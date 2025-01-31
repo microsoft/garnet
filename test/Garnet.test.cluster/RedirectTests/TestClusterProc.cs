@@ -119,9 +119,9 @@ namespace Garnet.test.cluster
             var setC = GetNextArg(ref procInput, ref offset).SpanByte;
 
             _ = api.GET(getA, out _);
-            var status = api.SET(ref setB, ref setB);
+            var status = api.SET(setB, setB);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
-            status = api.SET(ref setC, ref setC);
+            status = api.SET(setC, setC);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
             WriteSimpleString(ref output, "SUCCESS");
         }

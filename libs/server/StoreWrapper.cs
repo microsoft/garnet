@@ -217,7 +217,8 @@ namespace Garnet.server
         }
 
         internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager.rawStringCommandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer, logger ?? loggerFactory.CreateLogger("Garnet SessionFunctions"));
+            => new(appendOnlyFile, versionMap, customCommandManager.rawStringCommandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer,
+                    logger ?? loggerFactory?.CreateLogger("Garnet SessionFunctions"));
 
         internal void Recover()
         {

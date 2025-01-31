@@ -288,7 +288,6 @@ namespace Garnet.server
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
-            var value = logRecord.ValueSpan;    // reduce redundant offset calculation
 
             // First byte of input payload identifies command
             switch (input.header.cmd)
@@ -389,12 +388,12 @@ namespace Garnet.server
                     var bOffset = input.parseState.GetLong(0);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!BitmapManager.IsLargeEnough(value.Length, bOffset) && !logRecord.TrySetValueSpanLength(BitmapManager.Length(bOffset)))
+                    if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset) && !logRecord.TrySetValueSpanLength(BitmapManager.Length(bOffset)))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
 
-                    var valuePtr = value.ToPointer();
+                    var valuePtr = logRecord.ValueSpan.ToPointer();
                     var oldValSet = BitmapManager.UpdateBitmap(valuePtr, bOffset, bSetVal);
                     if (oldValSet == 0)
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
@@ -403,13 +402,13 @@ namespace Garnet.server
                     return true;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    valuePtr = value.ToPointer();
-                    if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, value.Length) && !logRecord.TrySetValueSpanLength(BitmapManager.LengthFromType(bitFieldArgs)))
+                    valuePtr = logRecord.ValueSpan.ToPointer();
+                    if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length) && !logRecord.TrySetValueSpanLength(BitmapManager.LengthFromType(bitFieldArgs)))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
 
-                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, value.Length);
+                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, logRecord.ValueSpan.Length);
 
                     if (!overflow)
                         functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
@@ -418,9 +417,9 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.PFADD:
-                    valuePtr = value.ToPointer();
+                    valuePtr = logRecord.ValueSpan.ToPointer();
 
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length))
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, logRecord.ValueSpan.Length))
                     {
                         *output.SpanByte.ToPointer() = (byte)0xFF;
                         return true;
@@ -428,7 +427,7 @@ namespace Garnet.server
 
                     var updated = false;
                     _ = logRecord.RemoveExpiration();
-                    var result = HyperLogLog.DefaultHLL.Update(ref input, valuePtr, value.Length, ref updated);
+                    var result = HyperLogLog.DefaultHLL.Update(ref input, valuePtr, logRecord.ValueSpan.Length, ref updated);
 
                     if (result)
                         *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
@@ -437,37 +436,36 @@ namespace Garnet.server
                 case RespCommand.PFMERGE:
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
                     var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
-                    var dstHLL = value.ToPointer();
+                    var dstHLL = logRecord.ValueSpan.ToPointer();
 
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, value.Length))
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, logRecord.ValueSpan.Length))
                     {
                         //InvalidType                                                
                         *(long*)output.SpanByte.ToPointer() = -1;
                         return true;
                     }
                     _ = logRecord.RemoveExpiration();
-                    return HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, value.Length);
+                    return HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, logRecord.ValueSpan.Length);
 
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                    if (newValue.Length + offset > value.Length)
+                    if (newValue.Length + offset > logRecord.ValueSpan.Length)
                         return false;
 
-                    newValue.CopyTo(value.AsSpan().Slice(offset));
-
-                    return CopyValueLengthToOutput(value, ref output);
+                    newValue.CopyTo(logRecord.ValueSpan.AsSpan().Slice(offset));
+                    return CopyValueLengthToOutput(logRecord.ValueSpan, ref output);
 
                 case RespCommand.GETDEL:
                     // Copy value to output for the GET part of the command.
                     // Then, set ExpireAndStop action to delete the record.
-                    CopyRespTo(value, ref output);
+                    CopyRespTo(logRecord.ValueSpan, ref output);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
 
                 case RespCommand.GETEX:
-                    CopyRespTo(value, ref output);
+                    CopyRespTo(logRecord.ValueSpan, ref output);
 
                     if (input.arg1 > 0)
                     {
@@ -489,13 +487,20 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.APPEND:
-                    // If nothing to append, can avoid copy update. TODO: TrySetValueLength to do an IPU if possible
-                    var appendSize = input.parseState.GetArgSliceByRef(0).Length;
+                    // If nothing to append, can avoid copy update.
+                    var appendValue = input.parseState.GetArgSliceByRef(0);
+                    var appendLength = appendValue.Length;
+                    if (appendLength > 0)
+                    { 
+                        // Try to grow in place.
+                        var originalLength = logRecord.ValueSpan.Length;
+                        if (!logRecord.TrySetValueSpanLength(originalLength + appendLength))
+                            return false;
 
-                    if (appendSize == 0)
-                        return CopyValueLengthToOutput(value, ref output);
-
-                    return false;
+                        // Append the new value with the client input at the end of the old data
+                        appendValue.ReadOnlySpan.CopyTo(logRecord.ValueSpan.AsSpan().Slice(originalLength));
+                    }
+                    return CopyValueLengthToOutput(logRecord.ValueSpan, ref output);
 
                 default:
                     var cmd = (ushort)input.header.cmd;
@@ -515,13 +520,13 @@ namespace Garnet.server
                                 return false;
                         }
 
-                        var valueLength = value.Length;
+                        var valueLength = logRecord.ValueSpan.Length;
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functions.InPlaceUpdater(logRecord.Key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
-                        Debug.Assert(valueLength <= value.Length);
+                        var ret = functions.InPlaceUpdater(logRecord.Key.AsReadOnlySpan(), ref input, logRecord.ValueSpan.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
+                        Debug.Assert(valueLength <= logRecord.ValueSpan.Length);
 
                         // Adjust value length if user shrinks it
-                        if (valueLength < value.Length)
+                        if (valueLength < logRecord.ValueSpan.Length)
                             _ = logRecord.TrySetValueSpanLength(valueLength);
 
                         output.Memory = outp.Memory;

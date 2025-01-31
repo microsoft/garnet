@@ -292,7 +292,14 @@ namespace Tsavorite.core
                 elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
             };
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
+            // TODO:
+            //      Actual length returned from TryAllocate
+            //      Make sure either value length to end of record, or filler is set.
+            //          Filler is probably better
+
+
+
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
@@ -308,9 +315,10 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, newPhysicalAddress + sizeInfo.FieldInfo.ValueSize);
+            hlog.InitializeValue(newPhysicalAddress, sizeInfo.FieldInfo.ValueSize);
+            newLogRecord.SetFillerLength(allocatedSize);
 
-            if (!sessionFunctions.SingleWriter(ref srcLogRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
+            if (!sessionFunctions.SingleWriter(ref newLogRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
                 if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
@@ -345,7 +353,7 @@ namespace Tsavorite.core
                         _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
                     }
                 }
-                else
+                else if (stackCtx.recSrc.HasMainLogSrc)
                     srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
 
                 stackCtx.ClearNewRecord();

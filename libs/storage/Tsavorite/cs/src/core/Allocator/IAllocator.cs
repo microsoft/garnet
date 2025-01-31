@@ -15,7 +15,9 @@ namespace Tsavorite.core
             where TAllocator : IAllocator<TValue, TStoreFunctions>;
 
         /// <summary>Cast address range to <typeparamref name="TValue"/>. For <see cref="SpanByte"/> this will also initialize the value to span the address range.</summary>
-        void InitializeValue(long physicalAddress, long endPhysicalAddress);
+        /// <param name="physicalAddress">The start of the record (address of its <see cref="RecordInfo"/>).</param>
+        /// <param name="valueTotalSize">The total size of the value; for SpanByte this includes the length prefix.</param>
+        void InitializeValue(long physicalAddress, int valueTotalSize);
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)

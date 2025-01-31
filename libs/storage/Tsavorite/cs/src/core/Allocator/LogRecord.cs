@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Net;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
@@ -41,8 +42,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
 
+        /// <summary>The address of the key</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte GetKey(long physicalAddress) => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
+        internal static long GetKeyAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static SpanByte GetKey(long physicalAddress) => SpanField.AsSpanByte(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsOverflow);
     }
 
     /// <summary>The in-memory record on the log: header, key, value, and optional fields
@@ -66,17 +71,29 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         readonly ObjectIdMap<TValue> objectIdMap;
 
+        /// <summary>The max inline value size if this is a record in the string log.</summary>
+        readonly int maxInlineValueSpanSize;
+
         /// <summary>Address-only ctor, usually used for simple record parsing.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
-        /// <summary>This ctor is primarily used for internal record-creation operations and is passed to IObjectSessionFunctions callbacks.</summary> 
+        /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator, ObjectIdMap<TValue> objectIdMap = null)
+        internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator, ObjectIdMap<TValue> objectIdMap)
             : this(physicalAddress)
         {
             this.overflowAllocator = overflowAllocator;
             this.objectIdMap = objectIdMap;
+        }
+
+        /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator, int maxInlineValueSpanSize)
+            : this(physicalAddress)
+        {
+            this.overflowAllocator = overflowAllocator;
+            this.maxInlineValueSpanSize = maxInlineValueSpanSize;
         }
 
         #region ISourceLogRecord
@@ -96,7 +113,7 @@ namespace Tsavorite.core
             get
             {
                 Debug.Assert(!IsObjectRecord, "ValueSpan is not valid for Object log records");
-                return *(SpanByte*)ValueAddress;
+                return SpanField.AsSpanByte(ValueAddress, Info.ValueIsOverflow);
             }
         }
 
@@ -157,22 +174,22 @@ namespace Tsavorite.core
 
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord.GetInfoRef(physicalAddress);
 
         /// <summary>Fast access returning a copy of the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
+        public static RecordInfo GetInfo(long physicalAddress) => LogRecord.GetInfo(physicalAddress);
 
         /// <summary>The address of the key</summary>
-        internal readonly long KeyAddress => GetKeyAddress(physicalAddress);
+        internal readonly long KeyAddress => LogRecord.GetKeyAddress(physicalAddress);
         /// <summary>The address of the key</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetKeyAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
+        internal static long GetKeyAddress(long physicalAddress) => LogRecord.GetKeyAddress(physicalAddress);
 
         /// <summary>A <see cref="SpanField"/> representing the record Key</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte GetKey(long physicalAddress) => *(SpanByte*)(physicalAddress + RecordInfo.GetLength());
+        public static SpanByte GetKey(long physicalAddress) => LogRecord.GetKey(physicalAddress);
 
         /// <summary>The address of the value</summary>
         internal readonly long ValueAddress => GetValueAddress(physicalAddress);
@@ -264,6 +281,10 @@ namespace Tsavorite.core
                         if (currentInlineSize + fillerLen < SpanField.OverflowInlineSize)
                             return false;
 
+                        // If the new value is within the inline size, return false to do an RCU.
+                        if (newValueLength <= maxInlineValueSpanSize)
+                            return false;
+
                         // Convert to overflow
                         var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
                         growth = currentInlineSize - SpanField.OverflowInlineSize;
@@ -318,7 +339,9 @@ namespace Tsavorite.core
 
             if (!TrySetValueSpanLength(value.Length))
                 return false;
-            value.CopyTo(SpanField.AsSpan(ValueAddress));
+            
+            var valueSpanByte = SpanField.AsSpanByte(ValueAddress, Info.ValueIsOverflow);
+            value.CopyTo(ref valueSpanByte);
             return true;
         }
 
@@ -378,6 +401,34 @@ namespace Tsavorite.core
             // due to RoundUp of record size. Optimize the filler address to avoid additional "if" statements.
             var recSize = (int)(fillerLenAddress - physicalAddress);
             return RoundUp(recSize, Constants.kRecordAlignment) - recSize;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetFillerLength(int allocatedSize)
+        {
+            // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
+            var valueAddress = ValueAddress;
+            var valueLength = SpanField.InlineSize(valueAddress);
+            var usedSize = (int)(valueAddress - physicalAddress + valueLength);
+            var fillerSize = allocatedSize - usedSize;
+
+            if (fillerSize >= LogRecord.FillerLengthSize)
+            { 
+                InfoRef.SetHasFiller(); // must do this first, for zero-init
+                var fillerAddress = valueAddress + valueLength;
+                *(int*)fillerAddress = fillerSize;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeForReuse(ref RecordSizeInfo sizeInfo)
+        {
+            // This assumes Key and Value lengths have not been set; and further, that the record is zero'd.
+            SpanField.SetInlineLength(KeyAddress, sizeInfo.KeyIsOverflow ? SpanField.OverflowInlineSize : sizeInfo.FieldInfo.KeySize);
+            SpanField.SetInlineLength(ValueAddress, sizeInfo.ValueIsOverflow ? SpanField.OverflowInlineSize : sizeInfo.FieldInfo.ValueSize);
+
+            // Anything remaining is filler.
+            SetFillerLength(sizeInfo.AllocatedInlineRecordSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -547,7 +598,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration)
         {
-            // TODO: Consider overflow in this
             var growth = newValueLen - InlineValueSize;
             if (Info.HasETag != withETag)
                 growth += withETag ? LogRecord.ETagSize : -LogRecord.ETagSize;

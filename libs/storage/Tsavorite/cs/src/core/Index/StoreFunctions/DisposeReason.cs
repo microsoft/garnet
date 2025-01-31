@@ -39,6 +39,11 @@ namespace Tsavorite.core
         SingleDeleterCASFailed,
 
         /// <summary>
+        /// Some CAS failed and retry could not use the record due to size or address restrictions
+        /// </summary>
+        CASAndRetryFailed,
+
+        /// <summary>
         /// A record was deserialized from the disk for a pending Read or RMW operation.
         /// </summary>
         DeserializedFromDisk,

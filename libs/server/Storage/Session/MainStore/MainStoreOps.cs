@@ -253,7 +253,8 @@ namespace Garnet.server
                     StopPendingMetrics();
                 }
 
-                if (status.Found) return GarnetStatus.OK;
+                if (status.Found)
+                    return GarnetStatus.OK;
             }
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)

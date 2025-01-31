@@ -35,7 +35,7 @@ namespace Tsavorite.core
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
             var allocOptions = new AllocateOptions() { recycle = true };
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
             var newLogRecord = WriteNewRecordInfo(srcLogRecord.Key, hlogBase, newLogicalAddress, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -48,7 +48,8 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, newPhysicalAddress + sizeInfo.FieldInfo.ValueSize);
+            hlog.InitializeValue(newPhysicalAddress, sizeInfo.FieldInfo.ValueSize);
+            newLogRecord.SetFillerLength(allocatedSize);
 
             if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref upsertInfo, reason))
             {

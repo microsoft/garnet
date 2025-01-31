@@ -48,7 +48,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                                                        ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
-                                                       out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+                                                       out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             status = OperationStatus.SUCCESS;
@@ -58,8 +58,10 @@ namespace Tsavorite.core
             var minRevivAddress = minMutableAddress;
 
             if (options.recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress
-                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref sizeInfo, out newLogicalAddress, out newPhysicalAddress))
+                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
+            { 
                 return true;
+            }
             if (RevivificationManager.UseFreeRecordPool)
             {
                 if (!options.elideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
@@ -70,7 +72,7 @@ namespace Tsavorite.core
                     if (fuzzyStartAddress > minRevivAddress)
                         minRevivAddress = fuzzyStartAddress;
                 }
-                if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
+                if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
                     return true;
             }
 
@@ -83,6 +85,7 @@ namespace Tsavorite.core
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
+                    allocatedSize = sizeInfo.AllocatedInlineRecordSize;
                     if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
                         return true;
 
@@ -92,9 +95,7 @@ namespace Tsavorite.core
                         // Set up a simple LogRecord with specified key size and value size taking the entire non-key space (we don't have optionals now)
                         // so revivification can read the record size.
                         var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
-                        SpanField.SetInlineLength(logRecord.KeyAddress, sizeInfo.KeyIsOverflow ? SpanField.OverflowInlineSize : sizeInfo.FieldInfo.KeySize);
-                        var valueSize = sizeInfo.AllocatedInlineRecordSize - (int)(logRecord.ValueAddress - newPhysicalAddress);
-                        SpanField.SetInlineLength(logRecord.ValueAddress, valueSize);
+                        logRecord.InitializeForReuse(ref sizeInfo);
                         if (RevivificationManager.TryAdd(newLogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             continue;
                     }
@@ -103,21 +104,20 @@ namespace Tsavorite.core
                 }
 
                 // In-memory source dropped below HeadAddress during BlockAllocate. Save the record for retry if we can.
-                ref var newRecordInfo = ref LogRecord.GetInfoRef(newPhysicalAddress);
                 if (options.recycle)
                 {
-                    // TODO: Return overflow allocations and DisposeRecord
-
-                    // FillerLength is not needed now; the Value is initialized correctly, and space for optionals is keyed by the RecordInfo header
+                    var logRecord = new LogRecord<TValue>(newPhysicalAddress);
+                    logRecord.InitializeForReuse(ref sizeInfo);
                     SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
                 }
                 else
-                    newRecordInfo.SetInvalid();  // Skip on log scan
+                    LogRecord.GetInfoRef(newPhysicalAddress).SetInvalid();      // Skip on log scan
                 status = OperationStatus.RETRY_LATER;
                 break;
             }
 
             newPhysicalAddress = 0;
+            allocatedSize = 0;
             return false;
         }
 
@@ -168,30 +168,33 @@ namespace Tsavorite.core
 
         // Do not inline, to keep TryAllocateRecord lean
         bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, long minAddress,
-                ref RecordSizeInfo sizeInfo, out long newLogicalAddress, out long newPhysicalAddress)
+                ref RecordSizeInfo sizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
             pendingContext.retryNewLogicalAddress = 0;
 
-            if (newLogicalAddress < hlogBase.HeadAddress)
+            if (newLogicalAddress <= minAddress || newLogicalAddress < hlogBase.HeadAddress)
             {
-                // The record dropped below headAddress. If it needs DisposeRecord, it will be done on eviction.
-                newPhysicalAddress = 0;
-                return false;
+                // The record is too small or dropped below headAddress.
+                goto Fail;
             }
 
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             var newLogRecord = new LogRecord<TValue>(newPhysicalAddress);
 
-            if (newLogicalAddress <= minAddress || newLogRecord.GetFullRecordSizes().allocatedSize < sizeInfo.AllocatedInlineRecordSize)
-            {
-                // Can't reuse, so abandon it.
-                newPhysicalAddress = 0;
-                return false;
-            }
+            allocatedSize = newLogRecord.GetFullRecordSizes().allocatedSize;
+            if (allocatedSize < sizeInfo.AllocatedInlineRecordSize)
+                goto Fail;
             return true;
+
+        Fail:
+            var logRecord = hlog.CreateLogRecord(newLogicalAddress);
+            DisposeRecord(ref logRecord, DisposeReason.CASAndRetryFailed);
+            allocatedSize = 0;
+            newPhysicalAddress = 0;
+            return false;
         }
     }
 }

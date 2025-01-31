@@ -29,10 +29,16 @@ namespace Tsavorite.core
             internal readonly OverflowAllocator overflowAllocator { get; init; }
             internal readonly ObjectIdMap<TValue> objectIdMap { get; init; }
 
+            public ObjectPage(int fixedPageSize)
+            {
+                overflowAllocator = new(fixedPageSize);
+                //objectIdMap = new();
+            }
+
             internal readonly void Clear()
             {
-                overflowAllocator.Clear();
-                objectIdMap.Clear();
+                //overflowAllocator.Clear();
+                //objectIdMap.Clear();
             }
         }
 
@@ -134,7 +140,7 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, long _ /* endAddress */) => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = 0;
+        public static void InitializeValue(long physicalAddress, int _ /* valueTotalSize */) => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)

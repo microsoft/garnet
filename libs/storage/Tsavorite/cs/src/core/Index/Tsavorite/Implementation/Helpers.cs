@@ -168,7 +168,7 @@ namespace Tsavorite.core
 
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
         bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref RecordSizeInfo sizeInfo, long minRevivAddress,
-                    out long logicalAddress, out long physicalAddress)
+                    out long logicalAddress, out long physicalAddress, out int allocatedSize)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
@@ -179,11 +179,13 @@ namespace Tsavorite.core
 
                 // Preserve the Sealed bit due to checkpoint/recovery; see RecordInfo.WriteInfo.
                 physicalAddress = logRecord.physicalAddress;
+                allocatedSize = logRecord.GetFullRecordSizes().allocatedSize;
                 return true;
             }
 
             // No free record available.
             logicalAddress = physicalAddress = default;
+            allocatedSize = default;
             return false;
         }
 

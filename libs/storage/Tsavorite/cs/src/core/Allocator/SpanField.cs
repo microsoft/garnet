@@ -54,7 +54,24 @@ namespace Tsavorite.core
         internal static int DataSize(long address) => LengthRef(address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> AsSpan(long address) => new((byte*)(address + FieldLengthPrefixSize), LengthRef(address));
+        internal static Span<byte> AsSpan(long address, bool isOverflow)
+        {
+            // Note: SpanByte.CopyTo(Span<byte> x) will assume that x is a serialized SpanByte space, and will write length to the first sizeof(int) bytes of the span data
+            var dataAddress = (byte*)(address + FieldLengthPrefixSize);
+            if (isOverflow)
+                dataAddress = *(byte**)dataAddress;
+            return new(dataAddress, LengthRef(address));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static SpanByte AsSpanByte(long address, bool isOverflow)
+        {
+            // Must always return non-serialized as it is not passed by ref
+            var dataAddress = (byte*)(address + FieldLengthPrefixSize);
+            if (isOverflow)
+                return new(LengthRef(address), *(IntPtr*)dataAddress);
+            return new(LengthRef(address), (IntPtr)dataAddress);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void ZeroInlineData(long address, int dataOffset, int clearLength) 
@@ -113,6 +130,7 @@ namespace Tsavorite.core
             var clearLength = LengthRef(address) - newLength;
             if (clearLength > 0)
                 ZeroInlineData(address, newLength, clearLength);
+            LengthRef(address) = newLength;
             return (byte*)(address + FieldLengthPrefixSize);            // Data pointer
         }
 

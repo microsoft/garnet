@@ -3310,7 +3310,7 @@ namespace Garnet.test
             var val = "myKeyValue";
             var val2 = "myKeyValue2";
 
-            db.StringSet(key, val);
+            _ = db.StringSet(key, val);
             var len = db.StringAppend(key, val2);
             ClassicAssert.AreEqual(val.Length + val2.Length, len);
 
@@ -3318,7 +3318,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(val + val2, _val.ToString());
 
             // Test appending an empty string
-            db.StringSet(key, val);
+            _ = db.StringSet(key, val);
             var len1 = db.StringAppend(key, "");
             ClassicAssert.AreEqual(val.Length, len1);
 
@@ -3332,23 +3332,50 @@ namespace Garnet.test
 
             _val = db.StringGet(nonExistentKey);
             ClassicAssert.AreEqual(val2, _val.ToString());
+        }
+
+        [Test]
+        public void AppendLargeStringValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "myKey1";
+            var key2 = "myKey2";
+            var val2 = "myKeyValue2";
+
+            var largeVal = new string('a', 1000000);
 
             // Test appending to a key with a large value
-            var largeVal = new string('a', 1000000);
-            db.StringSet(key, largeVal);
-            var len3 = db.StringAppend(key, val2);
-            ClassicAssert.AreEqual(largeVal.Length + val2.Length, len3);
+            _ = db.StringSet(key1, largeVal);
+            var len = db.StringAppend(key1, val2);
+            ClassicAssert.AreEqual(largeVal.Length + val2.Length, len);
 
-            // Test appending to a key with metadata
-            var keyWithMetadata = "keyWithMetadata";
-            db.StringSet(keyWithMetadata, val, TimeSpan.FromSeconds(10000));
-            var len4 = db.StringAppend(keyWithMetadata, val2);
-            ClassicAssert.AreEqual(val.Length + val2.Length, len4);
+            // Test appending a large value to a key
+            _ = db.StringSet(key2, val2);
+            var len2 = db.StringAppend(key2, largeVal);
+            ClassicAssert.AreEqual(largeVal.Length + val2.Length, len);
+        }
 
-            _val = db.StringGet(keyWithMetadata);
+        [Test]
+        public void AppendWithExpirationTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "keyWithExpiration";
+            var val = "myKeyValue";
+            var val2 = "myKeyValue2";
+
+            // Test appending to a key with expiration
+            _ = db.StringSet(key, val, TimeSpan.FromSeconds(10000));
+            var len = db.StringAppend(key, val2);
+            ClassicAssert.AreEqual(val.Length + val2.Length, len);
+
+            var _val = db.StringGet(key);
             ClassicAssert.AreEqual(val + val2, _val.ToString());
 
-            var time = db.KeyTimeToLive(keyWithMetadata);
+            var time = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
         }
 

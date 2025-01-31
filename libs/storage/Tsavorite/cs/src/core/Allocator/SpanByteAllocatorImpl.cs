@@ -99,7 +99,7 @@ namespace Tsavorite.core
         internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress, GetOverflowAllocator(logicalAddress));
+        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress, GetOverflowAllocator(logicalAddress), maxInlineValueSize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
@@ -110,11 +110,11 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeValue(long physicalAddress, long endAddress)
+        public void InitializeValue(long physicalAddress, int valueTotalSize)
         {
             // Initialize the SpanByte to the length of the entire value space, less the length of the int size prefix.
-            var src = (byte*)LogRecord<SpanByte>.GetValueAddress(physicalAddress);
-            *(int*)src = (int)((byte*)endAddress - src) - sizeof(int);
+            var lengthPtr = (int*)LogRecord<SpanByte>.GetValueAddress(physicalAddress);
+            *lengthPtr = valueTotalSize - sizeof(int);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

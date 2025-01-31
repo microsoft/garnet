@@ -253,7 +253,7 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.APPEND:
-                        fieldInfo.ValueSize += sizeof(int) + srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.ValueSize += srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
                         return fieldInfo;
 
                     default:

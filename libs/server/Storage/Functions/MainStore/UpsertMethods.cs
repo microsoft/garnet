@@ -12,7 +12,11 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool SingleWriter(ref LogRecord<SpanByte> dstLogRecord, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => dstLogRecord.TrySetValueSpan(srcValue);  // TODO does this need to check Expiration?
+        {
+            if (!dstLogRecord.TrySetValueSpan(srcValue))
+                return false;
+            return input.arg1 == 0 || dstLogRecord.TrySetExpiration(input.arg1);
+        }
 
         /// <inheritdoc />
         public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
@@ -42,6 +46,10 @@ namespace Garnet.server
         }
 
         static bool ConcurrentWriterWorker(ref LogRecord<SpanByte> logRecord, SpanByte srcValue, ref RawStringInput input, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueSpan(srcValue);
+        {
+            if (!logRecord.TrySetValueSpan(srcValue))
+                return false;
+            return input.arg1 == 0 || logRecord.TrySetExpiration(input.arg1);
+        }
     }
 }
