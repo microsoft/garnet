@@ -7,8 +7,8 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Threading.Tasks;
-using NUnit.Framework.Legacy;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
