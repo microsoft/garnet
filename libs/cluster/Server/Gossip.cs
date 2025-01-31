@@ -211,7 +211,7 @@ namespace Garnet.cluster
         public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
         {
             var conf = CurrentConfig;
-            List<(string, string, int)> nodeEntries = null;
+            List<(string NodeId, IPEndPoint Endpoint)> nodeEntries = null;
             if (cmd == RespCommand.PUBLISH)
                 conf.GetAllNodeIds(out nodeEntries);
             else
@@ -220,11 +220,10 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    var nodeId = entry.Item1;
-                    var address = entry.Item2;
-                    var port = entry.Item3;
+                    var nodeId = entry.NodeId;
+                    var endpoint = entry.Endpoint;
                     GarnetServerNode gsn = null;
-                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, address, port, tlsOptions, nodeId, out gsn, logger: logger))
+                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, tlsOptions, nodeId, out gsn, logger: logger))
                         Thread.Yield();
 
                     if (gsn == null)

@@ -190,7 +190,6 @@ namespace Garnet.client
             socket = ConnectSendSocketAsync(timeoutMilliseconds).ConfigureAwait(false).GetAwaiter().GetResult();
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
-            networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
             {
@@ -223,7 +222,6 @@ namespace Garnet.client
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
-            networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
             {
