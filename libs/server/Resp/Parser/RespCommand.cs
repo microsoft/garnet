@@ -1721,10 +1721,11 @@ namespace Garnet.server
                     return RespCommand.SCRIPT_EXISTS;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
                                               Encoding.UTF8.GetString(subCommand),
                                               nameof(RespCommand.SCRIPT));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.ECHO))
             {
@@ -1744,33 +1745,38 @@ namespace Garnet.server
                 {
                     specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
                         nameof(RespCommand.CONFIG)));
+                    return RespCommand.INVALID;
                 }
-                else if (count >= 1)
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.GET))
-                    {
-                        return RespCommand.CONFIG_GET;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
-                    {
-                        return RespCommand.CONFIG_REWRITE;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.SET))
-                    {
-                        return RespCommand.CONFIG_SET;
-                    }
+                    success = false;
+                    return RespCommand.NONE;
                 }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.GET))
+                {
+                    return RespCommand.CONFIG_GET;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
+                {
+                    return RespCommand.CONFIG_REWRITE;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.SET))
+                {
+                    return RespCommand.CONFIG_SET;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.CONFIG));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.CLIENT))
             {
@@ -1778,53 +1784,58 @@ namespace Garnet.server
                 {
                     specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
                         nameof(RespCommand.CLIENT)));
+                    return RespCommand.INVALID;
                 }
-                else if (count >= 1)
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.ID))
-                    {
-                        return RespCommand.CLIENT_ID;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
-                    {
-                        return RespCommand.CLIENT_INFO;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
-                    {
-                        return RespCommand.CLIENT_LIST;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.KILL))
-                    {
-                        return RespCommand.CLIENT_KILL;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
-                    {
-                        return RespCommand.CLIENT_GETNAME;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
-                    {
-                        return RespCommand.CLIENT_SETNAME;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
-                    {
-                        return RespCommand.CLIENT_SETINFO;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
-                    {
-                        return RespCommand.CLIENT_UNBLOCK;
-                    }
+                    success = false;
+                    return RespCommand.NONE;
                 }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.ID))
+                {
+                    return RespCommand.CLIENT_ID;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                {
+                    return RespCommand.CLIENT_INFO;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.LIST))
+                {
+                    return RespCommand.CLIENT_LIST;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.KILL))
+                {
+                    return RespCommand.CLIENT_KILL;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                {
+                    return RespCommand.CLIENT_GETNAME;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                {
+                    return RespCommand.CLIENT_SETNAME;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                {
+                    return RespCommand.CLIENT_SETINFO;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
+                {
+                    return RespCommand.CLIENT_UNBLOCK;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.CLIENT));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.AUTH))
             {
@@ -1880,6 +1891,12 @@ namespace Garnet.server
                 {
                     return RespCommand.COMMAND_GETKEYSANDFLAGS;
                 }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.COMMAND));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.PING))
             {
@@ -1891,6 +1908,13 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.CLUSTER)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2071,37 +2095,50 @@ namespace Garnet.server
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.UTF8.GetString(subCommand), "CLUSTER");
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                              Encoding.UTF8.GetString(subCommand), 
+                                              nameof(RespCommand.CLUSTER));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.LATENCY))
             {
-                if (count >= 1)
+                if (count == 0)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.HELP))
-                    {
-                        return RespCommand.LATENCY_HELP;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
-                    {
-                        return RespCommand.LATENCY_HISTOGRAM;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                    {
-                        return RespCommand.LATENCY_RESET;
-                    }
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.LATENCY)));
+                    return RespCommand.INVALID;
                 }
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.LATENCY_HELP;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
+                {
+                    return RespCommand.LATENCY_HISTOGRAM;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                {
+                    return RespCommand.LATENCY_RESET;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.LATENCY));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.TIME))
             {
@@ -2153,22 +2190,32 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.MEMORY))
             {
-                if (count > 0)
+                if (count == 0)
                 {
-                    ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    count--;
-
-                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
-                    {
-                        return RespCommand.MEMORY_USAGE;
-                    }
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.MEMORY)));
+                    return RespCommand.INVALID;
                 }
+
+                ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                count--;
+
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
+                {
+                    return RespCommand.MEMORY_USAGE;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.MEMORY));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.MONITOR))
             {
@@ -2176,6 +2223,13 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.ACL))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.ACL)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2219,6 +2273,12 @@ namespace Garnet.server
                 {
                     return RespCommand.ACL_WHOAMI;
                 }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.ACL));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
@@ -2230,6 +2290,13 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.MODULE))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.MODULE)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2243,9 +2310,22 @@ namespace Garnet.server
                 {
                     return RespCommand.MODULE_LOADCS;
                 }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp, 
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.MODULE));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.PUBSUB))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.PUBSUB)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2267,11 +2347,12 @@ namespace Garnet.server
                 {
                     return RespCommand.PUBSUB_NUMPAT;
                 }
-                else
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.PUBSUB));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.HCOLLECT))
             {
