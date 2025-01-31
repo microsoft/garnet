@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
 using Garnet.server;
@@ -529,6 +530,12 @@ namespace Garnet
         [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
         public string UnixSocketPath { get; set; }
 
+
+        [IntRangeValidation(0, 777, isRequired: false)]
+        [SupportedOSValidation(isRequired: false, nameof(OSPlatform.Linux), nameof(OSPlatform.OSX), nameof(OSPlatform.FreeBSD))]
+        [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
+        public int UnixSocketPermission { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -601,6 +608,9 @@ namespace Garnet
 
                 endpoint = new IPEndPoint(address, Port);
             }
+
+            // Unix file permission octal to UnixFileMode
+            var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
 
             var revivBinRecordSizes = this.RevivBinRecordSizes?.ToArray();
             var revivBinRecordCounts = this.RevivBinRecordCounts?.ToArray();
@@ -752,7 +762,8 @@ namespace Garnet
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
-                UnixSocketPath = UnixSocketPath
+                UnixSocketPath = UnixSocketPath,
+                UnixSocketPermission = unixSocketPermissions
             };
         }
 

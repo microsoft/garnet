@@ -85,6 +85,9 @@ Specify your subject name via the cert-subject-name command line argument, if ap
 
         [RedisOption("unixsocket", nameof(Options.UnixSocketPath))]
         public Option<string> UnixSocketPath { get; set; }
+
+        [RedisOption("unixsocketperm", nameof(Options.UnixSocketPermission))]
+        public Option<int> UnixSocketPermission { get; set; }
     }
 
     /// <summary>

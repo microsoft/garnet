@@ -430,5 +430,28 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
             ClassicAssert.IsFalse(parseSuccessful);
         }
+
+        [Test]
+        public void UnixSocketPermission_CanParseValidPermission()
+        {
+            if (OperatingSystem.IsWindows())
+                return;
+
+            string[] args = ["--unixsocketperm", "777"];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(888, options.UnixSocketPermission);
+        }
+
+        [Test]
+        public void UnixSocketPermission_InvalidPermissionFails()
+        {
+            if (OperatingSystem.IsWindows())
+                return;
+
+            string[] args = ["--unixsocketperm", "888"];
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
+            ClassicAssert.IsFalse(parseSuccessful);
+        }
     }
 }
