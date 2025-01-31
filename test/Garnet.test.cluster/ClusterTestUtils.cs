@@ -1861,7 +1861,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                var args = async ? new List<object>() { "replicate", primaryNodeId, "async" } : new List<object>() { "replicate", primaryNodeId };
+                List<object> args = async ? ["replicate", primaryNodeId, "async"] : ["replicate", primaryNodeId];
                 var result = (string)server.Execute("cluster", args);
                 ClassicAssert.AreEqual("OK", result);
                 return result;

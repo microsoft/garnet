@@ -516,7 +516,8 @@ namespace Garnet
         [Option("skip-rdb-restore-checksum-validation", Default = false, Required = false, HelpText = "Skip RDB restore checksum validation")]
         public bool? SkipRDBRestoreChecksumValidation { get; set; }
 
-        [Option("lua-memory-management-mode", Default = LuaMemoryManagementMode.Native, Required = false, HelpText = "Memory management mode for Lua scripts, must be set to LimittedNative or Managed to impose script limits")]
+        [OptionValidation]
+        [Option("lua-memory-management-mode", Required = false, HelpText = "Memory management mode for Lua scripts, must be set to Tracked or Managed to impose script limits")]
         public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
 
         [MemorySizeValidation(false)]

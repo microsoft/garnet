@@ -45,7 +45,7 @@ namespace CommandInfoUpdater
             }
 
             var (commandsToAdd, commandsToRemove) =
-                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
+                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands, null);
 
             if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {

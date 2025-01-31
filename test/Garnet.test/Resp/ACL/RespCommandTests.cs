@@ -14,7 +14,6 @@ using Garnet.server;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -778,6 +777,79 @@ namespace Garnet.test.Resp.ACL
             {
                 var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETINFO", "LIB-NAME", "foo"]);
                 ClassicAssert.IsNotEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task SSubscribeACLsAsync()
+        {
+            // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
+                "SSUBSCRIBE",
+                [DoSSubscribeAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoSSubscribeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("SSUBSCRIBE", ["channel"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task SPublishACLsAsync()
+        {
+            // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
+                "SPUBLISH",
+                [DoSPublishAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoSPublishAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("SPUBLISH", ["channel", "message"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClientUnblockACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT UNBLOCK",
+                [DoClientUnblockAsync]
+            );
+
+            static async Task DoClientUnblockAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("CLIENT", ["UNBLOCK", "123"]);
+                ClassicAssert.AreEqual(0, count);
             }
         }
 
@@ -2161,6 +2233,64 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("CLUSTER", ["SLOTSTATE"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterPublishACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER PUBLISH",
+                [DoClusterPublishAsync]
+            );
+
+            static async Task DoClusterPublishAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["PUBLISH", "channel", "message"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterSPublishACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SPUBLISH",
+                [DoClusterSPublishAsync]
+            );
+
+            static async Task DoClusterSPublishAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SPUBLISH", "channel", "message"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
@@ -3795,6 +3925,21 @@ namespace Garnet.test.Resp.ACL
             static async Task DoInfoMultiAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("INFO", ["SERVER", "MEMORY"]);
+                ClassicAssert.IsNotEmpty(val);
+            }
+        }
+
+        [Test]
+        public async Task RoleACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "ROLE",
+               [DoRoleAsync]
+            );
+
+            static async Task DoRoleAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("ROLE");
                 ClassicAssert.IsNotEmpty(val);
             }
         }

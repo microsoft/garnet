@@ -383,7 +383,7 @@ namespace Garnet.server
                 var valueExists = TryGetValue(key, out var value);
                 if (op == HashOperation.HINCRBY)
                 {
-                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out int incr))
+                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
                     {
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -394,7 +394,7 @@ namespace Garnet.server
 
                     if (valueExists)
                     {
-                        if (!NumUtils.TryParse(value, out int result))
+                        if (!NumUtils.TryParse(value, out long result))
                         {
                             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER, ref curr,
                                        end))
@@ -406,7 +406,7 @@ namespace Garnet.server
                         result += incr;
 
                         var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
-                        var success = Utf8Formatter.TryFormat((long)result, resultSpan, out int bytesWritten,
+                        var success = Utf8Formatter.TryFormat(result, resultSpan, out int bytesWritten,
                             format: default);
                         Debug.Assert(success);
 

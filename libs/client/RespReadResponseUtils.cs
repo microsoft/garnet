@@ -189,6 +189,12 @@ namespace Garnet.client
                     if (!TryReadSimpleString(out result[i], ref ptr, end))
                         return false;
                 }
+                else if (*ptr == '*')
+                {
+                    if (!TryReadStringArrayWithLengthHeader(out var subArray, ref ptr, end))
+                        return false;
+                    result[i] = string.Join(", ", subArray);
+                }
                 else
                 {
                     if (!TryReadIntegerAsString(out result[i], ref ptr, end))

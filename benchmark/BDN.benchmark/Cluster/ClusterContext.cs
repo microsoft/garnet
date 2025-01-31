@@ -69,7 +69,7 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref pairs[i].Item2);
             }
 
-            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.CountDigits(valueSize) + 2 + valueSize + 2);
+            var setByteCount = batchSize * ("*3\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.CountDigits(valueSize) + 2 + valueSize + 2);
             var setReq = new Request(setByteCount);
             var curr = setReq.ptr;
             var end = curr + setReq.buffer.Length;

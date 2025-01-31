@@ -255,7 +255,7 @@ namespace Garnet
             this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
 
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
-                    customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+                    customCommandManager, appendOnlyFile, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);

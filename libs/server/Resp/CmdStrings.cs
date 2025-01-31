@@ -15,6 +15,9 @@ namespace Garnet.server
         /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
         public static ReadOnlySpan<byte> SUBSCRIBE => "SUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> subscribe => "subcribe"u8;
+        public static ReadOnlySpan<byte> SSUBSCRIBE => "SSUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> ssubscribe => "ssubcribe"u8;
         public static ReadOnlySpan<byte> RUNTXP => "RUNTXP"u8;
         public static ReadOnlySpan<byte> GET => "GET"u8;
         public static ReadOnlySpan<byte> get => "get"u8;
@@ -56,6 +59,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
+        public static ReadOnlySpan<byte> ROLE => "ROLE"u8;
         public static ReadOnlySpan<byte> QUIT => "QUIT"u8;
         public static ReadOnlySpan<byte> SAVE => "SAVE"u8;
         public static ReadOnlySpan<byte> LASTSAVE => "LASTSAVE"u8;
@@ -137,6 +141,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
+        public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
+        public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
 
         /// <summary>
         /// Response strings
@@ -224,6 +230,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_LIMIT_NOT_SUPPORTED => "ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SCRIPT => "NOSCRIPT No matching script. Please use EVAL."u8;
         public static ReadOnlySpan<byte> RESP_ERR_CANNOT_LIST_CLIENTS => "ERR Clients cannot be listed."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_UBLOCKING_CLINET => "ERR Unable to unblock client because of error."u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SUCH_CLIENT => "ERR No such client"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_DISABLED => "ERR ACL Authenticator is disabled."u8;
@@ -239,6 +246,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;
         public static ReadOnlySpan<byte> RESP_INVALID_COMMAND_SPECIFIED => "Invalid command specified"u8;
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
+        public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
 
         /// <summary>
         /// Response string templates
@@ -335,6 +344,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KILL => "KILL"u8;
         public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
         public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
+        public static ReadOnlySpan<byte> UNBLOCK => "UNBLOCK"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;
@@ -352,6 +362,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> delkeysinslotrange => "DELKEYSINSLOTRANGE"u8;
         public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
         public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
+        public static ReadOnlySpan<byte> publish => "PUBLISH"u8;
+        public static ReadOnlySpan<byte> spublish => "SPUBLISH"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;

@@ -39,8 +39,19 @@ namespace CommandInfoUpdater
                 return false;
             }
 
+            var internalSubCommands = new Dictionary<string, HashSet<string>>();
+            foreach (var ci in updatedCommandsInfo)
+            {
+                if (ci.Value.SubCommands == null) continue;
+                var internalSubCmds =
+                    ci.Value.SubCommands.Where(sc => sc.IsInternal).Select(sc => sc.Name).ToHashSet();
+
+                if (internalSubCmds.Count > 0)
+                    internalSubCommands.Add(ci.Key, internalSubCmds);
+            }
+
             var (commandsToAdd, commandsToRemove) =
-                CommonUtils.GetCommandsToAddAndRemove(existingCommandsDocs, ignoreCommands);
+                CommonUtils.GetCommandsToAddAndRemove(existingCommandsDocs, ignoreCommands, internalSubCommands);
 
             if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {

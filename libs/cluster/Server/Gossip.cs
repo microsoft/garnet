@@ -8,6 +8,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -202,6 +203,48 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Forward message by issuing CLUSTER PUBLISH|SPUBLISH
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        {
+            var conf = CurrentConfig;
+            List<(string, string, int)> nodeEntries = null;
+            if (cmd == RespCommand.PUBLISH)
+                conf.GetAllNodeIds(out nodeEntries);
+            else
+                conf.GetNodeIdsForShard(out nodeEntries);
+            foreach (var entry in nodeEntries)
+            {
+                try
+                {
+                    var nodeId = entry.Item1;
+                    var address = entry.Item2;
+                    var port = entry.Item3;
+                    GarnetServerNode gsn = null;
+                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, address, port, tlsOptions, nodeId, out gsn, logger: logger))
+                        Thread.Yield();
+
+                    if (gsn == null)
+                        continue;
+
+                    // Initialize GarnetServerNode
+                    // Thread-Safe initialization executes only once
+                    gsn.InitializeAsync().GetAwaiter().GetResult();
+
+                    // Publish to remote nodes
+                    gsn.TryClusterPublish(cmd, ref channel, ref message);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublish)}");
+                }
+            }
+        }
+
+        /// <summary>
         /// Main gossip async task
         /// </summary>
         async Task GossipMain()
@@ -258,20 +301,25 @@ namespace Garnet.cluster
                     // Establish new connection only if it is not in banlist and not in dictionary
                     if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
                     {
-                        var gsn = new GarnetServerNode(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions?.TlsClientOptions, logger: logger)
-                        {
-                            NodeId = nodeId
-                        };
                         try
                         {
+                            GarnetServerNode gsn = null;
+                            while (!clusterConnectionStore.GetOrAdd(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions, nodeId, out gsn, logger: logger))
+                                await Task.Yield();
+
+                            if (gsn == null)
+                            {
+                                logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                                _ = clusterConnectionStore.TryRemove(nodeId);
+                                continue;
+                            }
+
                             await gsn.InitializeAsync();
-                            if (!clusterConnectionStore.AddConnection(gsn))
-                                gsn.Dispose();
                         }
                         catch (Exception ex)
                         {
-                            logger?.LogWarning("Connection to remote node [{nodeId} {address}:{port}] failed with message:{msg}", nodeId, address, port, ex.Message);
-                            gsn?.Dispose();
+                            logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                            _ = clusterConnectionStore.TryRemove(nodeId);
                         }
                     }
                 }

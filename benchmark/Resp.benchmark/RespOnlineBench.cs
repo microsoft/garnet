@@ -593,7 +593,6 @@ namespace Resp.benchmark
                     var op = SelectOpType(rand);
                     var startTimestamp = Stopwatch.GetTimestamp();
                     var c = opts.Pool ? await gcsPool.GetAsync() : client;
-
                     _ = op switch
                     {
                         OpType.PING => await c.ExecuteAsync(["PING"]),
@@ -603,6 +602,8 @@ namespace Resp.benchmark
                         OpType.DEL => await c.ExecuteAsync(["DEL", req.GenerateKey()]),
                         OpType.SETBIT => await c.ExecuteAsync(["SETBIT", req.GenerateKey(), req.GenerateBitOffset()]),
                         OpType.GETBIT => await c.ExecuteAsync(["GETBIT", req.GenerateKey(), req.GenerateBitOffset()]),
+                        OpType.PUBLISH => await c.ExecuteAsync(["PUBLISH", req.GenerateKey(), req.GenerateValue()]),
+                        OpType.SPUBLISH => await c.ExecuteAsync(["SPUBLISH", req.GenerateKey(), req.GenerateValue()]),
                         OpType.ZADD => await ZADD(),
                         OpType.ZREM => await ZREM(),
                         OpType.ZCARD => await ZCARD(),
@@ -713,6 +714,12 @@ namespace Resp.benchmark
                         break;
                     case OpType.GETBIT:
                         c.ExecuteBatch(["GETBIT", req.GenerateKey(), req.GenerateBitOffset()]);
+                        break;
+                    case OpType.PUBLISH:
+                        c.ExecuteBatch(["PUBLISH", req.GenerateKey(), req.GenerateValue()]);
+                        break;
+                    case OpType.SPUBLISH:
+                        c.ExecuteBatch(["SPUBLISH", req.GenerateKey(), req.GenerateValue()]);
                         break;
 
                     default:
@@ -1043,6 +1050,12 @@ namespace Resp.benchmark
                         case OpType.DEL:
                             await db.KeyDeleteAsync(req.GenerateKey());
                             break;
+                        case OpType.PUBLISH:
+                            await db.PublishAsync(RedisChannel.Literal(req.GenerateKey()), req.GenerateValue());
+                            break;
+                        case OpType.SPUBLISH:
+                            await db.ExecuteAsync("SPUBLISH", req.GenerateKey(), req.GenerateValue());
+                            break;
                         case OpType.ZADD:
                             {
                                 var key = req.GenerateKey();
@@ -1117,6 +1130,12 @@ namespace Resp.benchmark
                             break;
                         case OpType.SET:
                             tasks[offset++] = db.StringSetAsync(req.GenerateKey(), req.GenerateValue());
+                            break;
+                        case OpType.PUBLISH:
+                            tasks[offset++] = db.PublishAsync(RedisChannel.Literal(req.GenerateKey()), req.GenerateValue());
+                            break;
+                        case OpType.SPUBLISH:
+                            tasks[offset++] = db.ExecuteAsync("SPUBLISH", req.GenerateKey(), req.GenerateValue());
                             break;
                         case OpType.SETEX:
                             tasks[offset++] = db.StringSetAsync(req.GenerateKey(), req.GenerateValue(), TimeSpan.FromSeconds(opts.Ttl));
