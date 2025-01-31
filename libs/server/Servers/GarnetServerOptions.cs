@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Garnet.common;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -272,6 +273,11 @@ namespace Garnet.server
         public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
 
         /// <summary>
+        /// Creator of stream providers
+        /// </summary>
+        public Func<IStreamProvider> StreamProviderCreator = null;
+
+        /// <summary>
         /// Whether and by how much should we throttle the disk IO for checkpoints (default = 0)
         /// -1   - disable throttling
         /// >= 0 - run checkpoint flush in separate task, sleep for specified time after each WRiteAsync
@@ -481,6 +487,7 @@ namespace Garnet.server
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
             DeviceFactoryCreator ??= () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            StreamProviderCreator ??= () => StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -702,7 +709,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">DB ID</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings)
+        /// <param name="aofDir"></param>
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings, out string aofDir)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
@@ -721,9 +729,10 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
 
+            aofDir = Path.Combine(CheckpointDir, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 MainMemoryReplication ? new NullNamedDeviceFactory() : DeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(Path.Combine(CheckpointDir, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}")),
+                    new DefaultCheckpointNamingScheme(aofDir),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
         }
@@ -817,6 +826,18 @@ namespace Garnet.server
 
             return GetInitializedDeviceFactory(CheckpointDir)
                 .Get(new FileDescriptor($"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}", "aof.log"));
+        }
+
+        /// <summary>
+        /// Get device for logging database IDs
+        /// </summary>
+        /// <returns></returns>
+        public IDevice GetDatabaseIdsDevice()
+        {
+            if (MaxDatabases == 1) return new NullDevice();
+
+            return GetInitializedDeviceFactory(CheckpointDir)
+                .Get(new FileDescriptor($"databases", "ids.dat"));
         }
 
         /// <summary>

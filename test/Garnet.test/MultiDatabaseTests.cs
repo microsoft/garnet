@@ -17,7 +17,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
             server.Start();
         }
 
@@ -233,6 +233,54 @@ namespace Garnet.test
                 var db2ReturnedData = db2.StringGet(db2Key);
                 ClassicAssert.AreEqual(db2DataBeforeRecovery, db2ReturnedData);
                 ClassicAssert.AreEqual(db2data, db2ReturnedData);
+            }
+        }
+
+        [Test]
+        public void MultiDatabaseAofRecoverObjectTest()
+        {
+            var db1Key = "db1:key1";
+            var db2Key = "db2:key1";
+            var db1data = new SortedSetEntry[]{ new("db1:a", 1), new("db1:b", 2), new("db1:c", 3) };
+            var db2data = new SortedSetEntry[]{ new("db2:a", -1), new("db2:b", -2), new("db2:c", -3) };
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+                var added = db1.SortedSetAdd(db1Key, db1data);
+                ClassicAssert.AreEqual(3, added);
+
+                var score = db1.SortedSetScore(db1Key, "db1:a");
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(1, score.Value);
+
+                var db2 = redis.GetDatabase(1);
+                added = db2.SortedSetAdd(db2Key, db2data);
+                ClassicAssert.AreEqual(3, added);
+
+                score = db2.SortedSetScore(db2Key, "db2:a");
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(-1, score.Value);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+
+                var score = db1.SortedSetScore(db1Key, "db1:a");
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(1, score.Value);
+
+                var db2 = redis.GetDatabase(1);
+
+                score = db2.SortedSetScore(db2Key, "db2:a");
+                ClassicAssert.True(score.HasValue);
+                ClassicAssert.AreEqual(-1, score.Value);
             }
         }
 

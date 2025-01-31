@@ -11,6 +11,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
@@ -716,6 +717,8 @@ namespace Garnet
                 DeviceFactoryCreator = useAzureStorage
                     ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                StreamProviderCreator = () => StreamProviderFactory.GetStreamProvider(
+                    useAzureStorage ? FileLocationType.AzureStorage : FileLocationType.Local, AzureStorageConnectionString),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,

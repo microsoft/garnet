@@ -220,14 +220,8 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
-            var createDatabaseDelegate = (int dbId) =>
-            {
-                var store = CreateMainStore(dbId, clusterFactory, out var currCheckpointDir);
-                var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, currCheckpointDir,
-                    out var objectStoreSizeTracker);
-                var (aofDevice, aof) = CreateAOF(dbId);
-                return new GarnetDatabase(store, objectStore, objectStoreSizeTracker, aofDevice, aof);
-            };
+            StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId, out string storeCheckpointDir, out string aofDir) =>
+                CreateDatabase(dbId, clusterFactory, customCommandManager, out storeCheckpointDir, out aofDir);
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
@@ -238,7 +232,7 @@ namespace Garnet
             this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
 
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, createDatabaseDelegate,
-                    customCommandManager, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+                customCommandManager, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
@@ -251,6 +245,15 @@ namespace Garnet
             server.Register(WireFormat.ASCII, Provider);
 
             LoadModules(customCommandManager);
+        }
+
+        private GarnetDatabase CreateDatabase(int dbId, ClusterFactory clusterFactory, CustomCommandManager customCommandManager, out string storeCheckpointDir, out string aofDir)
+        {
+            var store = CreateMainStore(dbId, clusterFactory, out var checkpointDir, out storeCheckpointDir);
+            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, checkpointDir,
+                out var objectStoreSizeTracker);
+            var (aofDevice, aof) = CreateAOF(dbId, out aofDir);
+            return new GarnetDatabase(store, objectStore, objectStoreSizeTracker, aofDevice, aof);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -277,7 +280,7 @@ namespace Garnet
             }
         }
 
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory, out string checkpointDir)
+        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory, out string checkpointDir, out string mainStoreCheckpointDir)
         {
             kvSettings = opts.GetSettings(loggerFactory, out logFactory);
 
@@ -288,9 +291,10 @@ namespace Garnet
             kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
             var checkpointFactory = opts.DeviceFactoryCreator();
-            var baseName = Path.Combine(checkpointDir, "Store", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            mainStoreCheckpointDir = Path.Combine(checkpointDir, "Store");
+            var baseName = Path.Combine(mainStoreCheckpointDir, $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
-
+            
             kvSettings.CheckpointManager = opts.EnableCluster ? 
                 clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: true, logger) : 
                 new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
@@ -336,17 +340,18 @@ namespace Garnet
 
         }
 
-        private (IDevice, TsavoriteLog) CreateAOF(int dbId)
+        private (IDevice, TsavoriteLog) CreateAOF(int dbId, out string aofDir)
         {
+            aofDir = null;
+
             if (opts.EnableAOF)
             {
                 if (opts.MainMemoryReplication && opts.CommitFrequencyMs != -1)
                     throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
 
-                opts.GetAofSettings(dbId, out var aofSettings);
+                opts.GetAofSettings(dbId, out var aofSettings, out aofDir);
                 var aofDevice = aofSettings.LogDevice;
                 var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
-
                 if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                     throw new Exception("Cannot use CommitWait with manual commits");
                 return (aofDevice, appendOnlyFile);

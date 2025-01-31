@@ -4,18 +4,21 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using IStreamProvider = Garnet.common.IStreamProvider;
 
 namespace Garnet.server
 {
@@ -114,12 +117,17 @@ namespace Garnet.server
         /// <summary>
         /// Delegate for creating a new logical database
         /// </summary>
-        internal readonly Func<int, GarnetDatabase> createDatabasesDelegate;
+        internal readonly DatabaseCreatorDelegate createDatabasesDelegate;
 
         readonly bool allowMultiDb;
         internal ExpandableMap<GarnetDatabase> databases;
 
-        string activeDbIdsPath;
+        string databaseIdsFileName = "dbIds.dat";
+        string aofDatabaseIdsPath;
+        string checkpointDatabaseIdsPath;
+        IStreamProvider databaseIdsStreamProvider;
+
+        public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId, out string storeCheckpointDir, out string aofDir);
 
         /// <summary>
         /// Constructor
@@ -128,7 +136,7 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            Func<int, GarnetDatabase> createsDatabaseDelegate,
+            DatabaseCreatorDelegate createsDatabaseDelegate,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
             AccessControlList accessControlList = null,
@@ -154,11 +162,10 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
-            var checkpointDir = serverOptions.CheckpointDir ?? serverOptions.LogDir;
-            activeDbIdsPath = Path.Combine(checkpointDir, "activeDbIds.dat");
-
             // Create initial stores for default database of index 0
-            var db = createDatabasesDelegate(0);
+            var db = createDatabasesDelegate(0, out var storeCheckpointDir, out var aofPath);
+            checkpointDatabaseIdsPath = storeCheckpointDir == null ? null : Path.Combine(storeCheckpointDir, databaseIdsFileName);
+            aofDatabaseIdsPath = aofPath == null ? null : Path.Combine(aofPath, databaseIdsFileName);
 
             this.allowMultiDb = this.serverOptions.MaxDatabases > 1;
 
@@ -166,6 +173,11 @@ namespace Garnet.server
             databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
             if (!databases.TrySetValue(0, ref db))
                 throw new GarnetException("Failed to set initial database in databases map");
+
+            if (allowMultiDb)
+            {
+                databaseIdsStreamProvider = serverOptions.StreamProviderCreator();
+            }
 
             // Set fields to default database
             this.store = db.MainStore;
@@ -266,7 +278,7 @@ namespace Garnet.server
             if (dbId == 0)
                 return new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
             
-            if (!databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId), out var db, out _))
+            if (!databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId, out _, out _), out var db, out _))
                 throw new GarnetException($"Database with ID {dbId} was not found.");
             
             return new(db.AppendOnlyFile, db.VersionMap, customCommandManager, null, db.ObjectSizeTracker,
@@ -318,14 +330,17 @@ namespace Garnet.server
                 }
                 else
                 {
-                    using (var reader = new BinaryReader(File.Open(activeDbIdsPath, FileMode.Open)))
+                    if (allowMultiDb && checkpointDatabaseIdsPath != null)
                     {
-                        while (reader.BaseStream.Position < reader.BaseStream.Length)
+                        using var stream = databaseIdsStreamProvider.Read(checkpointDatabaseIdsPath);
+                        using var streamReader = new BinaryReader(stream);
+                        var idsCount = streamReader.ReadInt32();
+                        while (streamReader.BaseStream.Position < streamReader.BaseStream.Length)
                         {
-                            var dbId = reader.ReadInt32();
+                            var dbId = streamReader.ReadInt32();
                             if (dbId == 0) continue;
 
-                            var db = createDatabasesDelegate(dbId);
+                            var db = createDatabasesDelegate(dbId, out _, out _);
                             databases.TrySetValue(dbId, ref db);
                         }
                     }
@@ -470,15 +485,32 @@ namespace Garnet.server
                         var databasesMapSize = databases.ActualSize;
                         var databasesMapSnapshot = databases.Map;
 
-                        for (var i = 0; i < databasesMapSize; i++)
+                        var activeDbIds = allowMultiDb ? new List<int>() : null;
+
+                        for (var dbId = 0; dbId < databasesMapSize; dbId++)
                         {
-                            var db = databasesMapSnapshot[i];
+                            var db = databasesMapSnapshot[dbId];
                             if (db.Equals(default(GarnetDatabase))) continue;
 
                             await db.AppendOnlyFile.CommitAsync(null, token);
+
+                            if (allowMultiDb && dbId != 0)
+                                activeDbIds!.Add(dbId);
                         }
 
                         await Task.Delay(commitFrequencyMs, token);
+
+                        if (allowMultiDb && aofDatabaseIdsPath != null && activeDbIds!.Count > 0)
+                        {
+                            var dbIdsWithLength = new int[activeDbIds.Count + 1];
+                            dbIdsWithLength[0] = activeDbIds.Count;
+                            activeDbIds.CopyTo(dbIdsWithLength, 1);
+
+                            var dbIdData = new byte[sizeof(int) * dbIdsWithLength.Length];
+                            
+                            Buffer.BlockCopy(dbIdsWithLength, 0, dbIdData, 0, dbIdData.Length);
+                            databaseIdsStreamProvider.Write(aofDatabaseIdsPath, dbIdData);
+                        }
                     }
                 }
             }
@@ -914,7 +946,8 @@ namespace Garnet.server
                 var databasesMapSize = databases.ActualSize;
                 var databasesMapSnapshot = databases.Map;
 
-                var activeDbIds = new List<int>();
+                var activeDbIds = allowMultiDb ? new List<int>() : null;
+
                 for (var dbId = 0; dbId < databasesMapSize; dbId++)
                 {
                     var db = databasesMapSnapshot[dbId];
@@ -945,13 +978,15 @@ namespace Garnet.server
                             db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
                     }
 
-                    activeDbIds.Add(dbId);
+                    if(allowMultiDb && dbId != 0)
+                        activeDbIds!.Add(dbId);
                 }
 
-                await using (var bw = new BinaryWriter(File.Open(activeDbIdsPath, FileMode.Create)))
+                if (allowMultiDb && checkpointDatabaseIdsPath != null && activeDbIds!.Count > 0)
                 {
-                    foreach (var dbIds in activeDbIds)
-                        bw.Write(dbIds);
+                    var dbIdData = new byte[sizeof(int) * activeDbIds.Count];
+                    Buffer.BlockCopy(activeDbIds.ToArray(), 0, dbIdData, 0, dbIdData.Length);
+                    databaseIdsStreamProvider.Write(checkpointDatabaseIdsPath, dbIdData);
                 }
 
                 lastSaveTime = DateTimeOffset.UtcNow;
@@ -1092,7 +1127,7 @@ namespace Garnet.server
         {
             db = default;
 
-            if (!allowMultiDb || !databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId), out db, out var added))
+            if (!allowMultiDb || !databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId, out _, out _), out db, out var added))
                 return false;
 
             if (added)
