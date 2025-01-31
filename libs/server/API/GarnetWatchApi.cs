@@ -120,6 +120,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetCount(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetCount(key, minScore, maxScore, out numElements);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);

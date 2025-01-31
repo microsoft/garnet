@@ -1274,6 +1274,16 @@ namespace Garnet.server
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
         /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="minScore">Min Score</param>
+        /// <param name="maxScore">Max score</param>
+        /// <param name="numElements">Number of elements</param>
+        /// <returns></returns>
+        GarnetStatus SortedSetCount(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements);
+
+        /// <summary>
+        /// Returns the number of elements in the sorted set at key with a score between min and max.
+        /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
