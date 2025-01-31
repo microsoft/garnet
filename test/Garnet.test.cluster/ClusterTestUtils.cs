@@ -12,7 +12,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
-using Garnet.cluster;
 using Garnet.common;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -63,7 +62,7 @@ namespace Garnet.test.cluster
         public NodeNetInfo[] nnInfo;
     }
 
-    public enum Role
+    public enum NodeRole
     {
         PRIMARY,
         REPLICA
@@ -75,7 +74,7 @@ namespace Garnet.test.cluster
         public string nodeid;
         public string address;
         public int port;
-        public Role role;
+        public NodeRole role;
         public long replicationOffset;
     }
 
@@ -287,7 +286,7 @@ namespace Garnet.test.cluster
                     endpoints[i].Address.ToString(),
                     endpoints[i].Port,
                     i + 1 + (!isPrimary ? 1 : 0),
-                    isPrimary ? NodeRole.PRIMARY : NodeRole.REPLICA,
+                    isPrimary ? Garnet.cluster.NodeRole.PRIMARY : Garnet.cluster.NodeRole.REPLICA,
                     primaryId,
                     hostname,
                     isPrimary && i < slotRanges.Length ? slotRanges[i] : null);
@@ -386,7 +385,7 @@ namespace Garnet.test.cluster
                                     nodeid = GetNodeIdFromNode(i, logger),
                                     address = endpoint.Address.ToString(),
                                     port = endpoint.Port,
-                                    role = Role.PRIMARY,
+                                    role = NodeRole.PRIMARY,
                                     replicationOffset = 0
                                 }
                             }
@@ -450,7 +449,7 @@ namespace Garnet.test.cluster
                             nodeid = GetNodeIdFromNode(i, logger),
                             address = GetAddressFromNodeIndex(i),
                             port = GetPortFromNodeIndex(i),
-                            role = Role.REPLICA,
+                            role = NodeRole.REPLICA,
                             replicationOffset = 0
                         }
                     );
@@ -2120,7 +2119,7 @@ namespace Garnet.test.cluster
                             nodeid = (string)node[1],
                             port = (int)node[3],
                             address = (string)node[5],
-                            role = Enum.Parse<Role>((string)node[7]),
+                            role = Enum.Parse<NodeRole>((string)node[7]),
                             replicationOffset = (long)node[9]
                         };
                         shardInfo.nodes.Add(nodeInfo);
@@ -2385,7 +2384,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void Lpush(int nodeIndex, string key, List<int> elements, ILogger logger = null)
+        public int Lpush(int nodeIndex, string key, List<int> elements, ILogger logger = null)
         {
             try
             {
@@ -2396,11 +2395,13 @@ namespace Garnet.test.cluster
 
                 var result = (int)server.Execute("LPUSH", args);
                 ClassicAssert.AreEqual(elements.Count, result);
+                return result;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "lpush error");
                 Assert.Fail(ex.Message);
+                return -1;
             }
         }
 
@@ -2546,6 +2547,24 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occurred; GetConnectedReplicas");
                 Assert.Fail(ex.Message);
                 return 0;
+            }
+        }
+
+        public Role RoleCommand(int nodeIndex, ILogger logger = null)
+            => RoleCommand(endpoints[nodeIndex].ToIPEndPoint(), logger);
+
+        public Role RoleCommand(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                return server.Role();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{command}", nameof(NodeRole));
+                Assert.Fail(ex.Message);
+                return null;
             }
         }
 

@@ -401,9 +401,11 @@ namespace Garnet.test.cluster
                 while (kvPairsObj.ContainsKey(key))
                     key = clusterTestUtils.RandomStr(keyLength);
                 kvPairsObj.Add(key, value);
-
+                int count;
                 if (!set)
-                    clusterTestUtils.Lpush(primaryIndex, key, value, logger);
+                {
+                    count = clusterTestUtils.Lpush(primaryIndex, key, value, logger);
+                }
                 else
                     clusterTestUtils.Sadd(primaryIndex, key, value, logger);
 
