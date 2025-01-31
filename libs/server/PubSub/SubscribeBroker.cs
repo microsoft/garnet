@@ -383,13 +383,20 @@ namespace Garnet.server
         /// <summary>
         /// Publish the update made to key to all the subscribers, asynchronously
         /// </summary>
-        /// <param name="key">key that has been updated</param>
-        /// <param name="value">value that has been updated</param>
-        /// <param name="valueLength">value length that has been updated</param>
+        /// <param name="parseState">ParseState for publish message</param>
         /// <param name="ascii">is payload ascii</param>
-        public unsafe void Publish(byte* key, byte* value, int valueLength, bool ascii = false)
+        public unsafe void Publish(ref SessionParseState parseState, bool ascii = false)
         {
             if (subscriptions == null && prefixSubscriptions == null) return;
+
+            var key = parseState.GetArgSliceByRef(0).ptr - sizeof(int);
+            var value = parseState.GetArgSliceByRef(1).ptr - sizeof(int);
+
+            var kSize = parseState.GetArgSliceByRef(0).Length;
+            var vSize = parseState.GetArgSliceByRef(1).Length;
+            *(int*)key = kSize;
+            *(int*)value = vSize;
+            var valueLength = vSize + sizeof(int);
 
             var start = key;
             ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
