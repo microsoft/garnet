@@ -18,15 +18,6 @@ namespace Garnet.server
     /// </summary>
     internal sealed class SessionScriptCache : IDisposable
     {
-        // Provides a unique value for script invocations
-        //
-        // It doesn't need to be globally unique, it just needs to be able
-        // distiguish two different runs of some script on the same session.
-        //
-        // It's OK if this wraps around, because ~4 billion invocations are unlikely
-        // to race.
-        private uint nextTimeoutCookie;
-
         // Important to keep the hash length to this value 
         // for compatibility
         internal const int SHA1Len = 40;
@@ -43,6 +34,14 @@ namespace Garnet.server
 
         LuaRunner timeoutRunningScript;
         LuaTimeoutManager.Registration timeoutRegistration;
+
+        // Provides a unique value for script invocations
+        //
+        // It doesn't need to be globally unique, it just needs to be able
+        // distiguish two different runs of some script on the same session.
+        //
+        // It's OK if this wraps around, because ~4 billion invocations are unlikely
+        // to race.
         uint timeoutRunningCookie;
 
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, LuaTimeoutManager timeoutManager, ILogger logger = null)
@@ -154,12 +153,12 @@ namespace Garnet.server
                     ScriptHashKey storeKeyDigest = new(into);
                     digestOnHeap = storeKeyDigest;
 
-                    var addRes = scriptCache.TryAdd(storeKeyDigest, runner);
+                    _ = scriptCache.TryAdd(storeKeyDigest, runner);
 
                     // On first script load, register for timeout notifications
                     //
                     // We don't do this for every session because not every session will run scripts
-                    if (timeoutManager != null && addRes && timeoutRegistration == null)
+                    if (timeoutManager != null && timeoutRegistration == null)
                     {
                         timeoutRegistration = timeoutManager.RegisterForTimeout(this);
                     }

@@ -30,13 +30,13 @@ namespace Garnet.server
 
             ref var digest = ref parseState.GetArgSliceByRef(0);
 
+            var convertedToLower = false;
             LuaRunner runner = null;
 
             // Length check is mandatory, as ScriptHashKey assumes correct length
             if (digest.length == SessionScriptCache.SHA1Len)
             {
-                AsciiUtils.ToLowerInPlace(digest.Span);
-
+            tryAgain:
                 var scriptKey = new ScriptHashKey(digest.Span);
 
                 if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner))
@@ -50,6 +50,17 @@ namespace Garnet.server
                             _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
                             return true;
                         }
+                    }
+                    else if (!convertedToLower)
+                    {
+                        // On a miss (which should be rare) make sure the hash is lower case and try again.
+                        //
+                        // We assume that hashes will be sent in the same format as we return them (lower)
+                        // most of the time, so optimize for that.
+
+                        AsciiUtils.ToLowerInPlace(digest.Span);
+                        convertedToLower = true;
+                        goto tryAgain;
                     }
                 }
             }
