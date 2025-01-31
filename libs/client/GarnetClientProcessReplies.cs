@@ -231,11 +231,11 @@ namespace Garnet.client
                     Thread.Yield();
                     continue;
                 }
+
                 switch (tcs.taskType)
                 {
                     case TaskType.None:
                         return readHead;
-
                     case TaskType.StringCallback:
                         if (!ProcessReplyAsString(ref ptr, end, out var resultString, out var error))
                             return readHead;
