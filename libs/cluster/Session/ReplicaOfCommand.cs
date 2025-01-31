@@ -67,7 +67,11 @@ namespace Garnet.cluster
                     return true;
                 }
 
-                if (!clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true, out var errorMessage))
+                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, out var errorMessage) :
+                    clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true, out errorMessage);
+
+                if (!success)
                 {
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
