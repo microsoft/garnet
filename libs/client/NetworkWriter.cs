@@ -140,9 +140,10 @@ namespace Garnet.client
         /// </summary>
         /// <param name="size">Number of bytes to allocate</param>
         /// <param name="taskId"></param>
+        /// <param name="skipTaskIdIncrement"></param>
         /// <returns>The allocated logical address, or negative in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long TryAllocate(int size, out int taskId)
+        private long TryAllocate(int size, out int taskId, bool skipTaskIdIncrement = false)
         {
             PageOffset localTailPageOffset = default;
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
@@ -158,7 +159,7 @@ namespace Garnet.client
             }
 
             // Determine insertion index.
-            localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, size + (1L << PageOffset.kTaskOffset));
+            localTailPageOffset.PageAndOffset = skipTaskIdIncrement ? Interlocked.Add(ref TailPageOffset.PageAndOffset, size) : Interlocked.Add(ref TailPageOffset.PageAndOffset, size + (1L << PageOffset.kTaskOffset));
 
             taskId = localTailPageOffset.PrevTaskId;
             int page = localTailPageOffset.Page;
@@ -214,9 +215,10 @@ namespace Garnet.client
         /// </summary>
         /// <param name="size">Number of slots to allocate</param>
         /// <param name="flushEvent"></param>
+        /// <param name="skipTaskIdIncrement"></param>
         /// <returns>The allocated logical address</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int, long) TryAllocate(int size, out CompletionEvent flushEvent)
+        public (int, long) TryAllocate(int size, out CompletionEvent flushEvent, bool skipTaskIdIncrement = false)
         {
             const int kFlushSpinCount = 10;
             var spins = 0;
@@ -224,7 +226,7 @@ namespace Garnet.client
             {
                 Debug.Assert(epoch.ThisInstanceProtected());
                 flushEvent = this.FlushEvent;
-                var logicalAddress = this.TryAllocate(size, out int taskId);
+                var logicalAddress = this.TryAllocate(size, out int taskId, skipTaskIdIncrement: skipTaskIdIncrement);
                 // Console.WriteLine($"Allocated {logicalAddress}-{logicalAddress + size}");
 
                 if (logicalAddress >= 0)
