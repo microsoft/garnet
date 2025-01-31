@@ -325,6 +325,7 @@ namespace Garnet.server
             var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
 
+            // TODO ETag?
             if (!logRecord.TrySetValueSpan(newValue))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");

@@ -340,8 +340,7 @@ namespace Tsavorite.core
             if (!TrySetValueSpanLength(value.Length))
                 return false;
             
-            var valueSpanByte = SpanField.AsSpanByte(ValueAddress, Info.ValueIsOverflow);
-            value.CopyTo(ref valueSpanByte);
+            value.CopyTo(SpanField.AsSpanByte(ValueAddress, Info.ValueIsOverflow));
             return true;
         }
 
@@ -374,7 +373,7 @@ namespace Tsavorite.core
         internal readonly long GetOptionalStartAddress()
         {
             // Step through the address to reduce redundant addition operations.
-            var address = KeyAddress + RecordInfo.GetLength();
+            var address = KeyAddress;
             address += SpanField.InlineSize(address);           // Key
             return address + SpanField.InlineSize(address);     // Value
         }
@@ -458,21 +457,22 @@ namespace Tsavorite.core
             //      - We must do this here in case there is not enough room for filler after the growth.
             if (Info.HasFiller)
                 *(int*)address = 0;
+
             //  - Preserve Expiration if present; set ETag; re-enter Expiration if present
             var expiration = 0L;
+            var expirationSize = 0;
             if (Info.HasExpiration)
             {
-                address -= LogRecord.ExpirationSize;
+                expirationSize = LogRecord.ExpirationSize;
+                address -= expirationSize;
                 expiration = *(long*)address;
             }
             *(long*)address = eTag;
             InfoRef.SetHasETag();
-            if (Info.HasExpiration)
-            {
-                address += LogRecord.ETagSize;
-                *(long*)address = expiration;
-                address += ExpirationLen;
-            }
+
+            *(long*)address = expiration;   // will be 0 or a valid expiration
+            address += expirationSize;      // repositions to fillerAddress if expirationSize is nonzero
+
             //  - Set the new (reduced) FillerLength if there is still space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
                 *(int*)address = fillerLen;
@@ -503,20 +503,22 @@ namespace Tsavorite.core
                 *(int*)address = 0;
             //  - Move Expiration, if present, up to cover ETag; then clear the ETag bit
             var expiration = 0L;
+            var expirationSize = 0;
             if (Info.HasExpiration)
             {
-                address -= LogRecord.ExpirationSize;
+                expirationSize = LogRecord.ExpirationSize;
+                address -= expirationSize;
                 expiration = *(long*)address;
                 *(long*)address = 0L;  // To ensure zero-init
             }
-            address -= LogRecord.ETagSize;
             if (Info.HasETag)
             {
                 // Expiration will be either zero or a valid expiration, and we have not changed the info.HasExpiration flag
-                *(long*)address = expiration;
-                address += LogRecord.ExpirationSize; // repositions to fillerAddress
+                address -= LogRecord.ETagSize;
+                *(long*)address = expiration;   // will be 0 or a valid expiration
+                address += expirationSize;      // repositions to fillerAddress if expirationSize is nonzero
+                InfoRef.ClearHasETag();
             }
-            InfoRef.ClearHasETag();
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
                 *(int*)address = fillerLen;
@@ -545,21 +547,22 @@ namespace Tsavorite.core
                 return false;
 
             // Start at FillerLen address and back up, for speed
-            var address = fillerLenAddress;
             var fillerLen = availableSpace - growth;
 
             // Preserve zero-init by:
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
             //      - We must do this here in case there is not enough room for filler after the growth.
             if (Info.HasFiller)
-                *(int*)address = 0;
-            //  - Set Expiration
+                *(int*)fillerLenAddress = 0;
+
+            //  - Set Expiration where filler space used to be
             InfoRef.SetHasExpiration();
-            *(long*)address = expiration;
-            address += ExpirationLen;
+            *(long*)fillerLenAddress = expiration;
+            fillerLenAddress += LogRecord.ExpirationSize;
+
             //  - Set the new (reduced) FillerLength if there is still space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
-                *(int*)address = fillerLen;
+                *(int*)fillerLenAddress = fillerLen;
             else
                 InfoRef.ClearHasFiller();
             return true;
@@ -578,20 +581,21 @@ namespace Tsavorite.core
             var availableSpace = maxLen - recordLen;
 
             // Start at FillerLen address and back up, for speed
-            var address = fillerLenAddress;
             var fillerLen = availableSpace + growth;
 
             // Preserve zero-init by:
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
             if (Info.HasFiller)
-                *(int*)address = 0;
-            //  - Remove Expiration and clear the Expiration bit
-            address -= LogRecord.ExpirationSize;
-            *(long*)address = 0;
+                *(int*)fillerLenAddress = 0;
+
+            //  - Remove Expiration and clear the Expiration bit; this will be the new fillerLenAddress
+            fillerLenAddress -= LogRecord.ExpirationSize;
+            *(long*)fillerLenAddress = 0;
             InfoRef.ClearHasExpiration();
+
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
-                *(int*)address = fillerLen;
+                *(int*)fillerLenAddress = fillerLen;
             return true;
         }
 
@@ -629,33 +633,43 @@ namespace Tsavorite.core
             return SetOptionals(eTag, expiration);
         }
 
-        public bool TryCopyRecord<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord)
+        public bool TryCopyRecordValues<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, int additionalValueSpanLength = 0)
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
-            var recordInfo = srcLogRecord.Info;
+            // This assumes the Key has been set and is not changed
+            var srcRecordInfo = srcLogRecord.Info;
             if (!srcLogRecord.IsObjectRecord)
             {
-                var valueSpan = srcLogRecord.ValueSpan;
-                if (!HasEnoughSpace(valueSpan.TotalSize, recordInfo.HasETag, recordInfo.HasExpiration))
+                var srcValueSpan = srcLogRecord.ValueSpan;
+                if (!HasEnoughSpace(srcValueSpan.TotalSize, srcRecordInfo.HasETag, srcRecordInfo.HasExpiration))
                     return false;
-                if (!TrySetValueSpan(valueSpan))
+
+                // Additional value span length is > 0 for CopyUpdate; if so, grow the value length and then copy the old into the lower part of the new.
+                // Otherwise, just copy the record straight over (it is probably from I/O or CopyUpdater that changes only optionals).
+                if (additionalValueSpanLength > 0)
+                {
+                    if (!TrySetValueSpanLength(srcValueSpan.Length + additionalValueSpanLength))
+                        return false;
+                    srcValueSpan.CopyTo(ValueSpan);
+                }
+                else if (!TrySetValueSpan(srcValueSpan))
                     return false;
             }
             else
             {
-                if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, recordInfo.HasETag, recordInfo.HasExpiration))
+                if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, srcRecordInfo.HasETag, srcRecordInfo.HasExpiration))
                     return false;
                 if (!TrySetValueObject(srcLogRecord.ValueObject))
                     return false;
             }
 
             // Copy optionals
-            if (!recordInfo.HasETag)
+            if (!srcRecordInfo.HasETag)
                 _ = RemoveETag();
             else if (!TrySetETag(srcLogRecord.ETag))
                 return false;
 
-            if (!recordInfo.HasExpiration)
+            if (!srcRecordInfo.HasExpiration)
                 _ = RemoveExpiration();
             else if (!TrySetExpiration(srcLogRecord.Expiration))
                 return false;

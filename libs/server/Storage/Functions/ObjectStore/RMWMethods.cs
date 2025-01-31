@@ -41,15 +41,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialUpdater(ref LogRecord<IGarnetObject> dstLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool InitialUpdater(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
+            Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
+
             var type = input.header.type;
             IGarnetObject value;
             if ((byte)type < CustomCommandManager.TypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
                 _ = value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
-                _ = dstLogRecord.TrySetValueObject(value);
+                _ = logRecord.TrySetValueObject(value);
                 return true;
             }
 
@@ -60,8 +62,8 @@ namespace Garnet.server
             value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
 
             (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.spanByteAndMemory.Memory, 0);
-            var result = customObjectCommand.InitialUpdater(dstLogRecord.Key, ref input, value, ref memoryAndLength, ref rmwInfo);
-            _ = dstLogRecord.TrySetValueObject(value);
+            var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref memoryAndLength, ref rmwInfo);
+            _ = logRecord.TrySetValueObject(value);
             output.spanByteAndMemory.Memory = memoryAndLength.Memory;
             output.spanByteAndMemory.Length = memoryAndLength.Length;
             return result;

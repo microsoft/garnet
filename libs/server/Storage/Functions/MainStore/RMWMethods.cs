@@ -49,7 +49,7 @@ namespace Garnet.server
         public readonly bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var value = logRecord.ValueSpan;
-            logRecord.RemoveExpiration();
+            Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             switch (input.header.cmd)
@@ -594,7 +594,7 @@ namespace Garnet.server
             }
 
             var oldValue = srcLogRecord.ValueSpan;  // reduce redundant length calcs
-            var newValue = dstLogRecord.ValueSpan;
+            // Do not pre-get newValue = dstLogRecord.ValueSpan here, because it may change, e.g. moving between inline and overflow
 
             switch (input.header.cmd)
             {
@@ -609,17 +609,18 @@ namespace Garnet.server
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    Debug.Assert(newInputValue.Length == newValue.Length);
+                    Debug.Assert(newInputValue.Length == dstLogRecord.ValueSpan.Length);
 
                     if (input.arg1 != 0)
                         _ = dstLogRecord.TrySetExpiration(input.arg1);
-                    newInputValue.CopyTo(newValue.AsSpan());
+                    // TODO ETag?
+                    newInputValue.CopyTo(dstLogRecord.ValueSpan.AsSpan());
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    Debug.Assert(setValue.Length == newValue.Length);
+                    Debug.Assert(setValue.Length == dstLogRecord.ValueSpan.Length);
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
@@ -631,7 +632,8 @@ namespace Garnet.server
                     // Copy input to value, retain metadata of oldValue
                     if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                         return false;
-                    setValue.CopyTo(newValue.AsSpan());
+                    // TODO ETag?
+                    setValue.CopyTo(dstLogRecord.ValueSpan.AsSpan());
                     break;
 
                 case RespCommand.EXPIRE:
@@ -643,7 +645,7 @@ namespace Garnet.server
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
                     var expireOption = (ExpireOption)input.arg1;
 
-                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, expireOption, expiryTicks, newValue, ref output))
+                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
                         return false;
                     break;
 
@@ -655,24 +657,19 @@ namespace Garnet.server
                         : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
                     expireOption = (ExpireOption)input.arg1;
 
-                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, expireOption, expiryTicks, newValue, ref output))
+                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
                         return false;
                     break;
 
                 case RespCommand.PERSIST:
-                    oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord))
+                        return false;
                     if (srcLogRecord.Info.HasExpiration)
-                    {
-                        if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
-                        {
-                            functionsState.logger?.LogError("Can't set expiration in {methodName}.{caseName}", "CopyUpdater", "PERSIST");
-                            return false;
-                        }
                         output.SpanByte.AsSpan()[0] = 1;
-                    }
                     break;
 
                 case RespCommand.INCR:
+                    // TODO ETag on all of these?
                     if (!TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref output, input: 1))
                         return false;
                     break;
@@ -699,7 +696,7 @@ namespace Garnet.server
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                     {
                         // Move to tail of the log
-                        oldValue.CopyTo(ref newValue);
+                        oldValue.CopyTo(dstLogRecord.ValueSpan);
                         break;
                     }
                     _ = TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref output, input: incrByFloat);
@@ -708,6 +705,12 @@ namespace Garnet.server
                 case RespCommand.SETBIT:
                     var bOffset = input.parseState.GetLong(0);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
+
+                    // TODO ETag?
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, additionalValueSpanLength: dstLogRecord.ValueSpan.Length - oldValue.Length))
+                        return false;
+
+                    var newValue = dstLogRecord.ValueSpan;
                     var newValuePtr = newValue.ToPointer();
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValuePtr, newValue.Length, oldValue.Length);
                     var oldValSet = BitmapManager.UpdateBitmap(newValuePtr, bOffset, bSetVal);
@@ -719,6 +722,12 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
+
+                    // TODO ETag update?
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, additionalValueSpanLength: dstLogRecord.ValueSpan.Length - oldValue.Length))
+                        return false;
+
+                    newValue = dstLogRecord.ValueSpan;
                     newValuePtr = newValue.ToPointer();
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValuePtr, newValue.Length, oldValue.Length);
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValue.Length);
@@ -731,8 +740,13 @@ namespace Garnet.server
 
                 case RespCommand.PFADD:
                     var updated = false;
+                    newValue = dstLogRecord.ValueSpan;
                     newValuePtr = newValue.ToPointer();
                     var oldValuePtr = oldValue.ToPointer();
+
+                    // TODO ETag?
+                    if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                        return false;
 
                     if (newValue.Length != oldValue.Length)
                         updated = HyperLogLog.DefaultHLL.CopyUpdate(ref input, oldValuePtr, newValuePtr, newValue.Length);
@@ -741,13 +755,19 @@ namespace Garnet.server
                         Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValue.Length, oldValue.Length);
                         _ = HyperLogLog.DefaultHLL.Update(ref input, newValuePtr, newValue.Length, ref updated);
                     }
+
                     *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     break;
 
                 case RespCommand.PFMERGE:
+                    // TODO ETag?
+                    if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                        return false;
+
                     //srcA offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
                     var srcHLLPtr = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer(); // HLL merging from
                     var oldDstHLLPtr = oldValue.ToPointer(); // original HLL merging to (too small to hold its data plus srcA)
+                    newValue = dstLogRecord.ValueSpan;
                     var newDstHLLPtr = newValue.ToPointer(); // new HLL merging to (large enough to hold srcA and srcB
 
                     HyperLogLog.DefaultHLL.CopyUpdateMerge(srcHLLPtr, oldDstHLLPtr, newDstHLLPtr, oldValue.Length, newValue.Length);
@@ -755,8 +775,12 @@ namespace Garnet.server
 
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
-                    oldValue.CopyTo(newValue.AsSpan());
 
+                    // TODO ETag update?
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord))
+                        return false;
+
+                    newValue = dstLogRecord.ValueSpan;
                     newInputValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
                     newInputValue.CopyTo(newValue.AsSpan().Slice(offset));
 
@@ -773,6 +797,7 @@ namespace Garnet.server
                 case RespCommand.GETEX:
                     CopyRespTo(oldValue, ref output);
 
+                    newValue = dstLogRecord.ValueSpan;
                     Debug.Assert(newValue.Length == oldValue.Length);
                     if (input.arg1 > 0)
                     {
@@ -790,17 +815,17 @@ namespace Garnet.server
                         var persist = input.parseState.GetArgSliceByRef(0).ReadOnlySpan
                             .EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST);
                         if (persist) // Persist the key
-                            dstLogRecord.RemoveExpiration();
+                            _ = dstLogRecord.RemoveExpiration();
                     }
                     break;
 
                 case RespCommand.APPEND:
-                    // Copy any existing value with metadata to thew new value
-                    oldValue.CopyTo(ref newValue);
-
                     var appendValue = input.parseState.GetArgSliceByRef(0);
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, additionalValueSpanLength: appendValue.Length))
+                        return false;
 
                     // Append the new value with the client input at the end of the old data
+                    newValue = dstLogRecord.ValueSpan;
                     appendValue.ReadOnlySpan.CopyTo(newValue.AsSpan().Slice(oldValue.Length));
 
                     _ = CopyValueLengthToOutput(newValue, ref output);
@@ -813,7 +838,7 @@ namespace Garnet.server
                         var expiration = input.arg1;
                         if (expiration == 0)
                         {
-                            // We want to retain the old expiration, if any
+                            // We want to retain the old expiration, if any. TODO: ETag update?
                             if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                                 return false;
                         }
@@ -826,7 +851,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
 
-                        var ret = functions.CopyUpdater(dstLogRecord.Key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), newValue.AsSpan(), ref outp, ref rmwInfo);
+                        var ret = functions.CopyUpdater(dstLogRecord.Key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), dstLogRecord.ValueSpan.AsSpan(), ref outp, ref rmwInfo);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;

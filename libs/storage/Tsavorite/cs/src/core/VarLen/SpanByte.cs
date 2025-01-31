@@ -176,13 +176,32 @@ namespace Tsavorite.core
         /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryCopyTo(SpanByte dst)
+        {
+            if (dst.Length < Length)
+                return false;
+            CopyTo(dst);
+            return true;
+        }
+
+        /// <summary>
+        /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryCopyTo(ref SpanByte dst)
         {
-            if (dst.Length < Length) 
+            if (dst.Length < Length)
                 return false;
             CopyTo(ref dst);
             return true;
         }
+
+        /// <summary>
+        /// Blindly copy to given pre-allocated <see cref="SpanByte"/>, assuming sufficient space.
+        /// Does not change length of destination.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyTo(SpanByte dst) => AsReadOnlySpan().CopyTo(dst.AsSpan());
 
         /// <summary>
         /// Blindly copy to given pre-allocated <see cref="SpanByte"/>, assuming sufficient space.

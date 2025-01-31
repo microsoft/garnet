@@ -17,7 +17,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
-            => dstLogRecord.TryCopyRecord(ref srcLogRecord);
+            => dstLogRecord.TryCopyRecordValues(ref srcLogRecord);
 
         /// <inheritdoc />
         public void PostSingleWriter(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
