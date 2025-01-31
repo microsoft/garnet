@@ -217,7 +217,8 @@ namespace Garnet.test
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            string unixSocketPath = null)
+            string unixSocketPath = null,
+            UnixFileMode unixSocketPermission = default)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -297,7 +298,8 @@ namespace Garnet.test
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
-                UnixSocketPath = unixSocketPath
+                UnixSocketPath = unixSocketPath,
+                UnixSocketPermission = unixSocketPermission
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))

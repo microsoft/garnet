@@ -440,7 +440,7 @@ namespace Garnet.test
             string[] args = ["--unixsocketperm", "777"];
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _);
             ClassicAssert.IsTrue(parseSuccessful);
-            ClassicAssert.AreEqual(888, options.UnixSocketPermission);
+            ClassicAssert.AreEqual(777, options.UnixSocketPermission);
         }
 
         [Test]

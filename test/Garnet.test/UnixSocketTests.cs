@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using NUnit.Framework.Legacy;
 using NUnit.Framework;
 using StackExchange.Redis;
+using System.IO;
 
 namespace Garnet.test
 {
@@ -25,6 +26,28 @@ namespace Garnet.test
         public void TearDown()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public async Task Permission_SetPermissionMatches([Values] bool useTls)
+        {
+            if (OperatingSystem.IsWindows())
+                return;
+
+            var unixSocketPath = "./unix-socket-permission-test.sock";
+            var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
+            var unixSocketPermission =
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute; // 770
+
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, enableTLS: useTls, unixSocketPath: unixSocketPath, unixSocketPermission: unixSocketPermission);
+            server.Start();
+
+            using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
+            var db = client.GetDatabase(0);
+
+            ClassicAssert.IsTrue(client.IsConnected);
+            ClassicAssert.AreEqual(unixSocketPermission, File.GetUnixFileMode(unixSocketPath));
         }
 
         [Test]

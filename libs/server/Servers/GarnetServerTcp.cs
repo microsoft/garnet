@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -25,6 +26,8 @@ namespace Garnet.server
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly int networkConnectionLimit;
+        readonly string unixSocketPath;
+        readonly UnixFileMode unixSocketPermission;
 
         /// <summary>
         /// Get active consumers
@@ -60,7 +63,15 @@ namespace Garnet.server
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
         /// <param name="logger"></param>
-        public GarnetServerTcp(EndPoint endpoint, int networkBufferSize = default, IGarnetTlsOptions tlsOptions = null, int networkSendThrottleMax = 8, int networkConnectionLimit = -1, ILogger logger = null)
+        public GarnetServerTcp(
+            EndPoint endpoint,
+            int networkBufferSize = default,
+            IGarnetTlsOptions tlsOptions = null,
+            int networkSendThrottleMax = 8,
+            int networkConnectionLimit = -1,
+            string unixSocketPath = null,
+            UnixFileMode unixSocketPermission = default,
+            ILogger logger = null)
             : base(endpoint, networkBufferSize, logger)
         {
             this.networkConnectionLimit = networkConnectionLimit;
@@ -69,6 +80,8 @@ namespace Garnet.server
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
             this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            this.unixSocketPath = unixSocketPath;
+            this.unixSocketPermission = unixSocketPermission;
 
             listenSocket = endpoint switch
             {
@@ -99,6 +112,10 @@ namespace Garnet.server
         public override void Start()
         {
             listenSocket.Bind(EndPoint);
+            if (EndPoint is UnixDomainSocketEndPoint && unixSocketPermission != default && !OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(unixSocketPath, unixSocketPermission);
+            }
 
             listenSocket.Listen(512);
             if (!listenSocket.AcceptAsync(acceptEventArg))
