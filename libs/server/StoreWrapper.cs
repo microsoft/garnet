@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
+using Garnet.server.Lua;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -110,6 +111,11 @@ namespace Garnet.server
         /// </summary>
         public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
 
+        /// <summary>
+        /// Shared timeout manager for all <see cref="LuaRunner"/> across all sessions.
+        /// </summary>
+        internal readonly LuaTimeoutManager luaTimeoutManager;
+
         public readonly TimeSpan loggingFrequncy;
 
         /// <summary>
@@ -163,7 +169,14 @@ namespace Garnet.server
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
+            {
                 this.storeScriptCache = [];
+
+                if (serverOptions.LuaOptions.Timeout != Timeout.InfiniteTimeSpan)
+                {
+                    this.luaTimeoutManager = new(serverOptions.LuaOptions.Timeout, loggerFactory?.CreateLogger<LuaTimeoutManager>());
+                }
+            }
 
             if (accessControlList == null)
             {
@@ -603,6 +616,7 @@ namespace Garnet.server
         {
             monitor?.Start();
             clusterProvider?.Start();
+            luaTimeoutManager?.Start();
 
             if (serverOptions.AofSizeLimit.Length > 0)
             {
@@ -700,6 +714,7 @@ namespace Garnet.server
 
             itemBroker?.Dispose();
             monitor?.Dispose();
+            luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
 
             while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)

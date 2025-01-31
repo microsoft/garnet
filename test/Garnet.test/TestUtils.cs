@@ -219,7 +219,8 @@ namespace Garnet.test
             string pubSubPageSize = null,
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            TimeSpan? luaTimeout = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -299,7 +300,7 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, logger) : null,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -495,7 +496,8 @@ namespace Garnet.test
             bool asyncReplay = false,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            TimeSpan? luaTimeout = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -581,7 +583,7 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan) : null,
             };
 
             if (lowMemory)
