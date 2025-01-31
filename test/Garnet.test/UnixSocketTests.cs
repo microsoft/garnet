@@ -1,14 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Buffers;
+using System.Linq;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using NUnit.Framework.Legacy;
 using NUnit.Framework;
 using StackExchange.Redis;
-using System;
-using System.Buffers;
-using System.Linq;
 
 namespace Garnet.test
 {
