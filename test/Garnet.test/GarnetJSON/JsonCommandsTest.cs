@@ -74,6 +74,89 @@ namespace Garnet.test
             ClassicAssert.AreEqual("{\"f1\":[{\"a\":3}],\"$.f5\":[{\"c\":5}]}", result.ToString());
         }
 
+        [TestCase("{\"a\": 1}", "{\"a\":1}", Description = "Simple object")]
+        [TestCase("{\"a\": [1,2,3]}", "{\"a\":[1,2,3]}", Description = "Array value")]
+        [TestCase("{\"a\": null}", "{\"a\":null}", Description = "Null value")]
+        [TestCase("{\"a\": \"\"}", "{\"a\":\"\"}", Description = "Empty string")]
+        [TestCase("{}", "{}", Description = "Empty object")]
+        public void JsonSetGetBasicTypes(string input, string expectedOutput)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.Execute("JSON.SET", "key", "$", input);
+            var result = db.Execute("JSON.GET", "key");
+            ClassicAssert.AreEqual(expectedOutput, result.ToString());
+        }
+
+        [TestCase("$..a", 42, "{\"x\":{\"a\":1},\"y\":{\"a\":2}}", "{\"x\":{\"a\":42},\"y\":{\"a\":42}}", Description = "Update all 'a' fields")]
+        [TestCase("$.x", "{\"b\":2}", "{\"x\":{\"a\":1}}", "{\"x\":{\"b\":2}}", Description = "Replace object")]
+        [TestCase("$.new", 123, "{\"x\":1}", "{\"x\":1,\"new\":123}", Description = "Add new field")]
+        [TestCase("$[0]", 42, "[1,2,3]", "[42,2,3]", Description = "Update array element")]
+        public void JsonSetPathOperations(string path, object newValue, string initial, string expected)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.Execute("JSON.SET", "key", "$", initial);
+            db.Execute("JSON.SET", "key", path, newValue.ToString());
+            var result = db.Execute("JSON.GET", "key");
+            ClassicAssert.AreEqual(expected, result.ToString());
+        }
+
+        [Test]
+        public void JsonGetMultiplePathsTest()
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var json = "{\"a\":{\"x\":1},\"b\":{\"x\":2},\"c\":{\"x\":3}}";
+            db.Execute("JSON.SET", "key", "$", json);
+
+            var result = db.Execute("JSON.GET", "key", "$.a", "$.b", "$.c");
+            ClassicAssert.AreEqual("{\"$.a\":[{\"x\":1}],\"$.b\":[{\"x\":2}],\"$.c\":[{\"x\":3}]}", result.ToString());
+        }
+
+        [TestCase("{\"a\": ", Description = "Incomplete JSON")]
+        [TestCase("invalid", Description = "Invalid JSON string")]
+        [TestCase("{a:1}", Description = "Missing quotes on property")]
+        public void JsonSetInvalidJsonTest(string invalidJson)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("JSON.SET", "key", "$", invalidJson));
+        }
+
+        [TestCase("$[", Description = "Invalid JSONPath syntax")]
+        [TestCase("$..", Description = "Incomplete path")]
+        [TestCase("$[a]", Description = "Non-numeric array index")]
+        public void JsonSetInvalidPathTest(string invalidPath)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.Execute("JSON.SET", "key", "$", "{\"a\":1}");
+            Assert.Throws<RedisServerException>(() => db.Execute("JSON.SET", "key", invalidPath, "42"));
+        }
+
+        [TestCase("nonexistent", Description = "Non-existent key")]
+        [TestCase("key", "$..nonexistent", Description = "Non-existent path")]
+        public void JsonGetNonExistentTests(string key, string path = "$")
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.Execute("JSON.GET", key, path);
+            ClassicAssert.IsTrue(result.IsNull);
+        }
+
         [Test]
         public void SaveRecoverTest()
         {
@@ -150,7 +233,6 @@ namespace Garnet.test
                 using (var binaryWriter = new BinaryWriter(memoryStream))
                 {
                     jsonObject.Serialize(binaryWriter);
-                    //binaryWriter.Write("test");
                 }
 
                 serializedData = memoryStream.ToArray();
