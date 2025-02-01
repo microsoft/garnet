@@ -177,6 +177,22 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task AclGetUserACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GETUSER",
+                [DoAclGetUserAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoAclGetUserAsync(GarnetClient client)
+            {
+                // ACL GETUSER returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ACL", ["GETUSER", "default"]);
+            }
+        }
+
+        [Test]
         public async Task AclListACLsAsync()
         {
             await CheckCommandsAsync(
@@ -6808,7 +6824,7 @@ namespace Garnet.test.Resp.ACL
             {
                 var payload = new byte[]
                 {
-                    0x00, // value type 
+                    0x00, // value type
                     0x03, // length of payload
                     0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
                     0x0B, 0x00, // RDB version
@@ -7257,7 +7273,7 @@ namespace Garnet.test.Resp.ACL
         /// <summary>
         /// Returns true if no AUTH failure.
         /// Returns false AUTH failure.
-        /// 
+        ///
         /// Throws if anything else.
         /// </summary>
         private static async Task<bool> CheckAuthFailureAsync(Func<Task> act)

@@ -39,6 +39,22 @@
         ]
       },
       {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Summary": "Returns the rules defined for an ACL user.",
+        "Group": "Server",
+        "Complexity": "O(1) amortized time considering the typical user.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "USERNAME",
+            "DisplayText": "username",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Summary": "Dumps the effective rules in ACL file format.",

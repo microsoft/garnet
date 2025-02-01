@@ -316,6 +316,7 @@ namespace Garnet.server
         // subcommand parsing strings
         public static ReadOnlySpan<byte> CAT => "CAT"u8;
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
@@ -354,7 +355,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NO => "NO"u8;
 
         // Cluster subcommands which are internal and thus undocumented
-        // 
+        //
         // Because these are internal, they have lower case property names
         public static ReadOnlySpan<byte> gossip => "GOSSIP"u8;
         public static ReadOnlySpan<byte> myparentid => "MYPARENTID"u8;
