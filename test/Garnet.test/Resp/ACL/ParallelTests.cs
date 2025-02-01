@@ -77,7 +77,7 @@ namespace Garnet.test.Resp.ACL
         /// Test launches multiple clients that apply two simple ACL changes to the same user many times in parallel.
         /// Validates that ACL result after each execution is one of the possible valid responses.
         ///
-        /// Race conditions are not deterministic so tests uses repeat.
+        /// Race conditions are not deterministic so test uses repeat.
         ///
         /// </summary>
         [TestCase(128, 2048)]
@@ -126,7 +126,7 @@ namespace Garnet.test.Resp.ACL
         /// Test launches multiple clients that apply the same ACL change to the same user. Creates race to become the
         /// the first client to add the user to the ACL. Throws after initial insert into ACL if threading issues exist.
         ///
-        /// Race conditions are not deterministic so tests uses repeat.
+        /// Race conditions are not deterministic so test uses repeat.
         ///
         /// </summary>
         [TestCase(128, 2048)]

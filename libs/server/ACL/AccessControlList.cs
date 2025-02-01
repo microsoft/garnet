@@ -29,6 +29,11 @@ namespace Garnet.server.ACL
         User _defaultUser;
 
         /// <summary>
+        /// The subscribers who will receive access control list change notifications.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, IAccessControlListSubscriber> _subscribers = new();
+
+        /// <summary>
         /// Creates a new Access Control List from an optional ACL configuration file
         /// and sets the default user's password, if not provided by the configuration.
         /// </summary>
@@ -73,17 +78,14 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Adds the given user to the ACL.
+        /// Adds or replaces the given user in the ACL.
         /// </summary>
-        /// <param name="user">User to add to the list.</param>
-        /// <exception cref="ACLUserAlreadyExistsException">Thrown if a user with the given username already exists.</exception>
-        public void AddUser(User user)
+        /// <param name="user">User to add or replaces in the list.</param>
+        public void AddOrReplaceUser(User user)
         {
-            // If a user with the given name already exists in the ACL, the new user cannot be added
-            if (!_users.TryAdd(user.Name, user))
-            {
-                throw new ACLUserAlreadyExistsException(user.Name);
-            }
+            // If a user with the given name already exists replace the user, otherwise add the new user.
+            _users[user.Name] = user;
+            this.NotifySubscribers(user);
         }
 
         /// <summary>
@@ -150,7 +152,7 @@ namespace Garnet.server.ACL
                 // Add the user to the user list
                 try
                 {
-                    AddUser(defaultUser);
+                    AddOrReplaceUser(defaultUser);
                     break;
                 }
                 catch (ACLUserAlreadyExistsException)
@@ -280,6 +282,27 @@ namespace Garnet.server.ACL
                 {
                     throw new ACLParsingException(exception.Message, configurationFile, curLine);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Registers a subscriber to receive notifications when modifications are performed to the <see cref="AccessControlList"/>.
+        /// </summary>
+        /// <param name="subscriber">The <see cref="IAccessControlListSubscriber"/> to register.</param>
+        internal void Subscribe(IAccessControlListSubscriber subscriber)
+        {
+            _subscribers[subscriber.AclSubscriberKey] = subscriber;
+        }
+
+        /// <summary>
+        /// Notify the registered subscribers when modifications are performed to the <see cref="AccessControlList"/>.
+        /// </summary>
+        /// <param name="user">The created or updated <see cref="User"/> that triggered the notification.</param>
+        private void NotifySubscribers(User user)
+        {
+            foreach (IAccessControlListSubscriber subscriber in _subscribers.Values)
+            {
+                subscriber.NotifyAclChange(user);
             }
         }
     }

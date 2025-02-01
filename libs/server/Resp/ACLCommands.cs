@@ -171,7 +171,10 @@ namespace Garnet.server
                     if (user == null)
                     {
                         user = new User(username);
-                        aclAuthenticator.GetAccessControlList().AddUser(user);
+                    }
+                    else
+                    {
+                        user = new User(user);
                     }
 
                     // Remaining parameters are ACL operations
@@ -180,6 +183,8 @@ namespace Garnet.server
                         var op = parseState.GetString(i);
                         ACLParser.ApplyACLOpToUser(ref user, op);
                     }
+
+                    aclAuthenticator.GetAccessControlList().AddOrReplaceUser(user);
                 }
                 catch (ACLException exception)
                 {

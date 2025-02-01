@@ -45,6 +45,19 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Copy constructor for a <see cref="User"/>.
+        /// </summary>
+        /// <param name="user">The <see cref="User"/> the new <see cref="User"/> is constructed from.</param>
+        public User(User user)
+        {
+            Name = user.Name;
+            IsEnabled = user.IsEnabled;
+            IsPasswordless = user.IsPasswordless;
+            _enabledCommands = user._enabledCommands.Copy();
+            _passwordHashes = new HashSet<ACLPassword>(user._passwordHashes);
+        }
+
+        /// <summary>
         /// Checks whether the user can access the given command.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

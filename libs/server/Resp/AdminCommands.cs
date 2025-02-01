@@ -114,6 +114,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool CheckACLPermissions(RespCommand cmd)
         {
+            if (!(!_authenticator.IsAuthenticated || (_user != null)))
+            {
+                return false;
+            }
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
             if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
