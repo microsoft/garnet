@@ -4,16 +4,13 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Reflection;
+using System.Reflection.Metadata.Ecma335;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
@@ -140,6 +137,7 @@ namespace Garnet.server
             DatabaseCreatorDelegate createsDatabaseDelegate,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
+            bool createDefaultDatabase = true,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null)
@@ -148,10 +146,10 @@ namespace Garnet.server
             this.redisProtocolVersion = redisProtocolVersion;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
-            this.createDatabasesDelegate = createsDatabaseDelegate;
             this.serverOptions = serverOptions;
-            lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
+            this.lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
+            this.createDatabasesDelegate = createsDatabaseDelegate;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
                 ? new GarnetServerMonitor(this, serverOptions, server,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -163,29 +161,28 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
-            // Create initial stores for default database of index 0
-            var db = createDatabasesDelegate(0, out var storeCheckpointDir, out var aofPath);
-            checkpointDatabaseIdsPath = storeCheckpointDir == null ? null : Path.Combine(storeCheckpointDir, databaseIdsFileName);
-            aofDatabaseIdsPath = aofPath == null ? null : Path.Combine(aofPath, databaseIdsFileName);
-
             this.allowMultiDb = this.serverOptions.MaxDatabases > 1;
 
-            // Create databases map and set initial database
+            // Create databases map
             databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
-            if (!databases.TrySetValue(0, ref db))
-                throw new GarnetException("Failed to set initial database in databases map");
+
+            // Create default database of index 0 (unless specified otherwise)
+            if (createDefaultDatabase)
+            {
+                var db = createDatabasesDelegate(0, out var storeCheckpointDir, out var aofPath);
+                checkpointDatabaseIdsPath = storeCheckpointDir == null ? null : Path.Combine(storeCheckpointDir, databaseIdsFileName);
+                aofDatabaseIdsPath = aofPath == null ? null : Path.Combine(aofPath, databaseIdsFileName);
+
+                if (!databases.TrySetValue(0, ref db))
+                    throw new GarnetException("Failed to set initial database in databases map");
+
+                this.InitializeFieldsFromDatabase(databases.Map[0]);
+            }
 
             if (allowMultiDb)
             {
                 databaseIdsStreamProvider = serverOptions.StreamProviderCreator();
             }
-
-            // Set fields to default database
-            this.store = db.MainStore;
-            this.objectStore = db.ObjectStore;
-            this.objectStoreSizeTracker = db.ObjectSizeTracker;
-            this.appendOnlyFile = db.AppendOnlyFile;
-            this.versionMap = db.VersionMap;
 
             if (logger != null)
             {
@@ -242,6 +239,53 @@ namespace Garnet.server
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
             ctsCommit = new();
             run_id = Generator.CreateHexId();
+        }
+
+        /// <summary>
+        /// Copy Constructor
+        /// </summary>
+        /// <param name="storeWrapper">Source instance</param>
+        /// <param name="recordToAof"></param>
+        public StoreWrapper(StoreWrapper storeWrapper, bool recordToAof) : this(
+            storeWrapper.version,
+            storeWrapper.redisProtocolVersion,
+            storeWrapper.server,
+            storeWrapper.createDatabasesDelegate,
+            storeWrapper.customCommandManager,
+            storeWrapper.serverOptions,
+            createDefaultDatabase: false,
+            storeWrapper.accessControlList,
+            null,
+            storeWrapper.loggerFactory)
+        {
+            this.clusterProvider = storeWrapper.clusterProvider;
+            this.CopyDatabases(storeWrapper, recordToAof);
+        }
+
+        private void CopyDatabases(StoreWrapper src, bool recordToAof)
+        {
+            var databasesMapSize = src.databases.ActualSize;
+            var databasesMapSnapshot = src.databases.Map;
+
+            for (var dbId = 0; dbId < databasesMapSize; dbId++)
+            {
+                var db = databasesMapSnapshot[dbId];
+                var dbCopy = new GarnetDatabase(db.MainStore, db.ObjectStore, db.ObjectSizeTracker,
+                    recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null);
+                databases.TrySetValue(dbId, ref dbCopy);
+            }
+
+            InitializeFieldsFromDatabase(databases.Map[0]);
+        }
+
+        private void InitializeFieldsFromDatabase(GarnetDatabase db)
+        {
+            // Set fields to default database
+            this.store = db.MainStore;
+            this.objectStore = db.ObjectStore;
+            this.objectStoreSizeTracker = db.ObjectSizeTracker;
+            this.appendOnlyFile = db.AppendOnlyFile;
+            this.versionMap = db.VersionMap;
         }
 
         /// <summary>
@@ -383,8 +427,14 @@ namespace Garnet.server
                 var dbIdData = streamReader.ReadBytes((int)streamReader.BaseStream.Length);
                 Buffer.BlockCopy(dbIdData, 0, dbIds, 0, dbIdData.Length);
 
+                var databasesMapSize = databases.ActualSize;
+                var databasesMapSnapshot = databases.Map;
+
                 foreach (var dbId in dbIds)
                 {
+                    if (dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault()) 
+                        continue;
+
                     var db = createDatabasesDelegate(dbId, out _, out _);
                     databases.TrySetValue(dbId, ref db);
                 }
@@ -474,7 +524,7 @@ namespace Garnet.server
                     for (var i = 0; i < databasesMapSize; i++)
                     {
                         var db = databasesMapSnapshot[i];
-                        if (db.Equals(default(GarnetDatabase))) continue;
+                        if (db.IsDefault()) continue;
 
                         var dbAofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
                         if (dbAofSize > aofSizeLimit)
@@ -520,7 +570,7 @@ namespace Garnet.server
                         for (var dbId = 0; dbId < databasesMapSize; dbId++)
                         {
                             var db = databasesMapSnapshot[dbId];
-                            if (db.Equals(default(GarnetDatabase))) continue;
+                            if (db.IsDefault()) continue;
 
                             await db.AppendOnlyFile.CommitAsync(null, token);
 
@@ -556,7 +606,7 @@ namespace Garnet.server
                     for (var i = 0; i < databasesMapSize; i++)
                     {
                         var db = databasesMapSnapshot[i];
-                        if (db.Equals(default(GarnetDatabase))) continue;
+                        if (db.IsDefault()) continue;
 
                         DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
                     }
@@ -765,7 +815,7 @@ namespace Garnet.server
             for (var dbId = 0; dbId < databasesMapSize; dbId++)
             {
                 var db = databasesMapSnapshot[dbId];
-                if (db.Equals(default(GarnetDatabase))) continue;
+                if (db.IsDefault()) continue;
 
                 if (db.AppendOnlyFile == null) continue;
                 db.AppendOnlyFile.Commit(spinWait);
@@ -826,7 +876,7 @@ namespace Garnet.server
 
                 for (var i = 0; i < databasesMapSize; i++)
                 {
-                    if (databasesMapSnapshot[i].Equals(default(GarnetDatabase))) continue;
+                    if (databasesMapSnapshot[i].IsDefault()) continue;
 
                     databaseMainStoreIndexMaxedOut[i] = serverOptions.AdjustedIndexMaxCacheLines == 0;
                     databaseObjectStoreIndexMaxedOut[i] = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
@@ -995,7 +1045,7 @@ namespace Garnet.server
                 for (var dbId = 0; dbId < databasesMapSize; dbId++)
                 {
                     var db = databasesMapSnapshot[dbId];
-                    if (db.Equals(default(GarnetDatabase))) continue;
+                    if (db.IsDefault()) continue;
 
                     DoCompaction(ref db);
                     var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;

@@ -76,6 +76,8 @@ namespace Garnet.server
             LastSaveObjectStoreTailAddress = 0;
         }
 
+        public bool IsDefault() => MainStore == null;
+
         public void Dispose()
         {
             if (disposed) return;

@@ -68,19 +68,9 @@ namespace Garnet.server
 
             ReplicationOffset = 0;
 
-            var replayAofStoreWrapper = new StoreWrapper(
-                storeWrapper.version,
-                storeWrapper.redisProtocolVersion,
-                null,
-                storeWrapper.createDatabasesDelegate,
-                storeWrapper.customCommandManager,
-                //recordToAof ? storeWrapper.appendOnlyFile : null,
-                storeWrapper.serverOptions,
-                accessControlList: storeWrapper.accessControlList,
-                loggerFactory: storeWrapper.loggerFactory);
+            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
-
             var session = respServerSession.storageSession.basicContext.Session;
             basicContext = session.BasicContext;
             var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
