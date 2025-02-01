@@ -19,9 +19,19 @@ namespace Garnet.server.ACL
         const string DefaultUserName = "default";
 
         /// <summary>
+        /// Arbitrary Key for new user lock object.
+        /// </summary>
+        const string NewUserLockObjectKey = "441a61e2-4d4e-498e-8ca0-715cf550e5be";
+
+        /// <summary>
         /// Dictionary containing all users defined in the ACL
         /// </summary>
         ConcurrentDictionary<string, User> _users = new();
+
+        /// <summary>
+        /// Dictionary containing stable lock objects for each user in the ACL.
+        /// </summary>
+        ConcurrentDictionary<string, object> _userLockObjects = new();
 
         /// <summary>
         /// The currently configured default user (for fast default lookups)
@@ -52,6 +62,7 @@ namespace Garnet.server.ACL
                 // If no ACL file is defined, only create the default user
                 _defaultUser = CreateDefaultUser(defaultPassword);
             }
+            _userLockObjects[NewUserLockObjectKey] = new object();
         }
 
         /// <summary>
@@ -66,6 +77,33 @@ namespace Garnet.server.ACL
                 return user;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Returns the lock object for the user with the given name. This allows user level locks, which should only be
+        /// used for rare cases where modifications must be made to a user object, most notably ACL SETUSER.
+        ///
+        /// If modifications to a user are necessary the following pattern is suggested:
+        ///
+        /// 1. Obtain the lock object for the user using this method.
+        /// 2. Immediately take a lock on the object.
+        /// 3. Read the user from the <see cref="AccessControlList"/> and make a copy with the copy constructor.
+        /// 4. Modify the copy of the user object.
+        /// 5. Replace the user in the <see cref="AccessControlList"/> using the AddOrReplace(User user) method.
+        ///
+        /// Note: This pattern will make the critical section under lock single threaded across all sessions, use very
+        /// sparingly.
+        /// </summary>
+        /// <param name="username">Username of the user to retrieve.</param>
+        /// <returns>Matching user lock object.</returns>
+        public object GetUserLockObject(string username)
+        {
+            if (_userLockObjects.TryGetValue(username, out var userLockObject))
+            {
+                return userLockObject;
+            }
+
+            return _userLockObjects[NewUserLockObjectKey];
         }
 
         /// <summary>
@@ -85,6 +123,7 @@ namespace Garnet.server.ACL
         {
             // If a user with the given name already exists replace the user, otherwise add the new user.
             _users[user.Name] = user;
+            _ = _userLockObjects.TryAdd(user.Name, new object());
             this.NotifySubscribers(user);
         }
 

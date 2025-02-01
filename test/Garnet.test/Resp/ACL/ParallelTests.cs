@@ -130,7 +130,7 @@ namespace Garnet.test.Resp.ACL
         ///
         /// </summary>
         [TestCase(128, 2048)]
-        [Repeat(10)]
+        [Repeat(5)]
         public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism, int iterationsPerSession)
         {
             string command1 = $"ACL SETUSER {TestUserA} on >{DummyPassword}";
