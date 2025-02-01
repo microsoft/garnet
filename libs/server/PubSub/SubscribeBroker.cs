@@ -56,8 +56,8 @@ namespace Garnet.server
             {
                 foreach (var subscribedKey in subscriptions.Keys)
                 {
-                    fixed (byte* keyPtr = &subscribedKey[0])
-                        this.Unsubscribe(keyPtr, (ServerSessionBase)session);
+                    fixed (byte* keyPtr = subscribedKey)
+                        this.Unsubscribe(new ArgSlice(keyPtr, subscribedKey.Length), (ServerSessionBase)session);
                 }
             }
 
@@ -65,8 +65,8 @@ namespace Garnet.server
             {
                 foreach (var subscribedKey in patternSubscriptions.Keys)
                 {
-                    fixed (byte* keyPtr = &subscribedKey[0])
-                        this.PUnsubscribe(keyPtr, (ServerSessionBase)session);
+                    fixed (byte* keyPtr = subscribedKey)
+                        this.PatternUnsubscribe(new ArgSlice(keyPtr, subscribedKey.Length), (ServerSessionBase)session);
                 }
             }
         }
@@ -244,14 +244,11 @@ namespace Garnet.server
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool Unsubscribe(byte* key, ServerSessionBase session)
+        public unsafe bool Unsubscribe(ArgSlice key, ServerSessionBase session)
         {
             bool ret = false;
-            var start = key;
-            Skip(ref key);
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (subscriptions == null) return ret;
-            if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
+            if (subscriptions.TryGetValue(key.ToArray(), out var subscriptionDict))
             {
                 foreach (var sid in subscriptionDict.Keys)
                 {
@@ -275,12 +272,10 @@ namespace Garnet.server
         /// <param name="key">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe void PUnsubscribe(byte* key, ServerSessionBase session)
+        public unsafe void PatternUnsubscribe(ArgSlice key, ServerSessionBase session)
         {
-            var start = key;
-            Skip(ref key);
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (patternSubscriptions == null) return;
+            var subscriptionKey = key.ToArray();
             if (patternSubscriptions.ContainsKey(subscriptionKey))
             {
                 if (patternSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))

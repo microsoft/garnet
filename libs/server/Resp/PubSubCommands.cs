@@ -272,14 +272,13 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
-                    var channelsize = channel.Length - sizeof(int);
-                    fixed (byte* channelPtr = &channel[0])
+                    fixed (byte* channelPtr = channel)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
+                        var channelSlice = new ArgSlice(channelPtr, channel.Length);
+                        while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
                             SendAndReset();
 
-                        byte* delPtr = channelPtr;
-                        if (subscribeBroker.Unsubscribe(delPtr, this))
+                        if (subscribeBroker.Unsubscribe(channelSlice,this))
                             numActiveChannels--;
                         while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
@@ -306,9 +305,7 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (subscribeBroker != null)
                 {
@@ -316,11 +313,10 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
-                    *(int*)keyPtr = kSize;
-                    if (subscribeBroker.Unsubscribe(keyPtr, this))
+                    if (subscribeBroker.Unsubscribe(key, this))
                         numActiveChannels--;
 
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
@@ -357,18 +353,17 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
-                    var channelsize = channel.Length - sizeof(int);
-                    fixed (byte* channelPtr = &channel[0])
+                    fixed (byte* channelPtr = channel)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
+                        var channelSlice = new ArgSlice(channelPtr, channel.Length);
+                        while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
                             SendAndReset();
 
                         numActiveChannels--;
                         while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
 
-                        byte* delPtr = channelPtr;
-                        subscribeBroker.PUnsubscribe(delPtr, this);
+                        subscribeBroker.PatternUnsubscribe(channelSlice, this);
                     }
                 }
 
@@ -380,9 +375,7 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (subscribeBroker != null)
                 {
@@ -390,15 +383,14 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
                     numActiveChannels--;
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
 
-                    *(int*)keyPtr = kSize;
-                    subscribeBroker.Unsubscribe(keyPtr, this);
+                    subscribeBroker.Unsubscribe(key, this);
                 }
             }
 
