@@ -139,7 +139,15 @@ namespace Garnet.server.ACL
             {
                 throw new ACLException("The special 'default' user cannot be removed from the system");
             }
-            return _users.TryRemove(username, out _);
+
+            bool userDeleted = _users.TryRemove(username, out _);
+
+            if (userDeleted)
+            {
+                _userLockObjects.TryRemove(username, out _);
+            }
+
+            return userDeleted;
         }
 
         /// <summary>
