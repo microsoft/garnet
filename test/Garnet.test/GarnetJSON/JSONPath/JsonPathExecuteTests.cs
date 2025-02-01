@@ -65,7 +65,7 @@ namespace Garnet.test.JSONPath
         public void BacktrackingRegex_SingleMatch_TimeoutRespected()
         {
             const string RegexBacktrackingPattern = "(?<a>(.*?))[|].*(?<b>(.*?))[|].*(?<c>(.*?))[|].*(?<d>[1-3])[|].*(?<e>(.*?))[|].*[|].*[|].*(?<f>(.*?))[|].*[|].*(?<g>(.*?))[|].*(?<h>(.*))";
-            
+
             var jObj = JsonNode.Parse(@"[{""b"": ""15/04/2020 8:18:03 PM|1|System.String[]|3|Libero eligendi magnam ut inventore.. Quaerat et sit voluptatibus repellendus blanditiis aliquam ut.. Quidem qui ut sint in ex et tempore.|||.\\iste.cpp||46018|-1"" }]");
 
             ClassicAssert.Throws<RegexMatchTimeoutException>((() =>
@@ -1048,7 +1048,7 @@ namespace Garnet.test.JSONPath
         public void WildcardWithProperty()
         {
             var json = @"{
-                ""station"": 92000041000001, 
+                ""station"": 92000041000001,
                 ""containers"": [
                     {
                         ""id"": 1,
@@ -1058,8 +1058,8 @@ namespace Garnet.test.JSONPath
                             { ""id"": ""92000020100006"", ""text"": ""Sort yard 12"" },
                             { ""id"": ""92000020100005"", ""text"": ""Yard 13"" }
                         ]
-                    }, 
-                    { ""id"": ""92000020100011"", ""text"": ""TSP-1"" }, 
+                    },
+                    { ""id"": ""92000020100011"", ""text"": ""TSP-1"" },
                     { ""id"":""92000020100007"", ""text"": ""Passenger 15"" }
                 ]
             }";
@@ -1174,7 +1174,7 @@ namespace Garnet.test.JSONPath
             // Willis Street
 
             var manufacturers = (JsonArray)o["Manufacturers"];
-            IList<string> firstProductNames = manufacturers.Select(m => 
+            IList<string> firstProductNames = manufacturers.Select(m =>
             {
                 m.AsObject().TrySelectNode("Products[1].Name", out var node);
                 return node?.GetValue<string>();
@@ -1182,7 +1182,7 @@ namespace Garnet.test.JSONPath
             // null
             // Headlight Fluid
 
-            decimal totalPrice = manufacturers.Sum(m => 
+            decimal totalPrice = manufacturers.Sum(m =>
             {
                 m.AsObject().TrySelectNode("Products[0].Price", out var node);
                 return node.GetValue<decimal>();

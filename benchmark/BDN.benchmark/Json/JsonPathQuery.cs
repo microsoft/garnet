@@ -27,8 +27,8 @@ public class JsonPathQuery
         "$.store.book[?(@.author =~ /.*Waugh/)]",            // regex match on author
         "$..book[0,1]",                                     // union of array indices
         "$..*",                                             // recursive descent all nodes
-        "$..['bicycle','price']",                            // recursive descent specfic node with name match 
-        "$..[?(@.price < 10)]",                            // recursive descent specfic node with conditionally match 
+        "$..['bicycle','price']",                            // recursive descent specfic node with name match
+        "$..[?(@.price < 10)]",                            // recursive descent specfic node with conditionally match
         "$.store.book[?(@.author && @.title)]",            // existence check
         "$.store.*"                                       // wildcard child
     )]
