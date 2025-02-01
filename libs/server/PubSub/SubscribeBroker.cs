@@ -218,10 +218,8 @@ namespace Garnet.server
         /// <param name="pattern">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int PatternSubscribe(ref byte* pattern, ServerSessionBase session)
+        public unsafe int PatternSubscribe(ArgSlice pattern, ServerSessionBase session)
         {
-            var start = pattern;
-            Skip(ref pattern);
             var id = Interlocked.Increment(ref sid);
             if (id == 1)
             {
@@ -231,7 +229,7 @@ namespace Garnet.server
             {
                 while (patternSubscriptions == null) Thread.Yield();
             }
-            var subscriptionPattern = new Span<byte>(start, (int)(pattern - start)).ToArray();
+            var subscriptionPattern = pattern.ToArray();
             patternSubscriptions.TryAdd(subscriptionPattern, new ConcurrentDictionary<int, ServerSessionBase>());
             if (patternSubscriptions.TryGetValue(subscriptionPattern, out var val))
                 val.TryAdd(id, session);

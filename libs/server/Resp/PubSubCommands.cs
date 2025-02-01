@@ -217,9 +217,7 @@ namespace Garnet.server
             var disabledBroker = subscribeBroker == null;
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (disabledBroker)
                     continue;
@@ -229,15 +227,14 @@ namespace Garnet.server
 
                 while (!RespWriteUtils.TryWriteBulkString("psubscribe"u8, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
 
                 numActiveChannels++;
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
-                *(int*)keyPtr = kSize;
-                _ = subscribeBroker.PatternSubscribe(ref keyPtr, this);
+                _ = subscribeBroker.PatternSubscribe(key, this);
             }
 
             if (disabledBroker)
