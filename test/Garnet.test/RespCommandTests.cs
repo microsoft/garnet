@@ -297,7 +297,7 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                ClassicAssert.AreEqual("ERR unknown command", e.Message);
+                ClassicAssert.AreEqual("ERR unknown subcommand 'UNKNOWN'.", e.Message);
             }
         }
 
