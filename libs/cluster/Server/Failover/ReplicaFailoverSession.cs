@@ -40,13 +40,13 @@ namespace Garnet.cluster
         {
             _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out var gsn);
 
-            var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
-            while (!clusterProvider.clusterManager.clusterConnectionStore.GetOrAdd(clusterProvider, address, port, clusterProvider.serverOptions.TlsOptions, nodeId, out gsn, logger: logger))
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
+            while (!clusterProvider.clusterManager.clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, clusterProvider.serverOptions.TlsOptions, nodeId, out gsn, logger: logger))
                 _ = System.Threading.Thread.Yield();
 
             if (gsn == null)
             {
-                logger?.LogWarning("TryMeet: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                logger?.LogWarning("TryMeet: Could not establish connection to remote node [{nodeId} {endpoint}] failed", nodeId, endpoint);
                 return null;
             }
 
@@ -62,10 +62,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
         {
-            var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
-                address,
-                port,
+                endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 sendPageSize: sendPageSize,
                 maxOutstandingTasks: 8,

@@ -23,7 +23,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, EnableTLS: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
             server.Start();
         }
 

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -160,7 +161,7 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger);
+                    gsn = new GarnetServerNode(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions?.TlsClientOptions, logger: logger);
                     created = true;
                 }
 
@@ -210,7 +211,7 @@ namespace Garnet.cluster
         public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
         {
             var conf = CurrentConfig;
-            List<(string, string, int)> nodeEntries = null;
+            List<(string NodeId, IPEndPoint Endpoint)> nodeEntries = null;
             if (cmd == RespCommand.PUBLISH)
                 conf.GetAllNodeIds(out nodeEntries);
             else
@@ -219,11 +220,10 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    var nodeId = entry.Item1;
-                    var address = entry.Item2;
-                    var port = entry.Item3;
+                    var nodeId = entry.NodeId;
+                    var endpoint = entry.Endpoint;
                     GarnetServerNode gsn = null;
-                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, address, port, tlsOptions, nodeId, out gsn, logger: logger))
+                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, tlsOptions, nodeId, out gsn, logger: logger))
                         Thread.Yield();
 
                     if (gsn == null)
@@ -303,7 +303,7 @@ namespace Garnet.cluster
                         try
                         {
                             GarnetServerNode gsn = null;
-                            while (!clusterConnectionStore.GetOrAdd(clusterProvider, address, port, tlsOptions, nodeId, out gsn, logger: logger))
+                            while (!clusterConnectionStore.GetOrAdd(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions, nodeId, out gsn, logger: logger))
                                 await Task.Yield();
 
                             if (gsn == null)
@@ -363,12 +363,12 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                         gossipStats.gossip_failed_count++;
                     }
@@ -412,12 +412,12 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                         gossipStats.gossip_failed_count++;
                     }

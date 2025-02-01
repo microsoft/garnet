@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -25,6 +26,17 @@ namespace Garnet
         /// Determines if current property is required to have a value
         /// </summary>
         protected readonly bool IsRequired;
+
+        /// <summary>
+        /// Determine object default value at runtime
+        /// </summary>
+        protected static object GetDefault(Type t)
+        {
+            if (t.IsValueType && Nullable.GetUnderlyingType(t) == null)
+                return Activator.CreateInstance(t);
+            else
+                return null;
+        }
 
         protected static object GetDefault<T>(T t) => default(T);
 
@@ -599,6 +611,35 @@ namespace Garnet
             }
 
             return ValidationResult.Success;
+        }
+    }
+
+    /// <summary>
+    /// Forbids a config option from being set if the current OS platform is not supported.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class SupportedOSValidationAttribute : OptionValidationAttribute
+    {
+        private readonly string[] supportedPlatforms;
+
+        internal SupportedOSValidationAttribute(bool isRequired, params string[] supportedPlatforms) : base(isRequired)
+        {
+            this.supportedPlatforms = supportedPlatforms;
+        }
+
+        /// <inheritdoc/>
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (!IsRequired && (Equals(value, GetDefault(value.GetType())) || (value is string strVal && string.IsNullOrEmpty(strVal))))
+                return ValidationResult.Success;
+
+            foreach (var platform in supportedPlatforms)
+            {
+                if (OperatingSystem.IsOSPlatform(platform))
+                    return ValidationResult.Success;
+            }
+
+            return new ValidationResult($"{nameof(validationContext.DisplayName)} can only bet set on following platforms: {string.Join(',', supportedPlatforms)}");
         }
     }
 }

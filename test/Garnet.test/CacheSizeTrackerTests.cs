@@ -122,7 +122,7 @@ namespace Garnet.test
             }
 
             ClassicAssert.AreEqual(6200, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes); // 25 * 248 for each hashset object
-            var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.Address, TestUtils.Port), includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.EndPoint), includeReadCache: true, isObjectStore: true);
             ClassicAssert.AreEqual(632, info.ReadCacheTailAddress); // 25 (records) * 24 (rec size) + 24 (initial) + 8 (page boundary)
 
             if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.resizeTaskDelaySeconds)))

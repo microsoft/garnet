@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Security.Cryptography;
 using Garnet.common;
 using Garnet.server.TLS;
@@ -97,14 +98,13 @@ namespace Garnet.cluster
         /// Get or add a connection to the store.
         /// </summary>
         /// <param name="clusterProvider"></param>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
+        /// <param name="endpoint">The cluster node endpoint</param>
         /// <param name="tlsOptions"></param>
         /// <param name="nodeId"></param>
         /// <param name="conn"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public bool GetOrAdd(ClusterProvider clusterProvider, string address, int port, IGarnetTlsOptions tlsOptions, string nodeId, out GarnetServerNode conn, ILogger logger = null)
+        public bool GetOrAdd(ClusterProvider clusterProvider, IPEndPoint endpoint, IGarnetTlsOptions tlsOptions, string nodeId, out GarnetServerNode conn, ILogger logger = null)
         {
             conn = null;
             try
@@ -114,7 +114,7 @@ namespace Garnet.cluster
 
                 if (UnsafeGetConnection(nodeId, out conn)) return true;
 
-                conn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger)
+                conn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, logger: logger)
                 {
                     NodeId = nodeId
                 };

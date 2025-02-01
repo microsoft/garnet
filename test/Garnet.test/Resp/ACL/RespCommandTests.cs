@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -3606,7 +3607,7 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("HINCRBYFLOAT", ["foo", "bar", "1.0"]);
                 cur += 1.0;
-                ClassicAssert.AreEqual(cur, double.Parse(val));
+                ClassicAssert.AreEqual(cur, double.Parse(val, CultureInfo.InvariantCulture));
             }
         }
 

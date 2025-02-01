@@ -48,7 +48,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var server = redis.GetServer(TestUtils.Address, TestUtils.Port);
+            var server = redis.GetServer(TestUtils.EndPoint);
             var info = TestUtils.GetStoreAddressInfo(server);
 
             // Start at tail address of 64

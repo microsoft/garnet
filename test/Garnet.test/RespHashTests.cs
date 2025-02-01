@@ -1113,7 +1113,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var server = redis.GetServer(TestUtils.Address, TestUtils.Port);
+            var server = redis.GetServer(TestUtils.EndPoint);
 
             string[] smallExpireKeys = ["user:user0", "user:user1"];
             string[] largeExpireKeys = ["user:user2", "user:user3"];

@@ -97,7 +97,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("[{\"a\":1}]", (string)retValue);
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }

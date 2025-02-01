@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,14 +52,9 @@ namespace Garnet.cluster
         public string NodeId;
 
         /// <summary>
-        /// Address of remote node
+        /// EndPoint of remote node
         /// </summary>
-        public string Address;
-
-        /// <summary>
-        /// Port of remote node
-        /// </summary>
-        public int Port;
+        public EndPoint EndPoint;
 
         /// <summary>
         /// Default send page size for GarnetClient
@@ -74,18 +70,16 @@ namespace Garnet.cluster
         /// GarnetServerNode constructor
         /// </summary>
         /// <param name="clusterProvider"></param>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
+        /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
         /// <param name="logger"></param>
-        public GarnetServerNode(ClusterProvider clusterProvider, string address, int port, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
+        public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
         {
             var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
-            this.Address = address;
-            this.Port = port;
+            this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                address, port, tlsOptions,
+                endpoint, tlsOptions,
                 sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
                 maxOutstandingTasks: defaultMaxOutstandingTask,
                 timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,

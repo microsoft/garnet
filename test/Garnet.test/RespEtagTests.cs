@@ -981,7 +981,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
             server.Start();
 
             var key = "delKey";
@@ -1014,7 +1014,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1055,7 +1055,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1090,7 +1090,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1124,7 +1124,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
