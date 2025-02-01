@@ -55,7 +55,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void PrefixPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+        public override unsafe void PatternPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
             try
             {
@@ -245,7 +245,7 @@ namespace Garnet.server
                     SendAndReset();
 
                 *(int*)keyPtr = kSize;
-                _ = subscribeBroker.PSubscribe(ref keyPtr, this, true);
+                _ = subscribeBroker.PatternSubscribe(ref keyPtr, this);
             }
 
             if (disabledBroker)
@@ -357,7 +357,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                List<byte[]> channels = subscribeBroker.ListAllPSubscriptions(this);
+                List<byte[]> channels = subscribeBroker.ListAllPatternSubscriptions(this);
                 foreach (var channel in channels)
                 {
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))

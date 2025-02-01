@@ -45,17 +45,17 @@ namespace Garnet.server
         public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
         /// <summary>
-        /// Publish an update to a key to all the (prefix) subscribers of the key
+        /// Publish an update to a key to all the (pattern) subscribers of the key
         /// </summary>
-        /// <param name="prefixPtr"></param>
-        /// <param name="prefixLength"></param>
+        /// <param name="patternPtr"></param>
+        /// <param name="patternLength"></param>
         /// <param name="keyPtr"></param>
         /// <param name="keyLength"></param>
         /// <param name="valPtr"></param>
         /// <param name="valLength"></param>
         /// <param name="inputPtr"></param>
         /// <param name="sid"></param>
-        public abstract unsafe void PrefixPublish(byte* prefixPtr, int prefixLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
+        public abstract unsafe void PatternPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
 
         /// <summary>
         /// Dispose
