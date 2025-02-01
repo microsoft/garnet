@@ -135,9 +135,6 @@ namespace Garnet.test.Resp.ACL
         {
             string command1 = $"ACL SETUSER {TestUserA} on >{DummyPassword}";
 
-            var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
-
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 using var c = TestUtils.GetGarnetClientSession();
