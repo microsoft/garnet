@@ -96,7 +96,6 @@ namespace Garnet.server.ACL
                 if (user == null)
                 {
                     user = new User(username);
-                    acl.AddUser(user);
                 }
             }
             else
@@ -108,6 +107,11 @@ namespace Garnet.server.ACL
             for (int i = 2; i < tokens.Length; i++)
             {
                 ApplyACLOpToUser(ref user, tokens[i]);
+            }
+
+            if (acl != null)
+            {
+                acl.AddOrReplaceUser(user);
             }
 
             return user;
