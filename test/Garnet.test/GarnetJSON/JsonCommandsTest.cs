@@ -157,6 +157,186 @@ namespace Garnet.test
             ClassicAssert.IsTrue(result.IsNull);
         }
 
+        [TestCase("$.store.book[*].author", "[\"Nigel Rees\",\"Evelyn Waugh\",\"Herman Melville\",\"J. R. R. Tolkien\"]", Description = "Wildcard array access")]
+        [TestCase("$..author", "[\"Nigel Rees\",\"Evelyn Waugh\",\"Herman Melville\",\"J. R. R. Tolkien\"]", Description = "Recursive descent")]
+        [TestCase("$.store.book[2]", "[{\"category\":\"fiction\",\"author\":\"Herman Melville\",\"title\":\"Moby Dick\",\"price\":8.99}]", Description = "Array index access")]
+        [TestCase("$.store.book[?(@.price < 10)]", "[{\"category\":\"reference\",\"author\":\"Nigel Rees\",\"title\":\"Sayings of the Century\",\"price\":8.95},{\"category\":\"fiction\",\"author\":\"Herman Melville\",\"title\":\"Moby Dick\",\"price\":8.99}]", Description = "Filter expression")]
+        [TestCase("$.store.bicycle.color", "[\"red\"]", Description = "Direct property access")]
+        public void JsonGetComplexPathTests(string path, string expected)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string complexJson = @"{
+                ""store"": {
+                    ""book"": [
+                        {
+                            ""category"": ""reference"",
+                            ""author"": ""Nigel Rees"",
+                            ""title"": ""Sayings of the Century"",
+                            ""price"": 8.95
+                        },
+                        {
+                            ""category"": ""fiction"",
+                            ""author"": ""Evelyn Waugh"",
+                            ""title"": ""Sword of Honour"",
+                            ""price"": 12.99
+                        },
+                        {
+                            ""category"": ""fiction"",
+                            ""author"": ""Herman Melville"",
+                            ""title"": ""Moby Dick"",
+                            ""price"": 8.99
+                        },
+                        {
+                            ""category"": ""fiction"",
+                            ""author"": ""J. R. R. Tolkien"",
+                            ""title"": ""The Lord of the Rings"",
+                            ""price"": 22.99
+                        }
+                    ],
+                    ""bicycle"": {
+                        ""color"": ""red"",
+                        ""price"": 19.95
+                    }
+                }
+            }";
+
+            db.Execute("JSON.SET", "complex", "$", complexJson);
+            var result = db.Execute("JSON.GET", "complex", path);
+            ClassicAssert.AreEqual(expected, result.ToString());
+        }
+
+        [TestCase("$[0,1]", "[1,2]", "[1,2,3,4]", Description = "Multiple array indices")]
+        [TestCase("$[1:3]", "[2,3]", "[1,2,3,4]", Description = "Array slice")]
+        [TestCase("$[-2:]", "[3,4]", "[1,2,3,4]", Description = "Negative array indices")]
+        [TestCase("$[::2]", "[1,3]", "[1,2,3,4]", Description = "Array step")]
+        public void JsonGetArrayOperationsTest(string path, string expected, string initialJson)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.Execute("JSON.SET", "array", "$", initialJson);
+            var result = db.Execute("JSON.GET", "array", path);
+            ClassicAssert.AreEqual(expected, result.ToString());
+        }
+
+        [TestCase("$..[?(@.price > 20)]", "22.99", Description = "Deep search with filter")]
+        [TestCase("$..book[?(@.author =~ /.*Tolkien/)]", "J. R. R. Tolkien", Description = "Regex filter")]
+        public void JsonGetAdvancedFiltersTest(string path, string expectedValue)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string complexJson = @"{
+                ""store"": {
+                    ""book"": [
+                        {
+                            ""author"": ""Nigel Rees"",
+                            ""price"": 8.95
+                        },
+                        {
+                            ""author"": ""J. R. R. Tolkien"",
+                            ""title"": ""The Lord of the Rings"",
+                            ""price"": 22.99
+                        }
+                    ]
+                }
+            }";
+
+            db.Execute("JSON.SET", "complex", "$", complexJson);
+            var result = db.Execute("JSON.GET", "complex", path);
+            ClassicAssert.IsTrue(result.ToString().Contains(expectedValue));
+        }
+
+        [TestCase("$.store.book[0].price", 15.99, Description = "Update specific array element")]
+        [TestCase("$.store.book[3].price", 25.99, Description = "Update last element")]
+        [TestCase("$.store.bicycle.price", 29.99, Description = "Update nested value")]
+        public void JsonSetComplexPathOperationsTest(string path, decimal newPrice)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string complexJson = @"{
+                ""store"": {
+                    ""book"": [
+                        { ""price"": 8.95 },
+                        { ""price"": 12.99 },
+                        { ""price"": 8.99 },
+                        { ""price"": 22.99 }
+                    ],
+                    ""bicycle"": {
+                        ""price"": 19.95
+                    }
+                }
+            }";
+
+            db.Execute("JSON.SET", "complex", "$", complexJson);
+            db.Execute("JSON.SET", "complex", path, newPrice.ToString());
+            var result = db.Execute("JSON.GET", "complex", path);
+            ClassicAssert.AreEqual($"[{newPrice}]", result.ToString());
+        }
+
+        [TestCase("$..book[*].nonexistent", Description = "Create new field with wildcard")]
+        [TestCase("$.store.book[?(@.price >= 10)].newfield", Description = "Create new field with filter")]
+        [TestCase("$..[?(@.price)].discount", Description = "Create new nested field recursively")]
+        public void JsonSetNonStaticPathNewFieldTest(string path)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string complexJson = @"{
+                ""store"": {
+                    ""book"": [
+                        { ""price"": 8.95 },
+                        { ""price"": 12.99 }
+                    ],
+                    ""bicycle"": {
+                        ""price"": 19.95
+                    }
+                }
+            }";
+
+            db.Execute("JSON.SET", "complex", "$", complexJson);
+            Assert.Throws<RedisServerException>(() => db.Execute("JSON.SET", "complex", path, "42.99"));
+        }
+
+        [TestCase("$..price", "42.99", Description = "Update existing prices recursively")]
+        [TestCase("$.store.book[*].price", "19.99", Description = "Update prices with wildcard")]
+        [TestCase("$.store.book[?(@.price >= 10)].price", "29.99", Description = "Update prices with filter")]
+        public void JsonSetNonStaticPathExistingFieldTest(string path, string newValue)
+        {
+            RegisterCustomCommand();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string complexJson = @"{
+                ""store"": {
+                    ""book"": [
+                        { ""price"": 8.95 },
+                        { ""price"": 12.99 }
+                    ],
+                    ""bicycle"": {
+                        ""price"": 19.95
+                    }
+                }
+            }";
+
+            db.Execute("JSON.SET", "complex", "$", complexJson);
+            db.Execute("JSON.SET", "complex", path, newValue);
+            
+            // Verify that the update worked by getting all price fields
+            var result = db.Execute("JSON.GET", "complex", "$..price");
+            var resultStr = result.ToString();
+            Assert.That(resultStr.Contains(newValue), "Updated price value should be present in the result");
+            Assert.That(!resultStr.Contains("8.95") || !resultStr.Contains("12.99") || !resultStr.Contains("19.95"));
+        }
+
         [Test]
         public void SaveRecoverTest()
         {
