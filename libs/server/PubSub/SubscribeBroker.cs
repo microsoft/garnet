@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -19,10 +20,9 @@ namespace Garnet.server
     /// </summary>
     public sealed class SubscribeBroker : IDisposable
     {
-        private int sid = 0;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> patternSubscriptions;
-        readonly SpanByteKeySerializer spanByteSerializer;
+        int sid = 0;
+        ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
+        ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> patternSubscriptions;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
@@ -38,7 +38,6 @@ namespace Garnet.server
         /// <param name="startFresh">start the log from scratch, do not continue</param>
         public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true)
         {
-            this.spanByteSerializer = new();
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
@@ -72,7 +71,7 @@ namespace Garnet.server
             }
         }
 
-        private unsafe int Broadcast(byte[] key, byte* valPtr, int valLength)
+        unsafe int Broadcast(byte[] key, byte* valPtr, int valLength)
         {
             int numSubscribers = 0;
 
@@ -105,7 +104,7 @@ namespace Garnet.server
                             byte* subscribedPattern = subscribedPatternPtr;
                             byte* reqKeyPtr = ptr;
 
-                            bool match = spanByteSerializer.Match(ref spanByteSerializer.ReadByRef(ref reqKeyPtr), ref spanByteSerializer.ReadByRef(ref subscribedPattern));
+                            bool match = Match(ref ReadByRef(ref reqKeyPtr), ref ReadByRef(ref subscribedPattern));
                             if (match)
                             {
                                 foreach (var sub in kvp.Value)
@@ -123,22 +122,22 @@ namespace Garnet.server
             return numSubscribers;
         }
 
-        private async Task Start(CancellationToken cancellationToken = default)
+        async Task Start(CancellationToken cancellationToken = default)
         {
             try
             {
                 var uniqueKeys = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
-                using var iter = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                var signal = iter.Signal;
+                using var iterator = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                var signal = iterator.Signal;
                 using var registration = cts.Token.Register(signal);
 
                 while (!disposed)
                 {
-                    await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    await iterator.WaitAsync(cancellationToken).ConfigureAwait(false);
                     if (cancellationToken.IsCancellationRequested) break;
-                    while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
+                    while (iterator.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
                         if (currentAddress >= long.MaxValue) return;
 
@@ -150,7 +149,7 @@ namespace Garnet.server
                             fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
                             {
                                 var keyPtr = subscriptionKeyValueAsciiPtr;
-                                spanByteSerializer.Skip(ref keyPtr);
+                                Skip(ref keyPtr);
                                 int subscriptionKeyLength = (int)(keyPtr - subscriptionKeyValueAsciiPtr);
                                 int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
                                 subscriptionKey = new byte[subscriptionKeyLength];
@@ -207,7 +206,7 @@ namespace Garnet.server
         public unsafe int Subscribe(ref byte* key, ServerSessionBase session)
         {
             var start = key;
-            spanByteSerializer.Skip(ref key);
+            Skip(ref key);
             var id = Interlocked.Increment(ref sid);
 
             if (id == 1)
@@ -234,7 +233,7 @@ namespace Garnet.server
         public unsafe int PatternSubscribe(ref byte* pattern, ServerSessionBase session)
         {
             var start = pattern;
-            spanByteSerializer.Skip(ref pattern);
+            Skip(ref pattern);
             var id = Interlocked.Increment(ref sid);
             if (id == 1)
             {
@@ -261,7 +260,7 @@ namespace Garnet.server
         {
             bool ret = false;
             var start = key;
-            spanByteSerializer.Skip(ref key);
+            Skip(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (subscriptions == null) return ret;
             if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
@@ -291,7 +290,7 @@ namespace Garnet.server
         public unsafe void PUnsubscribe(byte* key, ServerSessionBase session)
         {
             var start = key;
-            spanByteSerializer.Skip(ref key);
+            Skip(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (patternSubscriptions == null) return;
             if (patternSubscriptions.ContainsKey(subscriptionKey))
@@ -361,7 +360,7 @@ namespace Garnet.server
             if (subscriptions == null && patternSubscriptions == null) return 0;
 
             var start = key;
-            spanByteSerializer.Skip(ref key);
+            Skip(ref key);
             var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
             return Broadcast(keyBytes, value, valueLength);
         }
@@ -384,7 +383,7 @@ namespace Garnet.server
             var valueLength = vSize + sizeof(int);
 
             var start = key;
-            spanByteSerializer.Skip(ref key);
+            Skip(ref key);
 
             // TODO: this needs to be a single atomic enqueue
             byte[] logEntryBytes = new byte[key - start + valueLength];
@@ -452,7 +451,7 @@ namespace Garnet.server
                     {
                         var endKeyPtr = keyPtr;
                         var _patternPtr = patternPtr;
-                        if (spanByteSerializer.Match(ref spanByteSerializer.ReadByRef(ref endKeyPtr), ref spanByteSerializer.ReadByRef(ref _patternPtr)))
+                        if (Match(ref ReadByRef(ref endKeyPtr), ref ReadByRef(ref _patternPtr)))
                         {
                             while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -497,9 +496,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>The number of pattern subscriptions.</returns>
         public int NumPatternSubscriptions()
-        {
-            return patternSubscriptions?.Count ?? 0;
-        }
+            => patternSubscriptions?.Count ?? 0;
 
         /// <summary>
         /// PUBSUB NUMSUB
@@ -566,6 +563,25 @@ namespace Garnet.server
             patternSubscriptions?.Clear();
             log.Dispose();
             device.Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        unsafe ref SpanByte ReadByRef(ref byte* src)
+        {
+            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            src += ret.TotalSize;
+            return ref ret;
+        }
+
+        unsafe void Skip(ref byte* src)
+        {
+            src += Unsafe.AsRef<SpanByte>(src).TotalSize;
+        }
+
+        /// <inheritdoc />
+        unsafe bool Match(ref SpanByte k, ref SpanByte pattern)
+        {
+            return GlobUtils.Match(pattern.ToPointer(), pattern.LengthWithoutMetadata, k.ToPointer(), k.LengthWithoutMetadata);
         }
     }
 }
