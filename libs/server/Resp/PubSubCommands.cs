@@ -19,7 +19,7 @@ namespace Garnet.server
         int numActiveChannels = 0;
 
         /// <inheritdoc />
-        public override unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+        public override unsafe void Publish(ArgSlice key, ArgSlice value, int sid)
         {
             try
             {
@@ -38,8 +38,8 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Write key and value to the network
-                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
-                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
+                WriteDirectLargeRespString(key.ReadOnlySpan);
+                WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
@@ -55,7 +55,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void PatternPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+        public override unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value, int sid)
         {
             try
             {
@@ -74,9 +74,9 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Write pattern, key, and value to the network
-                WriteDirectLargeRespString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)));
-                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
-                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
+                WriteDirectLargeRespString(pattern.ReadOnlySpan);
+                WriteDirectLargeRespString(key.ReadOnlySpan);
+                WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
@@ -118,13 +118,8 @@ namespace Garnet.server
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var val = parseState.GetArgSliceByRef(1).SpanByte;
-
-            var keyPtr = key.ToPointer() - sizeof(int);
-            var valPtr = val.ToPointer() - sizeof(int);
-            var kSize = key.Length;
-            var vSize = val.Length;
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
 
             if (subscribeBroker == null)
             {
@@ -133,10 +128,7 @@ namespace Garnet.server
                 return true;
             }
 
-            *(int*)keyPtr = kSize;
-            *(int*)valPtr = vSize;
-
-            var numClients = subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
+            var numClients = subscribeBroker.PublishNow(key, value);
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 var _key = parseState.GetArgSliceByRef(0).Span;
@@ -182,7 +174,7 @@ namespace Garnet.server
             // SUBSCRIBE|SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             for (var c = 0; c < parseState.Count; c++)
             {
-                ref var key = ref parseState.GetArgSliceByRef(c);
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (disabledBroker)
                     continue;
@@ -200,7 +192,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
-                _ = subscribeBroker.Subscribe(ref key.ptr, this);
+                _ = subscribeBroker.Subscribe(key, this);
             }
 
             if (disabledBroker)

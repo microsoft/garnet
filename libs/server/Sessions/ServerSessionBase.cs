@@ -36,26 +36,19 @@ namespace Garnet.server
         /// <summary>
         /// Publish an update to a key to all the subscribers of the key
         /// </summary>
-        /// <param name="keyPtr"></param>
-        /// <param name="keyLength"></param>
-        /// <param name="valPtr"></param>
-        /// <param name="valLength"></param>
-        /// <param name="inputPtr"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
         /// <param name="sid"></param>
-        public abstract unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
+        public abstract unsafe void Publish(ArgSlice key, ArgSlice value, int sid);
 
         /// <summary>
         /// Publish an update to a key to all the (pattern) subscribers of the key
         /// </summary>
-        /// <param name="patternPtr"></param>
-        /// <param name="patternLength"></param>
-        /// <param name="keyPtr"></param>
-        /// <param name="keyLength"></param>
-        /// <param name="valPtr"></param>
-        /// <param name="valLength"></param>
-        /// <param name="inputPtr"></param>
+        /// <param name="pattern"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
         /// <param name="sid"></param>
-        public abstract unsafe void PatternPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid);
+        public abstract unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value, int sid);
 
         /// <summary>
         /// Dispose

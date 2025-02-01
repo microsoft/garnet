@@ -71,49 +71,38 @@ namespace Garnet.server
             }
         }
 
-        unsafe int Broadcast(byte[] key, byte* valPtr, int valLength)
+        unsafe int Broadcast(ArgSlice key, ArgSlice value)
         {
             int numSubscribers = 0;
 
-            fixed (byte* ptr = &key[0])
+            if (subscriptions != null)
             {
-                byte* keyPtr = ptr;
-
-                if (subscriptions != null)
+                bool foundSubscription = subscriptions.TryGetValue(key.ToArray(), out var subscriptionServerSessionDict);
+                if (foundSubscription)
                 {
-                    bool foundSubscription = subscriptions.TryGetValue(key, out var subscriptionServerSessionDict);
-                    if (foundSubscription)
+                    foreach (var sub in subscriptionServerSessionDict)
                     {
-                        foreach (var sub in subscriptionServerSessionDict)
-                        {
-                            byte* keyBytePtr = ptr;
-                            byte* nullBytePtr = null;
-                            byte* valBytePtr = valPtr;
-                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valBytePtr, valLength, ref nullBytePtr, sub.Key);
-                            numSubscribers++;
-                        }
+                        sub.Value.Publish(key, value, sub.Key);
+                        numSubscribers++;
                     }
                 }
+            }
 
-                if (patternSubscriptions != null)
+            if (patternSubscriptions != null)
+            {
+                foreach (var kvp in patternSubscriptions)
                 {
-                    foreach (var kvp in patternSubscriptions)
-                    {
-                        fixed (byte* subscribedPatternPtr = &kvp.Key[0])
-                        {
-                            byte* subscribedPattern = subscribedPatternPtr;
-                            byte* reqKeyPtr = ptr;
+                    var pattern = kvp.Key;
 
-                            bool match = Match(ref ReadByRef(ref reqKeyPtr), ref ReadByRef(ref subscribedPattern));
-                            if (match)
+                    fixed (byte* patternPtr = pattern)
+                    {
+                        bool match = Match(key, pattern);
+                        if (match)
+                        {
+                            foreach (var sub in kvp.Value)
                             {
-                                foreach (var sub in kvp.Value)
-                                {
-                                    byte* keyBytePtr = ptr;
-                                    byte* nullBytePtr = null;
-                                    sub.Value.PatternPublish(subscribedPatternPtr, kvp.Key.Length, ref keyBytePtr, key.Length, ref valPtr, valLength, ref nullBytePtr, sub.Key);
-                                    numSubscribers++;
-                                }
+                                sub.Value.PatternPublish(new ArgSlice(patternPtr, pattern.Length), key, value, sub.Key);
+                                numSubscribers++;
                             }
                         }
                     }
@@ -177,8 +166,9 @@ namespace Garnet.server
                         {
                             byte[] keyBytes = enumerator.Current.Key;
                             byte[] valBytes = enumerator.Current.Value;
+                            fixed (byte* keyPtr = keyBytes)
                             fixed (byte* valPtr = valBytes)
-                                Broadcast(keyBytes, valPtr, valBytes.Length);
+                                Broadcast(new ArgSlice(keyPtr, keyBytes.Length), new ArgSlice(valPtr, valBytes.Length));
                         }
                         uniqueKeys.Clear();
                     }
@@ -203,10 +193,8 @@ namespace Garnet.server
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int Subscribe(ref byte* key, ServerSessionBase session)
+        public unsafe int Subscribe(ArgSlice key, ServerSessionBase session)
         {
-            var start = key;
-            Skip(ref key);
             var id = Interlocked.Increment(ref sid);
 
             if (id == 1)
@@ -217,7 +205,7 @@ namespace Garnet.server
             {
                 while (patternSubscriptions == null) Thread.Yield();
             }
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
+            var subscriptionKey = key.ReadOnlySpan.ToArray();
             subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
             if (subscriptions.TryGetValue(subscriptionKey, out var val))
                 val.TryAdd(id, session);
@@ -353,16 +341,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
-        /// <param name="valueLength">value length that has been updated</param>
-        /// <param name="ascii">whether ascii</param>
-        public unsafe int PublishNow(byte* key, byte* value, int valueLength, bool ascii)
+        public unsafe int PublishNow(ArgSlice key, ArgSlice value)
         {
             if (subscriptions == null && patternSubscriptions == null) return 0;
-
-            var start = key;
-            Skip(ref key);
-            var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
-            return Broadcast(keyBytes, value, valueLength);
+            return Broadcast(key, value);
         }
 
         /// <summary>
@@ -441,17 +423,14 @@ namespace Garnet.server
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 var noOfFoundChannels = 0;
-                var pattern = input.parseState.GetArgSliceByRef(0).SpanByte;
-                var patternPtr = pattern.ToPointer() - sizeof(int);
-                *(int*)patternPtr = pattern.Length;
+                var pattern = input.parseState.GetArgSliceByRef(0);
 
                 foreach (var key in subscriptions.Keys)
                 {
                     fixed (byte* keyPtr = key)
                     {
                         var endKeyPtr = keyPtr;
-                        var _patternPtr = patternPtr;
-                        if (Match(ref ReadByRef(ref endKeyPtr), ref ReadByRef(ref _patternPtr)))
+                        if (Match(new ArgSlice(keyPtr, key.Length), pattern))
                         {
                             while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -575,13 +554,17 @@ namespace Garnet.server
 
         unsafe void Skip(ref byte* src)
         {
-            src += Unsafe.AsRef<SpanByte>(src).TotalSize;
+            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            src += ret.TotalSize;
         }
 
-        /// <inheritdoc />
-        unsafe bool Match(ref SpanByte k, ref SpanByte pattern)
+        unsafe bool Match(ArgSlice key, byte[] pattern)
         {
-            return GlobUtils.Match(pattern.ToPointer(), pattern.LengthWithoutMetadata, k.ToPointer(), k.LengthWithoutMetadata);
+            fixed (byte* p = pattern)
+                return Match(key, new ArgSlice(p, pattern.Length));
         }
+
+        unsafe bool Match(ArgSlice key, ArgSlice pattern)
+            => GlobUtils.Match(pattern.ptr, pattern.length, key.ptr, key.length);
     }
 }
