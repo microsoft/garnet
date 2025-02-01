@@ -1892,7 +1892,7 @@ namespace Garnet.server
                     return RespCommand.COMMAND_GETKEYSANDFLAGS;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
                                               Encoding.UTF8.GetString(subCommand),
                                               nameof(RespCommand.COMMAND));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
