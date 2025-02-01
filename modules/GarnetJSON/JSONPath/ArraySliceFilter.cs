@@ -4,12 +4,34 @@ using System.Text.Json.Nodes;
 
 namespace GarnetJSON.JSONPath
 {
+    /// <summary>
+    /// Represents a filter that slices an array based on the specified start, end, and step values. Eg .[1:5:2]
+    /// </summary>
     internal class ArraySliceFilter : PathFilter
     {
+        /// <summary>
+        /// Gets or sets the start index of the slice.
+        /// </summary>
         public int? Start { get; set; }
+
+        /// <summary>
+        /// Gets or sets the end index of the slice.
+        /// </summary>
         public int? End { get; set; }
+
+        /// <summary>
+        /// Gets or sets the step value of the slice.
+        /// </summary>
         public int? Step { get; set; }
 
+        /// <summary>
+        /// Executes the filter on the specified JSON node.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current JSON node.</param>
+        /// <param name="settings">The settings for JSON selection.</param>
+        /// <returns>An enumerable of JSON nodes that match the filter.</returns>
+        /// <exception cref="JsonException">Thrown when the step value is zero or when no match is found and ErrorWhenNoMatch is true.</exception>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
         {
             if (Step == 0)
@@ -72,6 +94,14 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Executes the filter on the specified enumerable of JSON nodes.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current enumerable of JSON nodes.</param>
+        /// <param name="settings">The settings for JSON selection.</param>
+        /// <returns>An enumerable of JSON nodes that match the filter.</returns>
+        /// <exception cref="JsonException">Thrown when the step value is zero or when no match is found and ErrorWhenNoMatch is true.</exception>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
         {
             if (Step == 0)
@@ -138,6 +168,13 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Determines whether the specified index is valid based on the stop index and step direction.
+        /// </summary>
+        /// <param name="index">The current index.</param>
+        /// <param name="stopIndex">The stop index.</param>
+        /// <param name="positiveStep">A value indicating whether the step is positive.</param>
+        /// <returns><c>true</c> if the index is valid; otherwise, <c>false</c>.</returns>
         private bool IsValid(int index, int stopIndex, bool positiveStep)
         {
             if (positiveStep)

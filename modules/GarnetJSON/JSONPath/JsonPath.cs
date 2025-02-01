@@ -120,6 +120,9 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Parses the main JSON Path expression and builds the filter list.
+        /// </summary>
         private void ParseMain()
         {
             int currentPartStartIndex = _currentIndex;
@@ -161,6 +164,13 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Parses a path segment and adds appropriate filters to the filter list.
+        /// </summary>
+        /// <param name="filters">The list to add parsed filters to.</param>
+        /// <param name="currentPartStartIndex">The starting index of the current path segment.</param>
+        /// <param name="query">Indicates if parsing within a query context.</param>
+        /// <returns>True if parsing reached the end of the expression; otherwise, false.</returns>
         private bool ParsePath(List<PathFilter> filters, int currentPartStartIndex, bool query)
         {
             bool scan = false;
@@ -270,12 +280,24 @@ namespace GarnetJSON.JSONPath
             return atPathEnd;
         }
 
+        /// <summary>
+        /// Creates a path filter based on the member name and scan flag.
+        /// </summary>
+        /// <param name="member">The member name for the filter.</param>
+        /// <param name="scan">Indicates if this is a scan operation.</param>
+        /// <returns>A new PathFilter instance.</returns>
         private static PathFilter CreatePathFilter(string? member, bool scan)
         {
             PathFilter filter = (scan) ? (PathFilter)new ScanFilter(member) : new FieldFilter(member);
             return filter;
         }
 
+        /// <summary>
+        /// Parses an indexer expression starting with '[' or '('.
+        /// </summary>
+        /// <param name="indexerOpenChar">The opening character of the indexer.</param>
+        /// <param name="scan">Indicates if this is a scan operation.</param>
+        /// <returns>A PathFilter representing the parsed indexer.</returns>
         private PathFilter ParseIndexer(char indexerOpenChar, bool scan)
         {
             _currentIndex++;
@@ -300,6 +322,11 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Parses an array indexer expression, supporting single index, multiple indexes, or slice notation.
+        /// </summary>
+        /// <param name="indexerCloseChar">The closing character of the indexer.</param>
+        /// <returns>A PathFilter representing the array indexer.</returns>
         private PathFilter ParseArrayIndexer(char indexerCloseChar)
         {
             int start = _currentIndex;
@@ -457,6 +484,9 @@ namespace GarnetJSON.JSONPath
             throw new JsonException("Path ended with open indexer.");
         }
 
+        /// <summary>
+        /// Advances the current index past any whitespace characters.
+        /// </summary>
         private void EatWhitespace()
         {
             while (_currentIndex < _expression.Length)
@@ -470,6 +500,12 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Parses a query expression within an indexer.
+        /// </summary>
+        /// <param name="indexerCloseChar">The closing character of the indexer.</param>
+        /// <param name="scan">Indicates if this is a scan operation.</param>
+        /// <returns>A QueryFilter or QueryScanFilter based on the parsed expression.</returns>
         private PathFilter ParseQuery(char indexerCloseChar, bool scan)
         {
             _currentIndex++;
@@ -503,6 +539,11 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Attempts to parse an expression starting with '$' or '@'.
+        /// </summary>
+        /// <param name="expressionPath">When successful, contains the list of filters for the expression.</param>
+        /// <returns>True if successfully parsed an expression; otherwise, false.</returns>
         private bool TryParseExpression(out List<PathFilter>? expressionPath)
         {
             if (_expression[_currentIndex] == '$')
@@ -529,11 +570,19 @@ namespace GarnetJSON.JSONPath
             return true;
         }
 
+        /// <summary>
+        /// Creates a JsonException for unexpected characters encountered during parsing.
+        /// </summary>
+        /// <returns>A new JsonException with details about the unexpected character.</returns>
         private JsonException CreateUnexpectedCharacterException()
         {
             return new JsonException("Unexpected character while parsing path query: " + _expression[_currentIndex]);
         }
 
+        /// <summary>
+        /// Parses one side of a query expression.
+        /// </summary>
+        /// <returns>An object representing either a path filter list or a value.</returns>
         private object? ParseSide()
         {
             EatWhitespace();
@@ -557,6 +606,10 @@ namespace GarnetJSON.JSONPath
             throw CreateUnexpectedCharacterException();
         }
 
+        /// <summary>
+        /// Parses a complete query expression, including boolean operations.
+        /// </summary>
+        /// <returns>A QueryExpression representing the parsed expression.</returns>
         private QueryExpression ParseExpression()
         {
             QueryExpression? rootExpression = null;
@@ -644,6 +697,11 @@ namespace GarnetJSON.JSONPath
             throw new JsonException("Path ended with open query.");
         }
 
+        /// <summary>
+        /// Attempts to parse a JSON value (string, number, boolean, or null).
+        /// </summary>
+        /// <param name="value">When successful, contains the parsed JsonValue.</param>
+        /// <returns>True if successfully parsed a value; otherwise, false.</returns>
         private bool TryParseValue(out JsonValue? value)
         {
             char currentChar = _expression[_currentIndex];
@@ -716,6 +774,10 @@ namespace GarnetJSON.JSONPath
             return false;
         }
 
+        /// <summary>
+        /// Reads a quoted string value, handling escape sequences.
+        /// </summary>
+        /// <returns>The parsed string value.</returns>
         private string ReadQuotedString()
         {
             StringBuilder sb = new StringBuilder();
@@ -776,6 +838,10 @@ namespace GarnetJSON.JSONPath
             throw new JsonException("Path ended with an open string.");
         }
 
+        /// <summary>
+        /// Reads a regular expression string, including any flags.
+        /// </summary>
+        /// <returns>The complete regular expression string including delimiters and flags.</returns>
         private string ReadRegexString()
         {
             int startIndex = _currentIndex;
@@ -819,6 +885,11 @@ namespace GarnetJSON.JSONPath
             throw new JsonException("Path ended with an open regex.");
         }
 
+        /// <summary>
+        /// Attempts to match a specific string at the current position.
+        /// </summary>
+        /// <param name="s">The string to match.</param>
+        /// <returns>True if the string matches at the current position; otherwise, false.</returns>
         private bool Match(string s)
         {
             int currentPosition = _currentIndex;
@@ -838,6 +909,10 @@ namespace GarnetJSON.JSONPath
             return true;
         }
 
+        /// <summary>
+        /// Parses a comparison operator in a query expression.
+        /// </summary>
+        /// <returns>The QueryOperator enum value representing the parsed operator.</returns>
         private QueryOperator ParseOperator()
         {
             if (_currentIndex + 1 >= _expression.Length)
@@ -889,6 +964,12 @@ namespace GarnetJSON.JSONPath
             throw new JsonException("Could not read query operator.");
         }
 
+        /// <summary>
+        /// Parses a quoted field name in an indexer, supporting single or multiple field names.
+        /// </summary>
+        /// <param name="indexerCloseChar">The closing character of the indexer.</param>
+        /// <param name="scan">Indicates if this is a scan operation.</param>
+        /// <returns>A PathFilter representing the field(s) access.</returns>
         private PathFilter ParseQuotedField(char indexerCloseChar, bool scan)
         {
             List<string>? fields = null;
@@ -935,6 +1016,11 @@ namespace GarnetJSON.JSONPath
             throw new JsonException("Path ended with open indexer.");
         }
 
+        /// <summary>
+        /// Ensures that there are remaining characters to parse in the expression.
+        /// </summary>
+        /// <param name="message">The error message to use if the check fails.</param>
+        /// <exception cref="JsonException">Thrown when there are no remaining characters to parse.</exception>
         private void EnsureLength(string message)
         {
             if (_currentIndex >= _expression.Length)

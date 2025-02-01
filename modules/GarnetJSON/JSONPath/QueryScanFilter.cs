@@ -1,18 +1,33 @@
-using System.Collections;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace GarnetJSON.JSONPath
 {
+    /// <summary>
+    /// Represents a filter that scans and evaluates JSON nodes based on a query expression. Eg: ..[?(@.name == 'value')]
+    /// </summary>
     internal class QueryScanFilter : PathFilter
     {
+        /// <summary>
+        /// Gets or sets the query expression used to evaluate JSON nodes.
+        /// </summary>
         internal QueryExpression Expression;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="QueryScanFilter"/> class with the specified query expression.
+        /// </summary>
+        /// <param name="expression">The query expression to use for filtering JSON nodes.</param>
         public QueryScanFilter(QueryExpression expression)
         {
             Expression = expression;
         }
 
+        /// <summary>
+        /// Executes the filter on the specified JSON node and returns the matching nodes.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current JSON node to evaluate.</param>
+        /// <param name="settings">The settings to use for JSON selection.</param>
+        /// <returns>An enumerable collection of matching JSON nodes.</returns>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
         {
             if (Expression.IsMatch(root, current, settings))
@@ -65,6 +80,13 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Executes the filter on the specified collection of JSON nodes and returns the matching nodes.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The collection of current JSON nodes to evaluate.</param>
+        /// <param name="settings">The settings to use for JSON selection.</param>
+        /// <returns>An enumerable collection of matching JSON nodes.</returns>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
         {
             return current.SelectMany(x => ExecuteFilter(root, x, settings));

@@ -4,15 +4,33 @@ using System.Text.Json.Nodes;
 
 namespace GarnetJSON.JSONPath
 {
+    /// <summary>
+    /// Represents a filter that selects a specific field from a JSON object. Eg: .field
+    /// </summary>
     internal class FieldFilter : PathFilter
     {
+        /// <summary>
+        /// Gets or sets the name of the field to filter.
+        /// </summary>
         internal string? Name;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FieldFilter"/> class with the specified field name.
+        /// </summary>
+        /// <param name="name">The name of the field to filter.</param>
         public FieldFilter(string? name)
         {
             Name = name;
         }
 
+        /// <summary>
+        /// Executes the filter on the specified JSON node.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current JSON node.</param>
+        /// <param name="settings">The settings for JSON selection.</param>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
+        /// <exception cref="JsonException">Thrown when the specified field does not exist and <see cref="JsonSelectSettings.ErrorWhenNoMatch"/> is set to true.</exception>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
         {
             if (current is JsonObject obj)
@@ -44,6 +62,13 @@ namespace GarnetJSON.JSONPath
             return [];
         }
 
+        /// <summary>
+        /// Executes the filter on the specified enumerable of JSON nodes.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current enumerable of JSON nodes.</param>
+        /// <param name="settings">The settings for JSON selection.</param>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
         {
             var hasCount = current.TryGetNonEnumeratedCount(out int count);
@@ -62,6 +87,13 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Executes the filter on multiple JSON nodes.
+        /// </summary>
+        /// <param name="current">The current enumerable of JSON nodes.</param>
+        /// <param name="errorWhenNoMatch">Indicates whether to throw an exception when no match is found.</param>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
+        /// <exception cref="JsonException">Thrown when the specified field does not exist and <paramref name="errorWhenNoMatch"/> is set to true.</exception>
         private IEnumerable<JsonNode?> ExecuteFilterMultiple(IEnumerable<JsonNode?> current, bool errorWhenNoMatch)
         {
             foreach (var item in current)

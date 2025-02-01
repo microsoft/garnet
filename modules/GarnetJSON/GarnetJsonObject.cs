@@ -8,7 +8,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Garnet.server;
 using GarnetJSON.JSONPath;
-using Microsoft.Extensions.Logging;
 
 namespace GarnetJSON
 {
@@ -105,6 +104,16 @@ namespace GarnetJSON
             byte* pattern = default, int patternLength = 0, bool isNoValue = false) =>
             throw new NotImplementedException();
 
+        /// <summary>
+        /// Tries to get the JSON values for the specified paths and writes them to the output stream.
+        /// </summary>
+        /// <param name="paths">The JSON paths to get the values for.</param>
+        /// <param name="output">The output stream to write the values to.</param>
+        /// <param name="errorMessage">The error message if the operation fails.</param>
+        /// <param name="indent">The string to use for indentation.</param>
+        /// <param name="newLine">The string to use for new lines.</param>
+        /// <param name="space">The string to use for spaces.</param>
+        /// <returns>True if the operation is successful; otherwise, false.</returns>
         public bool TryGet(ReadOnlySpan<ArgSlice> paths, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
         {
             if (paths.Length == 1)
@@ -138,6 +147,16 @@ namespace GarnetJSON
             return true;
         }
 
+        /// <summary>
+        /// Tries to get the JSON value for the specified path and writes it to the output stream.
+        /// </summary>
+        /// <param name="path">The JSON path to get the value for.</param>
+        /// <param name="output">The output stream to write the value to.</param>
+        /// <param name="errorMessage">The error message if the operation fails.</param>
+        /// <param name="indent">The string to use for indentation.</param>
+        /// <param name="newLine">The string to use for new lines.</param>
+        /// <param name="space">The string to use for spaces.</param>
+        /// <returns>True if the operation is successful; otherwise, false.</returns>
         public bool TryGet(ReadOnlySpan<byte> path, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
         {
             try

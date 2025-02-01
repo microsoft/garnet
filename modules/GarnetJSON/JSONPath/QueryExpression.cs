@@ -1,17 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Text.RegularExpressions;
-using System.Diagnostics;
+﻿using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
-using System.Linq;
 using System.Text.Json;
-using System.Runtime.InteropServices;
 using System.Diagnostics.CodeAnalysis;
 
 namespace GarnetJSON.JSONPath
 {
+    /// <summary>
+    /// Represents the various query operators that can be used in JSONPath queries.
+    /// </summary>
     internal enum QueryOperator
     {
         None = 0,
@@ -29,27 +25,61 @@ namespace GarnetJSON.JSONPath
         StrictNotEquals = 12
     }
 
+    /// <summary>
+    /// Abstract base class for query expressions used in JSONPath queries.
+    /// </summary>
     internal abstract class QueryExpression
     {
+        /// <summary>
+        /// Gets or sets the query operator for the expression.
+        /// </summary>
         internal QueryOperator Operator;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="QueryExpression"/> class with the specified operator.
+        /// </summary>
+        /// <param name="operator">The query operator.</param>
         public QueryExpression(QueryOperator @operator)
         {
             Operator = @operator;
         }
 
+        /// <summary>
+        /// Determines whether the specified JSON node matches the query expression.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="t">The target JSON node.</param>
+        /// <param name="settings">The JSON select settings.</param>
+        /// <returns><c>true</c> if the JSON node matches the query expression; otherwise, <c>false</c>.</returns>
         public abstract bool IsMatch(JsonNode root, JsonNode? t, JsonSelectSettings? settings = null);
     }
 
+    /// <summary>
+    /// Represents a composite query expression that combines multiple expressions using a logical operator.
+    /// </summary>
     internal class CompositeExpression : QueryExpression
     {
+        /// <summary>
+        /// Gets or sets the list of query expressions.
+        /// </summary>
         public List<QueryExpression> Expressions { get; set; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CompositeExpression"/> class with the specified operator.
+        /// </summary>
+        /// <param name="operator">The query operator.</param>
         public CompositeExpression(QueryOperator @operator) : base(@operator)
         {
             Expressions = new List<QueryExpression>();
         }
 
+        /// <summary>
+        /// Determines whether the specified JSON node matches the composite query expression.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="t">The target JSON node.</param>
+        /// <param name="settings">The JSON select settings.</param>
+        /// <returns><c>true</c> if the JSON node matches the composite query expression; otherwise, <c>false</c>.</returns>
         public override bool IsMatch(JsonNode root, JsonNode? t, JsonSelectSettings? settings = null)
         {
             switch (Operator)
@@ -78,17 +108,40 @@ namespace GarnetJSON.JSONPath
         }
     }
 
+    /// <summary>
+    /// Represents a boolean query expression that compares two values using a specified operator.
+    /// </summary>
     internal class BooleanQueryExpression : QueryExpression
     {
+        /// <summary>
+        /// Gets the left operand of the boolean expression.
+        /// </summary>
         public readonly object? Left;
+
+        /// <summary>
+        /// Gets the right operand of the boolean expression.
+        /// </summary>
         public readonly object? Right;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="BooleanQueryExpression"/> class with the specified operator and operands.
+        /// </summary>
+        /// <param name="operator">The query operator.</param>
+        /// <param name="left">The left operand.</param>
+        /// <param name="right">The right operand.</param>
         public BooleanQueryExpression(QueryOperator @operator, object? left, object? right) : base(@operator)
         {
             Left = left;
             Right = right;
         }
 
+        /// <summary>
+        /// Determines whether the specified JSON node matches the boolean query expression.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="t">The target JSON node.</param>
+        /// <param name="settings">The JSON select settings.</param>
+        /// <returns><c>true</c> if the JSON node matches the boolean query expression; otherwise, <c>false</c>.</returns>
         public override bool IsMatch(JsonNode root, JsonNode? t, JsonSelectSettings? settings = null)
         {
             if (Operator == QueryOperator.Exists)

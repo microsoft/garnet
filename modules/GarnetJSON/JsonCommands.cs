@@ -11,14 +11,37 @@ using Tsavorite.core;
 
 namespace GarnetJSON
 {
+    /// <summary>
+    /// Represents a custom function to set JSON values in the Garnet object store.
+    /// </summary>
     public class JsonSET : CustomObjectFunctions
     {
         private ILogger? logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="JsonSET"/> class.
+        /// </summary>
+        /// <param name="logger">The logger instance to use for logging.</param>
         public JsonSET(ILogger? logger = null) => this.logger = logger;
 
+        /// <summary>
+        /// Determines whether an initial update is needed.
+        /// </summary>
+        /// <param name="key">The key of the object.</param>
+        /// <param name="input">The input data.</param>
+        /// <param name="output">The output data.</param>
+        /// <returns>Always returns true.</returns>
         public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
 
+        /// <summary>
+        /// Updates the JSON object with the specified key and input.
+        /// </summary>
+        /// <param name="key">The key of the object.</param>
+        /// <param name="input">The input data.</param>
+        /// <param name="jsonObject">The JSON object to update.</param>
+        /// <param name="output">The output data.</param>
+        /// <param name="rmwInfo">Additional information for the update.</param>
+        /// <returns>True if the update is successful, otherwise false.</returns>
         public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(jsonObject is GarnetJsonObject);
@@ -69,12 +92,28 @@ namespace GarnetJSON
         }
     }
 
+    /// <summary>
+    /// Represents a custom function to get JSON values from the Garnet object store.
+    /// </summary>
     public class JsonGET : CustomObjectFunctions
     {
         private ILogger? logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="JsonGET"/> class.
+        /// </summary>
+        /// <param name="logger">The logger instance to use for logging.</param>
         public JsonGET(ILogger? logger = null) => this.logger = logger;
 
+        /// <summary>
+        /// Reads the JSON object with the specified key and input.
+        /// </summary>
+        /// <param name="key">The key of the object.</param>
+        /// <param name="input">The input data.</param>
+        /// <param name="value">The JSON object to read.</param>
+        /// <param name="output">The output data.</param>
+        /// <param name="readInfo">Additional information for the read operation.</param>
+        /// <returns>True if the read is successful, otherwise false.</returns>
         public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
             Debug.Assert(value is GarnetJsonObject);

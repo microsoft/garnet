@@ -3,15 +3,29 @@ using System.Text.Json.Nodes;
 
 namespace GarnetJSON.JSONPath;
 
+/// <summary>
+/// Represents a filter that scans through JSON nodes to find nodes matching with specified names. Eg: ..['name1', 'name2']
+/// </summary>
 internal class ScanMultipleFilter : PathFilter
 {
     private List<string> _names;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScanMultipleFilter"/> class with the specified names.
+    /// </summary>
+    /// <param name="names">The list of names to filter by.</param>
     public ScanMultipleFilter(List<string> names)
     {
         _names = names;
     }
 
+    /// <summary>
+    /// Executes the filter on the specified JSON node and returns the filtered nodes.
+    /// </summary>
+    /// <param name="root">The root JSON node.</param>
+    /// <param name="current">The current JSON node.</param>
+    /// <param name="settings">The JSON select settings.</param>
+    /// <returns>An enumerable of filtered JSON nodes.</returns>
     public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
     {
         IEnumerator? enumerator = null;
@@ -70,6 +84,13 @@ internal class ScanMultipleFilter : PathFilter
         }
     }
 
+    /// <summary>
+    /// Executes the filter on the specified enumerable of JSON nodes and returns the filtered nodes.
+    /// </summary>
+    /// <param name="root">The root JSON node.</param>
+    /// <param name="current">The enumerable of current JSON nodes.</param>
+    /// <param name="settings">The JSON select settings.</param>
+    /// <returns>An enumerable of filtered JSON nodes.</returns>
     public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
     {
         return current.SelectMany(x => ExecuteFilter(root, x, settings));

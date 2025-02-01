@@ -4,10 +4,24 @@ using System.Text.Json.Nodes;
 
 namespace GarnetJSON.JSONPath
 {
+    /// <summary>
+    /// Represents a filter that selects a specific index from a JSON array. Eg: .[0] or .[*]
+    /// </summary>
     internal class ArrayIndexFilter : PathFilter
     {
+        /// <summary>
+        /// Gets or sets the index to filter.
+        /// </summary>
         public int? Index { get; set; }
 
+        /// <summary>
+        /// Executes the filter on the given JSON node.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current JSON node.</param>
+        /// <param name="settings">The settings for JSON selection.</param>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
+        /// <exception cref="JsonException">Thrown when the index is not valid on the current node and errorWhenNoMatch is true.</exception>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
         {
             if (Index != null)
@@ -35,6 +49,13 @@ namespace GarnetJSON.JSONPath
             return [];
         }
 
+        /// <summary>
+        /// Executes the filter on the given enumerable of JSON nodes.
+        /// </summary>
+        /// <param name="root">The root JSON node.</param>
+        /// <param name="current">The current enumerable of JSON nodes.</param>
+        /// <param name="settings">The settings for JSON selection.</param>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
         {
             var hasCount = current.TryGetNonEnumeratedCount(out int count);
@@ -52,6 +73,13 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+        /// <summary>
+        /// Executes the filter on multiple JSON nodes.
+        /// </summary>
+        /// <param name="current">The current enumerable of JSON nodes.</param>
+        /// <param name="errorWhenNoMatch">Indicates whether to throw an error when no match is found.</param>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
+        /// <exception cref="JsonException">Thrown when the index is not valid on the current node and errorWhenNoMatch is true.</exception>
         private IEnumerable<JsonNode?> ExecuteFilterMultiple(IEnumerable<JsonNode?> current, bool errorWhenNoMatch)
         {
             foreach (var item in current)

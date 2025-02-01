@@ -152,6 +152,11 @@ namespace Garnet.server
             output.Item2 = len;
         }
 
+        /// <summary>
+        /// Writes bytes directly into a rented memory buffer without any encoding transformation.
+        /// </summary>
+        /// <param name="output">A tuple containing the memory owner and the length of written data.</param>
+        /// <param name="bytes">The source bytes to write.</param>
         public static unsafe void WriteDirect(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<byte> bytes)
         {
             output.Item1 = MemoryPool.Rent(bytes.Length);

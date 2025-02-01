@@ -34,7 +34,7 @@ namespace BDN.benchmark.Operations
 
         private static string GenerateLargeJson(int items)
         {
-            var data = new System.Text.StringBuilder();
+            var data = new StringBuilder();
             data.Append("{\"data\":[");
 
             for (int i = 0; i < items; i++)
