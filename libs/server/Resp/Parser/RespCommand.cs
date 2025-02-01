@@ -2096,7 +2096,7 @@ namespace Garnet.server
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
-                                              Encoding.UTF8.GetString(subCommand), 
+                                              Encoding.UTF8.GetString(subCommand),
                                               nameof(RespCommand.CLUSTER));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
@@ -2311,7 +2311,7 @@ namespace Garnet.server
                     return RespCommand.MODULE_LOADCS;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp, 
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
                                               Encoding.UTF8.GetString(subCommand),
                                               nameof(RespCommand.MODULE));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
