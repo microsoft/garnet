@@ -15,37 +15,30 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Broker used for PUB-SUB to Tsavorite KV store. There is a broker per TsavoriteKV instance.
-    /// A single broker can be used with multiple TsavoriteKVProviders. 
+    /// Broker used for pub/sub
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    /// <typeparam name="TValue"></typeparam>
-    /// <typeparam name="TKeyValueSerializer"></typeparam>
-    public sealed class SubscribeBroker<TKey, TValue, TKeyValueSerializer> : IDisposable
-        where TKeyValueSerializer : IKeySerializer<TKey>
+    public sealed class SubscribeBroker : IDisposable
     {
         private int sid = 0;
         private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        private ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)> prefixSubscriptions;
-        private AsyncQueue<(byte[], byte[])> publishQueue;
-        readonly IKeySerializer<TKey> keySerializer;
+        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> prefixSubscriptions;
+        readonly SpanByteKeySerializer spanByteSerializer;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
-        readonly ManualResetEvent done = new(true);
+        readonly ManualResetEvent done = new(false);
         bool disposed = false;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="keySerializer">Serializer for Prefix Match and serializing Key</param>
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="subscriberRefreshFrequencyMs">Subscriber log refresh frequency</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(IKeySerializer<TKey> keySerializer, string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true)
+        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true)
         {
-            this.keySerializer = keySerializer;
+            this.spanByteSerializer = new();
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
@@ -79,7 +72,7 @@ namespace Garnet.server
             }
         }
 
-        private unsafe int Broadcast(byte[] key, byte* valPtr, int valLength, bool ascii)
+        private unsafe int Broadcast(byte[] key, byte* valPtr, int valLength)
         {
             int numSubscribers = 0;
 
@@ -112,11 +105,10 @@ namespace Garnet.server
                             byte* subPrefixPtr = subscribedPrefixPtr;
                             byte* reqKeyPtr = ptr;
 
-                            bool match = keySerializer.Match(ref keySerializer.ReadKeyByRef(ref reqKeyPtr), ascii,
-                                ref keySerializer.ReadKeyByRef(ref subPrefixPtr), kvp.Value.Item1);
+                            bool match = spanByteSerializer.Match(ref spanByteSerializer.ReadByRef(ref reqKeyPtr), ref spanByteSerializer.ReadByRef(ref subPrefixPtr));
                             if (match)
                             {
-                                foreach (var sub in kvp.Value.Item2)
+                                foreach (var sub in kvp.Value)
                                 {
                                     byte* keyBytePtr = ptr;
                                     byte* nullBytePtr = null;
@@ -135,7 +127,7 @@ namespace Garnet.server
         {
             try
             {
-                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(ByteArrayComparer.Instance);
+                var uniqueKeys = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
                 using var iter = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
@@ -152,31 +144,28 @@ namespace Garnet.server
 
                         byte[] subscriptionKey;
                         byte[] subscriptionValue;
-                        byte[] ascii;
 
                         unsafe
                         {
                             fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
                             {
                                 var keyPtr = subscriptionKeyValueAsciiPtr;
-                                keySerializer.ReadKeyByRef(ref keyPtr);
+                                spanByteSerializer.Skip(ref keyPtr);
                                 int subscriptionKeyLength = (int)(keyPtr - subscriptionKeyValueAsciiPtr);
                                 int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
                                 subscriptionKey = new byte[subscriptionKeyLength];
                                 subscriptionValue = new byte[subscriptionValueLength];
-                                ascii = new byte[sizeof(bool)];
 
-                                fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0], asciiPtr = &ascii[0])
+                                fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0])
                                 {
                                     Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr, subscriptionKeyPtr, subscriptionKeyLength, subscriptionKeyLength);
                                     Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength, subscriptionValuePtr, subscriptionValueLength, subscriptionValueLength);
-                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength + subscriptionValueLength, asciiPtr, sizeof(bool), sizeof(bool));
                                 }
                             }
                         }
                         truncateUntilAddress = nextAddress;
                         if (!uniqueKeys.ContainsKey(subscriptionKey))
-                            uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
+                            uniqueKeys.Add(subscriptionKey, subscriptionValue);
                     }
 
                     if (truncateUntilAddress > log.BeginAddress)
@@ -188,12 +177,9 @@ namespace Garnet.server
                         while (enumerator.MoveNext())
                         {
                             byte[] keyBytes = enumerator.Current.Key;
-                            byte[] valBytes = enumerator.Current.Value.Item1;
-                            byte[] asciiBytes = enumerator.Current.Value.Item2;
-                            bool ascii = asciiBytes[0] != 0;
-
+                            byte[] valBytes = enumerator.Current.Value;
                             fixed (byte* valPtr = valBytes)
-                                Broadcast(keyBytes, valPtr, valBytes.Length, ascii);
+                                Broadcast(keyBytes, valPtr, valBytes.Length);
                         }
                         uniqueKeys.Clear();
                     }
@@ -205,6 +191,13 @@ namespace Garnet.server
             }
         }
 
+        void Initialize()
+        {
+            subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+            prefixSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+            Task.Run(() => Start(cts.Token));
+        }
+
         /// <summary>
         /// Subscribe to a particular Key
         /// </summary>
@@ -214,14 +207,12 @@ namespace Garnet.server
         public unsafe int Subscribe(ref byte* key, ServerSessionBase session)
         {
             var start = key;
-            keySerializer.ReadKeyByRef(ref key);
+            spanByteSerializer.Skip(ref key);
             var id = Interlocked.Increment(ref sid);
-            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
+
+            if (id == 1)
             {
-                done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
-                Task.Run(() => Start(cts.Token));
+                Initialize();
             }
             else
             {
@@ -244,23 +235,20 @@ namespace Garnet.server
         public unsafe int PSubscribe(ref byte* prefix, ServerSessionBase session, bool ascii = false)
         {
             var start = prefix;
-            keySerializer.ReadKeyByRef(ref prefix);
+            spanByteSerializer.Skip(ref prefix);
             var id = Interlocked.Increment(ref sid);
-            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
+            if (id == 1)
             {
-                done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
-                Task.Run(() => Start(cts.Token));
+                Initialize();
             }
             else
             {
                 while (prefixSubscriptions == null) Thread.Yield();
             }
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));
+            prefixSubscriptions.TryAdd(subscriptionPrefix, new ConcurrentDictionary<int, ServerSessionBase>());
             if (prefixSubscriptions.TryGetValue(subscriptionPrefix, out var val))
-                val.Item2.TryAdd(id, session);
+                val.TryAdd(id, session);
             return id;
         }
 
@@ -274,7 +262,7 @@ namespace Garnet.server
         {
             bool ret = false;
             var start = key;
-            keySerializer.ReadKeyByRef(ref key);
+            spanByteSerializer.Skip(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (subscriptions == null) return ret;
             if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
@@ -304,20 +292,20 @@ namespace Garnet.server
         public unsafe void PUnsubscribe(byte* key, ServerSessionBase session)
         {
             var start = key;
-            keySerializer.ReadKeyByRef(ref key);
+            spanByteSerializer.Skip(ref key);
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             if (prefixSubscriptions == null) return;
             if (prefixSubscriptions.ContainsKey(subscriptionKey))
             {
                 if (prefixSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
                 {
-                    foreach (var sid in subscriptionDict.Item2.Keys)
+                    foreach (var sid in subscriptionDict.Keys)
                     {
-                        if (subscriptionDict.Item2.TryGetValue(sid, out var _session))
+                        if (subscriptionDict.TryGetValue(sid, out var _session))
                         {
                             if (_session == session)
                             {
-                                subscriptionDict.Item2.TryRemove(sid, out _);
+                                subscriptionDict.TryRemove(sid, out _);
                                 break;
                             }
                         }
@@ -355,7 +343,7 @@ namespace Garnet.server
             List<byte[]> sessionPSubscriptions = new();
             foreach (var psubscription in prefixSubscriptions)
             {
-                if (psubscription.Value.Item2.Values.Contains(session))
+                if (psubscription.Value.Values.Contains(session))
                     sessionPSubscriptions.Add(psubscription.Key);
             }
 
@@ -374,9 +362,9 @@ namespace Garnet.server
             if (subscriptions == null && prefixSubscriptions == null) return 0;
 
             var start = key;
-            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
+            spanByteSerializer.Skip(ref key);
             var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
-            int numSubscribedSessions = Broadcast(keyBytes, value, valueLength, ascii);
+            int numSubscribedSessions = Broadcast(keyBytes, value, valueLength);
             return numSubscribedSessions;
         }
 
@@ -384,8 +372,7 @@ namespace Garnet.server
         /// Publish the update made to key to all the subscribers, asynchronously
         /// </summary>
         /// <param name="parseState">ParseState for publish message</param>
-        /// <param name="ascii">is payload ascii</param>
-        public unsafe void Publish(ref SessionParseState parseState, bool ascii = false)
+        public unsafe void Publish(ref SessionParseState parseState)
         {
             if (subscriptions == null && prefixSubscriptions == null) return;
 
@@ -399,9 +386,10 @@ namespace Garnet.server
             var valueLength = vSize + sizeof(int);
 
             var start = key;
-            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
+            spanByteSerializer.Skip(ref key);
+
             // TODO: this needs to be a single atomic enqueue
-            byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
+            byte[] logEntryBytes = new byte[(key - start) + valueLength];
             fixed (byte* logEntryBytePtr = &logEntryBytes[0])
             {
                 byte* dst = logEntryBytePtr;
@@ -409,8 +397,6 @@ namespace Garnet.server
                 dst += (key - start);
                 Buffer.MemoryCopy(value, dst, valueLength, valueLength);
                 dst += valueLength;
-                byte* asciiPtr = (byte*)&ascii;
-                Buffer.MemoryCopy(asciiPtr, dst, sizeof(bool), sizeof(bool));
             }
 
             log.Enqueue(logEntryBytes);
@@ -468,7 +454,7 @@ namespace Garnet.server
                     {
                         var endKeyPtr = keyPtr;
                         var _patternPtr = patternPtr;
-                        if (keySerializer.Match(ref keySerializer.ReadKeyByRef(ref endKeyPtr), true, ref keySerializer.ReadKeyByRef(ref _patternPtr), true))
+                        if (spanByteSerializer.Match(ref spanByteSerializer.ReadByRef(ref endKeyPtr), ref spanByteSerializer.ReadByRef(ref _patternPtr)))
                         {
                             while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

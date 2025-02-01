@@ -189,7 +189,7 @@ namespace Garnet.server
             long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            SubscribeBroker subscribeBroker,
             IGarnetAuthenticator authenticator,
             bool enableScripts)
             : base(networkSender)

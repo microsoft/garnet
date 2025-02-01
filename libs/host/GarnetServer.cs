@@ -44,7 +44,7 @@ namespace Garnet
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
-        private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        private SubscribeBroker subscribeBroker;
         private KVSettings<SpanByte, SpanByte> kvSettings;
         private KVSettings<byte[], IGarnetObject> objKvSettings;
         private INamedDeviceFactory logFactory;
@@ -228,7 +228,7 @@ namespace Garnet
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
 
             CreateAOF();
 

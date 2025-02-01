@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -11,28 +10,26 @@ namespace Garnet.server
     /// <summary>
     /// Serializer for SpanByte.
     /// </summary>
-    public sealed unsafe class SpanByteKeySerializer : IKeySerializer<SpanByte>
+    public sealed unsafe class SpanByteKeySerializer
     {
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadKeyByRef(ref byte* src)
+        public ref SpanByte ReadByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
             src += ret.TotalSize;
             return ref ret;
         }
 
-        /// <inheritdoc />
-        public bool Match(ref SpanByte k, bool asciiKey, ref SpanByte pattern, bool asciiPattern)
+        public void Skip(ref byte* src)
         {
-            if (asciiKey && asciiPattern)
-            {
-                return GlobUtils.Match(pattern.ToPointer(), pattern.LengthWithoutMetadata, k.ToPointer(), k.LengthWithoutMetadata);
-            }
+            src += Unsafe.AsRef<SpanByte>(src).TotalSize;
+        }
 
-            if (pattern.LengthWithoutMetadata > k.LengthWithoutMetadata)
-                return false;
-            return pattern.AsReadOnlySpan().SequenceEqual(k.AsReadOnlySpan().Slice(0, pattern.LengthWithoutMetadata));
+        /// <inheritdoc />
+        public bool Match(ref SpanByte k, ref SpanByte pattern)
+        {
+            return GlobUtils.Match(pattern.ToPointer(), pattern.LengthWithoutMetadata, k.ToPointer(), k.LengthWithoutMetadata);
         }
     }
 }

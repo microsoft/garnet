@@ -14,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        readonly SubscribeBroker subscribeBroker;
         bool isSubscriptionSession = false;
         int numActiveChannels = 0;
 
@@ -182,9 +182,7 @@ namespace Garnet.server
             // SUBSCRIBE|SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                ref var key = ref parseState.GetArgSliceByRef(c);
 
                 if (disabledBroker)
                     continue;
@@ -195,15 +193,14 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(header, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
 
                 numActiveChannels++;
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
-                *(int*)keyPtr = kSize;
-                _ = subscribeBroker.Subscribe(ref keyPtr, this);
+                _ = subscribeBroker.Subscribe(ref key.ptr, this);
             }
 
             if (disabledBroker)
