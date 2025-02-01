@@ -88,4 +88,3 @@ namespace GarnetJSON.JSONPath
         }
     }
 }
-}
