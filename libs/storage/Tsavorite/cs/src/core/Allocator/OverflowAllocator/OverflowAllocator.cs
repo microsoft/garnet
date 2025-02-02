@@ -38,14 +38,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get the allocated size of this block. In-use size is tracked by caller.</summary>
-        public int GetAllocatedSize(long address) => (*((BlockHeader*)address - 1)).Size;
+        public int GetAllocatedSize(long address) => (*((BlockHeader*)address - 1)).BlockSize;
 
         internal void Free(long address)
         {
-            if (GetAllocatedSize(address) <= FixedSizePages.MaxBlockSize)
-                fixedSizePages.Free((byte*)address);
+            var blockPtr = BlockHeader.FromUserAddress(address);
+            if (blockPtr->BlockSize <= FixedSizePages.MaxBlockSize)
+                fixedSizePages.Free(blockPtr);
             else
-                oversizePages.Free((byte*)address);
+                oversizePages.Free(blockPtr);
         }
 
         /// <summary>Clears and frees all allocations and prepares for reuse</summary>

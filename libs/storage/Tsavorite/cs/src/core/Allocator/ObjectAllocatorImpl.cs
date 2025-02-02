@@ -29,23 +29,23 @@ namespace Tsavorite.core
             internal readonly OverflowAllocator overflowAllocator { get; init; }
             internal readonly ObjectIdMap<TValue> objectIdMap { get; init; }
 
-            public ObjectPage(int fixedPageSize)
+            public ObjectPage(int fixedPageSize, int maxRecordCount)
             {
                 overflowAllocator = new(fixedPageSize);
-                //objectIdMap = new();
+                objectIdMap = new(maxRecordCount);
             }
 
             internal readonly void Clear()
             {
-                //overflowAllocator.Clear();
-                //objectIdMap.Clear();
+                overflowAllocator?.Clear();
+                objectIdMap?.Clear();
             }
         }
 
         internal ObjectPage[] values;
 
         readonly int maxInlineKeySize;
-        readonly int overflowAllocatorPageSize;
+        readonly int overflowAllocatorFixedPageSize;
 
         // Size of object chunks being written to storage
         private readonly int objectBlockSize = 100 * (1 << 20);
@@ -53,7 +53,7 @@ namespace Tsavorite.core
         // RecordSize and Value size are constant; only the key size is variable.
         private static int FixedValueSize => ObjectIdMap.ObjectIdSize;
 
-        /// <summary>Minimum size of a record: header, key (length and 4 bytes), and Value Id. Does not include optional fields such as DBId, ETag, Expiration, or FillerLen.</summary>
+        /// <summary>Minimum size of a record: header, key (length and 4 bytes), and Value Id. Does not include optional fields such as ETag, Expiration, or FillerLen.</summary>
         private static int MinRecordSize => RecordInfo.GetLength() + (sizeof(int) * 2) + ObjectIdMap.ObjectIdSize;
 
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
@@ -61,17 +61,22 @@ namespace Tsavorite.core
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TValue, TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            values = new ObjectPage[BufferSize];
-
             // TODO: Verify LogSettings.MaxInlineKeySizeBits and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
+            overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
 
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
+
+            // TODO: Make ObjectIdMap use a freelist similar to OversizePages, and perhaps start smaller and make it resizable like OversizePages
+            var maxRecordCount = PageSize / MinRecordSize;
+
+            values = new ObjectPage[BufferSize];
+            for (var ii = 0; ii < BufferSize; ++ii)
+                values[ii] = new(overflowAllocatorFixedPageSize, maxRecordCount);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -102,7 +107,7 @@ namespace Tsavorite.core
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
             values[index] = new()
             {
-                overflowAllocator = new(overflowAllocatorPageSize),
+                overflowAllocator = new(overflowAllocatorFixedPageSize),
                 objectIdMap = new (PageSize / MinRecordSize)
             };
         }
@@ -140,7 +145,7 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, int _ /* valueTotalSize */) => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = 0;
+        public static void InitializeValue(long physicalAddress, int _ /* valueTotalSize */) => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)

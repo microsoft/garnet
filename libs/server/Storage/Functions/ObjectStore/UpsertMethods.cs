@@ -12,7 +12,7 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool SingleWriter(ref LogRecord<IGarnetObject> dstLogRecord, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => dstLogRecord.TrySetValueObject(srcValue);    // TODO does this need to check Expiration?
+            => dstLogRecord.TrySetValueObject(srcValue);
 
         /// <inheritdoc />
         public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)

@@ -50,10 +50,10 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal byte* Allocate(int size, bool zeroInit)
+            internal byte* Allocate(int userSize, bool zeroInit)
             {
-                size = BlockHeader.PromoteSize(size);
-                var ptr = PopFromFreeList(size, zeroInit);
+                var blockSize = BlockHeader.PromoteSize(userSize);
+                var ptr = PopFromFreeList(blockSize, userSize, zeroInit);
                 if (ptr != null)
                     return ptr;
 
@@ -63,14 +63,14 @@ namespace Tsavorite.core
                 while (true)
                 { 
                     // See if it fits on the current last page. This also applies to the "no pages allocated" case, because we initialize tailPageOffset.Offset to out-of-range
-                    while (localPageOffset.Offset + size < PageSize)
+                    while (localPageOffset.Offset + blockSize < PageSize)
                     {
                         // Fast path; simple offset pointer advance. If it fails, someone else advanced the pointer, so retry.
-                        if (Interlocked.CompareExchange(ref PageVector.TailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + size, localPageOffset.PageAndOffset)
+                        if (Interlocked.CompareExchange(ref PageVector.TailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + blockSize, localPageOffset.PageAndOffset)
                             == localPageOffset.PageAndOffset)
                         {
                             var blockPtr = (BlockHeader*)PageVector.Pages[localPageOffset.Page] + localPageOffset.Offset;
-                            return ReturnBlockPointer(blockPtr, size, zeroInit);
+                            return BlockHeader.Initialize(blockPtr, blockSize, userSize, zeroInit);
                         }
 
                         // Re-get the PageVector's PageAndOffset and retry the loop.
@@ -86,17 +86,6 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private static byte* ReturnBlockPointer(BlockHeader* blockPtr, int size, bool zeroInit)
-            {
-                size -= sizeof(BlockHeader);
-                blockPtr->Size = size;
-                ++blockPtr;
-                if (zeroInit)
-                    NativeMemory.Clear(blockPtr, (nuint)size);
-                return (byte*)blockPtr;
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private int FindBin(int size)
             {
                 // The bin count is small enough we can just linear-scan both to get to the first big-enough slot (we are optimized for small keys,
@@ -108,10 +97,10 @@ namespace Tsavorite.core
                 return bin;
             }
 
-            private byte* PopFromFreeList(int size, bool zeroInit)
+            private byte* PopFromFreeList(int blockSize, int userSize, bool zeroInit)
             {
                 // Size is assumed to have sizeof(BlockHeader) already added to the user request.
-                var bin = FindBin(size);
+                var bin = FindBin(blockSize);
 
                 var initialBin = bin;
                 do
@@ -130,7 +119,7 @@ namespace Tsavorite.core
                                 var splitPtr = head + halfCurrentBinSize;
                                 PushToFreeList((BlockHeader*)splitPtr, bin - 1);
                             }
-                            return ReturnBlockPointer((BlockHeader*)head, size, zeroInit);
+                            return BlockHeader.InitializeFixedSize((BlockHeader*)head, blockSize, userSize, zeroInit);
                         }
                     }
                     ++bin;
@@ -152,11 +141,10 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Free(byte* block)
+            internal void Free(BlockHeader* blockPtr)
             {
                 // BlockHeader.Size has sizeof(BlockHeader) added to the user request.
-                var blockHeader = (BlockHeader*)block - 1;
-                PushToFreeList(blockHeader, FindBin(blockHeader->Size));
+                PushToFreeList(blockPtr, FindBin(blockPtr->BlockSize));
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

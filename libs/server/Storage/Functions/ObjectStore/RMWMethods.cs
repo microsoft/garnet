@@ -228,7 +228,8 @@ namespace Garnet.server
                     // Expire will have allocated space for the expiration, so copy it over and do the "in-place" logic to replace it in the new record
                     if (srcLogRecord.Info.HasExpiration)
                         dstLogRecord.TrySetExpiration(srcLogRecord.Expiration);
-                    EvaluateObjectExpireInPlace(ref dstLogRecord, optionType, expiryTicks, ref output);
+                    if (!EvaluateObjectExpireInPlace(ref dstLogRecord, optionType, expiryTicks, ref output))
+                        return false;
                     break;
 
                 case GarnetObjectType.Persist:
@@ -244,7 +245,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
+                        _ = value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
                         if (removeKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;

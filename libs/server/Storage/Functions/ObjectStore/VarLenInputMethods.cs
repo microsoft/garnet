@@ -14,38 +14,13 @@ namespace Garnet.server
         /// <inheritdoc/>
         public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref ObjectInput input)
         {
-            var fieldInfo = new RecordFieldInfo()
+            return new RecordFieldInfo()
             {
                 KeySize = key.TotalSize,
                 ValueSize = ObjectIdMap.ObjectIdSize
+                // No object commands take an Expiration for InitialUpdater.
+                // TODO ETag?
             };
-
-            switch (input.header.cmd)
-            {
-                case RespCommand.SETBIT:
-                case RespCommand.BITFIELD:
-                case RespCommand.PFADD:
-                case RespCommand.PFMERGE:
-                    return fieldInfo;
-
-                case RespCommand.SET:
-                case RespCommand.SETEXNX:
-                    fieldInfo.HasExpiration = input.arg1 != 0;
-                    return fieldInfo;
-
-                case RespCommand.SETKEEPTTL:
-                case RespCommand.SETRANGE:
-                case RespCommand.APPEND:
-                case RespCommand.INCR:
-                case RespCommand.DECR:
-                case RespCommand.INCRBY:
-                case RespCommand.DECRBY:
-                    return fieldInfo;
-
-                default:
-                     fieldInfo.HasExpiration = input.arg1 != 0;
-                    return fieldInfo;
-            }
         }
 
         /// <inheritdoc/>
@@ -59,78 +34,31 @@ namespace Garnet.server
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
-            if (input.header.cmd != RespCommand.NONE)
+            switch (input.header.type)
             {
-                var cmd = input.header.cmd;
-                switch (cmd)
-                {
-                    case RespCommand.INCR:
-                    case RespCommand.INCRBY:
-                    case RespCommand.DECR:
-                    case RespCommand.DECRBY:
-                    case RespCommand.INCRBYFLOAT:
-                    case RespCommand.SETBIT:
-                    case RespCommand.BITFIELD:
-                    case RespCommand.PFADD:
-                    case RespCommand.PFMERGE:
-                    case RespCommand.SETKEEPTTLXX:
-                    case RespCommand.SETKEEPTTL:
-                    case RespCommand.SET:
-                    case RespCommand.SETEXXX:
-                        return fieldInfo;
+                case GarnetObjectType.Expire:
+                case GarnetObjectType.PExpire:
+                    fieldInfo.HasExpiration = true;
+                    return fieldInfo;
 
-                    case RespCommand.PERSIST:
-                        fieldInfo.HasExpiration = false;
-                        return fieldInfo;
+                case GarnetObjectType.Persist:
+                    fieldInfo.HasExpiration = false;
+                    return fieldInfo;
 
-                    case RespCommand.EXPIRE:
-                    case RespCommand.PEXPIRE:
-                    case RespCommand.EXPIREAT:
-                    case RespCommand.PEXPIREAT:
-                        fieldInfo.HasExpiration = true;
-                        return fieldInfo;
-
-                    case RespCommand.SETRANGE:
-                    case RespCommand.GETDEL:
-                        return fieldInfo;
-
-                    case RespCommand.GETEX:
-                        fieldInfo.HasExpiration = input.arg1 > 0;
-                        return fieldInfo;
-
-                    case RespCommand.APPEND:
-                        return fieldInfo;
-
-                    default:
-                        if ((ushort)cmd >= CustomCommandManager.StartOffset)
-                        {
-                            fieldInfo.HasExpiration = input.arg1 != 0;
-                            return fieldInfo;
-                        }
-                        throw new GarnetException("Unsupported operation on input");
-                }
+                default:
+                    return fieldInfo;
             }
-
-            fieldInfo.HasExpiration = input.arg1 != 0;
-            return fieldInfo;
         }
 
         public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, IGarnetObject value, ref ObjectInput input)
         {
-            var fieldInfo = new RecordFieldInfo()
+            return new RecordFieldInfo()
             {
                 KeySize = key.TotalSize,
                 ValueSize = ObjectIdMap.ObjectIdSize
+                // No object commands take an Expiration for Upsert.
+                // TODO ETag?
             };
-
-            switch (input.header.cmd)
-            {
-                case RespCommand.SET:
-                case RespCommand.SETEX:
-                    fieldInfo.HasExpiration = input.arg1 != 0;
-                    break;
-            }
-            return fieldInfo;
         }
     }
 }

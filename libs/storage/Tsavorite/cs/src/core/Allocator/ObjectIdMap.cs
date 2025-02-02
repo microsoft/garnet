@@ -50,7 +50,7 @@ namespace Tsavorite.core
         // Returns a reference to the slot's object.
         internal ref TValue GetRef(int objectId)
         {
-            Debug.Assert(objectId > 0 && objectId < tail, "Invalid objectId");
+            Debug.Assert(objectId >= 0 && objectId <= tail, "Invalid objectId");
             return ref objectVector[objectId];
         }
         public void Clear() => Array.Clear(objectVector, 0, tail);

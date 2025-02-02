@@ -31,7 +31,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal byte* Allocate(int size, bool zeroInit)
             {
-                size = OversizePageHeader.PromoteSize(size);
+                size = BlockHeader.PromoteSize(size);
 
                 BlockHeader* blockPtr;
                 int pageSlot;
@@ -47,7 +47,7 @@ namespace Tsavorite.core
                         localPageOffset.PageAndOffset = PageVector.TailPageOffset.PageAndOffset;
                     }
                 }
-                return OversizePageHeader.Initialize((OversizePageHeader*)blockPtr, size, zeroInit, pageSlot);
+                return BlockHeader.Initialize((BlockHeader*)blockPtr, size, pageSlot, zeroInit);
             }
 
             private bool PopFreeSlot(int size, out int slot)
@@ -59,7 +59,7 @@ namespace Tsavorite.core
                     if (slot == InvalidSlot)
                         return false;
 
-                    var next = ((OversizePageHeader*)PageVector.Pages[slot])->slot;
+                    var next = ((BlockHeader*)PageVector.Pages[slot])->NextSlot;
 
                     // Pages[slot] may have been reallocated by the time we try this CompareExchange, but in that case the freeList
                     // head will have changed and thus the CompareExchange will fail, so while 'next' may contain garbage (i.e. overwritten
@@ -70,22 +70,20 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PushFreeSlot(OversizePageHeader* pageHeader)
+            private void PushFreeSlot(BlockHeader* blockHeader)
             {
-                var slot = pageHeader->slot;
+                var slot = blockHeader->NextSlot;
                 int head;
                 do
                 {
-                    head = pageHeader->slot = freeList;
+                    head = blockHeader->NextSlot = freeList;
                 } while (Interlocked.CompareExchange(ref freeList, slot, head) != head);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Free(byte* block)
+            internal void Free(BlockHeader* blockPtr)
             {
-                // OversizePageHeader.BlockHeader.Size has sizeof(OversizePageHeader) added to the user request.
-                var pageHeader = (OversizePageHeader*)block - 1;
-                PushFreeSlot(pageHeader);
+                PushFreeSlot(blockPtr);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

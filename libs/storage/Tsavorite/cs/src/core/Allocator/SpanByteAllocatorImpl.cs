@@ -26,7 +26,7 @@ namespace Tsavorite.core
 
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
-        readonly int overflowAllocatorPageSize;
+        readonly int overflowAllocatorFixedPageSize;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
@@ -34,7 +34,7 @@ namespace Tsavorite.core
             // TODO: Verify LogSettings.MaxInlineKeySizeBits, .MaxInlineValueSizeBits, and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
-            overflowAllocatorPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
+            overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<OverflowAllocator>>(4, p => { });
 
@@ -43,6 +43,8 @@ namespace Tsavorite.core
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
 
             values = new OverflowAllocator[BufferSize];
+            for (var ii = 0; ii < BufferSize; ++ii)
+                values[ii] = new(overflowAllocatorFixedPageSize);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -74,7 +76,7 @@ namespace Tsavorite.core
             }
 
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new(overflowAllocatorPageSize);
+            values[index] = new(overflowAllocatorFixedPageSize);
         }
 
         void ReturnPage(int index)
