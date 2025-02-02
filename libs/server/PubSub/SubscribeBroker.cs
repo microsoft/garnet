@@ -22,7 +22,7 @@ namespace Garnet.server
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
-        readonly ManualResetEvent done = new(false);
+        readonly ManualResetEvent done = new(true);
         bool disposed = false;
 
         /// <summary>
@@ -148,6 +148,7 @@ namespace Garnet.server
 
         void Initialize()
         {
+            done.Reset();
             subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
             patternSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
             Task.Run(() => Start(cts.Token));
