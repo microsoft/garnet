@@ -115,7 +115,7 @@ namespace Garnet.server
         {
             try
             {
-                var uniqueKeys = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
+                var uniqueKeys = new HashSet<byte[]>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
                 using var iterator = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
@@ -126,50 +126,24 @@ namespace Garnet.server
                 {
                     await iterator.WaitAsync(cancellationToken).ConfigureAwait(false);
                     if (cancellationToken.IsCancellationRequested) break;
-                    while (iterator.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
-                    {
-                        if (currentAddress >= long.MaxValue) return;
-
-                        byte[] subscriptionKey;
-                        byte[] subscriptionValue;
-
-                        unsafe
-                        {
-                            fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
-                            {
-                                var keyPtr = subscriptionKeyValueAsciiPtr;
-                                Skip(ref keyPtr);
-                                int subscriptionKeyLength = (int)(keyPtr - subscriptionKeyValueAsciiPtr);
-                                int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
-                                subscriptionKey = new byte[subscriptionKeyLength];
-                                subscriptionValue = new byte[subscriptionValueLength];
-
-                                fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0])
-                                {
-                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr, subscriptionKeyPtr, subscriptionKeyLength, subscriptionKeyLength);
-                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength, subscriptionValuePtr, subscriptionValueLength, subscriptionValueLength);
-                                }
-                            }
-                        }
-                        truncateUntilAddress = nextAddress;
-                        if (!uniqueKeys.ContainsKey(subscriptionKey))
-                            uniqueKeys.Add(subscriptionKey, subscriptionValue);
-                    }
-
-                    if (truncateUntilAddress > log.BeginAddress)
-                        log.TruncateUntil(truncateUntilAddress);
-
                     unsafe
                     {
-                        var enumerator = uniqueKeys.GetEnumerator();
-                        while (enumerator.MoveNext())
+                        while (iterator.GetNext(out var logEntry, out _, out long currentAddress, out long nextAddress))
                         {
-                            byte[] keyBytes = enumerator.Current.Key;
-                            byte[] valBytes = enumerator.Current.Value;
-                            fixed (byte* keyPtr = keyBytes)
-                            fixed (byte* valPtr = valBytes)
-                                Broadcast(new ArgSlice(keyPtr, keyBytes.Length), new ArgSlice(valPtr, valBytes.Length));
+                            if (currentAddress >= long.MaxValue) return;
+                            fixed (byte* logEntryPtr = &logEntry[0])
+                            {
+                                var key = new ArgSlice(logEntryPtr + sizeof(int), *(int*)logEntryPtr);
+                                var value = new ArgSlice(logEntryPtr + sizeof(int) + key.length, *(int*)(logEntryPtr + sizeof(int) + key.Length));
+                                truncateUntilAddress = nextAddress;
+                                if (uniqueKeys.Add(key.ToArray()))
+                                    Broadcast(key, value);
+                            }
                         }
+
+                        if (truncateUntilAddress > log.BeginAddress)
+                            log.TruncateUntil(truncateUntilAddress);
+
                         uniqueKeys.Clear();
                     }
                 }
@@ -403,7 +377,7 @@ namespace Garnet.server
 
                     foreach (var key in subscriptions.Keys)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
+                        while (!RespWriteUtils.TryWriteBulkString(key.AsSpan(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     return;
@@ -415,7 +389,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                var noOfFoundChannels = 0;
+                var foundChannels = 0;
                 var pattern = input.parseState.GetArgSliceByRef(0);
 
                 foreach (var key in subscriptions.Keys)
@@ -425,14 +399,14 @@ namespace Garnet.server
                         var endKeyPtr = keyPtr;
                         if (Match(new ArgSlice(keyPtr, key.Length), pattern))
                         {
-                            while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
+                            while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            noOfFoundChannels++;
+                            foundChannels++;
                         }
                     }
                 }
 
-                if (noOfFoundChannels == 0)
+                if (foundChannels == 0)
                 {
                     curr = ptr;
                     while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
@@ -441,13 +415,13 @@ namespace Garnet.server
                 }
 
                 // Below code is to write the actual array length in the buffer
-                // And move the array elements to the start of the new array length if new array length is less than the max array length that we orginally write in the above line
+                // And move the array elements to the start of the new array length if new array length is less than the max array length that we originally write in the above line
                 var newTotalArrayHeaderLen = 0;
                 var _ptr = ptr;
                 // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
-                _ = RespWriteUtils.TryWriteArrayLength(noOfFoundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
+                _ = RespWriteUtils.TryWriteArrayLength(foundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
 
-                Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
+                Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array length in the buffer");
                 if (totalArrayHeaderLen != newTotalArrayHeaderLen)
                 {
                     var remainingLength = curr - ptr - totalArrayHeaderLen;
@@ -486,35 +460,27 @@ namespace Garnet.server
 
             try
             {
-                var numOfChannels = input.parseState.Count;
-                if (subscriptions is null || numOfChannels == 0)
+                var numChannels = input.parseState.Count;
+                if (subscriptions is null || numChannels == 0)
                 {
                     while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
 
-                while (!RespWriteUtils.TryWriteArrayLength(numOfChannels * 2, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(numChannels * 2, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                var currChannelIdx = 0;
-                while (currChannelIdx < numOfChannels)
+                for (int c = 0; c < numChannels; c++)
                 {
-                    var channelArg = input.parseState.GetArgSliceByRef(currChannelIdx);
-                    var channelSpan = channelArg.SpanByte;
-                    var channelPtr = channelSpan.ToPointer() - sizeof(int);  // Memory would have been already pinned
-                    *(int*)channelPtr = channelSpan.Length;
+                    var channel = input.parseState.GetArgSliceByRef(c);
 
-                    while (!RespWriteUtils.TryWriteBulkString(channelArg.ReadOnlySpan, ref curr, end))
+                    while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    var channel = new Span<byte>(channelPtr, channelSpan.Length + sizeof(int)).ToArray();
-
-                    subscriptions.TryGetValue(channel, out var subscriptionDict);
+                    subscriptions.TryGetValue(channel.ToArray(), out var subscriptionDict);
                     while (!RespWriteUtils.TryWriteInt32(subscriptionDict is null ? 0 : subscriptionDict.Count, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    currChannelIdx++;
                 }
             }
             finally
@@ -535,14 +501,6 @@ namespace Garnet.server
             patternSubscriptions?.Clear();
             log.Dispose();
             device.Dispose();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe ref SpanByte ReadByRef(ref byte* src)
-        {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += ret.TotalSize;
-            return ref ret;
         }
 
         unsafe void Skip(ref byte* src)
