@@ -130,7 +130,7 @@ namespace Garnet.server
                         while (iterator.GetNext(out var logEntry, out _, out long currentAddress, out long nextAddress))
                         {
                             if (currentAddress >= long.MaxValue) return;
-                            fixed (byte* logEntryPtr = &logEntry[0])
+                            fixed (byte* logEntryPtr = logEntry)
                             {
                                 var key = new ArgSlice(logEntryPtr + sizeof(int), *(int*)logEntryPtr);
                                 var value = new ArgSlice(logEntryPtr + sizeof(int) + key.length, *(int*)(logEntryPtr + sizeof(int) + key.Length));
@@ -324,8 +324,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var value = parseState.GetArgSliceByRef(1);
 
-            byte[] logEntry = new byte[2 * sizeof(int) + key.length + value.length];
-            fixed (byte* logEntryPtr = &logEntry[0])
+            var logEntry = new byte[sizeof(int) + key.length + sizeof(int) + value.length];
+            fixed (byte* logEntryPtr = logEntry)
             {
                 var dst = logEntryPtr;
 
