@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -322,30 +321,26 @@ namespace Garnet.server
         {
             if (subscriptions == null && patternSubscriptions == null) return;
 
-            var key = parseState.GetArgSliceByRef(0).ptr - sizeof(int);
-            var value = parseState.GetArgSliceByRef(1).ptr - sizeof(int);
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
 
-            var kSize = parseState.GetArgSliceByRef(0).Length;
-            var vSize = parseState.GetArgSliceByRef(1).Length;
-            *(int*)key = kSize;
-            *(int*)value = vSize;
-            var valueLength = vSize + sizeof(int);
-
-            var start = key;
-            Skip(ref key);
-
-            // TODO: this needs to be a single atomic enqueue
-            byte[] logEntryBytes = new byte[key - start + valueLength];
-            fixed (byte* logEntryBytePtr = &logEntryBytes[0])
+            byte[] logEntry = new byte[2 * sizeof(int) + key.length + value.length];
+            fixed (byte* logEntryPtr = &logEntry[0])
             {
-                byte* dst = logEntryBytePtr;
-                Buffer.MemoryCopy(start, dst, key - start, key - start);
-                dst += key - start;
-                Buffer.MemoryCopy(value, dst, valueLength, valueLength);
-                dst += valueLength;
+                var dst = logEntryPtr;
+
+                *(int*)dst = key.length;
+                dst += sizeof(int);
+                key.ReadOnlySpan.CopyTo(new Span<byte>(dst, key.length));
+                dst += key.length;
+
+                *(int*)dst = value.length;
+                dst += sizeof(int);
+                value.ReadOnlySpan.CopyTo(new Span<byte>(dst, value.length));
+                dst += value.length;
             }
 
-            log.Enqueue(logEntryBytes);
+            log.Enqueue(logEntry);
         }
 
         /// <summary>
@@ -501,12 +496,6 @@ namespace Garnet.server
             patternSubscriptions?.Clear();
             log.Dispose();
             device.Dispose();
-        }
-
-        unsafe void Skip(ref byte* src)
-        {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += ret.TotalSize;
         }
 
         unsafe bool Match(ArgSlice key, byte[] pattern)
