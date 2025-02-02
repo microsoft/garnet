@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -344,92 +345,36 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Retrieves the collection of channels that have active subscriptions.
+        /// Get the number of channels subscribed to
         /// </summary>
-        /// <returns>The collection of channels.</returns>
-        public unsafe void Channels(ref ObjectInput input, ref SpanByteAndMemory output)
+        /// <returns></returns>
+        public List<byte[]> GetChannels()
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            if (subscriptions is null || subscriptions.Count == 0)
+                return [];
+            return [.. subscriptions.Keys];
+        }
 
-            var curr = ptr;
-            var end = curr + output.Length;
+        /// <summary>
+        /// Get the number of channels subscribed to, matching the given pattern
+        /// </summary>
+        /// <param name="pattern"></param>
+        /// <returns></returns>
+        public unsafe List<byte[]> GetChannels(ArgSlice pattern)
+        {
+            if (subscriptions is null || subscriptions.Count == 0)
+                return [];
 
-            try
+            List<byte[]> matches = [];
+            foreach (var key in subscriptions.Keys)
             {
-                if (subscriptions is null || subscriptions.Count == 0)
+                fixed (byte* keyPtr = key)
                 {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                if (input.parseState.Count == 0)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(subscriptions.Count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    foreach (var key in subscriptions.Keys)
-                    {
-                        while (!RespWriteUtils.TryWriteBulkString(key.AsSpan(), ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    return;
-                }
-
-                // Below WriteArrayLength is primarily to move the start of the buffer to the max length that is required to write the array length. The actual length is written in the below line.
-                // This is done to avoid multiple two passes over the subscriptions or new array allocation if we use single pass over the subscriptions
-                var totalArrayHeaderLen = 0;
-                while (!RespWriteUtils.TryWriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                var foundChannels = 0;
-                var pattern = input.parseState.GetArgSliceByRef(0);
-
-                foreach (var key in subscriptions.Keys)
-                {
-                    fixed (byte* keyPtr = key)
-                    {
-                        var endKeyPtr = keyPtr;
-                        if (Match(new ArgSlice(keyPtr, key.Length), pattern))
-                        {
-                            while (!RespWriteUtils.TryWriteSimpleString(key.AsSpan(), ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            foundChannels++;
-                        }
-                    }
-                }
-
-                if (foundChannels == 0)
-                {
-                    curr = ptr;
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                // Below code is to write the actual array length in the buffer
-                // And move the array elements to the start of the new array length if new array length is less than the max array length that we originally write in the above line
-                var newTotalArrayHeaderLen = 0;
-                var _ptr = ptr;
-                // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
-                _ = RespWriteUtils.TryWriteArrayLength(foundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
-
-                Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array length in the buffer");
-                if (totalArrayHeaderLen != newTotalArrayHeaderLen)
-                {
-                    var remainingLength = curr - ptr - totalArrayHeaderLen;
-                    Buffer.MemoryCopy(ptr + totalArrayHeaderLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
-                    curr = curr - (totalArrayHeaderLen - newTotalArrayHeaderLen);
+                    if (Match(new ArgSlice(keyPtr, key.Length), pattern))
+                        matches.Add(key);
                 }
             }
-            finally
-            {
-                if (isMemory)
-                    ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            return matches;
         }
 
         /// <summary>
@@ -440,50 +385,16 @@ namespace Garnet.server
             => patternSubscriptions?.Count ?? 0;
 
         /// <summary>
-        /// PUBSUB NUMSUB
+        /// Retrieves the number of subscriptions for a given channel.
         /// </summary>
-        /// <param name="output"></param>
+        /// <param name="channel"></param>
         /// <returns></returns>
-        public unsafe void NumSubscriptions(ref ObjectInput input, ref SpanByteAndMemory output)
+        public int NumSubscriptions(ArgSlice channel)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            try
-            {
-                var numChannels = input.parseState.Count;
-                if (subscriptions is null || numChannels == 0)
-                {
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                while (!RespWriteUtils.TryWriteArrayLength(numChannels * 2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                for (int c = 0; c < numChannels; c++)
-                {
-                    var channel = input.parseState.GetArgSliceByRef(c);
-
-                    while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    subscriptions.TryGetValue(channel.ToArray(), out var subscriptionDict);
-                    while (!RespWriteUtils.TryWriteInt32(subscriptionDict is null ? 0 : subscriptionDict.Count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-            }
-            finally
-            {
-                if (isMemory)
-                    ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            if (subscriptions is null)
+                return 0;
+            _ = subscriptions.TryGetValue(channel.ToArray(), out var subscriptionDict);
+            return subscriptionDict?.Count ?? 0;
         }
 
         /// <inheritdoc />

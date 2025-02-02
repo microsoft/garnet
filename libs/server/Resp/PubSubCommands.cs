@@ -275,7 +275,7 @@ namespace Garnet.server
                         while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
                             SendAndReset();
 
-                        if (subscribeBroker.Unsubscribe(channelSlice,this))
+                        if (subscribeBroker.Unsubscribe(channelSlice, this))
                             numActiveChannels--;
                         while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
@@ -413,22 +413,24 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new ObjectInput()
-            {
-                parseState = parseState
-            };
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            subscribeBroker.Channels(ref input, ref output);
-
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
+            List<byte[]> channels;
+            if (parseState.Count == 0)
+                channels = subscribeBroker.GetChannels();
             else
-                dcurr += output.Length;
+                channels = subscribeBroker.GetChannels(parseState.GetArgSliceByRef(0));
 
+            while (!RespWriteUtils.TryWriteArrayLength(channels.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var channel in channels)
+            {
+                while (!RespWriteUtils.TryWriteBulkString(channel, ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
 
-        private bool NetworkPUBSUB_NUMPAT()
+        private bool NetworkPubSubNumPatternSubscriptions()
         {
             if (parseState.Count > 0)
             {
@@ -450,7 +452,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkPUBSUB_NUMSUB()
+        private bool NetworkPubSubNumSubscriptions()
         {
             if (subscribeBroker is null)
             {
@@ -459,18 +461,19 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new ObjectInput
+            var numChannels = parseState.Count;
+            while (!RespWriteUtils.TryWriteArrayLength(numChannels * 2, ref dcurr, dend))
+                SendAndReset();
+
+            for (int c = 0; c < numChannels; c++)
             {
-                parseState = parseState
-            };
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            subscribeBroker.NumSubscriptions(ref input, ref output);
+                var channel = parseState.GetArgSliceByRef(c);
 
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
-            else
-                dcurr += output.Length;
-
+                while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.TryWriteInt32(subscribeBroker.NumSubscriptions(channel), ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
     }
