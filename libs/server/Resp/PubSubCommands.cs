@@ -429,7 +429,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkPubSubNumPatternSubscriptions()
+        private bool NetworkPUBSUB_NUMPAT()
         {
             if (parseState.Count > 0)
             {
@@ -451,7 +451,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkPubSubNumSubscriptions()
+        private bool NetworkPUBSUB_NUMSUB()
         {
             if (subscribeBroker is null)
             {
