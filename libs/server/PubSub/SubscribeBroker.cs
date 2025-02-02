@@ -109,7 +109,6 @@ namespace Garnet.server
         {
             try
             {
-                var uniqueKeys = new HashSet<byte[]>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
                 using var iterator = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
@@ -127,18 +126,17 @@ namespace Garnet.server
                             if (currentAddress >= long.MaxValue) return;
                             fixed (byte* logEntryPtr = logEntry)
                             {
-                                var key = new ArgSlice(logEntryPtr + sizeof(int), *(int*)logEntryPtr);
-                                var value = new ArgSlice(logEntryPtr + sizeof(int) + key.length, *(int*)(logEntryPtr + sizeof(int) + key.Length));
+                                var src = logEntryPtr;
+                                var key = new ArgSlice(src + sizeof(int), *(int*)src);
+                                src += sizeof(int) + key.length;
+                                var value = new ArgSlice(src + sizeof(int), *(int*)src);
                                 truncateUntilAddress = nextAddress;
-                                if (uniqueKeys.Add(key.ToArray()))
-                                    Broadcast(key, value);
+                                _ = Broadcast(key, value);
                             }
                         }
 
                         if (truncateUntilAddress > log.BeginAddress)
                             log.TruncateUntil(truncateUntilAddress);
-
-                        uniqueKeys.Clear();
                     }
                 }
             }
@@ -332,7 +330,6 @@ namespace Garnet.server
                 *(int*)dst = value.length;
                 dst += sizeof(int);
                 value.ReadOnlySpan.CopyTo(new Span<byte>(dst, value.length));
-                dst += value.length;
             }
 
             log.Enqueue(logEntry);
