@@ -42,7 +42,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.PubSubOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.PubSubOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
