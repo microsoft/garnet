@@ -2,14 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
 
@@ -73,12 +69,11 @@ namespace Garnet.server
 
         unsafe int Broadcast(ArgSlice key, ArgSlice value)
         {
-            int numSubscribers = 0;
+            var numSubscribers = 0;
 
             if (subscriptions != null)
             {
-                bool foundSubscription = subscriptions.TryGetValue(key.ToArray(), out var subscriptionServerSessionDict);
-                if (foundSubscription)
+                if (subscriptions.TryGetValue(key.ToArray(), out var subscriptionServerSessionDict))
                 {
                     foreach (var sub in subscriptionServerSessionDict)
                     {
@@ -93,15 +88,14 @@ namespace Garnet.server
                 foreach (var kvp in patternSubscriptions)
                 {
                     var pattern = kvp.Key;
-
                     fixed (byte* patternPtr = pattern)
                     {
-                        bool match = Match(key, pattern);
-                        if (match)
+                        var patternSlice = new ArgSlice(patternPtr, pattern.Length);
+                        if (Match(key, patternSlice))
                         {
                             foreach (var sub in kvp.Value)
                             {
-                                sub.Value.PatternPublish(new ArgSlice(patternPtr, pattern.Length), key, value, sub.Key);
+                                sub.Value.PatternPublish(patternSlice, key, value, sub.Key);
                                 numSubscribers++;
                             }
                         }
@@ -407,12 +401,6 @@ namespace Garnet.server
             patternSubscriptions?.Clear();
             log.Dispose();
             device.Dispose();
-        }
-
-        unsafe bool Match(ArgSlice key, byte[] pattern)
-        {
-            fixed (byte* p = pattern)
-                return Match(key, new ArgSlice(p, pattern.Length));
         }
 
         unsafe bool Match(ArgSlice key, ArgSlice pattern)
