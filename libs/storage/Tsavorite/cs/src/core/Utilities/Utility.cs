@@ -219,7 +219,7 @@ namespace Tsavorite.core
 
                 return (long)b;
             }
-            
+
             const ulong K0 = 0xc3a5c85c97cb3127;
             const ulong K1 = 0xb492b66fbe98f273;
             const ulong K2 = 0x9ae16a3b2f90404f;
