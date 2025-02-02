@@ -181,7 +181,7 @@ namespace Tsavorite.core
 
             return (long)Rotr64((ulong)local_rand_hash, 45);
         }
-        
+
         /// <summary>
         /// Get 64-bit hash code for a byte array
         /// </summary>
