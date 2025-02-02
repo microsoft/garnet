@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -14,12 +13,12 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        readonly SubscribeBroker subscribeBroker;
         bool isSubscriptionSession = false;
         int numActiveChannels = 0;
 
         /// <inheritdoc />
-        public override unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+        public override unsafe void Publish(ArgSlice key, ArgSlice value, int sid)
         {
             try
             {
@@ -38,8 +37,8 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Write key and value to the network
-                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
-                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
+                WriteDirectLargeRespString(key.ReadOnlySpan);
+                WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
@@ -55,7 +54,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void PrefixPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
+        public override unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value, int sid)
         {
             try
             {
@@ -74,9 +73,9 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Write pattern, key, and value to the network
-                WriteDirectLargeRespString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)));
-                WriteDirectLargeRespString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)));
-                WriteDirectLargeRespString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)));
+                WriteDirectLargeRespString(pattern.ReadOnlySpan);
+                WriteDirectLargeRespString(key.ReadOnlySpan);
+                WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
@@ -118,13 +117,8 @@ namespace Garnet.server
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var val = parseState.GetArgSliceByRef(1).SpanByte;
-
-            var keyPtr = key.ToPointer() - sizeof(int);
-            var valPtr = val.ToPointer() - sizeof(int);
-            var kSize = key.Length;
-            var vSize = val.Length;
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
 
             if (subscribeBroker == null)
             {
@@ -133,10 +127,7 @@ namespace Garnet.server
                 return true;
             }
 
-            *(int*)keyPtr = kSize;
-            *(int*)valPtr = vSize;
-
-            var numClients = subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
+            var numClients = subscribeBroker.PublishNow(key, value);
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 var _key = parseState.GetArgSliceByRef(0).Span;
@@ -182,9 +173,7 @@ namespace Garnet.server
             // SUBSCRIBE|SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (disabledBroker)
                     continue;
@@ -195,15 +184,14 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(header, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
 
                 numActiveChannels++;
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
-                *(int*)keyPtr = kSize;
-                _ = subscribeBroker.Subscribe(ref keyPtr, this);
+                _ = subscribeBroker.Subscribe(key, this);
             }
 
             if (disabledBroker)
@@ -228,9 +216,7 @@ namespace Garnet.server
             var disabledBroker = subscribeBroker == null;
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (disabledBroker)
                     continue;
@@ -240,15 +226,14 @@ namespace Garnet.server
 
                 while (!RespWriteUtils.TryWriteBulkString("psubscribe"u8, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
 
                 numActiveChannels++;
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
-                *(int*)keyPtr = kSize;
-                _ = subscribeBroker.PSubscribe(ref keyPtr, this, true);
+                _ = subscribeBroker.PatternSubscribe(key, this);
             }
 
             if (disabledBroker)
@@ -283,14 +268,13 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
-                    var channelsize = channel.Length - sizeof(int);
-                    fixed (byte* channelPtr = &channel[0])
+                    fixed (byte* channelPtr = channel)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
+                        var channelSlice = new ArgSlice(channelPtr, channel.Length);
+                        while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
                             SendAndReset();
 
-                        byte* delPtr = channelPtr;
-                        if (subscribeBroker.Unsubscribe(delPtr, this))
+                        if (subscribeBroker.Unsubscribe(channelSlice, this))
                             numActiveChannels--;
                         while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
@@ -317,9 +301,7 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (subscribeBroker != null)
                 {
@@ -327,11 +309,10 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
-                    *(int*)keyPtr = kSize;
-                    if (subscribeBroker.Unsubscribe(keyPtr, this))
+                    if (subscribeBroker.Unsubscribe(key, this))
                         numActiveChannels--;
 
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
@@ -360,7 +341,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                List<byte[]> channels = subscribeBroker.ListAllPSubscriptions(this);
+                List<byte[]> channels = subscribeBroker.ListAllPatternSubscriptions(this);
                 foreach (var channel in channels)
                 {
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
@@ -368,18 +349,17 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
-                    var channelsize = channel.Length - sizeof(int);
-                    fixed (byte* channelPtr = &channel[0])
+                    fixed (byte* channelPtr = channel)
                     {
-                        while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
+                        var channelSlice = new ArgSlice(channelPtr, channel.Length);
+                        while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
                             SendAndReset();
 
                         numActiveChannels--;
                         while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
 
-                        byte* delPtr = channelPtr;
-                        subscribeBroker.PUnsubscribe(delPtr, this);
+                        subscribeBroker.PatternUnsubscribe(channelSlice, this);
                     }
                 }
 
@@ -391,9 +371,7 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var keyPtr = key.ToPointer() - sizeof(int);
-                var kSize = key.Length;
+                var key = parseState.GetArgSliceByRef(c);
 
                 if (subscribeBroker != null)
                 {
@@ -401,15 +379,14 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
                     numActiveChannels--;
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
 
-                    *(int*)keyPtr = kSize;
-                    subscribeBroker.Unsubscribe(keyPtr, this);
+                    subscribeBroker.Unsubscribe(key, this);
                 }
             }
 
@@ -435,18 +412,20 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new ObjectInput()
-            {
-                parseState = parseState
-            };
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            subscribeBroker.Channels(ref input, ref output);
-
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
+            List<byte[]> channels;
+            if (parseState.Count == 0)
+                channels = subscribeBroker.GetChannels();
             else
-                dcurr += output.Length;
+                channels = subscribeBroker.GetChannels(parseState.GetArgSliceByRef(0));
 
+            while (!RespWriteUtils.TryWriteArrayLength(channels.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var channel in channels)
+            {
+                while (!RespWriteUtils.TryWriteBulkString(channel, ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
 
@@ -481,18 +460,19 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new ObjectInput
+            var numChannels = parseState.Count;
+            while (!RespWriteUtils.TryWriteArrayLength(numChannels * 2, ref dcurr, dend))
+                SendAndReset();
+
+            for (int c = 0; c < numChannels; c++)
             {
-                parseState = parseState
-            };
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            subscribeBroker.NumSubscriptions(ref input, ref output);
+                var channel = parseState.GetArgSliceByRef(c);
 
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
-            else
-                dcurr += output.Length;
-
+                while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.TryWriteInt32(subscribeBroker.NumSubscriptions(channel), ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
     }
