@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -178,26 +179,120 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe long HashBytes(byte* pbString, int len)
         {
-            ulong _hash = 0x811C9DC5U;
-            var pwString = pbString;
-            int cbBuf = len / 2;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ulong RotateRight(ulong operand, int shiftCount)
+            {
+                shiftCount &= 0x3f;
+
+                return
+                    (operand >> shiftCount) |
+                    (operand << (64 - shiftCount));
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ulong ReverseByteOrder(ulong operand)
+            {
+                return
+                    (operand >> 56) |
+                    ((operand & 0x00ff000000000000) >> 40) |
+                    ((operand & 0x0000ff0000000000) >> 24) |
+                    ((operand & 0x000000ff00000000) >> 8) |
+                    ((operand & 0x00000000ff000000) << 8) |
+                    ((operand & 0x0000000000ff0000) << 24) |
+                    ((operand & 0x000000000000ff00) << 40) |
+                    (operand << 56);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ulong Mix(ulong value) =>
+                        value ^ (value >> 47);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            long Hash64Len16(ulong u, ulong v, ulong mul)
+            {
+                ulong a = (u ^ v) * mul;
+                a ^= (a >> 47);
+
+                ulong b = (v ^ a) * mul;
+                b ^= (b >> 47);
+                b *= mul;
+
+                return (long)b;
+            }
+            
+            const ulong K0 = 0xc3a5c85c97cb3127;
+            const ulong K1 = 0xb492b66fbe98f273;
+            const ulong K2 = 0x9ae16a3b2f90404f;
 
             unchecked
             {
-                for (int i = 0; i < cbBuf; i++, pwString++)
+                if (len > 32)
                 {
-                    _hash ^= *pwString;
-                    _hash *= 0x01000193U;
+                    ulong mul = K2 + (ulong)len * 2;
+                    ulong a = Unsafe.Read<ulong>(pbString) * K2;
+                    ulong b = Unsafe.Read<ulong>(pbString + 8);
+                    ulong c = Unsafe.Read<ulong>(pbString + len - 24);
+                    ulong d = Unsafe.Read<ulong>(pbString + len - 32);
+                    ulong e = Unsafe.Read<ulong>(pbString + 16) * K2;
+                    ulong f = Unsafe.Read<ulong>(pbString + 24) * 9;
+                    ulong g = Unsafe.Read<ulong>(pbString + len - 8);
+                    ulong h = Unsafe.Read<ulong>(pbString + len - 16) * mul;
+
+                    ulong u = RotateRight(a + g, 43) + (RotateRight(b, 30) + c) * 9;
+                    ulong v = ((a + g) ^ d) + f + 1;
+                    ulong w = ReverseByteOrder((u + v) * mul) + h;
+                    ulong x = RotateRight(e + f, 42) + c;
+                    ulong y = (ReverseByteOrder((v + w) * mul) + g) * mul;
+                    ulong z = e + f + c;
+
+                    a = ReverseByteOrder((x + z) * mul + y) + b;
+                    b = Mix((z + a) * mul + d + h) * mul;
+                    return (long)(b + x);
+                }
+                else if (len > 16)
+                {
+                    ulong mul = K2 + (ulong)len * 2;
+                    ulong a = Unsafe.Read<ulong>(pbString) * K1;
+                    ulong b = Unsafe.Read<ulong>(pbString + 8);
+                    ulong c = Unsafe.Read<ulong>(pbString + len - 8) * mul;
+                    ulong d = Unsafe.Read<ulong>(pbString + len - 16) * K2;
+
+                    return (long)Hash64Len16(
+                        RotateRight(a + b, 43) +
+                            RotateRight(c, 30) + d,
+                        a + RotateRight(b + K2, 18) + c,
+                        mul);
+                }
+                else if (len >= 8)
+                {
+                    ulong mul = K2 + (ulong)len * 2;
+                    ulong a = Unsafe.Read<ulong>(pbString) + K2;
+                    ulong b = Unsafe.Read<ulong>(pbString + len - 8);
+                    ulong c = RotateRight(b, 37) * mul + a;
+                    ulong d = (RotateRight(a, 25) + b) * mul;
+
+                    return Hash64Len16(c, d, mul);
+                }
+                else if (len >= 4)
+                {
+                    ulong mul = K2 + (ulong)len * 2;
+                    ulong a = Unsafe.Read<uint>(pbString);
+                    return Hash64Len16((ulong)len + (a << 3), Unsafe.Read<uint>(pbString + len - 4), mul);
+                }
+                else if (len > 0)
+                {
+                    byte a = pbString[0];
+                    byte b = pbString[0 + (len >> 1)];
+                    byte c = pbString[len - 1];
+
+                    uint y = (uint)a + ((uint)b << 8);
+                    uint z = (uint)len + ((uint)c << 2);
+
+                    return (long)(Mix((ulong)(y * K2 ^ z * K0)) * K2);
                 }
 
-                if ((len & 1) > 0)
-                {
-                    byte* pC = (byte*)pwString;
-                    _hash = 40343 * _hash + *pC;
-                }
+                return (long)K2;
             }
-
-            return (long)_hash;
         }
 
         /// <summary>
