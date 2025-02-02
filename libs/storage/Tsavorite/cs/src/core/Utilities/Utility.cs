@@ -178,21 +178,19 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe long HashBytes(byte* pbString, int len)
         {
-            const long magicno = 40343;
+            ulong _hash = 0xCBF29CE484222325UL;
             char* pwString = (char*)pbString;
-            int cbBuf = len / 2;
-            ulong hashState = (ulong)len;
 
-            for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + *pwString;
-
-            if ((len & 1) > 0)
+            for (int i = 0; i < len; i++, pwString++)
             {
-                byte* pC = (byte*)pwString;
-                hashState = magicno * hashState + *pC;
+                unchecked
+                {
+                    _hash ^= *pwString;
+                    _hash *= 0x00000100000001B3UL;
+                }
             }
 
-            return (long)Rotr64(magicno * hashState, 4);
+            return (long)_hash;
         }
 
         /// <summary>
