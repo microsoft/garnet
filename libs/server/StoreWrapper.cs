@@ -48,6 +48,12 @@ namespace Garnet.server
         /// Server options
         /// </summary>
         public readonly GarnetServerOptions serverOptions;
+
+        /// <summary>
+        /// Subscribe broker
+        /// </summary>
+        public readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+
         internal readonly IClusterProvider clusterProvider;
 
         /// <summary>
@@ -130,6 +136,7 @@ namespace Garnet.server
             CustomCommandManager customCommandManager,
             TsavoriteLog appendOnlyFile,
             GarnetServerOptions serverOptions,
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null
@@ -143,6 +150,7 @@ namespace Garnet.server
             this.objectStore = objectStore;
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
+            this.subscribeBroker = subscribeBroker;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;

@@ -718,5 +718,47 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("connected", result[3].ToString());
             ClassicAssert.True(int.TryParse(result[4].ToString(), out _));
         }
+
+        [Test, Order(12)]
+        public void ClusterNodeCommand()
+        {
+            var primary_count = 1;
+            var node_count = 3;
+            var replica_count = node_count - primary_count;
+            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateConnection();
+            var (shardInfo, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+            var endpoint = (IPEndPoint)context.endpoints[0];
+            var result = context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["NODES"]);
+            ClassicAssert.IsNotNull(result);
+            var lines = result.ToString().Split("\n", StringSplitOptions.RemoveEmptyEntries);
+            ClassicAssert.AreEqual(node_count, lines.Length);
+
+            var primaries = shardInfo[0].nodes.Where(x => x.role == Role.PRIMARY).Select(w => w.nodeid).ToArray();
+            foreach (var line in lines)
+            {
+                var fields = line.Split(' ');
+                ClassicAssert.IsTrue(shardInfo[0].nodes.Any(e => e.nodeid == fields[0]));
+
+                var node = shardInfo[0].nodes.Single(e => e.nodeid == fields[0]);
+                if (node.role == Role.PRIMARY)
+                {
+                    ClassicAssert.GreaterOrEqual(fields.Length, 8);
+                    ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
+                    ClassicAssert.IsTrue(fields[2].Contains("master"));
+                    ClassicAssert.AreEqual("-", fields[3]); // primary node id
+                    ClassicAssert.AreEqual("1", fields[6]); // default config-epoch
+                    ClassicAssert.AreEqual("connected", fields[7]);
+                }
+                else
+                {
+                    ClassicAssert.GreaterOrEqual(fields.Length, 8);
+                    ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
+                    ClassicAssert.AreEqual("slave", fields[2]);
+                    ClassicAssert.Contains(fields[3], primaries);
+                    ClassicAssert.AreEqual("connected", fields[7]);
+                }
+            }
+        }
     }
 }

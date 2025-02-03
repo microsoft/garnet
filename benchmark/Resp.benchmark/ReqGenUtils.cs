@@ -94,6 +94,8 @@ namespace Resp.benchmark
                 case OpType.SCRIPTSET:
                 case OpType.SCRIPTGET:
                 case OpType.SCRIPTRETKEY:
+                case OpType.PUBLISH:
+                case OpType.SPUBLISH:
                     if (!WriteKey(ref curr, vend, out keyData))
                         return false;
                     break;
@@ -189,6 +191,8 @@ namespace Resp.benchmark
                 case OpType.MPFADD:
                 case OpType.SET:
                 case OpType.SCRIPTSET:
+                case OpType.PUBLISH:
+                case OpType.SPUBLISH:
                     RandomString();
                     if (!WriteStringBytes(ref curr, vend, valueBuffer))
                         return false;

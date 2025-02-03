@@ -94,11 +94,25 @@ namespace Garnet.server
         /// <summary>
         /// PUBLISH
         /// </summary>
-        private bool NetworkPUBLISH()
+        private bool NetworkPUBLISH(RespCommand cmd)
         {
             if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH));
+                var cmdName = cmd switch
+                {
+                    RespCommand.PUBLISH => nameof(RespCommand.PUBLISH),
+                    RespCommand.SPUBLISH => nameof(RespCommand.SPUBLISH),
+                    _ => throw new NotImplementedException()
+                };
+                return AbortWithWrongNumberOfArguments(cmdName);
+            }
+
+            if (cmd == RespCommand.SPUBLISH && clusterSession == null)
+            {
+                // Print error message
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             Debug.Assert(isSubscriptionSession == false);
@@ -123,21 +137,49 @@ namespace Garnet.server
             *(int*)valPtr = vSize;
 
             var numClients = subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
+            if (storeWrapper.serverOptions.EnableCluster)
+            {
+                var _key = parseState.GetArgSliceByRef(0).Span;
+                var _val = parseState.GetArgSliceByRef(1).Span;
+                storeWrapper.clusterProvider.ClusterPublish(cmd, ref _key, ref _val);
+            }
+
             while (!RespWriteUtils.TryWriteInt32(numClients, ref dcurr, dend))
                 SendAndReset();
 
             return true;
         }
 
-        private bool NetworkSUBSCRIBE()
+        private bool NetworkSUBSCRIBE(RespCommand cmd)
         {
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUBSCRIBE));
+                var cmdName = cmd switch
+                {
+                    RespCommand.SUBSCRIBE => nameof(RespCommand.SUBSCRIBE),
+                    RespCommand.SSUBSCRIBE => nameof(RespCommand.SSUBSCRIBE),
+                    _ => throw new NotImplementedException()
+                };
+                return AbortWithWrongNumberOfArguments(cmdName);
             }
 
-            // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
+            if (cmd == RespCommand.SSUBSCRIBE && clusterSession == null)
+            {
+                // Print error message
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var disabledBroker = subscribeBroker == null;
+            var header = cmd switch
+            {
+                RespCommand.SUBSCRIBE => CmdStrings.subscribe,
+                RespCommand.SSUBSCRIBE => CmdStrings.ssubscribe,
+                _ => throw new NotImplementedException()
+            };
+
+            // SUBSCRIBE|SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
@@ -150,8 +192,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString("subscribe"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(header, ref dcurr, dend))
                     SendAndReset();
+
                 while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
                     SendAndReset();
 
