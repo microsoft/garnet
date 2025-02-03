@@ -77,9 +77,11 @@ namespace Garnet.server
             return true;
         }
 
+
         /// <summary>
         /// SETIFMATCH key val etag [EX|PX] [expiry] [NOGET]
-        /// Sets a key value pair only if the already existing etag matches the etag sent as a part of the request.
+        /// Sets a key value pair with the given etag only if (1) the etag given in the request matches the already existing etag ;
+        /// or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent Etag was 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
@@ -90,10 +92,11 @@ namespace Garnet.server
             return NetworkSetETagConditional(RespCommand.SETIFMATCH, ref storageApi);
         }
 
+
         /// <summary>
         /// SETIFGREATER key val etag [EX|PX] [expiry] [NOGET]
-        /// Sets a key value pair using the given etag incremented only if (1) the etag given in the request is greater than the already existing etag ;
-        /// or (2) the existing value was not associated with any etag and the given etag is more than 0
+        /// Sets a key value pair with the given etag only if (1) the etag given in the request is greater than the already existing etag ;
+        /// or (2) there was no existing value; or (3) the existing value was not associated with any etag.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
