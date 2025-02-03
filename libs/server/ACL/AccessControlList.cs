@@ -39,9 +39,9 @@ namespace Garnet.server.ACL
         User _defaultUser;
 
         /// <summary>
-        /// The subscribers who will receive access control list change notifications.
+        /// The <see cref="RespServerSession"/>s that will receive access control list change notifications.
         /// </summary>
-        private readonly ConcurrentDictionary<string, IAccessControlListSubscriber> _subscribers = new();
+        private readonly ConcurrentDictionary<string, RespServerSession> _subscribedSessions = new();
 
         /// <summary>
         /// Creates a new Access Control List from an optional ACL configuration file
@@ -333,23 +333,33 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Registers a subscriber to receive notifications when modifications are performed to the <see cref="AccessControlList"/>.
+        /// Registers a <see cref="RespServerSession"/> to receive notifications when modifications are performed to the <see cref="AccessControlList"/>.
         /// </summary>
-        /// <param name="subscriber">The <see cref="IAccessControlListSubscriber"/> to register.</param>
-        internal void Subscribe(IAccessControlListSubscriber subscriber)
+        /// <param name="respSession">The <see cref="RespServerSession"/> to register.</param>
+        internal void Subscribe(RespServerSession respSession)
         {
-            _subscribers[subscriber.AclSubscriberKey] = subscriber;
+            _subscribedSessions[respSession.AclSubscriberKey] = respSession;
         }
 
         /// <summary>
-        /// Notify the registered subscribers when modifications are performed to the <see cref="AccessControlList"/>.
+        /// Unregisters a <see cref="RespServerSession"/> to receive notifications when modifications are performed to the <see cref="AccessControlList"/>.
+        /// </summary>
+        /// <param name="respSession">The <see cref="RespServerSession"/> to register.</param>
+        internal void Unsubscribe(RespServerSession respSession)
+        {
+            _ = _subscribedSessions.TryRemove(respSession.AclSubscriberKey, out _);
+        }
+
+
+        /// <summary>
+        /// Notify the registered <see cref="RespServerSession"/> when modifications are performed to the <see cref="AccessControlList"/>.
         /// </summary>
         /// <param name="user">The created or updated <see cref="User"/> that triggered the notification.</param>
         private void NotifySubscribers(User user)
         {
-            foreach (IAccessControlListSubscriber subscriber in _subscribers.Values)
+            foreach (RespServerSession respSession in _subscribedSessions.Values)
             {
-                subscriber.NotifyAclChange(user);
+                respSession.NotifyAclChange(user);
             }
         }
     }

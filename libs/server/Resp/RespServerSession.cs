@@ -33,7 +33,7 @@ namespace Garnet.server
     /// <summary>
     /// RESP server session
     /// </summary>
-    internal sealed unsafe partial class RespServerSession : ServerSessionBase, IAccessControlListSubscriber
+    internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         readonly GarnetSessionMetrics sessionMetrics;
         readonly GarnetLatencyMetricsSession LatencyMetrics;
@@ -254,6 +254,12 @@ namespace Garnet.server
             {
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
+            }
+
+            // Ensure user was not updated during initialization.
+            if (_authenticator is GarnetACLAuthenticator aclAuthenticator && _user != aclAuthenticator.GetUser())
+            {
+                this.RefreshUser();
             }
         }
 
@@ -1031,7 +1037,19 @@ namespace Garnet.server
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
-        => networkSender.TryClose();
+        {
+            if (networkSender.TryClose())
+            {
+                if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
+                {
+                    aclAuthenticator.GetAccessControlList().Unsubscribe(this);
+                }
+
+                return true;
+            }
+
+            return false;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)
