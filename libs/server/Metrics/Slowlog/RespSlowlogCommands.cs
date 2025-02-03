@@ -20,8 +20,7 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for SLOWLOG HELP.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_HELP));
             }
 
             List<string> slowLogCommands = RespSlowLogHelp.GetSlowLogCommands();
@@ -45,8 +44,7 @@ namespace Garnet.server
             // Check arguments
             if (parseState.Count > 1)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for SLOWLOG GET.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_GET));
             }
 
             int count = 10;
@@ -121,8 +119,7 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for SLOWLOG LEN.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_LEN));
             }
             while (!RespWriteUtils.TryWriteInt32(storeWrapper.slowLogContainer?.Count ?? 0, ref dcurr, dend))
                 SendAndReset();
@@ -137,8 +134,7 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for SLOWLOG RESET.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_RESET));
             }
             storeWrapper.slowLogContainer?.Clear();
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
