@@ -11,10 +11,15 @@ namespace Tsavorite.core
     /// <summary>
     /// Struct encoding a Span field (Key or Value) at a certain address. The layout is:
     /// <list type="bullet">
-    ///     <item>Inline: [int size = # of data bytes][inline data bytes]</item>
-    ///     <item>Overflow: [int size = sizeof(IntPtr)][Intptr overflow_pointer] (see <see cref="OverflowInlineSize"/>)</item>
+    ///     <item>Inline: [int Length][data bytes]</item>
+    ///     <item>Overflow: [<see cref="IntPtr"/> Length][<see cref="IntPtr"/> to overflow allocation containing data bytes]</item>
+    ///     <br>The data bytes are laid out as in the <see cref="OverflowAllocator.BlockHeader"/> description:</br>
+    ///     <list type="bullet">
+    ///         <item>[int allocatedSize][int userSize] for fixed-length data (less than or equal to <see cref="OverflowAllocator.FixedSizePages.MaxBlockSize"/>)</item>
+    ///         <item>[int allocatedSize][int nextFreeSlot] for oversize data (greater than <see cref="OverflowAllocator.FixedSizePages.MaxBlockSize"/>)</item>
+    ///     </list>
     /// </list>
-    /// The [int size] prefix for Overflow is necessary to ensure proper zero-initialization layout of the record if a checkpoint is happening 
+    /// The [<see cref="IntPtr"/> size] prefix for Overflow is necessary to ensure proper zero-initialization layout of the record if a checkpoint is happening 
     /// at the same time we are adjusting the Value length, <see cref="RecordInfo.ValueIsOverflow"/> bit, and optional field offsets.
     /// </summary>
     /// <remarks>Considerations regarding variable field sizes:
@@ -44,45 +49,72 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ref int LengthRef(long address) => ref *(int*)address;
 
+        /// <summary>
+        /// Address of the actual data (past the length prefix). This may be either the start of the stream of bytes, or a pointer to an overflow allocation.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long DataAddress(long address) => (IntPtr)(address + FieldLengthPrefixSize);
 
+        /// <summary>
+        /// Size of the actual data (not including the length prefix).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int InlineSize(long address) => FieldLengthPrefixSize + LengthRef(address);
+        internal static int DataSize(long address, bool isOverflow) => isOverflow ? OverflowAllocator.BlockHeader.GetUserSize(address) : LengthRef(address);
 
+        /// <summary>
+        /// Total inline size of the field: The length prefix plus length of byte stream if not overflow, or length of the pointer to overflow data.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int DataSize(long address) => LengthRef(address);
+        internal static int TotalInlineSize(long address) => FieldLengthPrefixSize + LengthRef(address);
 
+        /// <summary>
+        /// Obtain a <see cref="Span{_byte_}"/> referencing the inline or overflow data and the datasize for this field.
+        /// </summary>
+        /// <remarks>Note: SpanByte.CopyTo(<see cref="Span{_byte_}"/> x) will assume that x is a serialized SpanByte space, and will write length to the first sizeof(int) bytes of the span data</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static Span<byte> AsSpan(long address, bool isOverflow)
         {
-            // Note: SpanByte.CopyTo(Span<byte> x) will assume that x is a serialized SpanByte space, and will write length to the first sizeof(int) bytes of the span data
             var dataAddress = (byte*)(address + FieldLengthPrefixSize);
-            if (isOverflow)
-                dataAddress = *(byte**)dataAddress;
-            return new(dataAddress, LengthRef(address));
+            if (!isOverflow)
+                return new(dataAddress, LengthRef(address));
+            dataAddress = *(byte**)dataAddress;
+            return new(dataAddress, OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress));
         }
 
+        /// <summary>
+        /// Obtain a <see cref="SpanByte"/> referencing the inline or overflow data and the datasize for this field.
+        /// </summary>
+        /// <remarks>Note: returns non-serialized as it is not passed by ref</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static SpanByte AsSpanByte(long address, bool isOverflow)
         {
-            // Must always return non-serialized as it is not passed by ref
             var dataAddress = (byte*)(address + FieldLengthPrefixSize);
-            if (isOverflow)
-                return new(LengthRef(address), *(IntPtr*)dataAddress);
-            return new(LengthRef(address), (IntPtr)dataAddress);
+            if (!isOverflow)
+                return new(LengthRef(address), (IntPtr)dataAddress);
+            dataAddress = *(byte**)dataAddress;
+            return new(OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress), *(IntPtr*)dataAddress);
         }
 
+        /// <summary>
+        /// Set all data within a field to zero.
+        /// </summary>
+        /// <param name="address">Address of the field</param>
+        /// <param name="dataOffset">Starting position in the field to zero</param>
+        /// <param name="clearLength">Length of the data from <paramref name="dataOffset"/> to zero</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void ZeroInlineData(long address, int dataOffset, int clearLength) 
             => new Span<byte>((byte*)(DataAddress(address) + dataOffset), clearLength).Clear();
 
+        /// <summary>
+        /// Convert a Span field from inline to overflow.
+        /// </summary>
+        /// <remarks>
+        /// Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
+        /// and that the field does not currently contain an overflow allocation. Applies to Keys as well during freelist revivification.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* ConvertToOverflow(long address, int newLength, OverflowAllocator allocator)
         {
-            // Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
-            // and that the field does not currently contain an overflow allocation. Applies to Keys as well during freelist revivification.
-
             // If "shrinking" the allocation because the overflow pointer size is less than the current inline size, we must zeroinit the extra space.
             var clearLength = LengthRef(address) - OverflowDataPtrSize;
             if (clearLength > 0)
@@ -91,6 +123,10 @@ namespace Tsavorite.core
             return SetOverflowAllocation(address, newLength, allocator);
         }
 
+        /// <summary>
+        /// Utility function to set the overflow allocation at the given Span field's address. Assumes caller has ensured no existing overflow
+        /// allocation is there; e.g. SerializeKey.
+        /// </summary>
         internal static byte* SetOverflowAllocation(long address, int newLength, OverflowAllocator allocator)
         {
             LengthRef(address) = sizeof(IntPtr);                        // actual length (i.e. the size of the out-of-line allocation)
@@ -99,13 +135,17 @@ namespace Tsavorite.core
             return ptr;
         }
 
+        /// <summary>
+        /// Convert a Span field from overflow to inline.
+        /// </summary>
+        /// <remarks>
+        /// Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
+        /// and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* ConvertToInline(long address, int newLength, OverflowAllocator allocator)
         {
-            // Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
-            // and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
-
-            // If "shrinking" the allocation because the new inline size is less than the inline size, we must zeroinit the extra space.
+            // If "shrinking" the allocation because the new inline size is less than the inline size of the pointer, we must zeroinit the extra space.
             var clearLength = OverflowDataPtrSize - newLength;
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize - clearLength, clearLength);
@@ -114,18 +154,25 @@ namespace Tsavorite.core
             return SetInlineLength(address, newLength);
         }
 
+        /// <summary>
+        /// Utility function to set the inline length of a Span field and return a pointer to the data start (which may be a byte stream or a pointer to overflow data).
+        /// </summary>
         internal static byte* SetInlineLength(long address, int newLength)
         {
             LengthRef(address) = newLength;                             // actual length (i.e. the inline data space used by this field)
             return (byte*)(address + FieldLengthPrefixSize);            // Data pointer
         }
 
+        /// <summary>
+        /// Shrink an inline Span field in place.
+        /// </summary>
+        /// <remarks>
+        /// Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
+        /// and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* ShrinkInline(long address, int newLength)
         {
-            // Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
-            // and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
-
             // Zeroinit the extra space.
             var clearLength = LengthRef(address) - newLength;
             if (clearLength > 0)
@@ -134,12 +181,17 @@ namespace Tsavorite.core
             return (byte*)(address + FieldLengthPrefixSize);            // Data pointer
         }
 
+        /// <summary>
+        /// Reallocate a Span field that is overflow, e.g. to make the overflow allocation larger. Shrinkage is done in-place (the caller decides if the
+        /// shrinkage is sufficient (given available space in the record) to convert the field in-place to inline.
+        /// </summary>
+        /// <remarks>
+        /// Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
+        /// and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* ReallocateOverflow(long address, int newLength, OverflowAllocator allocator)
         {
-            // Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
-            // and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
-            
             // First see if the existing allocation is large enough. If we are shrinking we don't need to zeroinit in the oversize allocations
             // because there is no "log scan to next record" there.
             if (allocator.GetAllocatedSize(address) >= newLength)

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using static Tsavorite.core.Utility;
@@ -21,6 +22,7 @@ namespace Tsavorite.core
             [FieldOffset(0)]
             internal int BlockSize;
 
+            #region Union of UserSize and NextSlot
             /// <summary>Union element 1: For FixedSizePages, the user request size. For OversizePages, there is only one allocation per page, 
             /// so it is always the same size as the user request size and thus need not be repeated.</summary>
             [FieldOffset(sizeof(int))]
@@ -29,10 +31,15 @@ namespace Tsavorite.core
             /// <summary>Union element 2: For OversizePages, the next slot in the page vector freelist.</summary>
             [FieldOffset(sizeof(int))]
             internal int NextSlot;
+            #endregion // Union of UserSize and NextSlot
 
             /// <summary>Include blockHeader in the allocation size. For FixedSizeBlocks, this is included in the internal request size, so blocks remain power-of-2.</summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static int PromoteSize(int size) => (int)NextPowerOf2(size + sizeof(BlockHeader));
+
+            /// <summary>Get the user size of the allocation.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static int GetUserSize(long address) => ((BlockHeader*)address - 1)->UserSize;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static byte* InitializeFixedSize(BlockHeader* blockPtr, int blockSize, int userSize, bool zeroInit)

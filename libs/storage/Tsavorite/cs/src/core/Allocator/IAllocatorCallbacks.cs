@@ -31,7 +31,7 @@ namespace Tsavorite.core
         SpanByte GetKey(long physicalAddress);  // TODO still needed?
 
         /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
-        (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress);
+        (int actualSize, int allocatedSize) GetInlineRecordSizes(long physicalAddress);
 
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);

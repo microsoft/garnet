@@ -65,7 +65,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress) => new LogRecord<SpanByte>(physicalAddress).GetFullRecordSizes();
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes(long physicalAddress) => new LogRecord<SpanByte>(physicalAddress).GetInlineRecordSizes();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

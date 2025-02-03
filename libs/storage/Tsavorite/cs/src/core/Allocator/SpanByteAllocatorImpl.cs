@@ -197,7 +197,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out SpanByte valueObject)
         {
-            var logRecord = new LogRecord<SpanByte>(GetPhysicalAddress(logicalAddress));
+            var logRecord = CreateLogRecord(logicalAddress);
             long recordSize = RecordInfo.GetLength() + logRecord.Key.TotalSize + logRecord.ValueSpan.TotalSize
                 + (logRecord.Info.HasETag ? LogRecord.ETagSize : 0)
                 + (logRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);

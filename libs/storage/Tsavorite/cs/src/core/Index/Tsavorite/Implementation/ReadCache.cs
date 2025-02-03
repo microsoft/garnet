@@ -246,7 +246,7 @@ namespace Tsavorite.core
             while (rcLogicalAddress < rcToLogicalAddress)
             {
                 var logRecord = new LogRecord<TValue>(readcache.GetPhysicalAddress(rcLogicalAddress));
-                var (_, rcAllocatedSize) = logRecord.GetFullRecordSizes();
+                var (_, rcAllocatedSize) = logRecord.GetInlineRecordSizes();
                 var rcRecordInfo = logRecord.Info;
 
                 // Check PreviousAddress for null to handle the info.IsNull() "partial record at end of page" case as well as readcache CAS failures

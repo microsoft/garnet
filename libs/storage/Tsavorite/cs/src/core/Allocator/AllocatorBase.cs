@@ -283,7 +283,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             ref var info = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
-                            var (_, alignedRecordSize) = _wrapper.GetFullRecordSizes(physicalAddress);
+                            var (_, alignedRecordSize) = _wrapper.GetInlineRecordSizes(physicalAddress);
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
@@ -458,7 +458,7 @@ namespace Tsavorite.core
                                 var destination = _wrapper.GetPhysicalAddress(address);
 
                                 // Clear extra space (if any) in old record
-                                var oldSize = _wrapper.GetFullRecordSizes(destination).allocatedSize;
+                                var oldSize = _wrapper.GetInlineRecordSizes(destination).allocatedSize;
                                 if (oldSize > size)
                                     new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
 
@@ -1964,7 +1964,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             ref var info = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
-                            var (_, alignedRecordSize) = _wrapper.GetFullRecordSizes(physicalAddress);
+                            var (_, alignedRecordSize) = _wrapper.GetInlineRecordSizes(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;

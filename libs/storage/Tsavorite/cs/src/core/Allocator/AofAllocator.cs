@@ -68,7 +68,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetFullRecordSizes(long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes(long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

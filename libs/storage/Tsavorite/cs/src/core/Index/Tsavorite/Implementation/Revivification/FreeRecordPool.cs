@@ -150,7 +150,7 @@ namespace Tsavorite.core
         {
             // This is called for oversize, so we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
             var logRecord = store.hlog.CreateLogRecord(logicalAddress);
-            return logRecord.GetFullRecordSizes().allocatedSize;
+            return logRecord.GetInlineRecordSizes().allocatedSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -514,7 +514,7 @@ namespace Tsavorite.core
         {
             var minAddress = store.GetMinRevivifiableAddress();
             int binIndex = 0;
-            var recordSize = logRecord.GetFullRecordSizes().allocatedSize;
+            var recordSize = logRecord.GetInlineRecordSizes().allocatedSize;
             if (logicalAddress < minAddress)
                 return false;
             if (!bins[binIndex].TryAdd(logicalAddress, recordSize, store, minAddress, ref revivStats))

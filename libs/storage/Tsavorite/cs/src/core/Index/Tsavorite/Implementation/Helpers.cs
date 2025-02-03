@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
@@ -38,7 +36,7 @@ namespace Tsavorite.core
 
             if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
             {
-                // Clear the IHeapObject, but leave the ObjectId in the record
+                // Clear the IHeapObject, but leave the ObjectId in the record, along with any overflow Key and possibly Value spans.  TODO make sure this a freelist
                 ref var heapObj = ref logRecord.ObjectRef;
                 if (heapObj is not null)
                 {
@@ -179,7 +177,7 @@ namespace Tsavorite.core
 
                 // Preserve the Sealed bit due to checkpoint/recovery; see RecordInfo.WriteInfo.
                 physicalAddress = logRecord.physicalAddress;
-                allocatedSize = logRecord.GetFullRecordSizes().allocatedSize;
+                allocatedSize = logRecord.GetInlineRecordSizes().allocatedSize;
                 return true;
             }
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -13,10 +14,17 @@ namespace Tsavorite.core
     /// Useful in quick recordInfo-testing operations</summary>
     public unsafe struct DiskLogRecord
     {
-        /// <inheritdoc/>
-        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
-        /// <inheritdoc/>
-        public readonly RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
+        /// <summary>A ref to the record header</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
+
+        /// <summary>Fast access returning a copy of the record header</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
+
+        /// <summary>Serialized length of the record</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetSerializedLength(long physicalAddress) => *(int*)(physicalAddress + RecordInfo.GetLength());
     }
 
     /// <summary>The record on the disk: header, optional fields, key, value</summary>
@@ -90,13 +98,13 @@ namespace Tsavorite.core
 
         const int SerializedRecordLengthSize = sizeof(long);
 
-        public readonly long SerializedRecordLength => *(long*)(physicalAddress + RecordInfo.GetLength());
+        public readonly int SerializedRecordLength => DiskLogRecord.GetSerializedLength(physicalAddress);
 
         readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
-        internal readonly long ValueAddress => KeyAddress + SpanField.InlineSize(KeyAddress);
+        internal readonly long ValueAddress => KeyAddress + SpanField.TotalInlineSize(KeyAddress);
 
-        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.InlineSize(ValueAddress);
+        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.TotalInlineSize(ValueAddress);
         public readonly int OptionalLength => (Info.HasETag ? LogRecord.ETagSize : 0) + (Info.HasExpiration ? LogRecord.ExpirationSize : 0);
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;

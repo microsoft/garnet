@@ -130,7 +130,7 @@ namespace Tsavorite.core
             {
                 while (totalSizes <= offset)
                 {
-                    var (_, allocatedSize) = new LogRecord<TValue>(physicalAddress).GetFullRecordSizes();
+                    var (_, allocatedSize) = new LogRecord<TValue>(physicalAddress).GetInlineRecordSizes();
                     if (totalSizes + allocatedSize > offset)
                         break;
                     totalSizes += allocatedSize;
@@ -190,7 +190,7 @@ namespace Tsavorite.core
                     // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
                     // So create a disk log record from the in-memory record.
                     var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
-                    nextAddress = currentAddress + logRecord.GetFullRecordSizes().allocatedSize;
+                    nextAddress = currentAddress + logRecord.GetInlineRecordSizes().allocatedSize;
 
                     // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
                     // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.

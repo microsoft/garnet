@@ -87,7 +87,8 @@ namespace Tsavorite.core
         public void ClearBitsForDiskImages()
         {
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
-            word &= ~(kDirtyBitMask | kSealedBitMask);
+            // *IsOverflow should be cleared as we have expanded the fields to inline on disk.
+            word &= ~(kDirtyBitMask | kSealedBitMask | kKeyIsOverflowBitMask | kValueIsOverflowBitMask);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

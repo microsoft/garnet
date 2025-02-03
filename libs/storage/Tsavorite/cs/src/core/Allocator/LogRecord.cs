@@ -53,7 +53,13 @@ namespace Tsavorite.core
     /// </summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][SpanByte key][Value Id or SpanByte][ETag?][Expiration?][FillerLen?]</item>
+    ///     <item>[RecordInfo][SpanByte key][Value][ETag?][Expiration?][FillerLen?]
+    ///         <br>Where Value Span is one of:</br>
+    ///         <list type="bullet">
+    ///             <item>ObjectId: If this is a object record, this is the ID into the <see cref="ObjectIdMap"/></item>
+    ///             <item>Span data: See <see cref="SpanField"/> for details</item>
+    ///         </list>
+    ///     </item>
     ///     </list>
     /// This lets us get to the key without intermediate computations to account for the optional fields.
     /// Some methods have both member and static versions for ease of access and possibly performance gains.
@@ -72,7 +78,8 @@ namespace Tsavorite.core
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         readonly int maxInlineValueSpanSize;
 
-        /// <summary>Address-only ctor, usually used for simple record parsing.</summary>
+        /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
+        /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
@@ -201,11 +208,11 @@ namespace Tsavorite.core
 
         private readonly int InlineKeySize => InlineKeySizeAt(KeyAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int InlineKeySizeAt(long keyAddress) => SpanField.InlineSize(keyAddress);
+        private static int InlineKeySizeAt(long keyAddress) => SpanField.TotalInlineSize(keyAddress);
 
         private readonly int InlineValueSize => InlineValueSizeAt(ValueAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly int InlineValueSizeAt(long valueAddress) => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.InlineSize(valueAddress);
+        private readonly int InlineValueSizeAt(long valueAddress) => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.TotalInlineSize(valueAddress);
 
         internal readonly int* ValueObjectIdAddress => (int*)ValueAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -246,7 +253,7 @@ namespace Tsavorite.core
             Debug.Assert(!IsObjectRecord, "ValueSpan cannot be used with Object log records");
 
             var address = ValueAddress;
-            var currentDataSize = SpanField.DataSize(address);
+            var currentDataSize = SpanField.DataSize(address, Info.ValueIsOverflow);
 
             // Do nothing if no size change. Growth and fillerLen may be negative if shrinking.
             var growth = newValueLength - currentDataSize;
@@ -258,7 +265,7 @@ namespace Tsavorite.core
             var valueAddress = ValueAddress;
             var optionalStartAddress = valueAddress + currentInlineSize;
 
-            var (usedRecordSize, allocatedRecordSize) = GetFullRecordSizes();
+            var (usedRecordSize, allocatedRecordSize) = GetInlineRecordSizes();
             var fillerLen = allocatedRecordSize - usedRecordSize;
 
             // Handle changed size, including changing between inline and overflow or vice-versa.
@@ -366,7 +373,7 @@ namespace Tsavorite.core
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
 
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
-        public readonly (int actualSize, int allocatedSize) GetFullRecordSizes()
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
         {
             var actualSize = ActualRecordSize;
             return (actualSize, actualSize + GetFillerLength());
@@ -731,7 +738,7 @@ namespace Tsavorite.core
             //      - This is so we don't waste a bunch of small allocs in the overflow allocator
             var keySize = Info.KeyIsOverflow || sizeInfo.KeyIsOverflow ? SpanField.OverflowInlineSize : sizeInfo.FieldInfo.KeySize;
             var valueSize = Info.ValueIsOverflow || sizeInfo.ValueIsOverflow ? SpanField.OverflowInlineSize : sizeInfo.FieldInfo.ValueSize;
-            return keySize + valueSize + sizeInfo.OptionalSize <= GetFullRecordSizes().allocatedSize;
+            return keySize + valueSize + sizeInfo.OptionalSize <= GetInlineRecordSizes().allocatedSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -746,7 +753,7 @@ namespace Tsavorite.core
 
             // Zero out optionals
             var address = GetFillerLengthAddress();
-            var allocatedRecordSize = GetFullRecordSizes().allocatedSize;
+            var allocatedRecordSize = GetInlineRecordSizes().allocatedSize;
             if (Info.HasFiller)
             {
                 *(int*)address = 0;

@@ -184,7 +184,7 @@ namespace Tsavorite.core
             newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
             var newLogRecord = new LogRecord<TValue>(newPhysicalAddress);
 
-            allocatedSize = newLogRecord.GetFullRecordSizes().allocatedSize;
+            allocatedSize = newLogRecord.GetInlineRecordSizes().allocatedSize;
             if (allocatedSize < sizeInfo.AllocatedInlineRecordSize)
                 goto Fail;
             return true;
