@@ -389,7 +389,7 @@ namespace Garnet.test.cluster
             context.nodes[restartingNode].Dispose(deleteDir: true);
 
             context.nodes[restartingNode] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(restartingNode).Port,
+                context.clusterTestUtils.GetEndPoint(restartingNode),
                 disableObjects: true,
                 tryRecover: false,
                 enableAOF: true,
@@ -413,7 +413,7 @@ namespace Garnet.test.cluster
         public void ClusterClientList()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, mainMemoryReplication: true, commitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -544,7 +544,7 @@ namespace Garnet.test.cluster
         public void ClusterClientKill()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, mainMemoryReplication: true, commitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -561,7 +561,7 @@ namespace Garnet.test.cluster
             // Test SLAVE separately - it's equivalent to REPLICA, but needed for compatibility
 
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, mainMemoryReplication: true, commitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
