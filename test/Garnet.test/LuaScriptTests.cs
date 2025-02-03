@@ -1183,7 +1183,7 @@ return count";
             var sw = Stopwatch.StartNew();
 
             const int FinalTimeout = DurationMS + 60 * 1_000;
-            
+
             foreach (var thread in threads)
             {
                 var timeout = thread.Join((int)(FinalTimeout - sw.ElapsedMilliseconds));
