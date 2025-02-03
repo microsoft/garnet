@@ -67,6 +67,8 @@ namespace Garnet.server
             var entries = storeWrapper.slowLogContainer.GetEntries(count);
             while (!RespWriteUtils.TryWriteArrayLength(entries.Count, ref dcurr, dend))
                 SendAndReset();
+
+            SessionParseState sps = default;
             foreach (var entry in entries)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
@@ -86,8 +88,6 @@ namespace Garnet.server
                 }
                 else
                 {
-                    SessionParseState sps = default;
-
                     // Deserialize the parse state
                     fixed (byte* ptr = entry.Arguments)
                     {

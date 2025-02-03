@@ -49,9 +49,7 @@ namespace Garnet.server
         /// Clear the slow log buffer
         /// </summary>
         public void Clear()
-        {
-            while (logEntries.TryDequeue(out _)) { }
-        }
+            => logEntries.Clear();
 
         /// <summary>
         /// Get a snapshot of the latest count entries in the slow log (-1 returns all entries)
