@@ -82,6 +82,12 @@ Specify your subject name via the cert-subject-name command line argument, if ap
 
         [RedisOption("repl-diskless-sync-delay", nameof(Options.ReplicaSyncDelayMs))]
         public Option<int> ReplicaDisklessSyncDelay { get; set; }
+
+        [RedisOption("slowlog-log-slower-than", nameof(Options.SlowLogThreshold))]
+        public Option<int> SlowLogLogSlowerThan { get; set; }
+
+        [RedisOption("slowlog-max-len", nameof(Options.SlowLogMaxEntries))]
+        public Option<int> SlowLogMaxLen { get; set; }
     }
 
     /// <summary>

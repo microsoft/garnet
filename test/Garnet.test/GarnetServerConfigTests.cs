@@ -184,11 +184,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual(4, options.ThreadPoolMinThreads);
             ClassicAssert.AreEqual(15000, options.ClusterTimeout);
             ClassicAssert.AreEqual(LogLevel.Information, options.LogLevel);
-            ClassicAssert.AreEqual(5, options.ReplicaSyncDelayMs);
+            ClassicAssert.AreEqual(10, options.ReplicaSyncDelayMs);
             ClassicAssert.IsTrue(options.EnableTLS);
             ClassicAssert.IsTrue(options.ClientCertificateRequired);
             ClassicAssert.AreEqual("testcert.pfx", options.CertFileName);
             ClassicAssert.AreEqual("placeholder", options.CertPassword);
+            ClassicAssert.AreEqual(10000, options.SlowLogThreshold);
+            ClassicAssert.AreEqual(128, options.SlowLogMaxEntries);
 
             // Import from redis.conf file, include command line args
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
@@ -200,9 +202,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual("20gb", options.MemorySize);
             ClassicAssert.AreEqual("1g", options.SegmentSize);
             ClassicAssert.AreEqual(6, options.ThreadPoolMinThreads);
-            ClassicAssert.AreEqual(5, options.ReplicaSyncDelayMs);
+            ClassicAssert.AreEqual(10, options.ReplicaSyncDelayMs);
             ClassicAssert.IsFalse(options.EnableTLS);
             ClassicAssert.IsTrue(options.ClientCertificateRequired);
+            ClassicAssert.AreEqual("testcert.pfx", options.CertFileName);
+            ClassicAssert.AreEqual("placeholder", options.CertPassword);
+            ClassicAssert.AreEqual(10000, options.SlowLogThreshold);
+            ClassicAssert.AreEqual(128, options.SlowLogMaxEntries);
             ClassicAssert.IsTrue(File.Exists(garnetConfigPath));
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

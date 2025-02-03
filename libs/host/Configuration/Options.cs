@@ -313,11 +313,11 @@ namespace Garnet
         public bool? LatencyMonitor { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("slowlog-log-slower-than", Required = false, Default = 0, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
+        [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
         public int SlowLogThreshold { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("slowlog-max-len", Required = false, Default = 128, HelpText = "Maximum number of slow log entries to keep.")]
+        [Option("slowlog-max-len", Required = false, HelpText = "Maximum number of slow log entries to keep.")]
         public int SlowLogMaxEntries { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
