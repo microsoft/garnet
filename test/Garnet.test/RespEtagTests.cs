@@ -385,30 +385,27 @@ namespace Garnet.test
         #endregion
 
         # region Edgecases
-
         [Test]
-        public void SetIfGreaterReturnsNilOnNonExistingKey()
+        public void SetIfMatchSetsKeyValueOnNonExistingKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
-            RedisResult res = db.Execute("SETIFGREATER", "non-existing-key", "value", 0);
-            ClassicAssert.IsTrue(res.IsNull);
-
-            // add a key-value pair, call setifgreater with a greater etag, then expire it, and call setifgreater again
-            var key = "key";
-            var value = "value";
-            db.StringSet(key, value);
-
-            RedisResult[] result = (RedisResult[])db.Execute("SETIFGREATER", key, "valueanother", 1, "EX", 3);
+            RedisResult[] result = (RedisResult[])db.Execute("SETIFMATCH", "key", "valueanother", 1, "EX", 3);
             ClassicAssert.AreEqual(2, (long)result[0]);
             ClassicAssert.IsTrue(result[1].IsNull);
+        }
 
-            Thread.Sleep(4000);
 
-            // also nil on calling on expired key
-            res = db.Execute("SETIFGREATER", key, "value", 2);
-            ClassicAssert.IsTrue(res.IsNull);
+        [Test]
+        public void SetIfGreaterSetsKeyValueOnNonExistingKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            RedisResult[] result = (RedisResult[])db.Execute("SETIFGREATER", "key", "valueanother", 1, "EX", 3);
+            ClassicAssert.AreEqual(2, (long)result[0]);
+            ClassicAssert.IsTrue(result[1].IsNull);
         }
 
         [Test]

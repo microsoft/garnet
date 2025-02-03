@@ -87,7 +87,7 @@ namespace Garnet.server
         private bool NetworkSETIFMATCH<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            return NetworkSEtETagConditional(RespCommand.SETIFMATCH, ref storageApi);
+            return NetworkSetETagConditional(RespCommand.SETIFMATCH, ref storageApi);
         }
 
         /// <summary>
@@ -101,10 +101,10 @@ namespace Garnet.server
         private bool NetworkSETIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            return NetworkSEtETagConditional(RespCommand.SETIFGREATER, ref storageApi);
+            return NetworkSetETagConditional(RespCommand.SETIFGREATER, ref storageApi);
         }
 
-        private bool NetworkSEtETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
+        private bool NetworkSetETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // Currently only supports these two commands
@@ -167,6 +167,12 @@ namespace Garnet.server
                 // neither NOGET nor EX|PX expiry combination
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                 break;
+            }
+
+            bool etagRead = parseState.TryGetLong(2, out long etag);
+            if (!etagRead || etag < 0)
+            {
+                errorMessage = CmdStrings.RESP_ERR_INVALID_ETAG;
             }
 
             if (!errorMessage.IsEmpty)

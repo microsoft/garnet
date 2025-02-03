@@ -28,8 +28,6 @@ namespace Garnet.server
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
                     return false;
-                case RespCommand.SETIFGREATER:
-                case RespCommand.SETIFMATCH:
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
                     if (input.header.CheckWithEtagFlag())
@@ -38,6 +36,11 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     }
                     return false;
+                case RespCommand.SETIFGREATER:
+                case RespCommand.SETIFMATCH:
+                    // add etag on first insertion
+                    this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
+                    return true;
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
@@ -88,12 +91,44 @@ namespace Garnet.server
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
 
-                case RespCommand.SET:
-                case RespCommand.SETEXNX:
+                case RespCommand.SETIFGREATER:
+                case RespCommand.SETIFMATCH:
                     int spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
+                    value.ExtraMetadata = input.arg1;
+                    newInputValue.CopyTo(value.AsSpan(spaceForEtag));
+
+                    long clientSentEtag = input.parseState.GetLong(1);
+
+                    clientSentEtag++;
+
+                    recordInfo.SetHasETag();
+                    // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+                    value.SetEtagInPayload(clientSentEtag);
+                    EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
+
+                    // write back array of the format [etag, nil]
+                    var nilResponse = CmdStrings.RESP_ERRNOTFOUND;
+                    // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                    WriteValAndEtagToDst(
+                        4 + 1 + NumUtils.CountDigits(functionsState.etagState.etag) + 2 + nilResponse.Length,
+                        ref nilResponse,
+                        functionsState.etagState.etag,
+                        ref output,
+                        functionsState.memoryPool,
+                        writeDirect: true
+                    );
+
+                    break;
+                case RespCommand.SET:
+                case RespCommand.SETEXNX:
+                    spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
+                    // Copy input to value
+                    newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
@@ -248,7 +283,7 @@ namespace Garnet.server
         public void PostInitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // reset etag state set at need initial update
-            if (input.header.cmd is (RespCommand.SET or RespCommand.SETEXNX or RespCommand.SETKEEPTTL))
+            if (input.header.cmd is (RespCommand.SET or RespCommand.SETEXNX or RespCommand.SETKEEPTTL or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER))
                 EtagState.ResetState(ref functionsState.etagState);
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
