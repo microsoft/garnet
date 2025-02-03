@@ -1038,17 +1038,17 @@ namespace Garnet.server
         /// </summary>
         public bool TryKill()
         {
-            if (networkSender.TryClose())
+            if (!networkSender.TryClose())
             {
-                if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
-                {
-                    aclAuthenticator.GetAccessControlList().Unsubscribe(this);
-                }
-
-                return true;
+                return false;
             }
 
-            return false;
+            if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
+            {
+                aclAuthenticator.GetAccessControlList().Unsubscribe(this);
+            }
+
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
