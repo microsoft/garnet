@@ -475,7 +475,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            clusterProvider.storeWrapper.subscribeBroker.Publish(ref parseState);
+            clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
             return true;
         }
     }

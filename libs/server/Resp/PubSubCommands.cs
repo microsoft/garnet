@@ -18,7 +18,7 @@ namespace Garnet.server
         int numActiveChannels = 0;
 
         /// <inheritdoc />
-        public override unsafe void Publish(ArgSlice key, ArgSlice value, int sid)
+        public override unsafe void Publish(ArgSlice key, ArgSlice value)
         {
             try
             {
@@ -54,7 +54,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value, int sid)
+        public override unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value)
         {
             try
             {

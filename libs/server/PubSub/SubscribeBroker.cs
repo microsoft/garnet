@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.networking;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -14,7 +15,7 @@ namespace Garnet.server
     /// <summary>
     /// Broker used for pub/sub
     /// </summary>
-    public sealed class SubscribeBroker : IDisposable
+    public sealed class SubscribeBroker : IDisposable, IBulkLogEntryConsumer
     {
         int sid = 0;
         ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
@@ -24,6 +25,7 @@ namespace Garnet.server
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
         bool disposed = false;
+        readonly ILogger logger;
 
         /// <summary>
         /// Constructor
@@ -32,13 +34,14 @@ namespace Garnet.server
         /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="subscriberRefreshFrequencyMs">Subscriber log refresh frequency</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true)
+        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true, ILogger logger = null)
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
+            this.logger = logger;
         }
 
         /// <summary>
@@ -77,7 +80,7 @@ namespace Garnet.server
                 {
                     foreach (var sub in subscriptionServerSessionDict)
                     {
-                        sub.Value.Publish(key, value, sub.Key);
+                        sub.Value.Publish(key, value);
                         numSubscribers++;
                     }
                 }
@@ -95,7 +98,7 @@ namespace Garnet.server
                         {
                             foreach (var sub in kvp.Value)
                             {
-                                sub.Value.PatternPublish(patternSlice, key, value, sub.Key);
+                                sub.Value.PatternPublish(patternSlice, key, value);
                                 numSubscribers++;
                             }
                         }
@@ -109,41 +112,58 @@ namespace Garnet.server
         {
             try
             {
-                long truncateUntilAddress = log.BeginAddress;
-
                 using var iterator = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
                 var signal = iterator.Signal;
                 using var registration = cts.Token.Register(signal);
 
                 while (!disposed)
                 {
-                    await iterator.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    if (cancellationToken.IsCancellationRequested) break;
-                    unsafe
-                    {
-                        while (iterator.GetNext(out var logEntry, out _, out long currentAddress, out long nextAddress))
-                        {
-                            if (currentAddress >= long.MaxValue) return;
-                            fixed (byte* logEntryPtr = logEntry)
-                            {
-                                var src = logEntryPtr;
-                                var key = new ArgSlice(src + sizeof(int), *(int*)src);
-                                src += sizeof(int) + key.length;
-                                var value = new ArgSlice(src + sizeof(int), *(int*)src);
-                                truncateUntilAddress = nextAddress;
-                                _ = Broadcast(key, value);
-                            }
-                        }
-
-                        if (truncateUntilAddress > log.BeginAddress)
-                            log.TruncateUntil(truncateUntilAddress);
-                    }
+                    if (cts.Token.IsCancellationRequested) break;
+                    await iterator.BulkConsumeAllAsync(this, token: cts.Token).ConfigureAwait(false);
                 }
             }
             finally
             {
                 done.Set();
             }
+        }
+
+        public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            try
+            {
+                var src = payloadPtr;
+                while (src < payloadPtr + payloadLength)
+                {
+                    cts.Token.ThrowIfCancellationRequested();
+                    var entryPayloadLength = log.UnsafeGetLength(src);
+                    src += log.HeaderSize;
+                    if (entryPayloadLength > 0)
+                    {
+                        var ptr = src;
+                        var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                        ptr += sizeof(int) + key.length;
+                        var value = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                        _ = Broadcast(key, value);
+                        src += TsavoriteLog.UnsafeAlign(entryPayloadLength);
+                    }
+                    else
+                    {
+                        src += TsavoriteLog.UnsafeAlign(-entryPayloadLength);
+                    }
+                }
+                if (nextAddress > log.BeginAddress)
+                    log.TruncateUntil(nextAddress);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at SubscribeBroker.Consume");
+                throw;
+            }
+        }
+
+        public void Throttle()
+        {
         }
 
         void Initialize()
@@ -310,30 +330,15 @@ namespace Garnet.server
         /// <summary>
         /// Publish the update made to key to all the subscribers, asynchronously
         /// </summary>
-        /// <param name="parseState">ParseState for publish message</param>
-        public unsafe void Publish(ref SessionParseState parseState)
+        /// <param name="key">key that has been updated</param>
+        /// <param name="value">value that has been updated</param>
+        public unsafe void Publish(ArgSlice key, ArgSlice value)
         {
             if (subscriptions == null && patternSubscriptions == null) return;
 
-            var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
-
-            var logEntry = new byte[sizeof(int) + key.length + sizeof(int) + value.length];
-            fixed (byte* logEntryPtr = logEntry)
-            {
-                var dst = logEntryPtr;
-
-                *(int*)dst = key.length;
-                dst += sizeof(int);
-                key.ReadOnlySpan.CopyTo(new Span<byte>(dst, key.length));
-                dst += key.length;
-
-                *(int*)dst = value.length;
-                dst += sizeof(int);
-                value.ReadOnlySpan.CopyTo(new Span<byte>(dst, value.length));
-            }
-
-            log.Enqueue(logEntry);
+            var keySB = key.SpanByte;
+            var valueSB = value.SpanByte;
+            log.Enqueue(ref keySB, ref valueSB, out _);
         }
 
         /// <summary>
