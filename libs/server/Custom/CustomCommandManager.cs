@@ -86,10 +86,10 @@ namespace Garnet.server
             var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, arity, customFunctions, expirationTicks);
             var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return extId;
         }
 
@@ -113,10 +113,10 @@ namespace Garnet.server
             var newCmd = new CustomTransaction(name, (byte)cmdId, arity, proc);
             var setSuccessful = transactionProcMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
-
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
-
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 
@@ -166,8 +166,10 @@ namespace Garnet.server
             var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
             Debug.Assert(scSetSuccessful);
 
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
 
             return (extId, scId);
         }
@@ -193,8 +195,10 @@ namespace Garnet.server
             var setSuccessful = customProcedureMap.TrySetValue(cmdId, ref newCmd);
             Debug.Assert(setSuccessful);
 
-            if (commandInfo != null) customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
-            if (commandDocs != null) customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
+            if (commandInfo != null)
+                customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
+            if (commandDocs != null)
+                customCommandsDocs.AddOrUpdate(name, commandDocs, (_, _) => commandDocs);
             return cmdId;
         }
 

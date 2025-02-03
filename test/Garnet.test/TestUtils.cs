@@ -583,7 +583,7 @@ namespace Garnet.test
                     tlsServerOptionsOverride: null,
                     clusterTlsClientOptionsOverride: new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = certificates ?? [new X509Certificate2(certFile, certPassword)],
+                        ClientCertificates = certificates ?? [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -691,7 +691,7 @@ namespace Garnet.test
                 (
                     new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = certificates ?? [new X509Certificate2(certFile, certPassword)],
+                        ClientCertificates = certificates ?? [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -708,7 +708,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -724,7 +724,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -740,7 +740,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,

@@ -58,7 +58,7 @@ namespace Garnet.test
                     tasks[i] = (input[offset].Value, db.StringGetAsync(input[offset].Key));
                 }
 
-                Task.WaitAll(tasks.Select(r => r.Item2).ToArray());
+                Task.WaitAll([.. tasks.Select(r => r.Item2)]);
                 for (int i = 0; i < numGets; i++)
                     ClassicAssert.AreEqual(tasks[i].Item1, tasks[i].Item2.Result);
             }
@@ -79,7 +79,7 @@ namespace Garnet.test
             var result = db.StringSet(input);
             ClassicAssert.IsTrue(result);
 
-            var results = db.StringGet(input.Select(r => (RedisKey)r.Key).ToArray());
+            var results = db.StringGet([.. input.Select(r => (RedisKey)r.Key)]);
             for (int i = 0; i < length; i++)
                 ClassicAssert.AreEqual(input[i].Value, results[i]);
         }

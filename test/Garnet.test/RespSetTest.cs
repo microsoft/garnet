@@ -556,7 +556,7 @@ namespace Garnet.test
 
             result = db.SetCombine(SetOperation.Difference, [new RedisKey(key1), new RedisKey(key2), new RedisKey(key3)]);
             ClassicAssert.AreEqual(2, result.Length);
-            strResult = result.Select(r => r.ToString()).ToArray();
+            strResult = [.. result.Select(r => r.ToString())];
             expectedResult = ["b", "d"];
             ClassicAssert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
 
@@ -651,7 +651,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
 
             membersResult = db.SetMembers(destination);
-            strResult = membersResult.Select(r => r.ToString()).ToArray();
+            strResult = [.. membersResult.Select(r => r.ToString())];
             expectedResult = ["three", "two"];
             ClassicAssert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
 
@@ -662,7 +662,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(exists);
 
             membersResult = db.SetMembers(destination);
-            strResult = membersResult.Select(r => r.ToString()).ToArray();
+            strResult = [.. membersResult.Select(r => r.ToString())];
             expectedResult = ["three", "two", "one"];
             ClassicAssert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
@@ -1570,7 +1570,7 @@ namespace Garnet.test
                 db.SetAdd(key, value);
             }
 
-            var actualResult = db.SetContains(key, find.Select(x => (RedisValue)x).ToArray());
+            var actualResult = db.SetContains(key, [.. find.Select(x => (RedisValue)x)]);
 
             CollectionAssert.AreEqual(expectedResult, actualResult);
         }
