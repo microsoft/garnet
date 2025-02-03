@@ -86,9 +86,6 @@ namespace Tsavorite.core
                         case LatchDestination.Retry:
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
-                            if (stackCtx.recSrc.HasInMemorySrc)
-                                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
                             goto CreateNewRecord;
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
@@ -152,7 +149,7 @@ namespace Tsavorite.core
 
                 // No record exists, or readonly or below. Drop through to create new record.
                 Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
-
+                
             CreateNewRecord:
                 status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
                 if (!OperationStatusUtils.IsAppend(status))
