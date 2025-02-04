@@ -55,7 +55,7 @@ namespace Garnet.server
             {
                 foreach (var subscribedKey in subscriptions.Keys)
                 {
-                        this.Unsubscribe(subscribedKey, (ServerSessionBase)session);
+                    this.Unsubscribe(subscribedKey, (ServerSessionBase)session);
                 }
             }
 
