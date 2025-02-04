@@ -588,6 +588,15 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("GET key3");
             expectedResponse = "$-1\r\n";
             ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("HSET key4 first 1");
+            expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists even if it's an object.
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key4 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         [Test]

@@ -415,6 +415,7 @@ namespace Garnet.server
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
                     txnManager.SaveKeyEntryToLock(srcKey, false, LockType.Exclusive);
+                    txnManager.SaveKeyEntryToLock(srcKey, true, LockType.Exclusive);
                 }
                 txnManager.Run(true);
             }
