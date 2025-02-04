@@ -69,6 +69,22 @@ namespace Garnet.server
         void PurgeBufferPool(ManagerType managerType);
 
         /// <summary>
+        /// Extract key specs
+        /// </summary>
+        /// <param name="commandInfo"></param>
+        /// <param name="cmd"></param>
+        /// <param name="csvi"></param>
+        void ExtractKeySpecs(RespCommandsInfo commandInfo, RespCommand cmd, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi);
+
+        /// <summary>
+        /// Issue a cluster publish message to remote nodes
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message);
+
+        /// <summary>
         /// Is Primary
         /// </summary>
         /// <returns></returns>

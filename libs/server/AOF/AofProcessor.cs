@@ -78,6 +78,7 @@ namespace Garnet.server
                 storeWrapper.customCommandManager,
                 recordToAof ? storeWrapper.appendOnlyFile : null,
                 storeWrapper.serverOptions,
+                storeWrapper.subscribeBroker,
                 accessControlList: storeWrapper.accessControlList,
                 loggerFactory: storeWrapper.loggerFactory);
 

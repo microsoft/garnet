@@ -7,16 +7,17 @@ using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.networking;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.common
 {
-
     /// <summary>
     /// Light remote client
     /// </summary>
-    public unsafe class LightClient : ClientBase, IServerHook, IMessageConsumer
+    public class LightClient : ClientBase, IServerHook, IMessageConsumer
     {
         /// <summary>
         /// On response delegate function.
@@ -25,7 +26,7 @@ namespace Garnet.common
         /// <param name="bytesRead"></param>
         /// <param name="opType"></param>        
         /// <returns></returns>
-        public delegate (int, int) OnResponseDelegateUnsafe(byte* buf, int bytesRead, int opType);
+        public unsafe delegate (int, int) OnResponseDelegateUnsafe(byte* buf, int bytesRead, int opType);
         readonly OnResponseDelegateUnsafe onResponseDelegateUnsafe = null;
 
         readonly int BufferSize;
@@ -39,24 +40,24 @@ namespace Garnet.common
         LightClientTcpNetworkHandler networkHandler;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+        readonly ILogger logger;
 
         /// <summary>
         /// Create client instance to connect to specfied destination
         /// </summary>
-        /// <param name="address">IP address</param>
-        /// <param name="port">Port</param>
+        /// <param name="endpoint">The server endpoint</param>
         /// <param name="opType">Op type</param>
         /// <param name="onResponseDelegateUnsafe">Callback that takes in a byte array and length, and returns the number of bytes read and the number of requests processed</param>
         /// <param name="BufferSize">Message buffer size.</param>
         /// <param name="sslOptions">SSL options</param>
-        public LightClient(
-            string address,
-            int port,
+        public unsafe LightClient(
+            EndPoint endpoint,
             int opType,
             OnResponseDelegateUnsafe onResponseDelegateUnsafe = null,
             int BufferSize = 1 << 18,
-            SslClientAuthenticationOptions sslOptions = null)
-            : base(address, port, BufferSize)
+            SslClientAuthenticationOptions sslOptions = null,
+            ILogger logger = null)
+            : base(endpoint, BufferSize)
         {
             this.networkBufferSettings = new NetworkBufferSettings(BufferSize, BufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool();
@@ -64,6 +65,7 @@ namespace Garnet.common
             this.opType = opType;
             this.BufferSize = BufferSize;
             this.sslOptions = sslOptions;
+            this.logger = logger;
         }
 
         /// <summary>
@@ -109,11 +111,70 @@ namespace Garnet.common
         /// </summary>
         public override void Connect()
         {
-            socket = GetSendSocket(address, port);
+            socket = ConnectSendSocketAsync().ConfigureAwait(false).GetAwaiter().GetResult();
             networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBufferSettings, networkPool, sslOptions != null, this);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}").ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, endpoint.ToString()).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
+        }
+
+        /// <summary>
+        /// Connect client send socket
+        /// </summary>
+        private async Task<Socket> ConnectSendSocketAsync(CancellationToken cancellationToken = default)
+        {
+            if (endpoint is DnsEndPoint dnsEndpoint)
+            {
+                var hostEntries = await Dns.GetHostEntryAsync(dnsEndpoint.Host, cancellationToken).ConfigureAwait(false);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    if (await TryConnectSocketAsync(socket, endpoint, cancellationToken))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (endpoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (await TryConnectSocketAsync(socket, endpoint, cancellationToken))
+                    return socket;
+            }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", endpoint);
+            throw new Exception($"Failed to connect at {endpoint}");
+        }
+
+        /// <summary>
+        /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
+        /// </summary>
+        /// <param name="socket"></param>
+        /// <param name="endpoint"></param>
+        /// <param name="cancellationToken">The cancellation token</param>
+        /// <returns></returns>
+        private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                if (socket.Connected)
+                    return true;
+            }
+            catch
+            {
+                socket.Dispose();
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -122,7 +183,7 @@ namespace Garnet.common
         /// <param name="buf"></param>
         /// <param name="len"></param>
         /// <param name="numTokens">Number of symbols expected in the response</param>
-        public override void Send(byte[] buf, int len, int numTokens = 1)
+        public override unsafe void Send(byte[] buf, int len, int numTokens = 1)
         {
             Interlocked.Add(ref numPendingRequests, numTokens);
 
@@ -161,35 +222,6 @@ namespace Garnet.common
             networkSender.GetResponseObject();
         }
 
-        private static Socket GetSendSocket(string address, int port, int millisecondsTimeout = -2)
-        {
-            var ip = IPAddress.Parse(address);
-            var endPoint = new IPEndPoint(ip, port);
-            var socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
-            {
-                NoDelay = true
-            };
-
-            if (millisecondsTimeout != -2)
-            {
-                IAsyncResult result = socket.BeginConnect(endPoint, null, null);
-                result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
-                if (socket.Connected)
-                    socket.EndConnect(result);
-                else
-                {
-                    socket.Close();
-                    throw new Exception("Failed to connect server.");
-                }
-            }
-            else
-            {
-                socket.Connect(endPoint);
-            }
-
-            return socket;
-        }
-
         public override bool CompletePendingRequests(int timeout = -1, CancellationToken token = default)
         {
             var deadline = timeout == -1 ? DateTime.MaxValue.Ticks : DateTime.Now.AddMilliseconds(timeout).Ticks;
@@ -206,7 +238,7 @@ namespace Garnet.common
             return numPendingRequests == 0;
         }
 
-        private static (int, int) DefaultLightReceiveUnsafe(byte* buf, int bytesRead, int opType) => (bytesRead, 1);
+        private static unsafe (int, int) DefaultLightReceiveUnsafe(byte* buf, int bytesRead, int opType) => (bytesRead, 1);
 
         /// <inheritdoc />
         public override void Dispose()
@@ -227,7 +259,7 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
-        public int TryConsumeMessages(byte* reqBuffer, int bytesRead)
+        public unsafe int TryConsumeMessages(byte* reqBuffer, int bytesRead)
         {
             (int readHead, int count) = onResponseDelegateUnsafe(reqBuffer, bytesRead, opType);
             Interlocked.Add(ref numPendingRequests, -count);
