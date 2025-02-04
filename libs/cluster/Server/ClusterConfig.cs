@@ -519,20 +519,20 @@ namespace Garnet.cluster
             //<slot> <slot> ... <slot>
             var nodeInfoStringBuilder = new StringBuilder();
             return nodeInfoStringBuilder
-           .Append(workers[workerId].Nodeid).Append(" ")
-           .Append(workers[workerId].Address).Append(":").Append(workers[workerId].Port)
-           .Append("@").Append(workers[workerId].Port + 10000).Append(",").Append(workers[workerId].hostname).Append(" ")
-           .Append(workerId == 1 ? "myself," : "")
-           .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(" ")
-           .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-").Append(" ")
-           .Append(info.ping).Append(" ")
-           .Append(info.pong).Append(" ")
-           .Append(workers[workerId].ConfigEpoch).Append(" ")
-           .Append(info.connected || workerId == 1 ? "connected" : "disconnected")
-           .Append(GetSlotRange(workerId))
-           .Append(GetSpecialStates(workerId))
-           .Append("\n")
-           .ToString();
+                .Append(workers[workerId].Nodeid).Append(" ")
+                .Append(workers[workerId].Address).Append(":").Append(workers[workerId].Port)
+                .Append("@").Append(workers[workerId].Port + 10000).Append(",").Append(workers[workerId].hostname).Append(" ")
+                .Append(workerId == 1 ? "myself," : "")
+                .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(" ")
+                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-").Append(" ")
+                .Append(info.ping).Append(" ")
+                .Append(info.pong).Append(" ")
+                .Append(workers[workerId].ConfigEpoch).Append(" ")
+                .Append(info.connected || workerId == 1 ? "connected" : "disconnected")
+                .Append(GetSlotRange(workerId))
+                .Append(GetSpecialStates(workerId))
+                .Append("\n")
+                .ToString();
         }
 
         private string GetSpecialStates(ushort workerId)
