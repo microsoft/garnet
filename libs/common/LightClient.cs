@@ -168,7 +168,7 @@ namespace Garnet.common
                 if (socket.Connected)
                     return true;
             }
-            catch (Exception ex)
+            catch
             {
                 socket.Dispose();
                 return false;
