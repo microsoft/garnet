@@ -277,7 +277,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+            var server = redis.GetServer(TestUtils.EndPoint);
 
             // Load a script in the memory
             var script = "return 1;";
@@ -298,7 +298,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var extendedCharsScript = "return '僕'";
 
-            var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+            var server = redis.GetServer(TestUtils.EndPoint);
             var scriptSha = server.ScriptLoad(extendedCharsScript);
             var result = redis.GetDatabase(0).ScriptEvaluate(scriptSha);
             ClassicAssert.AreNotEqual("僕", result);

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Text;
 using Garnet.networking;
@@ -26,16 +27,14 @@ namespace Garnet.common
         /// </summary>
         public CountResponseType countResponseType;
 
-        public string Address { get; set; }
-        public int Port { get; set; }
+        public EndPoint EndPoint { get; set; }
 
-        public LightClientRequest(string address, int port, int optType, LightClient.OnResponseDelegateUnsafe onReceive = null, SslClientAuthenticationOptions sslOptions = null, CountResponseType countResponseType = CountResponseType.Tokens)
+        public LightClientRequest(EndPoint endpoint, int optType, LightClient.OnResponseDelegateUnsafe onReceive = null, SslClientAuthenticationOptions sslOptions = null, CountResponseType countResponseType = CountResponseType.Tokens)
         {
             this.countResponseType = countResponseType;
-            client = new LightClient(address, port, optType, onReceive == null ? LightReceive : onReceive, sslOptions: sslOptions);
+            client = new LightClient(endpoint, optType, onReceive == null ? LightReceive : onReceive, sslOptions: sslOptions);
             client.Connect();
-            Address = address;
-            Port = port;
+            EndPoint = endpoint;
         }
 
         public byte[] SendCommand(string cmd, int numTokens = 1, bool returnAccumulatedBuffer = false)

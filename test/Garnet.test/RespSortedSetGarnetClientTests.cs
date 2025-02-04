@@ -63,7 +63,7 @@ namespace Garnet.test
         [Test]
         public async Task CanDoZAddGarnetAsync()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             List<string> parameters =
@@ -93,7 +93,7 @@ namespace Garnet.test
         [Test]
         public void CanDoZAddGarnetCallback()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
             List<string> parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
             db.ExecuteForMemoryResult(SimpleMemoryResultCallback, 1, "ZADD", parameters);
@@ -104,7 +104,7 @@ namespace Garnet.test
         [Test]
         public void CanDoExecuteForStringResultCallback()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
             var expectedResult = "2";
             List<string> parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
@@ -130,7 +130,7 @@ namespace Garnet.test
         [Test]
         public async Task CanDoZCardGarnetUsingMemoryResultAsync()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
             List<string> parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
             db.ExecuteForMemoryResult(SimpleMemoryResultCallback, 1, "ZADD", parameters);
@@ -156,7 +156,7 @@ namespace Garnet.test
         [Test]
         public async Task CanDoZAddGarnetMultithread()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
             var numThreads = 2;
             Task[] tasks = new Task[numThreads];
@@ -232,7 +232,7 @@ namespace Garnet.test
         [Test]
         public async Task CanUseExecuteForStringArrayResult()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             List<string> parameters =
@@ -262,7 +262,7 @@ namespace Garnet.test
         [Test]
         public async Task CanUseExecuteForStringResultAsync()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
             List<string> parameters = [];
             parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
@@ -283,7 +283,7 @@ namespace Garnet.test
         [Test]
         public async Task CanUseExecuteForMemoryResultArrayWithCancellationTokenAsync()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             List<string> parameters =
@@ -323,7 +323,7 @@ namespace Garnet.test
         [Test]
         public async Task CanUseExecuteForMemoryResultWithCancellationTokenAsync()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             List<string> parameters =
@@ -368,7 +368,7 @@ namespace Garnet.test
         private static async Task DoZRangeAsync(int taskId, CancellationToken ct)
         {
             var rnd = new Random();
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             var parameters = new List<string>();
@@ -412,7 +412,7 @@ namespace Garnet.test
         [Test]
         public async Task CanGarnetClientUseZaddZrem()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             // add a new Sorted Set
@@ -442,7 +442,7 @@ namespace Garnet.test
         [Test]
         public void CanGarnetClientUseZaddZremWithCallback()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
 
             ManualResetEventSlim e = new();
@@ -490,7 +490,7 @@ namespace Garnet.test
         [Test]
         public async Task CanGarnetClientUseZCard()
         {
-            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            using var db = new GarnetClient(TestUtils.EndPoint);
             db.Connect();
             var expectedValue = 0;
 
