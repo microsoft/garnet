@@ -18,8 +18,8 @@ namespace Garnet.server
     public sealed class SubscribeBroker : IDisposable, IBulkLogEntryConsumer
     {
         int sid = 0;
-        ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>> patternSubscriptions;
+        ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>> subscriptions;
+        ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>> patternSubscriptions;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
@@ -74,11 +74,12 @@ namespace Garnet.server
 
             if (subscriptions != null)
             {
-                if (subscriptions.TryGetValue(new ByteArrayWrapper(key), out var subscriptionServerSessionDict))
+                if (subscriptions.TryGetValue(new ByteArrayWrapper(key), out var sessions))
                 {
-                    foreach (var sub in subscriptionServerSessionDict)
+                    int index = 0;
+                    while (sessions.Get(ref index, out var session))
                     {
-                        sub.Value.Publish(key, value);
+                        session.Publish(key, value);
                         numSubscribers++;
                     }
                 }
@@ -94,9 +95,11 @@ namespace Garnet.server
                         var patternSlice = new ArgSlice(patternPtr, pattern.ReadOnlySpan.Length);
                         if (Match(key, patternSlice))
                         {
-                            foreach (var sub in kvp.Value)
+                            var sessions = kvp.Value;
+                            int index = 0;
+                            while (sessions.Get(ref index, out var session))
                             {
-                                sub.Value.PatternPublish(patternSlice, key, value);
+                                session.PatternPublish(patternSlice, key, value);
                                 numSubscribers++;
                             }
                         }
@@ -167,8 +170,8 @@ namespace Garnet.server
         void Initialize()
         {
             done.Reset();
-            subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
-            patternSubscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
+            subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
+            patternSubscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
             Task.Run(() => Start(cts.Token));
         }
 
@@ -191,9 +194,9 @@ namespace Garnet.server
                 while (patternSubscriptions == null) Thread.Yield();
             }
             var subscriptionKey = ByteArrayWrapper.CopyFrom(key.ReadOnlySpan, false);
-            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
-            if (subscriptions.TryGetValue(subscriptionKey, out var val))
-                val.TryAdd(id, session);
+            subscriptions.TryAdd(subscriptionKey, new ConcurrentList<ServerSessionBase>());
+            if (subscriptions.TryGetValue(subscriptionKey, out var sessions))
+                sessions.Add(session);
             return id;
         }
 
@@ -215,9 +218,9 @@ namespace Garnet.server
                 while (patternSubscriptions == null) Thread.Yield();
             }
             var subscriptionPattern = ByteArrayWrapper.CopyFrom(pattern.ReadOnlySpan, false);
-            patternSubscriptions.TryAdd(subscriptionPattern, new ConcurrentDictionary<int, ServerSessionBase>());
-            if (patternSubscriptions.TryGetValue(subscriptionPattern, out var val))
-                val.TryAdd(id, session);
+            patternSubscriptions.TryAdd(subscriptionPattern, new ConcurrentList<ServerSessionBase>());
+            if (patternSubscriptions.TryGetValue(subscriptionPattern, out var sessions))
+                sessions.Add(session);
             return id;
         }
 
@@ -231,17 +234,9 @@ namespace Garnet.server
         {
             bool ret = false;
             if (subscriptions == null) return ret;
-            if (subscriptions.TryGetValue(key, out var subscriptionDict))
+            if (subscriptions.TryGetValue(key, out var sessions))
             {
-                foreach (var kvp in subscriptionDict)
-                {
-                    if (kvp.Value == session)
-                    {
-                        subscriptionDict.TryRemove(sid, out _);
-                        ret = true;
-                        break;
-                    }
-                }
+                return sessions.RemoveAll(session);
             }
             return ret;
         }
@@ -257,16 +252,9 @@ namespace Garnet.server
             if (patternSubscriptions == null) return;
             if (patternSubscriptions.ContainsKey(key))
             {
-                if (patternSubscriptions.TryGetValue(key, out var subscriptionDict))
+                if (patternSubscriptions.TryGetValue(key, out var sessions))
                 {
-                    foreach (var kvp in subscriptionDict)
-                    {
-                        if (kvp.Value == session)
-                        {
-                            subscriptionDict.TryRemove(sid, out _);
-                            break;
-                        }
-                    }
+                    sessions.RemoveAll(session);
                 }
             }
         }
@@ -283,7 +271,7 @@ namespace Garnet.server
             {
                 foreach (var subscription in subscriptions)
                 {
-                    if (subscription.Value.Values.Contains(session))
+                    if (subscription.Value.Count > 0)
                         sessionSubscriptions.Add(subscription.Key);
                 }
             }
@@ -300,7 +288,7 @@ namespace Garnet.server
             List<ByteArrayWrapper> sessionPatternSubscriptions = new();
             foreach (var patternSubscription in patternSubscriptions)
             {
-                if (patternSubscription.Value.Values.Contains(session))
+                if (patternSubscription.Value.Count > 0)
                     sessionPatternSubscriptions.Add(patternSubscription.Key);
             }
 
@@ -381,8 +369,8 @@ namespace Garnet.server
         {
             if (subscriptions is null)
                 return 0;
-            _ = subscriptions.TryGetValue(new ByteArrayWrapper(channel), out var subscriptionDict);
-            return subscriptionDict?.Count ?? 0;
+            _ = subscriptions.TryGetValue(new ByteArrayWrapper(channel), out var sessions);
+            return sessions?.Count ?? 0;
         }
 
         /// <inheritdoc />
