@@ -85,7 +85,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -4053,7 +4053,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBLMoveAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("BLMOVE", ["foo", "bar", "RIGHT", "LEFT", "1"]);
+                string val = await client.ExecuteForStringResultAsync("BLMOVE", ["foo", "bar", "RIGHT", "LEFT", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4068,7 +4068,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBRPopLPushAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("BRPOPLPUSH", ["foo", "bar", "1"]);
+                string val = await client.ExecuteForStringResultAsync("BRPOPLPUSH", ["foo", "bar", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4083,7 +4083,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBLMPopAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("BLMPOP", ["1", "1", "foo", "RIGHT"]);
+                string val = await client.ExecuteForStringResultAsync("BLMPOP", ["0.1", "1", "foo", "RIGHT"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4098,7 +4098,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBLPopAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("BLPOP", ["foo", "1"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("BLPOP", ["foo", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4113,7 +4113,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBRPopAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("BRPOP", ["foo", "1"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("BRPOP", ["foo", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4128,7 +4128,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBZMPopAsync(GarnetClient client)
             {
-                var val = await client.ExecuteForStringResultAsync("BZMPOP", ["1", "1", "foo", "MIN"]);
+                var val = await client.ExecuteForStringResultAsync("BZMPOP", ["0.1", "1", "foo", "MIN"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4143,7 +4143,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBZPopMaxAsync(GarnetClient client)
             {
-                var val = await client.ExecuteForStringResultAsync("BZPOPMAX", ["foo", "1"]);
+                var val = await client.ExecuteForStringResultAsync("BZPOPMAX", ["foo", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -4158,7 +4158,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBZPopMinAsync(GarnetClient client)
             {
-                var val = await client.ExecuteForStringResultAsync("BZPOPMIN", ["foo", "1"]);
+                var val = await client.ExecuteForStringResultAsync("BZPOPMIN", ["foo", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -5727,6 +5727,66 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task SlowlogGetACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG GET",
+                [DoSlowlogGetAsync]
+            );
+
+            static async Task DoSlowlogGetAsync(GarnetClient client)
+            {
+                string[] res = await client.ExecuteForStringArrayResultAsync("SLOWLOG", ["GET"]);
+                ClassicAssert.AreEqual(0, res.Length);
+            }
+        }
+
+        [Test]
+        public async Task SlowlogHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG HELP",
+                [DoSlowlogHelpAsync]
+            );
+
+            static async Task DoSlowlogHelpAsync(GarnetClient client)
+            {
+                string[] res = await client.ExecuteForStringArrayResultAsync("SLOWLOG", ["HELP"]);
+                ClassicAssert.AreEqual(12, res.Length);
+            }
+        }
+
+        [Test]
+        public async Task SlowlogLenACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG LEN",
+                [DoSlowlogLenAsync]
+            );
+
+            static async Task DoSlowlogLenAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("SLOWLOG", ["LEN"]);
+                ClassicAssert.AreEqual("0", res);
+            }
+        }
+
+        [Test]
+        public async Task SlowlogResetACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG RESET",
+                [DoSlowlogResetAsync]
+            );
+
+            static async Task DoSlowlogResetAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("SLOWLOG", ["RESET"]);
+                ClassicAssert.AreEqual("OK", res);
             }
         }
 
