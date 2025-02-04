@@ -84,6 +84,7 @@ namespace Garnet.server
         /// <param name="message"></param>
         void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message);
 
+        /// <summary>
         /// Is Primary
         /// </summary>
         /// <returns></returns>
