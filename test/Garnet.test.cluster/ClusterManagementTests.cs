@@ -734,14 +734,14 @@ namespace Garnet.test.cluster
             var lines = result.ToString().Split("\n", StringSplitOptions.RemoveEmptyEntries);
             ClassicAssert.AreEqual(node_count, lines.Length);
 
-            var primaries = shardInfo[0].nodes.Where(x => x.role == Role.PRIMARY).Select(w => w.nodeid).ToArray();
+            var primaries = shardInfo[0].nodes.Where(x => x.role == NodeRole.PRIMARY).Select(w => w.nodeid).ToArray();
             foreach (var line in lines)
             {
                 var fields = line.Split(' ');
                 ClassicAssert.IsTrue(shardInfo[0].nodes.Any(e => e.nodeid == fields[0]));
 
                 var node = shardInfo[0].nodes.Single(e => e.nodeid == fields[0]);
-                if (node.role == Role.PRIMARY)
+                if (node.role == NodeRole.PRIMARY)
                 {
                     ClassicAssert.GreaterOrEqual(fields.Length, 8);
                     ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
