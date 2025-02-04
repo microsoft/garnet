@@ -40,6 +40,7 @@ namespace Garnet.server
                 WriteDirectLargeRespString(key.ReadOnlySpan);
                 WriteDirectLargeRespString(value.ReadOnlySpan);
 
+                // Flush the publish message for this subscriber
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
             }
@@ -268,17 +269,13 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
-                    fixed (byte* channelPtr = channel)
-                    {
-                        var channelSlice = new ArgSlice(channelPtr, channel.Length);
-                        while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
-                            SendAndReset();
+                    while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref dcurr, dend))
+                        SendAndReset();
 
-                        if (subscribeBroker.Unsubscribe(channelSlice, this))
-                            numActiveChannels--;
-                        while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
-                            SendAndReset();
-                    }
+                    if (subscribeBroker.Unsubscribe(channel, this))
+                        numActiveChannels--;
+                    while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
+                        SendAndReset();
                 }
 
                 if (channels.Count == 0)
@@ -312,7 +309,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
-                    if (subscribeBroker.Unsubscribe(key, this))
+                    if (subscribeBroker.Unsubscribe(new ByteArrayWrapper(key), this))
                         numActiveChannels--;
 
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
@@ -341,7 +338,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                List<byte[]> channels = subscribeBroker.ListAllPatternSubscriptions(this);
+                List<ByteArrayWrapper> channels = subscribeBroker.ListAllPatternSubscriptions(this);
                 foreach (var channel in channels)
                 {
                     while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
@@ -349,18 +346,14 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
-                    fixed (byte* channelPtr = channel)
-                    {
-                        var channelSlice = new ArgSlice(channelPtr, channel.Length);
-                        while (!RespWriteUtils.TryWriteBulkString(channelSlice.ReadOnlySpan, ref dcurr, dend))
-                            SendAndReset();
+                    while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref dcurr, dend))
+                        SendAndReset();
 
-                        numActiveChannels--;
-                        while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
-                            SendAndReset();
+                    numActiveChannels--;
+                    while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
+                        SendAndReset();
 
-                        subscribeBroker.PatternUnsubscribe(channelSlice, this);
-                    }
+                    subscribeBroker.PatternUnsubscribe(channel, this);
                 }
 
                 if (numActiveChannels == 0)
@@ -386,7 +379,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
 
-                    subscribeBroker.Unsubscribe(key, this);
+                    subscribeBroker.Unsubscribe(new ByteArrayWrapper(key), this);
                 }
             }
 
@@ -412,7 +405,7 @@ namespace Garnet.server
                 return true;
             }
 
-            List<byte[]> channels;
+            List<ByteArrayWrapper> channels;
             if (parseState.Count == 0)
                 channels = subscribeBroker.GetChannels();
             else
@@ -423,7 +416,7 @@ namespace Garnet.server
 
             foreach (var channel in channels)
             {
-                while (!RespWriteUtils.TryWriteBulkString(channel, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

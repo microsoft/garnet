@@ -18,8 +18,8 @@ namespace Garnet.server
     public sealed class SubscribeBroker : IDisposable, IBulkLogEntryConsumer
     {
         int sid = 0;
-        ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> patternSubscriptions;
+        ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
+        ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>> patternSubscriptions;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
@@ -55,8 +55,7 @@ namespace Garnet.server
             {
                 foreach (var subscribedKey in subscriptions.Keys)
                 {
-                    fixed (byte* keyPtr = subscribedKey)
-                        this.Unsubscribe(new ArgSlice(keyPtr, subscribedKey.Length), (ServerSessionBase)session);
+                        this.Unsubscribe(subscribedKey, (ServerSessionBase)session);
                 }
             }
 
@@ -64,8 +63,7 @@ namespace Garnet.server
             {
                 foreach (var subscribedKey in patternSubscriptions.Keys)
                 {
-                    fixed (byte* keyPtr = subscribedKey)
-                        this.PatternUnsubscribe(new ArgSlice(keyPtr, subscribedKey.Length), (ServerSessionBase)session);
+                    this.PatternUnsubscribe(subscribedKey, (ServerSessionBase)session);
                 }
             }
         }
@@ -76,7 +74,7 @@ namespace Garnet.server
 
             if (subscriptions != null)
             {
-                if (subscriptions.TryGetValue(key.ToArray(), out var subscriptionServerSessionDict))
+                if (subscriptions.TryGetValue(new ByteArrayWrapper(key), out var subscriptionServerSessionDict))
                 {
                     foreach (var sub in subscriptionServerSessionDict)
                     {
@@ -86,14 +84,14 @@ namespace Garnet.server
                 }
             }
 
-            if (patternSubscriptions != null)
+            if (patternSubscriptions != null && patternSubscriptions.Count > 0)
             {
                 foreach (var kvp in patternSubscriptions)
                 {
                     var pattern = kvp.Key;
-                    fixed (byte* patternPtr = pattern)
+                    fixed (byte* patternPtr = pattern.ReadOnlySpan)
                     {
-                        var patternSlice = new ArgSlice(patternPtr, pattern.Length);
+                        var patternSlice = new ArgSlice(patternPtr, pattern.ReadOnlySpan.Length);
                         if (Match(key, patternSlice))
                         {
                             foreach (var sub in kvp.Value)
@@ -169,8 +167,8 @@ namespace Garnet.server
         void Initialize()
         {
             done.Reset();
-            subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
-            patternSubscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+            subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
+            patternSubscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
             Task.Run(() => Start(cts.Token));
         }
 
@@ -192,7 +190,7 @@ namespace Garnet.server
             {
                 while (patternSubscriptions == null) Thread.Yield();
             }
-            var subscriptionKey = key.ReadOnlySpan.ToArray();
+            var subscriptionKey = ByteArrayWrapper.CopyFrom(key.ReadOnlySpan, false);
             subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
             if (subscriptions.TryGetValue(subscriptionKey, out var val))
                 val.TryAdd(id, session);
@@ -216,7 +214,7 @@ namespace Garnet.server
             {
                 while (patternSubscriptions == null) Thread.Yield();
             }
-            var subscriptionPattern = pattern.ToArray();
+            var subscriptionPattern = ByteArrayWrapper.CopyFrom(pattern.ReadOnlySpan, false);
             patternSubscriptions.TryAdd(subscriptionPattern, new ConcurrentDictionary<int, ServerSessionBase>());
             if (patternSubscriptions.TryGetValue(subscriptionPattern, out var val))
                 val.TryAdd(id, session);
@@ -229,22 +227,19 @@ namespace Garnet.server
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool Unsubscribe(ArgSlice key, ServerSessionBase session)
+        public unsafe bool Unsubscribe(ByteArrayWrapper key, ServerSessionBase session)
         {
             bool ret = false;
             if (subscriptions == null) return ret;
-            if (subscriptions.TryGetValue(key.ToArray(), out var subscriptionDict))
+            if (subscriptions.TryGetValue(key, out var subscriptionDict))
             {
-                foreach (var sid in subscriptionDict.Keys)
+                foreach (var kvp in subscriptionDict)
                 {
-                    if (subscriptionDict.TryGetValue(sid, out var _session))
+                    if (kvp.Value == session)
                     {
-                        if (_session == session)
-                        {
-                            subscriptionDict.TryRemove(sid, out _);
-                            ret = true;
-                            break;
-                        }
+                        subscriptionDict.TryRemove(sid, out _);
+                        ret = true;
+                        break;
                     }
                 }
             }
@@ -257,23 +252,19 @@ namespace Garnet.server
         /// <param name="key">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe void PatternUnsubscribe(ArgSlice key, ServerSessionBase session)
+        public unsafe void PatternUnsubscribe(ByteArrayWrapper key, ServerSessionBase session)
         {
             if (patternSubscriptions == null) return;
-            var subscriptionKey = key.ToArray();
-            if (patternSubscriptions.ContainsKey(subscriptionKey))
+            if (patternSubscriptions.ContainsKey(key))
             {
-                if (patternSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
+                if (patternSubscriptions.TryGetValue(key, out var subscriptionDict))
                 {
-                    foreach (var sid in subscriptionDict.Keys)
+                    foreach (var kvp in subscriptionDict)
                     {
-                        if (subscriptionDict.TryGetValue(sid, out var _session))
+                        if (kvp.Value == session)
                         {
-                            if (_session == session)
-                            {
-                                subscriptionDict.TryRemove(sid, out _);
-                                break;
-                            }
+                            subscriptionDict.TryRemove(sid, out _);
+                            break;
                         }
                     }
                 }
@@ -285,9 +276,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="session"></param>
         /// <returns></returns>
-        public unsafe List<byte[]> ListAllSubscriptions(ServerSessionBase session)
+        public unsafe List<ByteArrayWrapper> ListAllSubscriptions(ServerSessionBase session)
         {
-            List<byte[]> sessionSubscriptions = new();
+            List<ByteArrayWrapper> sessionSubscriptions = new();
             if (subscriptions != null)
             {
                 foreach (var subscription in subscriptions)
@@ -304,9 +295,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="session"></param>
         /// <returns></returns>
-        public unsafe List<byte[]> ListAllPatternSubscriptions(ServerSessionBase session)
+        public unsafe List<ByteArrayWrapper> ListAllPatternSubscriptions(ServerSessionBase session)
         {
-            List<byte[]> sessionPatternSubscriptions = new();
+            List<ByteArrayWrapper> sessionPatternSubscriptions = new();
             foreach (var patternSubscription in patternSubscriptions)
             {
                 if (patternSubscription.Value.Values.Contains(session))
@@ -345,7 +336,7 @@ namespace Garnet.server
         /// Get the number of channels subscribed to
         /// </summary>
         /// <returns></returns>
-        public List<byte[]> GetChannels()
+        public List<ByteArrayWrapper> GetChannels()
         {
             if (subscriptions is null || subscriptions.Count == 0)
                 return [];
@@ -357,17 +348,17 @@ namespace Garnet.server
         /// </summary>
         /// <param name="pattern"></param>
         /// <returns></returns>
-        public unsafe List<byte[]> GetChannels(ArgSlice pattern)
+        public unsafe List<ByteArrayWrapper> GetChannels(ArgSlice pattern)
         {
             if (subscriptions is null || subscriptions.Count == 0)
                 return [];
 
-            List<byte[]> matches = [];
+            List<ByteArrayWrapper> matches = [];
             foreach (var key in subscriptions.Keys)
             {
-                fixed (byte* keyPtr = key)
+                fixed (byte* keyPtr = key.ReadOnlySpan)
                 {
-                    if (Match(new ArgSlice(keyPtr, key.Length), pattern))
+                    if (Match(new ArgSlice(keyPtr, key.ReadOnlySpan.Length), pattern))
                         matches.Add(key);
                 }
             }
@@ -390,7 +381,7 @@ namespace Garnet.server
         {
             if (subscriptions is null)
                 return 0;
-            _ = subscriptions.TryGetValue(channel.ToArray(), out var subscriptionDict);
+            _ = subscriptions.TryGetValue(new ByteArrayWrapper(channel), out var subscriptionDict);
             return subscriptionDict?.Count ?? 0;
         }
 
