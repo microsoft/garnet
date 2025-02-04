@@ -64,6 +64,9 @@ namespace Tsavorite.core
 
                 PageOffset localPageOffset = new() { PageAndOffset = PageVector.TailPageOffset.PageAndOffset };
 
+                if (PageVector.Pages is null)
+                    PageVector.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _);
+
                 // We need to pointer-advance, and possibly allocate a new page.
                 while (true)
                 { 
@@ -170,7 +173,8 @@ namespace Tsavorite.core
             internal void Clear()
             {
                 PageVector.Clear();
-                System.Array.Clear(freeList);
+                if (freeList is not null)
+                    System.Array.Clear(freeList);
             }
         }
     }

@@ -430,7 +430,7 @@ namespace Garnet.server
         {
             parseState.InitializeWithArgument(value);
             var input = new RawStringInput(RespCommand.APPEND, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
-            return SET(key.SpanByte, ref input, scratchBufferManager.FormatScratch(sizeof(long), value).SpanByte, ref context);
+            return SET(key.SpanByte, ref input, value.SpanByte, ref context);
         }
 
         /// <summary>

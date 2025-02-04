@@ -310,7 +310,7 @@ namespace Tsavorite.core
                 }
                 else    // We are growing and currently isOverflow
                 {
-                    // Growing and already oversize. SpanField will handle this either in-place (shrinking, or growth within the already-allocated size) or by free/alloc.
+                    // Growing and already in overflow. SpanField will handle this by reallocating. Inline length, and therefore Filler, do not change.
                     _ = SpanField.ReallocateOverflow(address, newValueLength, overflowAllocator);
                 }
             }
@@ -340,7 +340,8 @@ namespace Tsavorite.core
                     else
                     {
                         // Too big to convert to inline so shrink the overflow allocation in-place; we do not need to zero-init in overflow space.
-                        SpanField.GetLengthRef(address) = newValueLength;
+                        // SpanField will handle this by reallocating. Inline length, and therefore Filler, do not change.
+                        _ = SpanField.ReallocateOverflow(address, newValueLength, overflowAllocator);
                     }
                 }
             }

@@ -61,6 +61,8 @@ namespace Tsavorite.core
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TValue, TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
+            IsObjectAllocator = true;
+
             // TODO: Verify LogSettings.MaxInlineKeySizeBits and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
@@ -211,29 +213,21 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out TValue valueObject)
+        internal override void SerializeRecordToIteratorBuffer(ref LogRecord<TValue> logRecord, ref SectorAlignedMemory recordBuffer, out TValue valueObject)
         {
-            var logRecord = CreateLogRecord(GetPhysicalAddress(logicalAddress));
-            long recordSize = RecordInfo.GetLength() + logRecord.Key.TotalSize + new SpanByte().TotalSize
-                + (logRecord.Info.HasETag ? LogRecord.ETagSize : 0)
-                + (logRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);
-            if (recordSize > int.MaxValue)
+            // InlineRecordSize includes size for the objectId, which is >= sizeof(int), which is what we use for a placeholder for this DiskLogRecord instance.
+            var inlineRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
+            if (inlineRecordSize > int.MaxValue)
                 throw new TsavoriteException("Total size out of range");
 
-            bufferPool.EnsureSize(ref recordBuffer, (int)recordSize);
-            var ptr = recordBuffer.aligned_pointer;
+            bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
+            var ptr = recordBuffer.GetValidPointer();
 
             *(RecordInfo*)ptr = logRecord.Info;
             ptr += RecordInfo.GetLength();
 
-            var key = logRecord.Key;
-            (*(SpanByte*)ptr).Length = key.Length;
-            key.CopyTo(ref *(SpanByte*)ptr);
-            ptr += key.Length;
-
-            // Empty value; we'll return the value object
-            (*(SpanByte*)ptr).Length = 0;
-            ptr += (*(SpanByte*)ptr).TotalSize;
+            *(long*)ptr = (long)inlineRecordSize;
+            ptr += DiskLogRecord.SerializedRecordLengthSize;
 
             if (logRecord.Info.HasETag)
             {
@@ -246,6 +240,15 @@ namespace Tsavorite.core
                 *(long*)ptr = logRecord.Expiration;
                 ptr += sizeof(long);
             }
+
+            var key = logRecord.Key;
+            (*(SpanByte*)ptr).Length = key.Length;
+            key.CopyTo(ref *(SpanByte*)ptr);
+            ptr += key.TotalSize;
+
+            // Empty value; we'll return the deserialized value object. See note above regarding allocated space for this in the DiskLogRecord.
+            (*(SpanByte*)ptr).Length = 0;
+            ptr += (*(SpanByte*)ptr).TotalSize;
 
             valueObject = logRecord.ValueObject;
         }

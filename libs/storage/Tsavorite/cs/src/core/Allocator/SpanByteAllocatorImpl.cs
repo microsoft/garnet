@@ -196,30 +196,20 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out SpanByte valueObject)
+        internal override void SerializeRecordToIteratorBuffer(ref LogRecord<SpanByte> logRecord, ref SectorAlignedMemory recordBuffer, out SpanByte valueObject)
         {
-            var logRecord = CreateLogRecord(logicalAddress);
-            long recordSize = RecordInfo.GetLength() + logRecord.Key.TotalSize + logRecord.ValueSpan.TotalSize
-                + (logRecord.Info.HasETag ? LogRecord.ETagSize : 0)
-                + (logRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);
-            if (recordSize > int.MaxValue)
+            var inlineRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
+            if (inlineRecordSize > int.MaxValue)
                 throw new TsavoriteException("Total size out of range");
 
-            bufferPool.EnsureSize(ref recordBuffer, (int)recordSize);
-            var ptr = recordBuffer.aligned_pointer;
+            bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
+            var ptr = recordBuffer.GetValidPointer();
 
             *(RecordInfo*)ptr = logRecord.Info;
             ptr += RecordInfo.GetLength();
 
-            var key = logRecord.Key;
-            (*(SpanByte*)ptr).Length = key.Length;
-            key.CopyTo(ref *(SpanByte*)ptr);
-            ptr += key.Length;
-
-            var value = logRecord.ValueSpan;
-            (*(SpanByte*)ptr).Length = value.Length;
-            value.CopyTo(ref *(SpanByte*)ptr);
-            ptr += value.Length;
+            *(long*)ptr = (long)inlineRecordSize;
+            ptr += DiskLogRecord.SerializedRecordLengthSize;
 
             if (logRecord.Info.HasETag)
             {
@@ -232,6 +222,16 @@ namespace Tsavorite.core
                 *(long*)ptr = logRecord.Expiration;
                 ptr += sizeof(long);
             }
+
+            var key = logRecord.Key;
+            (*(SpanByte*)ptr).Length = key.Length;
+            key.CopyTo(ref *(SpanByte*)ptr);
+            ptr += key.TotalSize;
+
+            var value = logRecord.ValueSpan;
+            (*(SpanByte*)ptr).Length = value.Length;
+            value.CopyTo(ref *(SpanByte*)ptr);
+            ptr += value.TotalSize;
 
             valueObject = default;
         }
@@ -249,6 +249,8 @@ namespace Tsavorite.core
         {
             base.Dispose();
             freePagePool.Dispose();
+            foreach (var value in values)
+                value.Dispose();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -167,14 +167,14 @@ namespace Tsavorite.core
                 var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
 
                 // If record did not fit on the page its recordInfo will be Null; skip to the next page if so.
-                if ((*(RecordInfo*)(physicalAddress & hlogBase.PageSizeMask)).IsNull)
+                var recordInfo = LogRecord<TValue>.GetInfo(physicalAddress);
+                if (recordInfo.IsNull)
                 {
                     nextAddress = (1 + (currentAddress >> hlogBase.LogPageSizeBits)) << hlogBase.LogPageSizeBits;
                     epoch?.Suspend();
                     continue;
                 }
 
-                var recordInfo = LogRecord<TValue>.GetInfo(physicalAddress);
                 var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
                 if (skipOnScan || recordInfo.IsNull)
                 {
@@ -201,7 +201,7 @@ namespace Tsavorite.core
                         if (currentAddress >= headAddress && store is not null)
                             store.LockForScan(ref stackCtx, LogRecord<TValue>.GetKey(physicalAddress));
 
-                        hlogBase.SerializeRecordToIteratorBuffer(currentAddress, ref recordBuffer, out valueObject);
+                        hlogBase.SerializeRecordToIteratorBuffer(ref logRecord, ref recordBuffer, out valueObject);
                     }
                     finally
                     {
@@ -217,10 +217,13 @@ namespace Tsavorite.core
                     nextAddress = currentAddress + diskLogRecord.SerializedRecordLength;
                 }
 
-                if (valueObject is not null)
-                    diskLogRecord.valueObject = valueObject;
-                else 
-                    hlogBase.DeserializeFromDiskBuffer(ref diskLogRecord, frame.GetArrayAndUnalignedOffset(currentPage, offset));
+                if (hlogBase.IsObjectAllocator)
+                { 
+                    if (valueObject is not null)
+                        diskLogRecord.valueObject = valueObject;
+                    else 
+                        hlogBase.DeserializeFromDiskBuffer(ref diskLogRecord, frame.GetArrayAndUnalignedOffset(currentPage, offset));
+                }
 
                 // Success
                 epoch?.Suspend();

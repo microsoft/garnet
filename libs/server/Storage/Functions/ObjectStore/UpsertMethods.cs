@@ -36,7 +36,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentWriter(ref LogRecord<IGarnetObject> logRecord, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
-            logRecord.TrySetValueObject(srcValue);
+            _ = logRecord.TrySetValueObject(srcValue);
+            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+                return false;
+
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)

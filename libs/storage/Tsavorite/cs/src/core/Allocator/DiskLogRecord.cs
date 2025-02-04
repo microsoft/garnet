@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -14,6 +13,9 @@ namespace Tsavorite.core
     /// Useful in quick recordInfo-testing operations</summary>
     public unsafe struct DiskLogRecord
     {
+        /// <summary>The length of the serialized data.</summary>
+        internal const int SerializedRecordLengthSize = sizeof(long);
+
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
@@ -51,7 +53,7 @@ namespace Tsavorite.core
 
         #region IReadOnlyRecord
         /// <inheritdoc/>
-        public readonly bool IsObjectRecord => valueObject is not null;
+        public readonly bool IsObjectRecord => valueObject is IHeapObject;
         /// <inheritdoc/>
         public readonly bool IsSet => true;
         /// <inheritdoc/>
@@ -96,11 +98,9 @@ namespace Tsavorite.core
             };
         #endregion //IReadOnlyRecord
 
-        const int SerializedRecordLengthSize = sizeof(long);
-
         public readonly int SerializedRecordLength => DiskLogRecord.GetSerializedLength(physicalAddress);
 
-        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize + ETagLen + ExpirationLen;
+        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
         internal readonly long ValueAddress => KeyAddress + SpanField.GetInlineSize(KeyAddress);
 
@@ -110,12 +110,12 @@ namespace Tsavorite.core
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
 
-        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize;
+        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize;
         private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
 
         /// <summary>The size to IO from disk when reading a record. Keys and Values are SpanByte on disk and we reuse the max inline key size
         /// for both key and value for this estimate. They are prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
-        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
+        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
 
         internal static SpanByte GetContextRecordKey(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).Key;
 

@@ -49,7 +49,7 @@ namespace Garnet.server
         {
             if (!logRecord.TrySetValueSpan(srcValue))
                 return false;
-            return input.arg1 == 0 || logRecord.TrySetExpiration(input.arg1);
+            return input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
         }
     }
 }

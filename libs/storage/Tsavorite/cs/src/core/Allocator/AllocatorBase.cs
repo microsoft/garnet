@@ -29,6 +29,9 @@ namespace Tsavorite.core
         /// <summary>The fully-derived allocator struct wrapper (so calls on it are inlined rather than virtual) for this log.</summary>
         internal readonly TAllocator _wrapper;
 
+        /// <summary>Sometimes it's useful to know this explicitly rather than rely on method overrides etc.</summary>
+        internal bool IsObjectAllocator = false;
+
         #region Protected size definitions
         /// <summary>Buffer size</summary>
         internal readonly int BufferSize;
@@ -190,7 +193,7 @@ namespace Tsavorite.core
 
         #region Abstract and virtual methods
         /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>'s record buffer.</summary>
-        internal abstract void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out TValue valueObject);
+        internal abstract void SerializeRecordToIteratorBuffer(ref LogRecord<TValue> logRecord, ref SectorAlignedMemory recordBuffer, out TValue valueObject);
 
         /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>,
         /// if this is the <see cref="ObjectAllocator{TValue, TStoreFunctions}"/>.</summary>

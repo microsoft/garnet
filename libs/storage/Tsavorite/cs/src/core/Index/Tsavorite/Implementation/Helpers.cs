@@ -52,7 +52,7 @@ namespace Tsavorite.core
         internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
-            if (logRecord.ValueObject is not null)
+            if (logRecord.IsObjectRecord && logRecord.ValueObject is not null)
                 storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 

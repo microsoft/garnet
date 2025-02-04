@@ -285,6 +285,7 @@ namespace Garnet.server
             {
                 case RespCommand.SET:
                 case RespCommand.SETEX:
+                case RespCommand.APPEND:
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     break;
             }

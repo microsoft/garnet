@@ -62,7 +62,7 @@ namespace Tsavorite.core
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
-        internal override void SerializeRecordToIteratorBuffer(long logicalAddress, ref SectorAlignedMemory recordBuffer, out AofValue valueObject) => throw new TsavoriteException("AofAllocator Scan methods should not be used");
+        internal override void SerializeRecordToIteratorBuffer(ref LogRecord<AofValue> logRecord, ref SectorAlignedMemory recordBuffer, out AofValue valueObject) => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
         internal override void DeserializeFromDiskBuffer(ref DiskLogRecord<AofValue> diskLogRecord, (byte[] array, long offset) byteStream)
         {

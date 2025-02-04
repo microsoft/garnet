@@ -99,12 +99,15 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Clear()
             {
-                for (var ii = 0; ii < TailPageOffset.Page; ++ii)
+                if (Pages is not null)
                 {
-                    if (Pages[ii] == null)
-                        continue;
-                    NativeMemory.AlignedFree((nuint*)Pages[ii]);
-                    Pages[ii] = null;
+                    for (var ii = 0; ii < TailPageOffset.Page; ++ii)
+                    {
+                        if (Pages[ii] == null)
+                            continue;
+                        NativeMemory.AlignedFree((nuint*)Pages[ii]);
+                        Pages[ii] = null;
+                    }
                 }
 
                 // Prep for reuse

@@ -113,13 +113,16 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Clear()
             {
-                // The PageVector has no concept of the FreeList, so we must set "free" slots to null.
-                var slot = freeList;
-                while (slot != InvalidSlot)
-                {
-                    var next = ((BlockHeader*)PageVector.Pages[slot])->Slot;
-                    PageVector.Pages[slot] = null;
-                    slot = next;
+                // The PageVector has no concept of the FreeList, so we must set "free" slots to null before claring the PageVector.
+                if (PageVector.Pages is not null)
+                { 
+                    var slot = freeList;
+                    while (slot != InvalidSlot)
+                    {
+                        var next = ((BlockHeader*)PageVector.Pages[slot])->Slot;
+                        PageVector.Pages[slot] = null;
+                        slot = next;
+                    }
                 }
                 freeList = default;
 

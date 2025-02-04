@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Net;
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -15,7 +15,7 @@ namespace Tsavorite.core
     ///         <item>Oversize: these are allocations greater than <see cref="FixedSizePages.MaxBlockSize"/>. Each allocation is a separate page. See <see cref="OversizePages"/></item>
     ///     </list>
     /// </remarks>
-    internal unsafe partial class OverflowAllocator
+    internal unsafe partial class OverflowAllocator : IDisposable
     {
         private FixedSizePages fixedSizePages;
         private OversizePages oversizePages;
@@ -69,5 +69,15 @@ namespace Tsavorite.core
             fixedSizePages.Clear();
             oversizePages.Clear();
         }
+
+        /// <summary>
+        /// Dispose overflow allocator
+        /// </summary>
+        public void Dispose() => Clear();
+
+        /// <summary>
+        /// Finalizer to free native memory in case caller forgets Dispose().
+        /// </summary>
+        ~OverflowAllocator() => Dispose();
     }
 }
