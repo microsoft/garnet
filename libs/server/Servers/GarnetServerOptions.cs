@@ -412,6 +412,16 @@ namespace Garnet.server
         public LuaOptions LuaOptions;
 
         /// <summary>
+        /// Unix socket address path to bind server to
+        /// </summary>
+        public string UnixSocketPath { get; set; }
+
+        /// <summary>
+        /// Unix socket file permissions
+        /// </summary>
+        public UnixFileMode UnixSocketPermission { get; set; }
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)

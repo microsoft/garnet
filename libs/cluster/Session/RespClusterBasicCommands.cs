@@ -241,8 +241,8 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var (host, port) = current.GetEndpointFromNodeId(nodeId);
-            while (!RespWriteUtils.TryWriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
+            var endpoint = current.GetEndpointFromNodeId(nodeId);
+            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }
