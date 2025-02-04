@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -87,10 +88,9 @@ namespace Garnet.cluster
                     }
 
                     gcs = new(
-                        address,
-                        port,
-                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
-                        clusterProvider.replicationManager.GetNetworkPool,
+                        new IPEndPoint(IPAddress.Parse(address), port),
+                        networkBufferSettings: clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                        networkPool: clusterProvider.replicationManager.GetNetworkPool,
                         tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                         authUsername: clusterProvider.ClusterUsername,
                         authPassword: clusterProvider.ClusterPassword);
