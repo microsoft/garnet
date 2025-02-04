@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using System.Text;
 
 namespace Garnet.cluster
 {
@@ -479,14 +480,14 @@ namespace Garnet.cluster
         /// <returns>Formatted string.</returns>
         public string GetClusterInfo(ClusterProvider clusterProvider)
         {
-            var nodes = "";
+            var nodesStringBuilder = new StringBuilder();
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 var info = default(ConnectionInfo);
                 _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[i].Nodeid, out info);
-                nodes += GetNodeInfo(i, info);
+                nodesStringBuilder.Append(GetNodeInfo(i, info));
             }
-            return nodes;
+            return nodesStringBuilder.ToString();
         }
 
         /// <summary>
@@ -506,17 +507,22 @@ namespace Garnet.cluster
             //<config-epoch>
             //<link-state>
             //<slot> <slot> ... <slot>
-
-            return $"{workers[workerId].Nodeid} " +
-                $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
-                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
-                $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
-                $"{info.ping} " +
-                $"{info.pong} " +
-                $"{workers[workerId].ConfigEpoch} " +
-                $"{(info.connected || workerId == 1 ? "connected" : "disconnected")}" +
-                $"{GetSlotRange(workerId)}" +
-                $"{GetSpecialStates(workerId)}\n";
+            var nodeInfoStringBuilder = new StringBuilder();
+            return nodeInfoStringBuilder
+           .Append(workers[workerId].Nodeid).Append(" ")
+           .Append(workers[workerId].Address).Append(":").Append(workers[workerId].Port)
+           .Append("@").Append(workers[workerId].Port + 10000).Append(",").Append(workers[workerId].hostname).Append(" ")
+           .Append(workerId == 1 ? "myself," : "")
+           .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(" ")
+           .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-").Append(" ")
+           .Append(info.ping).Append(" ")
+           .Append(info.pong).Append(" ")
+           .Append(workers[workerId].ConfigEpoch).Append(" ")
+           .Append(info.connected || workerId == 1 ? "connected" : "disconnected")
+           .Append(GetSlotRange(workerId))
+           .Append(GetSpecialStates(workerId))
+           .Append("\n")
+           .ToString();
         }
 
         private string GetSpecialStates(ushort workerId)
