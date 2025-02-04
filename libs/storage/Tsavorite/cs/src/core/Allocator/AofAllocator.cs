@@ -48,27 +48,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly SpanByte GetKey(long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator"); // TODO can we remove Allocator.GetKey in favor of *LogRecord.Key?
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly AofValue GetValue(long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");   // TODO can we remove Allocator.GetValue in favor of *LogRecord.Key?
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo _) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes(long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -99,7 +79,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void DeserializeValue(ref DiskLogRecord<AofValue> diskLogRecord, ref AsyncIOContext<AofValue> ctx) { }
+        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord<AofValue> diskLogRecord, ref AsyncIOContext<AofValue> ctx) { }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

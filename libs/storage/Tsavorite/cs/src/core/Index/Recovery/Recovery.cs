@@ -1103,7 +1103,8 @@ namespace Tsavorite.core
             while (pointer < untilLogicalAddressInPage)
             {
                 recordStart = pagePhysicalAddress + pointer;
-                ref RecordInfo info = ref hlog.GetInfoRef(recordStart);
+                var diskLogRecord = new DiskLogRecord<TValue>(recordStart);
+                ref RecordInfo info = ref diskLogRecord.InfoRef;
 
                 if (info.IsNull)
                 {
@@ -1113,7 +1114,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(hlog.GetKey(recordStart)));
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(diskLogRecord.Key));
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
@@ -1139,7 +1140,7 @@ namespace Tsavorite.core
                         }
                     }
                 }
-                pointer += hlog.GetInlineRecordSizes(recordStart).allocatedSize;
+                pointer += diskLogRecord.SerializedRecordLength;
             }
 
             return touched;

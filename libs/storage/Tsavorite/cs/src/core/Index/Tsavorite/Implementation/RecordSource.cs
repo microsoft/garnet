@@ -139,8 +139,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref RecordInfo GetInfoRef() => ref Allocator.GetInfoRef(PhysicalAddress);
-        internal readonly RecordInfo GetInfo() => Allocator.GetInfoRef(PhysicalAddress);
+        internal readonly ref RecordInfo GetInfoRef() => ref LogRecord.GetInfoRef(PhysicalAddress);
+        internal readonly RecordInfo GetInfo() => LogRecord.GetInfoRef(PhysicalAddress);
 
         internal readonly LogRecord<TValue> CreateLogRecord()
         {

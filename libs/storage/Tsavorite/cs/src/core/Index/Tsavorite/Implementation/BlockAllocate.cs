@@ -155,7 +155,7 @@ namespace Tsavorite.core
         // Do not inline, to keep CreateNewRecord* lean
         void SaveAllocationForRetry<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, long logicalAddress, long physicalAddress)
         {
-            ref var recordInfo = ref hlog.GetInfoRef(physicalAddress);
+            ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
 
             // TryAllocateRecord may stash this before WriteRecordInfo is called, leaving .PreviousAddress set to kInvalidAddress.
             // This is zero, and setting Invalid will result in recordInfo.IsNull being true, which will cause log-scan problems.

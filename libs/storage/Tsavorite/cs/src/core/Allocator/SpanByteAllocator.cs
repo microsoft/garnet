@@ -49,23 +49,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord<SpanByte>.GetInfoRef(physicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr) => ref *(RecordInfo*)ptr;
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly SpanByte GetKey(long physicalAddress) => SpanByteAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo) => _this.InitializeValue(physicalAddress, ref sizeInfo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes(long physicalAddress) => new LogRecord<SpanByte>(physicalAddress).GetInlineRecordSizes();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -94,7 +78,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void DeserializeValue(ref DiskLogRecord<SpanByte> diskLogRecord, ref AsyncIOContext<SpanByte> ctx) { }
+        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord<SpanByte> diskLogRecord, ref AsyncIOContext<SpanByte> ctx) { }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

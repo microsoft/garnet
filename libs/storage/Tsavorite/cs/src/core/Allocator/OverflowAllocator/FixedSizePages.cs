@@ -140,6 +140,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void PushToFreeList(BlockHeader* ptr, int bin)
             {
+                // We do not try to coalesce.
                 long head;
                 do
                 {

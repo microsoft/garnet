@@ -21,18 +21,6 @@ namespace Tsavorite.core
         /// <summary>Get physical address from <paramref name="logicalAddress"/></summary>
         long GetPhysicalAddress(long logicalAddress);
 
-        /// <summary>Get ref <see cref="RecordInfo"/> from <paramref name="physicalAddress"/></summary>
-        ref RecordInfo GetInfoRef(long physicalAddress);
-
-        /// <summary>Get <see cref="RecordInfo"/> from pinned memory</summary>
-        unsafe ref RecordInfo GetInfoRefFromBytePointer(byte* ptr); // TODO still needed?
-
-        /// <summary>Get <see cref="SpanByte"/> Key from <paramref name="physicalAddress"/></summary>
-        SpanByte GetKey(long physicalAddress);  // TODO still needed?
-
-        /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
-        (int actualSize, int allocatedSize) GetInlineRecordSizes(long physicalAddress);
-
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);
 
@@ -54,7 +42,7 @@ namespace Tsavorite.core
         int OverflowPageCount { get; }
 
         /// <summary>Deserialize the value, if this is <see cref="ObjectAllocator{TValue, TStoreFunctions}"/></summary>
-        unsafe void DeserializeValue(ref DiskLogRecord<TValue> diskLogRecord, ref AsyncIOContext<TValue> ctx);
+        unsafe void DeserializeValueObject(ref DiskLogRecord<TValue> diskLogRecord, ref AsyncIOContext<TValue> ctx);
 
         /// <summary>Get heap container for pending key</summary>
         IHeapContainer<SpanByte> GetKeyContainer(SpanByte key);

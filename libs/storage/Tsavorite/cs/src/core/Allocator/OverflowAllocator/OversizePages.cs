@@ -119,7 +119,7 @@ namespace Tsavorite.core
                     var slot = freeList;
                     while (slot != InvalidSlot)
                     {
-                        var next = ((BlockHeader*)PageVector.Pages[slot])->Slot;
+                        var next = (int)(long)PageVector.Pages[slot];
                         PageVector.Pages[slot] = null;
                         slot = next;
                     }

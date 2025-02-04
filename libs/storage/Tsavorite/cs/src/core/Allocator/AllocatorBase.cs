@@ -285,8 +285,9 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
-                            var (_, alignedRecordSize) = _wrapper.GetInlineRecordSizes(physicalAddress);
+                            var logRecord = _wrapper.CreateLogRecord(logicalAddress);
+                            ref var info = ref logRecord.InfoRef;
+                            var (_, alignedRecordSize) = logRecord.GetInlineRecordSizes();
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
@@ -407,8 +408,6 @@ namespace Tsavorite.core
         /// <summary>Get first valid address</summary>
         public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
 
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord<TValue>.GetInfoRef(physicalAddress);
-
         public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
         // GetKey is used in TracebackForKeyMatch. TODO remove in favor of the direct LogRecord call
@@ -460,10 +459,11 @@ namespace Tsavorite.core
                             physicalAddress += sizeof(int);
                             if (address >= startLogicalAddress && address < endLogicalAddress)
                             {
-                                var destination = _wrapper.GetPhysicalAddress(address);
+                                var logRecord = _wrapper.CreateLogRecord(address);
+                                var destination = logRecord.physicalAddress;
 
                                 // Clear extra space (if any) in old record
-                                var oldSize = _wrapper.GetInlineRecordSizes(destination).allocatedSize;
+                                var oldSize = logRecord.GetInlineRecordSizes().allocatedSize;
                                 if (oldSize > size)
                                     new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
 
@@ -1820,13 +1820,13 @@ namespace Tsavorite.core
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
                     Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
-                    _wrapper.DeserializeValue(ref diskLogRecord, ref ctx);
+                    _wrapper.DeserializeValueObject(ref diskLogRecord, ref ctx);
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
                     if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ctx.request_key.Get(), diskLogRecord.Key))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
-                        ctx.logicalAddress = _wrapper.GetInfoRefFromBytePointer(record).PreviousAddress;
+                        ctx.logicalAddress = diskLogRecord.Info.PreviousAddress;
                         if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                         {
                             ctx.record.Return();
@@ -1968,8 +1968,9 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
-                            var (_, alignedRecordSize) = _wrapper.GetInlineRecordSizes(physicalAddress);
+                            var logRecord = _wrapper.CreateLogRecord(startAddress);
+                            ref var info = ref logRecord.InfoRef;
+                            var (_, alignedRecordSize) = logRecord.GetInlineRecordSizes();
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;

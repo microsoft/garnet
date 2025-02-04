@@ -48,7 +48,7 @@ namespace Tsavorite.core
                 // When traversing the readcache, we skip Invalid (Closed) records. We don't have Sealed records in the readcache because they cause
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc
-                    && storeFunctions.KeysEqual(key, readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
+                    && storeFunctions.KeysEqual(key, LogRecord.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
                 {
                     // Keep these at the current readcache location; they'll be the caller's source record.
                     stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
@@ -218,8 +218,8 @@ namespace Tsavorite.core
             while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))
             {
                 var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                ref var recordInfo = ref readcache.GetInfoRef(physicalAddress);
-                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, readcache.GetKey(physicalAddress)))
+                ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
+                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, LogRecord.GetKey(physicalAddress)))
                 {
                     recordInfo.SetInvalidAtomic();
                     return;
