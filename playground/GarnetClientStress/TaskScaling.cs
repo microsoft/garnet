@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -32,8 +33,7 @@ namespace GarnetClientStress
             for (int i = 0; i < gclientArray.Length; i++)
             {
                 gclientArray[i] = new GarnetClient(
-                    opts.Address,
-                    opts.Port,
+                    new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port),
                     opts.EnableTLS ? StressTestUtils.GetTlsOptions("GarnetTest") : null,
                     timeoutMilliseconds: (int)timeout.TotalMilliseconds,
                     maxOutstandingTasks: opts.ClientMaxOutstandingTasks,

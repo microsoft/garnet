@@ -13,18 +13,16 @@ namespace Garnet.client
 {
     public static unsafe class RespReadResponseUtils
     {
-        /// <summary>
-        /// Read simple string
-        /// </summary>
+        /// <inheritdoc cref="RespReadUtils.TryReadSimpleString(out string, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadSimpleString(out string result, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadSimpleString(out result, ref ptr, end);
+        public static bool TryReadSimpleString(out string result, ref byte* ptr, byte* end)
+            => RespReadUtils.TryReadSimpleString(out result, ref ptr, end);
 
         /// <summary>
         /// Read simple string
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadSimpleString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        public static bool TryReadSimpleString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
         {
             result = default;
             if (ptr + 2 >= end)
@@ -38,21 +36,19 @@ namespace Garnet.client
 
             ptr++;
 
-            return ReadString(pool, out result, ref ptr, end);
+            return TryReadString(pool, out result, ref ptr, end);
         }
 
-        /// <summary>
-        /// Read integer as string
-        /// </summary>
+        /// <inheritdoc cref="RespReadUtils.TryReadIntegerAsString(out string, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadIntegerAsString(out string result, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadIntegerAsString(out result, ref ptr, end);
+        public static bool TryReadIntegerAsString(out string result, ref byte* ptr, byte* end)
+            => RespReadUtils.TryReadIntegerAsString(out result, ref ptr, end);
 
         /// <summary>
         /// Read integer as string
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadIntegerAsString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        public static bool TryReadIntegerAsString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
         {
             result = default;
             if (ptr + 2 >= end)
@@ -66,7 +62,7 @@ namespace Garnet.client
 
             ptr++;
 
-            return ReadString(pool, out result, ref ptr, end);
+            return TryReadString(pool, out result, ref ptr, end);
         }
 
         /// <summary>
@@ -78,13 +74,13 @@ namespace Garnet.client
         /// <param name="end"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringWithLengthHeader(out string result, ref byte* ptr, byte* end)
+        public static bool TryReadStringWithLengthHeader(out string result, ref byte* ptr, byte* end)
         {
             result = null;
 
             byte* keyPtr = null;
             var length = 0;
-            if (!ReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
+            if (!TryReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
                 return false;
 
             if (length < 0)
@@ -103,13 +99,13 @@ namespace Garnet.client
         /// <param name="end">The current end of the RESP message.</param>
         /// <returns>True if a RESP string was successfully read.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        public static bool TryReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
         {
             result = default;
 
             byte* keyPtr = null;
             var length = 0;
-            if (!ReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
+            if (!TryReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
                 return false;
 
             if (length < 0)
@@ -121,10 +117,10 @@ namespace Garnet.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static bool ReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
+        static bool TryReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!RespReadUtils.ReadSignedLengthHeader(out length, ref ptr, end))
+            if (!RespReadUtils.TryReadSignedLengthHeader(out length, ref ptr, end))
             {
                 return false;
             }
@@ -154,23 +150,21 @@ namespace Garnet.client
             return true;
         }
 
-        /// <summary>
-        /// Read error as string
-        /// </summary>
+        /// <inheritdoc cref="RespReadUtils.TryReadErrorAsString(out string, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadErrorAsString(out string error, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadErrorAsString(out error, ref ptr, end);
+        public static bool TryReadErrorAsString(out string error, ref byte* ptr, byte* end)
+            => RespReadUtils.TryReadErrorAsString(out error, ref ptr, end);
 
         /// <summary>
         /// Read string array with length header
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
+        public static bool TryReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
         {
             result = null;
 
             // Parse RESP array header
-            if (!RespReadUtils.ReadSignedArrayLength(out var length, ref ptr, end))
+            if (!RespReadUtils.TryReadSignedArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
@@ -187,17 +181,23 @@ namespace Garnet.client
             {
                 if (*ptr == '$')
                 {
-                    if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
+                    if (!TryReadStringWithLengthHeader(out result[i], ref ptr, end))
                         return false;
                 }
                 else if (*ptr == '+')
                 {
-                    if (!ReadSimpleString(out result[i], ref ptr, end))
+                    if (!TryReadSimpleString(out result[i], ref ptr, end))
                         return false;
+                }
+                else if (*ptr == '*')
+                {
+                    if (!TryReadStringArrayWithLengthHeader(out var subArray, ref ptr, end))
+                        return false;
+                    result[i] = string.Join(", ", subArray);
                 }
                 else
                 {
-                    if (!ReadIntegerAsString(out result[i], ref ptr, end))
+                    if (!TryReadIntegerAsString(out result[i], ref ptr, end))
                         return false;
                 }
             }
@@ -209,11 +209,11 @@ namespace Garnet.client
         /// Read string array with length header
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
+        public static bool TryReadStringArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
         {
             result = null;
             // Parse RESP array header
-            if (!RespReadUtils.ReadSignedArrayLength(out var length, ref ptr, end))
+            if (!RespReadUtils.TryReadSignedArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
@@ -230,17 +230,17 @@ namespace Garnet.client
             {
                 if (*ptr == '$')
                 {
-                    if (!ReadStringWithLengthHeader(pool, out result[i], ref ptr, end))
+                    if (!TryReadStringWithLengthHeader(pool, out result[i], ref ptr, end))
                         return false;
                 }
                 else if (*ptr == '+')
                 {
-                    if (!ReadSimpleString(pool, out result[i], ref ptr, end))
+                    if (!TryReadSimpleString(pool, out result[i], ref ptr, end))
                         return false;
                 }
                 else
                 {
-                    if (!ReadIntegerAsString(pool, out result[i], ref ptr, end))
+                    if (!TryReadIntegerAsString(pool, out result[i], ref ptr, end))
                         return false;
                 }
             }
@@ -248,18 +248,16 @@ namespace Garnet.client
             return true;
         }
 
-        /// <summary>
-        /// Read int with length header
-        /// </summary>
+        /// <inheritdoc cref="RespReadUtils.TryReadInt32WithLengthHeader(out int, ref byte*, byte*)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadIntWithLengthHeader(out int number, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadIntWithLengthHeader(out number, ref ptr, end);
+        public static bool TryReadIntWithLengthHeader(out int number, ref byte* ptr, byte* end)
+            => RespReadUtils.TryReadInt32WithLengthHeader(out number, ref ptr, end);
 
         /// <summary>
         /// Read ASCII string without header until string terminator ('\r\n').
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        public static bool TryReadString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
         {
             result = default;
             if (ptr + 1 >= end)

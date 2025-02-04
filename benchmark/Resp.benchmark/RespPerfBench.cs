@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -86,7 +87,7 @@ namespace Resp.benchmark
             {
                 var req = Encoding.ASCII.GetBytes("*1\r\n$6\r\nDBSIZE\r\n");
                 var lighClientOnResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
-                using LightClient client = new(opts.Address, opts.Port, (int)OpType.DBSIZE, lighClientOnResponseDelegate, 128, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                using LightClient client = new(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), (int)OpType.DBSIZE, lighClientOnResponseDelegate, 128, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
                 client.Connect();
                 client.Authenticate(opts.Auth);
@@ -96,7 +97,7 @@ namespace Resp.benchmark
                 fixed (byte* buf = client.ResponseBuffer)
                 {
                     byte* ptr = buf;
-                    RespReadResponseUtils.ReadIntegerAsString(out dbSize, ref ptr, ptr + client.ResponseBuffer.Length);
+                    RespReadResponseUtils.TryReadIntegerAsString(out dbSize, ref ptr, ptr + client.ResponseBuffer.Length);
                 }
             }
             else
@@ -373,7 +374,7 @@ namespace Resp.benchmark
         private unsafe void LightOperateThreadRunner(int NumOps, OpType opType, ReqGen rg)
         {
             var lighClientOnResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
-            using ClientBase client = new LightClient(opts.Address, opts.Port, (int)opType, lighClientOnResponseDelegate, rg.GetBufferSize(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+            using ClientBase client = new LightClient(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), (int)opType, lighClientOnResponseDelegate, rg.GetBufferSize(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
 
             client.Connect();
             client.Authenticate(opts.Auth);
@@ -407,7 +408,7 @@ namespace Resp.benchmark
                 default:
                     throw new Exception($"opType: {opType} benchmark not supported with GarnetClientSession!");
             }
-            var c = new GarnetClientSession(opts.Address, opts.Port, new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+            var c = new GarnetClientSession(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
             c.Connect();
             if (opts.Auth != null)
             {

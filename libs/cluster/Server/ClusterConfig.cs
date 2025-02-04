@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using System.Net;
 using System.Text;
 
 namespace Garnet.cluster
@@ -55,14 +56,7 @@ namespace Garnet.cluster
                 slotMap[i]._workerId = 0;
             }
             workers = new Worker[2];
-            workers[0].Address = "unassigned";
-            workers[0].Port = 0;
-            workers[0].Nodeid = null;
-            workers[0].ConfigEpoch = 0;
-            workers[0].Role = NodeRole.UNASSIGNED;
-            workers[0].ReplicaOfNodeId = null;
-            workers[0].ReplicationOffset = 0;
-            workers[0].hostname = null;
+            InitializeUnassignedWorker();
         }
 
         /// <summary>
@@ -74,6 +68,7 @@ namespace Garnet.cluster
         {
             this.slotMap = slotMap;
             this.workers = workers;
+            InitializeUnassignedWorker();
         }
 
         public ClusterConfig Copy()
@@ -83,6 +78,21 @@ namespace Garnet.cluster
             Array.Copy(workers, newWorkers, workers.Length);
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
             return new ClusterConfig(newSlotMap, newWorkers);
+        }
+
+        /// <summary>
+        /// Initialize the worker at index 0 as unassigned.
+        /// </summary>
+        private void InitializeUnassignedWorker()
+        {
+            workers[0].Address = "unassigned";
+            workers[0].Port = 0;
+            workers[0].Nodeid = null;
+            workers[0].ConfigEpoch = 0;
+            workers[0].Role = NodeRole.UNASSIGNED;
+            workers[0].ReplicaOfNodeId = null;
+            workers[0].ReplicationOffset = 0;
+            workers[0].hostname = null;
         }
 
         /// <summary>
@@ -245,14 +255,14 @@ namespace Garnet.cluster
         /// Get list of endpoints for all replicas of this node.
         /// </summary>
         /// <returns>List of (address,port) pairs.</returns>
-        public List<(string, int)> GetLocalNodeReplicaEndpoints()
+        public List<IPEndPoint> GetLocalNodeReplicaEndpoints()
         {
-            List<(string, int)> replicas = new();
+            List<IPEndPoint> replicas = new();
             for (ushort i = 2; i < workers.Length; i++)
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(workers[1].Nodeid, StringComparison.OrdinalIgnoreCase))
-                    replicas.Add((workers[i].Address, workers[i].Port));
+                    replicas.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
             }
             return replicas;
         }
@@ -262,17 +272,17 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="includeMyPrimaryFirst"></param>
         /// <returns>List of pairs (address,port) representing known primary endpoints</returns>
-        public List<(string, int)> GetLocalNodePrimaryEndpoints(bool includeMyPrimaryFirst = false)
+        public List<IPEndPoint> GetLocalNodePrimaryEndpoints(bool includeMyPrimaryFirst = false)
         {
             string myPrimaryId = includeMyPrimaryFirst ? LocalNodePrimaryId : "";
-            List<(string, int)> primaries = new();
+            List<IPEndPoint> primaries = new();
             for (ushort i = 2; i < workers.Length; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY && !workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
-                    primaries.Add((workers[i].Address, workers[i].Port));
+                    primaries.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
 
                 if (workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
-                    primaries.Insert(0, (workers[i].Address, workers[i].Port));
+                    primaries.Insert(0, new(IPAddress.Parse(workers[i].Address), workers[i].Port));
             }
             return primaries;
         }
@@ -467,10 +477,10 @@ namespace Garnet.cluster
         /// <param name="nodeid">Node-id.</param>
         /// <returns>Pair of (string,integer) representing endpoint.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (string address, int port) GetEndpointFromNodeId(string nodeid)
+        public IPEndPoint GetEndpointFromNodeId(string nodeid)
         {
             var workerId = GetWorkerIdFromNodeId(nodeid);
-            return (workers[workerId].Address, workers[workerId].Port);
+            return new(IPAddress.Parse(workers[workerId].Address), workers[workerId].Port);
         }
         #endregion
 
@@ -770,15 +780,42 @@ namespace Garnet.cluster
             List<string> replicas = [];
             for (ushort i = 1; i < workers.Length; i++)
             {
+                var nodeId = workers[i].Nodeid;
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     var info = default(ConnectionInfo);
-                    _ = clusterProvider?.clusterManager?.GetConnectionInfo(replicaOf, out info);
+                    _ = clusterProvider?.clusterManager?.GetConnectionInfo(nodeId, out info);
                     replicas.Add(GetNodeInfo(i, info));
                 }
             }
             return replicas;
+        }
+
+        /// <summary>
+        /// Get all know node ids
+        /// </summary>
+        public void GetAllNodeIds(out List<(string NodeId, IPEndPoint EndPoint)> allNodeIds)
+        {
+            allNodeIds = [];
+            for (ushort i = 2; i < workers.Length; i++)
+                allNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].Address), workers[i].Port)));
+        }
+
+        /// <summary>
+        /// Get node-ids for nodes in the local shard
+        /// </summary>
+        /// <returns></returns>
+        public void GetNodeIdsForShard(out List<(string NodeId, IPEndPoint EndPoint)> shardNodeIds)
+        {
+            var primaryId = LocalNodeRole == NodeRole.PRIMARY ? LocalNodeId : workers[1].ReplicaOfNodeId;
+            shardNodeIds = [];
+            for (ushort i = 2; i < workers.Length; i++)
+            {
+                var replicaOf = workers[i].ReplicaOfNodeId;
+                if (primaryId != null && ((replicaOf != null && replicaOf.Equals(primaryId, StringComparison.OrdinalIgnoreCase)) || primaryId.Equals(workers[i].Nodeid)))
+                    shardNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].Address), workers[i].Port)));
+            }
         }
 
         /// <summary>

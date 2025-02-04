@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
@@ -32,19 +33,12 @@ namespace Garnet.server
         /// </summary>
         readonly ConcurrentDictionary<WireFormat, ISessionProvider> sessionProviders;
 
-        readonly string address;
-        readonly int port;
         readonly int networkBufferSize;
 
         /// <summary>
-        /// Server Address
-        /// </summary>        
-        public string Address => address;
-
-        /// <summary>
-        /// Server Port
+        /// The endpoint server listener socket is bound to.
         /// </summary>
-        public int Port => port;
+        public EndPoint EndPoint { get; }
 
         /// <summary>
         /// Server NetworkBufferSize
@@ -62,20 +56,20 @@ namespace Garnet.server
         protected readonly ILogger logger;
 
 
-        long total_connections_received = 0;
-        long total_connections_disposed = 0;
+        long totalConnectionsReceived = 0;
+        long totalConnectionsDisposed = 0;
 
         /// <summary>
         /// Add to total_connections_received
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void incr_conn_recv() => Interlocked.Increment(ref total_connections_received);
+        public void IncrementConnectionsReceived() => Interlocked.Increment(ref totalConnectionsReceived);
 
         /// <summary>
         /// Add to total_connections_disposed
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void incr_conn_disp() => Interlocked.Increment(ref total_connections_disposed);
+        public void IncrementConnectionsDisposed() => Interlocked.Increment(ref totalConnectionsDisposed);
 
         /// <summary>
         /// Returns all the active message consumers.
@@ -86,39 +80,34 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get total_connections_received
+        /// Get total_connections_active
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long get_conn_recv() => total_connections_received;
+        public long get_conn_active() => this.activeHandlers.Count;
 
         /// <summary>
-        /// Get total_connections_disposed
+        /// Get the total number of connections received.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long get_conn_disp() => total_connections_disposed;
+        public long TotalConnectionsReceived => totalConnectionsReceived;
 
         /// <summary>
-        /// Reset connection recv counter. Multiplier for accounting for pub/sub
+        /// Get the total number of connections received.
         /// </summary>
-        public void reset_conn_recv() => Interlocked.Exchange(ref total_connections_received, activeHandlers.Count);
+        public long TotalConnectionsDisposed => totalConnectionsDisposed;
 
         /// <summary>
-        /// Reset connection disposed counter
+        /// Reset connections received counter. Multiplier for accounting for pub/sub
         /// </summary>
-        public void reset_conn_disp() => Interlocked.Exchange(ref total_connections_disposed, 0);
+        public void ResetConnectionsReceived() => Interlocked.Exchange(ref totalConnectionsReceived, activeHandlers.Count);
 
         /// <summary>
-        /// 
+        /// Reset connections disposed counter
         /// </summary>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
-        /// <param name="networkBufferSize"></param>
-        /// <param name="logger"></param>
-        public GarnetServerBase(string address, int port, int networkBufferSize, ILogger logger = null)
+        public void ResetConnectionsDiposed() => Interlocked.Exchange(ref totalConnectionsDisposed, 0);
+
+        public GarnetServerBase(EndPoint endpoint, int networkBufferSize, ILogger logger = null)
         {
             this.logger = logger;
-            this.address = address;
-            this.port = port;
             this.networkBufferSize = networkBufferSize;
             if (networkBufferSize == default)
                 this.networkBufferSize = BufferSizeUtils.ClientBufferSize(new MaxSizeSettings());
@@ -126,6 +115,8 @@ namespace Garnet.server
             activeHandlers = new();
             sessionProviders = new();
             activeHandlerCount = 0;
+
+            EndPoint = endpoint;
             Disposed = false;
         }
 

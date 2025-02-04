@@ -26,15 +26,15 @@ namespace Garnet.server
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 if (respProtocolVersion == 2)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WritePushLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
                         SendAndReset();
                 }
-                while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString("message"u8, ref dcurr, dend))
                     SendAndReset();
 
                 // Write key and value to the network
@@ -62,15 +62,15 @@ namespace Garnet.server
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 if (respProtocolVersion == 2)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(4, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(4, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WritePushLength(4, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWritePushLength(4, ref dcurr, dend))
                         SendAndReset();
                 }
-                while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString("pmessage"u8, ref dcurr, dend))
                     SendAndReset();
 
                 // Write pattern, key, and value to the network
@@ -94,11 +94,25 @@ namespace Garnet.server
         /// <summary>
         /// PUBLISH
         /// </summary>
-        private bool NetworkPUBLISH()
+        private bool NetworkPUBLISH(RespCommand cmd)
         {
             if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH));
+                var cmdName = cmd switch
+                {
+                    RespCommand.PUBLISH => nameof(RespCommand.PUBLISH),
+                    RespCommand.SPUBLISH => nameof(RespCommand.SPUBLISH),
+                    _ => throw new NotImplementedException()
+                };
+                return AbortWithWrongNumberOfArguments(cmdName);
+            }
+
+            if (cmd == RespCommand.SPUBLISH && clusterSession == null)
+            {
+                // Print error message
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             Debug.Assert(isSubscriptionSession == false);
@@ -114,7 +128,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                while (!RespWriteUtils.WriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -123,21 +137,49 @@ namespace Garnet.server
             *(int*)valPtr = vSize;
 
             var numClients = subscribeBroker.PublishNow(keyPtr, valPtr, vSize + sizeof(int), true);
-            while (!RespWriteUtils.WriteInteger(numClients, ref dcurr, dend))
+            if (storeWrapper.serverOptions.EnableCluster)
+            {
+                var _key = parseState.GetArgSliceByRef(0).Span;
+                var _val = parseState.GetArgSliceByRef(1).Span;
+                storeWrapper.clusterProvider.ClusterPublish(cmd, ref _key, ref _val);
+            }
+
+            while (!RespWriteUtils.TryWriteInt32(numClients, ref dcurr, dend))
                 SendAndReset();
 
             return true;
         }
 
-        private bool NetworkSUBSCRIBE()
+        private bool NetworkSUBSCRIBE(RespCommand cmd)
         {
             if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUBSCRIBE));
+                var cmdName = cmd switch
+                {
+                    RespCommand.SUBSCRIBE => nameof(RespCommand.SUBSCRIBE),
+                    RespCommand.SSUBSCRIBE => nameof(RespCommand.SSUBSCRIBE),
+                    _ => throw new NotImplementedException()
+                };
+                return AbortWithWrongNumberOfArguments(cmdName);
             }
 
-            // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
+            if (cmd == RespCommand.SSUBSCRIBE && clusterSession == null)
+            {
+                // Print error message
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var disabledBroker = subscribeBroker == null;
+            var header = cmd switch
+            {
+                RespCommand.SUBSCRIBE => CmdStrings.subscribe,
+                RespCommand.SSUBSCRIBE => CmdStrings.ssubscribe,
+                _ => throw new NotImplementedException()
+            };
+
+            // SUBSCRIBE|SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
@@ -147,16 +189,17 @@ namespace Garnet.server
                 if (disabledBroker)
                     continue;
 
-                while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString("subscribe"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(header, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+
+                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
                     SendAndReset();
 
                 numActiveChannels++;
-                while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
                 *(int*)keyPtr = kSize;
@@ -165,7 +208,7 @@ namespace Garnet.server
 
             if (disabledBroker)
             {
-                while (!RespWriteUtils.WriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -192,16 +235,16 @@ namespace Garnet.server
                 if (disabledBroker)
                     continue;
 
-                while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString("psubscribe"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString("psubscribe"u8, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
                     SendAndReset();
 
                 numActiveChannels++;
-                while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
 
                 *(int*)keyPtr = kSize;
@@ -210,7 +253,7 @@ namespace Garnet.server
 
             if (disabledBroker)
             {
-                while (!RespWriteUtils.WriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR SUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -227,7 +270,7 @@ namespace Garnet.server
             {
                 if (subscribeBroker == null)
                 {
-                    while (!RespWriteUtils.WriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -235,34 +278,34 @@ namespace Garnet.server
                 var channels = subscribeBroker.ListAllSubscriptions(this);
                 foreach (var channel in channels)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString("unsubscribe"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
                     var channelsize = channel.Length - sizeof(int);
                     fixed (byte* channelPtr = &channel[0])
                     {
-                        while (!RespWriteUtils.WriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
                             SendAndReset();
 
                         byte* delPtr = channelPtr;
                         if (subscribeBroker.Unsubscribe(delPtr, this))
                             numActiveChannels--;
-                        while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
 
                 if (channels.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString("unsubscribe"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
                 }
 
@@ -280,25 +323,25 @@ namespace Garnet.server
 
                 if (subscribeBroker != null)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString("unsubscribe"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
                         SendAndReset();
 
                     *(int*)keyPtr = kSize;
                     if (subscribeBroker.Unsubscribe(keyPtr, this))
                         numActiveChannels--;
 
-                    while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
                 }
             }
 
             if (subscribeBroker == null)
             {
-                while (!RespWriteUtils.WriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -312,7 +355,7 @@ namespace Garnet.server
             {
                 if (subscribeBroker == null)
                 {
-                    while (!RespWriteUtils.WriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -320,19 +363,19 @@ namespace Garnet.server
                 List<byte[]> channels = subscribeBroker.ListAllPSubscriptions(this);
                 foreach (var channel in channels)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString("punsubscribe"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
                     var channelsize = channel.Length - sizeof(int);
                     fixed (byte* channelPtr = &channel[0])
                     {
-                        while (!RespWriteUtils.WriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(channelPtr + sizeof(int), channelsize), ref dcurr, dend))
                             SendAndReset();
 
                         numActiveChannels--;
-                        while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                             SendAndReset();
 
                         byte* delPtr = channelPtr;
@@ -354,15 +397,15 @@ namespace Garnet.server
 
                 if (subscribeBroker != null)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString("punsubscribe"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(keyPtr + sizeof(int), kSize), ref dcurr, dend))
                         SendAndReset();
 
                     numActiveChannels--;
-                    while (!RespWriteUtils.WriteInteger(numActiveChannels, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
 
                     *(int*)keyPtr = kSize;
@@ -372,7 +415,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                while (!RespWriteUtils.WriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -387,7 +430,7 @@ namespace Garnet.server
 
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB CHANNELS"), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB CHANNELS"), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -416,14 +459,14 @@ namespace Garnet.server
 
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMPAT"), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMPAT"), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             var numPatSubs = subscribeBroker.NumPatternSubscriptions();
 
-            while (!RespWriteUtils.WriteInteger(numPatSubs, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt32(numPatSubs, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -433,7 +476,7 @@ namespace Garnet.server
         {
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMSUB"), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMSUB"), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
