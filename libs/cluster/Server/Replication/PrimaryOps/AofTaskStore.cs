@@ -239,8 +239,7 @@ namespace Garnet.cluster
                         current.LocalNodeId,
                         replicaNodeId,
                         new GarnetClientSession(
-                            address,
-                            port,
+                            new IPEndPoint(IPAddress.Parse(address), port),
                             clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
                             clusterProvider.replicationManager.GetNetworkPool,
                             tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
