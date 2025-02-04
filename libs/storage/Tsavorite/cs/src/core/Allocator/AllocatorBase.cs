@@ -416,11 +416,13 @@ namespace Tsavorite.core
         {
             byte* keyPtr;
             if (key.Length <= maxInlineKeySize)
-                keyPtr = SpanField.SetInlineLength(logRecord.KeyAddress, key.Length);
+                keyPtr = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             else
-                keyPtr = logRecord.Info.KeyIsOverflow   // This may be true if it is a revivified record; we preserved the overflow allocation.
-                    ? SpanField.ReallocateOverflow(logRecord.KeyAddress, key.Length, overflowAllocator)
-                    : SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, overflowAllocator);
+            {
+                Debug.Assert(!logRecord.Info.KeyIsOverflow, "We should not have any overflow allocations in SerializeKey (revivification frees the overflow allocation).");
+                logRecord.InfoRef.KeyIsOverflow = true;     // Set this now while everything is zero'd for zeroinit correctness
+                keyPtr = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, overflowAllocator);
+            }
             key.AsReadOnlySpan().CopyTo(new Span<byte>(keyPtr, key.Length));
         }
 

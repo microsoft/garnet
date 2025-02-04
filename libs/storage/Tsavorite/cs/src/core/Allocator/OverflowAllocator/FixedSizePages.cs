@@ -45,14 +45,19 @@ namespace Tsavorite.core
             internal FixedSizePages(int pageSize)
             {
                 PageSize = pageSize;
+                PageVector = new();
                 var numBins = GetLogBase2(MaxBlockSize) - GetLogBase2(MinBlockSize) + 1;
                 freeList = new long[numBins];
             }
 
+            /// <summary>Include blockHeader in the allocation size. For FixedSizeBlocks, this is included in the internal request size, so blocks remain power-of-2.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static int PromoteSize(int size) => (int)NextPowerOf2(size + sizeof(BlockHeader));
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal byte* Allocate(int userSize, bool zeroInit)
             {
-                var blockSize = BlockHeader.PromoteSize(userSize);
+                var blockSize = PromoteSize(userSize);
                 var ptr = PopFromFreeList(blockSize, userSize, zeroInit);
                 if (ptr != null)
                     return ptr;
@@ -144,7 +149,21 @@ namespace Tsavorite.core
             internal void Free(BlockHeader* blockPtr)
             {
                 // BlockHeader.Size has sizeof(BlockHeader) added to the user request.
-                PushToFreeList(blockPtr, FindBin(blockPtr->BlockSize));
+                PushToFreeList(blockPtr, FindBin(blockPtr->AllocatedSize));
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal bool TryRealloc(BlockHeader* blockPtr, int newSize, out byte* newPtr)
+            {
+                // This can only be done in-place for FixedSizePages
+                if (blockPtr->AllocatedSize < newSize)
+                {
+                    newPtr = null;
+                    return false;
+                }
+                blockPtr->UserSize = newSize;
+                newPtr = (byte*)(blockPtr + 1);
+                return true;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -145,7 +145,8 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, int _ /* valueTotalSize */) => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+        public static void InitializeValue(long physicalAddress, ref RecordSizeInfo _)
+            => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)

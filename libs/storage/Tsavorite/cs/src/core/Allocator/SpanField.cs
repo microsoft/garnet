@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using static Tsavorite.core.OverflowAllocator;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -47,25 +48,37 @@ namespace Tsavorite.core
         internal const int OverflowInlineSize = FieldLengthPrefixSize + OverflowDataPtrSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ref int LengthRef(long address) => ref *(int*)address;
+        internal static ref int GetLengthRef(long address) => ref *(int*)address;
 
         /// <summary>
         /// Address of the actual data (past the length prefix). This may be either the start of the stream of bytes, or a pointer to an overflow allocation.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long DataAddress(long address) => (IntPtr)(address + FieldLengthPrefixSize);
+        internal static long GetDataAddress(long address) => address + FieldLengthPrefixSize;
+
+        /// <summary>
+        /// Gets the out-of-line pointer at address (which is KeyAddress or ValueAddress).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static IntPtr GetOverflowPointer(long address) => *(IntPtr*)GetDataAddress(address);
+
+        /// <summary>
+        /// Sets the out-of-line pointer at address (which is KeyAddress or ValueAddress).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void SetOverflowPointer(long address, IntPtr pointer) => *(IntPtr*)GetDataAddress(address) = pointer;
 
         /// <summary>
         /// Size of the actual data (not including the length prefix).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int DataSize(long address, bool isOverflow) => isOverflow ? OverflowAllocator.BlockHeader.GetUserSize(address) : LengthRef(address);
+        internal static int GetDataSize(long address, bool isOverflow) => !isOverflow ? GetLengthRef(address) : OverflowAllocator.BlockHeader.GetUserSize((long)GetOverflowPointer(address));
 
         /// <summary>
-        /// Total inline size of the field: The length prefix plus length of byte stream if not overflow, or length of the pointer to overflow data.
+        /// Total inline size of the field: The length prefix plus: length of byte stream if not overflow, else length of the pointer to overflow data.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int TotalInlineSize(long address) => FieldLengthPrefixSize + LengthRef(address);
+        internal static int GetInlineSize(long address) => FieldLengthPrefixSize + GetLengthRef(address);
 
         /// <summary>
         /// Obtain a <see cref="Span{_byte_}"/> referencing the inline or overflow data and the datasize for this field.
@@ -74,10 +87,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static Span<byte> AsSpan(long address, bool isOverflow)
         {
-            var dataAddress = (byte*)(address + FieldLengthPrefixSize);
+            var dataAddress = (byte*)GetDataAddress(address);
             if (!isOverflow)
-                return new(dataAddress, LengthRef(address));
-            dataAddress = *(byte**)dataAddress;
+                return new(dataAddress, GetLengthRef(address));
+            dataAddress = *(byte**)dataAddress;     // dataAddress contains the pointer
             return new(dataAddress, OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress));
         }
 
@@ -88,11 +101,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static SpanByte AsSpanByte(long address, bool isOverflow)
         {
-            var dataAddress = (byte*)(address + FieldLengthPrefixSize);
+            var dataAddress = (byte*)GetDataAddress(address);
             if (!isOverflow)
-                return new(LengthRef(address), (IntPtr)dataAddress);
-            dataAddress = *(byte**)dataAddress;
-            return new(OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress), *(IntPtr*)dataAddress);
+                return new(GetLengthRef(address), (IntPtr)dataAddress);
+            dataAddress = *(byte**)dataAddress;     // dataAddress contains the pointer
+            return new(OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress), (IntPtr)dataAddress);
         }
 
         /// <summary>
@@ -103,7 +116,7 @@ namespace Tsavorite.core
         /// <param name="clearLength">Length of the data from <paramref name="dataOffset"/> to zero</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void ZeroInlineData(long address, int dataOffset, int clearLength) 
-            => new Span<byte>((byte*)(DataAddress(address) + dataOffset), clearLength).Clear();
+            => new Span<byte>((byte*)(GetDataAddress(address) + dataOffset), clearLength).Clear();
 
         /// <summary>
         /// Convert a Span field from inline to overflow.
@@ -116,7 +129,7 @@ namespace Tsavorite.core
         internal static byte* ConvertToOverflow(long address, int newLength, OverflowAllocator allocator)
         {
             // If "shrinking" the allocation because the overflow pointer size is less than the current inline size, we must zeroinit the extra space.
-            var clearLength = LengthRef(address) - OverflowDataPtrSize;
+            var clearLength = GetLengthRef(address) - OverflowDataPtrSize;
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize, clearLength);
 
@@ -125,13 +138,13 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Utility function to set the overflow allocation at the given Span field's address. Assumes caller has ensured no existing overflow
-        /// allocation is there; e.g. SerializeKey.
+        /// allocation is there; e.g. SerializeKey and InitializeValue.
         /// </summary>
         internal static byte* SetOverflowAllocation(long address, int newLength, OverflowAllocator allocator)
         {
-            LengthRef(address) = sizeof(IntPtr);                        // actual length (i.e. the size of the out-of-line allocation)
+            GetLengthRef(address) = sizeof(IntPtr);                         // actual length (i.e. the size of the out-of-line allocation)
             byte* ptr = allocator.Allocate(newLength, zeroInit: false);
-            *(IntPtr*)(address + FieldLengthPrefixSize) = (IntPtr)ptr;  // out-of-line data pointer
+            SetOverflowPointer(address, (IntPtr)ptr);                       // out-of-line data pointer
             return ptr;
         }
 
@@ -151,16 +164,16 @@ namespace Tsavorite.core
                 ZeroInlineData(address, OverflowDataPtrSize - clearLength, clearLength);
 
             allocator.Free(address);
-            return SetInlineLength(address, newLength);
+            return SetInlineDataLength(address, newLength);
         }
 
         /// <summary>
         /// Utility function to set the inline length of a Span field and return a pointer to the data start (which may be a byte stream or a pointer to overflow data).
         /// </summary>
-        internal static byte* SetInlineLength(long address, int newLength)
+        internal static byte* SetInlineDataLength(long address, int newLength)
         {
-            LengthRef(address) = newLength;                             // actual length (i.e. the inline data space used by this field)
-            return (byte*)(address + FieldLengthPrefixSize);            // Data pointer
+            GetLengthRef(address) = newLength;             // actual length (i.e. the inline data space used by this field)
+            return (byte*)GetDataAddress(address);
         }
 
         /// <summary>
@@ -174,11 +187,11 @@ namespace Tsavorite.core
         internal static byte* ShrinkInline(long address, int newLength)
         {
             // Zeroinit the extra space.
-            var clearLength = LengthRef(address) - newLength;
+            var clearLength = GetLengthRef(address) - newLength;
             if (clearLength > 0)
                 ZeroInlineData(address, newLength, clearLength);
-            LengthRef(address) = newLength;
-            return (byte*)(address + FieldLengthPrefixSize);            // Data pointer
+            GetLengthRef(address) = newLength;
+            return (byte*)GetDataAddress(address);
         }
 
         /// <summary>
@@ -194,10 +207,10 @@ namespace Tsavorite.core
         {
             // First see if the existing allocation is large enough. If we are shrinking we don't need to zeroinit in the oversize allocations
             // because there is no "log scan to next record" there.
-            if (allocator.GetAllocatedSize(address) >= newLength)
+            if (allocator.TryRealloc(GetOverflowPointer(address), newLength, out byte* newPointer))
             {
-                LengthRef(address) = newLength;                          // actual length (i.e. the inline data space used by this field)
-                return (byte*)address;
+                SetOverflowPointer(address, (IntPtr)newPointer);
+                return newPointer;
             }
 
             // Free the current allocation then insert a new one

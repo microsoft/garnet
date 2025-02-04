@@ -112,11 +112,12 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeValue(long physicalAddress, int valueTotalSize)
+        public void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
         {
-            // Initialize the SpanByte to the length of the entire value space, less the length of the int size prefix.
-            var lengthPtr = (int*)LogRecord<SpanByte>.GetValueAddress(physicalAddress);
-            *lengthPtr = valueTotalSize - sizeof(int);
+            var valueAddress = LogRecord.GetValueAddress(physicalAddress);
+            _ = !sizeInfo.ValueIsOverflow
+                        ? SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueSize - SpanField.FieldLengthPrefixSize)
+                        : SpanField.SetInlineDataLength(valueAddress, SpanField.OverflowDataPtrSize);   // Set the field length for the pointer, but wait for LogRecord<TValue>.TrySetValueSpan to do the allocation.
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

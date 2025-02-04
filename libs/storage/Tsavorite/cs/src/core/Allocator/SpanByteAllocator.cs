@@ -61,7 +61,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, int valueTotalSize) => _this.InitializeValue(physicalAddress, valueTotalSize);
+        public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo) => _this.InitializeValue(physicalAddress, ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net;
+using System.Runtime.CompilerServices;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -38,15 +41,26 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get the allocated size of this block. In-use size is tracked by caller.</summary>
-        public int GetAllocatedSize(long address) => (*((BlockHeader*)address - 1)).BlockSize;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetAllocatedSize(long address) => (*((BlockHeader*)address - 1)).AllocatedSize;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Free(long address)
         {
             var blockPtr = BlockHeader.FromUserAddress(address);
-            if (blockPtr->BlockSize <= FixedSizePages.MaxBlockSize)
+            if (blockPtr->AllocatedSize <= FixedSizePages.MaxBlockSize)
                 fixedSizePages.Free(blockPtr);
             else
                 oversizePages.Free(blockPtr);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryRealloc(long address, int newSize, out byte* newPtr)
+        {
+            var blockPtr = BlockHeader.FromUserAddress(address);
+            return blockPtr->AllocatedSize <= FixedSizePages.MaxBlockSize
+                ? fixedSizePages.TryRealloc(blockPtr, newSize, out newPtr)
+                : oversizePages.TryRealloc(blockPtr, newSize, out newPtr);
         }
 
         /// <summary>Clears and frees all allocations and prepares for reuse</summary>

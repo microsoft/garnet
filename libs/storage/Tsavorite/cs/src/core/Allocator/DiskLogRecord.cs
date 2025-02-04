@@ -102,9 +102,9 @@ namespace Tsavorite.core
 
         readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
-        internal readonly long ValueAddress => KeyAddress + SpanField.TotalInlineSize(KeyAddress);
+        internal readonly long ValueAddress => KeyAddress + SpanField.GetInlineSize(KeyAddress);
 
-        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.TotalInlineSize(ValueAddress);
+        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.GetInlineSize(ValueAddress);
         public readonly int OptionalLength => (Info.HasETag ? LogRecord.ETagSize : 0) + (Info.HasExpiration ? LogRecord.ExpirationSize : 0);
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;

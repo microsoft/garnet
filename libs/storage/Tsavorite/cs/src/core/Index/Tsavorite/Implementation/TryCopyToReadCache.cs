@@ -40,7 +40,7 @@ namespace Tsavorite.core
             };
 
             // Even though readcache records are immutable, we have to initialize the lengths
-            readcache.InitializeValue(newPhysicalAddress, sizeInfo.FieldInfo.ValueSize);
+            readcache.InitializeValue(newPhysicalAddress, ref sizeInfo);
 
             TOutput output = default;
             if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref upsertInfo, WriteReason.CopyToReadCache))

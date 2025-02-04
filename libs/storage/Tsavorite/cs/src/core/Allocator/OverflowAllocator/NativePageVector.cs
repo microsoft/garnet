@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -79,10 +80,29 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void FreePage(BlockHeader* page)
+            {
+                Pages[page->Slot] = null;
+                NativeMemory.AlignedFree(page);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal BlockHeader* Realloc(BlockHeader* page, int size)
+            {
+                var slot = page->Slot;
+                Pages[slot] = null;
+                var ptr = (byte*)NativeMemory.AlignedRealloc(page, (nuint)size, Constants.kCacheLineBytes);
+                Pages[slot] = ptr;
+                return (BlockHeader*)ptr;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Clear()
             {
                 for (var ii = 0; ii < TailPageOffset.Page; ++ii)
                 {
+                    if (Pages[ii] == null)
+                        continue;
                     NativeMemory.AlignedFree((nuint*)Pages[ii]);
                     Pages[ii] = null;
                 }

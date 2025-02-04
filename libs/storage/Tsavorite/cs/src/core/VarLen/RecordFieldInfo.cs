@@ -19,5 +19,9 @@ namespace Tsavorite.core
 
         /// <summary>Whether the new record will have an Expiration.</summary>
         public bool HasExpiration;
+
+        /// <inheritdoc/>
+        public override string ToString()
+            => $"KeySize {KeySize}, ValSize {ValueSize}, HasETag {HasETag}, HasExpir {HasExpiration}";
     }
 }

@@ -48,7 +48,7 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, sizeInfo.FieldInfo.ValueSize);
+            hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
             if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref upsertInfo, reason))

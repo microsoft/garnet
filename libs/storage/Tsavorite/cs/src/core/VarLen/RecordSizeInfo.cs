@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Security.Cryptography;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -35,5 +37,12 @@ namespace Tsavorite.core
 
         /// <summary>Shortcut to see if either key or value is overflow.</summary>
         internal bool HasOverflow => KeyIsOverflow || ValueIsOverflow;
+
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"[{FieldInfo}] | KeyIsOF {bstr(KeyIsOverflow)}, ValIsOF {bstr(ValueIsOverflow)}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}, HasOF {bstr(HasOverflow)}";
+        }
     }
 }

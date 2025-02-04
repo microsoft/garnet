@@ -16,7 +16,7 @@ namespace Tsavorite.core
     /// </remarks>
     internal unsafe partial class OverflowAllocator
     {
-        internal partial struct OversizePages
+        internal struct OversizePages
         {
             /// <summary>The pages allocated by this allocator.</summary>
             internal NativePageVector PageVector;
@@ -24,14 +24,22 @@ namespace Tsavorite.core
             private const int InvalidSlot = -1;
 
             /// <summary>The head of the "linked list" of free oversize slots.</summary>
-            private int freeList = InvalidSlot;
+            private int freeList;
 
-            public OversizePages() { }
+            public OversizePages()
+            {
+                PageVector = new();
+                freeList = InvalidSlot;
+            }
+
+            /// <summary>Include blockHeader in the allocation size.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static int PromoteSize(int size) => size + sizeof(BlockHeader);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal byte* Allocate(int size, bool zeroInit)
             {
-                size = BlockHeader.PromoteSize(size);
+                size = PromoteSize(size);
 
                 BlockHeader* blockPtr;
                 int pageSlot;
@@ -59,7 +67,7 @@ namespace Tsavorite.core
                     if (slot == InvalidSlot)
                         return false;
 
-                    var next = ((BlockHeader*)PageVector.Pages[slot])->NextSlot;
+                    int next = (int)(long)PageVector.Pages[slot];
 
                     // Pages[slot] may have been reallocated by the time we try this CompareExchange, but in that case the freeList
                     // head will have changed and thus the CompareExchange will fail, so while 'next' may contain garbage (i.e. overwritten
@@ -70,27 +78,52 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PushFreeSlot(BlockHeader* blockHeader)
+            private void PushFreeSlot(int slot)
             {
-                var slot = blockHeader->NextSlot;
                 int head;
                 do
                 {
-                    head = blockHeader->NextSlot = freeList;
+                    // This threads the free slot indexes through their freed slots in the page vector. This eliminates the need to grow the 
+                    // page vector if there are a lot of frees, such as for revivification, failed CAS, and so on.
+                    head = freeList;
+                    PageVector.Pages[slot] = (byte*)(long)head;
                 } while (Interlocked.CompareExchange(ref freeList, slot, head) != head);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Free(BlockHeader* blockPtr)
             {
-                PushFreeSlot(blockPtr);
+                var slot = blockPtr->Slot;
+                PageVector.FreePage(blockPtr);
+                PushFreeSlot(slot);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal bool TryRealloc(BlockHeader* blockPtr, int newSize, out byte* newPtr)
+            {
+                // For Oversize, this is a reallocation of the single-item page. It thows OOM if unsuccessful.
+                var slot = blockPtr->Slot;
+                var newBlockPtr = PageVector.Realloc(blockPtr, newSize);
+                newBlockPtr->AllocatedSize = newSize;
+                newBlockPtr->Slot = slot;
+                newPtr = (byte*)(newBlockPtr + 1);
+                return true;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Clear()
             {
-                PageVector.Clear();
+                // The PageVector has no concept of the FreeList, so we must set "free" slots to null.
+                var slot = freeList;
+                while (slot != InvalidSlot)
+                {
+                    var next = ((BlockHeader*)PageVector.Pages[slot])->Slot;
+                    PageVector.Pages[slot] = null;
+                    slot = next;
+                }
                 freeList = default;
+
+                PageVector.Clear();
             }
         }
     }

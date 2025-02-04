@@ -292,13 +292,6 @@ namespace Tsavorite.core
                 elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
             };
 
-            // TODO:
-            //      Actual length returned from TryAllocate
-            //      Make sure either value length to end of record, or filler is set.
-            //          Filler is probably better
-
-
-
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
 
@@ -315,7 +308,7 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, sizeInfo.FieldInfo.ValueSize);
+            hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
             if (!sessionFunctions.SingleWriter(ref newLogRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))

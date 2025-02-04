@@ -384,7 +384,7 @@ namespace Tsavorite.core
 
             rmwInfo.Address = newLogicalAddress;
 
-            hlog.InitializeValue(newPhysicalAddress, sizeInfo.FieldInfo.ValueSize);
+            hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
             if (!doingCU)
