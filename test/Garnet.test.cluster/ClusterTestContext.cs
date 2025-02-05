@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -84,17 +85,17 @@ namespace Garnet.test.cluster
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
         /// <param name="lowMemory"></param>
-        /// <param name="MemorySize"></param>
-        /// <param name="PageSize"></param>
-        /// <param name="SegmentSize"></param>
+        /// <param name="memorySize"></param>
+        /// <param name="pageSize"></param>
+        /// <param name="segmentSize"></param>
         /// <param name="enableAOF"></param>
-        /// <param name="MainMemoryReplication"></param>
-        /// <param name="OnDemandCheckpoint"></param>
-        /// <param name="AofMemorySize"></param>
-        /// <param name="CommitFrequencyMs"></param>
-        /// <param name="DisableStorageTier"></param>
-        /// <param name="EnableIncrementalSnapshots"></param>
-        /// <param name="FastCommit"></param>
+        /// <param name="mainMemoryReplication"></param>
+        /// <param name="onDemandCheckpoint"></param>
+        /// <param name="aofMemorySize"></param>
+        /// <param name="commitFrequencyMs"></param>
+        /// <param name="disableStorageTier"></param>
+        /// <param name="enableIncrementalSnapshots"></param>
+        /// <param name="fastCommit"></param>
         /// <param name="useAcl"></param>
         /// <param name="clusterCreds"></param>
         /// <param name="timeout"></param>
@@ -106,17 +107,17 @@ namespace Garnet.test.cluster
             bool tryRecover = false,
             bool disableObjects = false,
             bool lowMemory = false,
-            string MemorySize = default,
-            string PageSize = default,
-            string SegmentSize = "1g",
+            string memorySize = default,
+            string pageSize = default,
+            string segmentSize = "1g",
             bool enableAOF = false,
-            bool MainMemoryReplication = false,
-            bool OnDemandCheckpoint = false,
-            string AofMemorySize = "64m",
-            int CommitFrequencyMs = 0,
-            bool DisableStorageTier = false,
-            bool EnableIncrementalSnapshots = false,
-            bool FastCommit = true,
+            bool mainMemoryReplication = false,
+            bool onDemandCheckpoint = false,
+            string aofMemorySize = "64m",
+            int commitFrequencyMs = 0,
+            bool disableStorageTier = false,
+            bool enableIncrementalSnapshots = false,
+            bool fastCommit = true,
             int timeout = -1,
             bool useTLS = false,
             bool useAcl = false,
@@ -130,7 +131,9 @@ namespace Garnet.test.cluster
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
-            endpoints = TestUtils.GetEndPoints(shards, 7000);
+            TestUtils.EndPoint = new IPEndPoint(IPAddress.Loopback, 7000);
+            endpoints = TestUtils.GetShardEndPoints(shards, IPAddress.Loopback, 7000);
+
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
                 disablePubSub: disablePubSub,
@@ -143,16 +146,16 @@ namespace Garnet.test.cluster
                 UseTLS: useTLS,
                 cleanClusterConfig: cleanClusterConfig,
                 lowMemory: lowMemory,
-                MemorySize: MemorySize,
-                PageSize: PageSize,
-                SegmentSize: SegmentSize,
-                MainMemoryReplication: MainMemoryReplication,
-                AofMemorySize: AofMemorySize,
-                CommitFrequencyMs: CommitFrequencyMs,
-                DisableStorageTier: DisableStorageTier,
-                OnDemandCheckpoint: OnDemandCheckpoint,
-                EnableIncrementalSnapshots: EnableIncrementalSnapshots,
-                FastCommit: FastCommit,
+                MemorySize: memorySize,
+                PageSize: pageSize,
+                SegmentSize: segmentSize,
+                MainMemoryReplication: mainMemoryReplication,
+                AofMemorySize: aofMemorySize,
+                CommitFrequencyMs: commitFrequencyMs,
+                DisableStorageTier: disableStorageTier,
+                OnDemandCheckpoint: onDemandCheckpoint,
+                EnableIncrementalSnapshots: enableIncrementalSnapshots,
+                FastCommit: fastCommit,
                 useAcl: useAcl,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
@@ -172,7 +175,7 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Create single cluster instance with corresponding options
         /// </summary>
-        /// <param name="Port"></param>
+        /// <param name="endpoint"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
@@ -196,7 +199,7 @@ namespace Garnet.test.cluster
         /// <param name="certificates"></param>
         /// <returns></returns>
         public GarnetServer CreateInstance(
-            int Port,
+            EndPoint endpoint,
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
             bool tryRecover = false,
@@ -225,26 +228,26 @@ namespace Garnet.test.cluster
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
                 TestFolder,
-                Port,
+                endpoint,
                 disablePubSub: true,
                 disableObjects: disableObjects,
                 enableAOF: enableAOF,
                 timeout: timeout,
                 gossipDelay: gossipDelay,
                 tryRecover: tryRecover,
-                UseTLS: useTLS,
+                useTLS: useTLS,
                 cleanClusterConfig: cleanClusterConfig,
                 lowMemory: lowMemory,
-                MemorySize: MemorySize,
-                PageSize: PageSize,
-                SegmentSize: SegmentSize,
-                MainMemoryReplication: MainMemoryReplication,
-                AofMemorySize: AofMemorySize,
-                CommitFrequencyMs: CommitFrequencyMs,
-                DisableStorageTier: DisableStorageTier,
-                OnDemandCheckpoint: OnDemandCheckpoint,
-                EnableIncrementalSnapshots: EnableIncrementalSnapshots,
-                FastCommit: FastCommit,
+                memorySize: MemorySize,
+                pageSize: PageSize,
+                segmentSize: SegmentSize,
+                mainMemoryReplication: MainMemoryReplication,
+                aofMemorySize: AofMemorySize,
+                commitFrequencyMs: CommitFrequencyMs,
+                disableStorageTier: DisableStorageTier,
+                onDemandCheckpoint: OnDemandCheckpoint,
+                enableIncrementalSnapshots: EnableIncrementalSnapshots,
+                fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
                 aclFile: credManager.aclFilePath,
@@ -337,10 +340,10 @@ namespace Garnet.test.cluster
                     primaryIndex = slotMap[slot];
                 }
 
-                var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out string _, out int _, logger: logger);
+                var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out _, logger: logger);
                 ClassicAssert.AreEqual(ResponseState.OK, resp);
 
-                var retVal = clusterTestUtils.GetKey(primaryIndex, keyBytes, out int _, out string _, out int _, out ResponseState responseState, logger: logger);
+                var retVal = clusterTestUtils.GetKey(primaryIndex, keyBytes, out int _, out _, out ResponseState responseState, logger: logger);
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal));
 
@@ -447,10 +450,10 @@ namespace Garnet.test.cluster
                     replicaIndex = slotMap[slot];
                 }
 
-                var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out var responseState, logger: logger);
+                var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out _, out _, out var responseState, logger: logger);
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
-                    retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out responseState, logger: logger);
+                    retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out _, out _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
@@ -491,15 +494,15 @@ namespace Garnet.test.cluster
                 var key = orderedKeys ? (keyOffset++).ToString() : clusterTestUtils.RandomStr(keyLength);
                 var keyBytes = Encoding.ASCII.GetBytes(key);
                 var value = r.Next();
-                var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out string _, out int _, logger: logger);
+                var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out _, logger: logger);
                 ClassicAssert.AreEqual(ResponseState.OK, resp);
 
                 clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
-                var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out ResponseState responseState, logger: logger);
+                var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out _, out _, out ResponseState responseState, logger: logger);
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
-                    retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out responseState, logger: logger);
+                    retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out _, out _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);

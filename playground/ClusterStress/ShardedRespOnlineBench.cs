@@ -205,8 +205,7 @@ namespace Resp.benchmark
                     for (int i = 0; i < nodes.Length; i++)
                     {
                         var endpoint = (IPEndPoint)nodes[i].EndPoint;
-                        gclient[i] = new GarnetClient(endpoint.Address.ToString(),
-                            endpoint.Port,
+                        gclient[i] = new GarnetClient(endpoint,
                             opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
                             recordLatency: opts.ClientHistogram);
                         gclient[i].Connect();
@@ -221,8 +220,7 @@ namespace Resp.benchmark
                         {
                             var endpoint = (IPEndPoint)nodes[i].EndPoint;
                             gcs[j][i] = new GarnetClientSession(
-                                endpoint.Address.ToString(),
-                                endpoint.Port,
+                                endpoint,
                                 new(Math.Max(bufferSizeValue, opts.IntraThreadParallelism * opts.ValueLength)),
                                 tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                             gcs[j][i].Connect();

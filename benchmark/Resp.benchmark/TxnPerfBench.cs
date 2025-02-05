@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
@@ -107,7 +108,7 @@ namespace Resp.benchmark
             {
                 gcsPool = new AsyncPool<GarnetClientSession>(opts.NumThreads.First(), () =>
                 {
-                    var c = new GarnetClientSession(address, port, new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    var c = new GarnetClientSession(new IPEndPoint(IPAddress.Parse(address), port), new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                     c.Connect();
                     if (auth != null)
                     {
@@ -325,7 +326,7 @@ namespace Resp.benchmark
         public void LoadData()
         {
             var req = new OnlineReqGen(0, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
-            GarnetClientSession client = new(address, port, new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+            GarnetClientSession client = new(new IPEndPoint(IPAddress.Parse(address), port), new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
             client.Connect();
             if (auth != null)
             {
