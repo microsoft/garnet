@@ -60,6 +60,7 @@ namespace Garnet.server
                 RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_GETUSER => NetworkAclGetUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
@@ -130,7 +131,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Handle ACL or NoScript failures.
-        /// 
+        ///
         /// Failing should be rare, and is not important for performance so hide this behind
         /// a method call to keep icache pressure down
         /// </summary>

@@ -436,6 +436,7 @@ namespace Garnet.test
                 // ACL
                 RespCommand.ACL_CAT,
                 RespCommand.ACL_DELUSER,
+                RespCommand.ACL_GETUSER,
                 RespCommand.ACL_LIST,
                 RespCommand.ACL_LOAD,
                 RespCommand.ACL_SAVE,
