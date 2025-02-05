@@ -2794,7 +2794,7 @@ namespace Garnet.test.cluster
                 var secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
                     break;
-                BackOff(cancellationToken: context.cts.Token);
+                BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]{secondaryReplicationOffset1}");
             }
             logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
         }
