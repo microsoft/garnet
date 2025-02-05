@@ -118,11 +118,7 @@ namespace CommandInfoUpdater
             new("CustomTxn", RespCommand.CustomTxn),
             new("CustomProcedure", RespCommand.CustomProcedure),
             new("DBSIZE", RespCommand.DBSIZE),
-            new("DEBUG", RespCommand.DEBUG,
-            [
-                new("DEBUG|SEGFAULT", RespCommand.DEBUG_SEGFAULT),
-                new("DEBUG|VERSION", RespCommand.DEBUG_VERSION),
-            ]),
+            new("DEBUG", RespCommand.DEBUG),
             new("DECR", RespCommand.DECR),
             new("DECRBY", RespCommand.DECRBY),
             new("DEL", RespCommand.DEL),

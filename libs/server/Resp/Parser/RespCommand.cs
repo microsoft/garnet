@@ -302,8 +302,6 @@ namespace Garnet.server
         CONFIG_SET,
 
         DEBUG,
-        DEBUG_SEGFAULT,
-        DEBUG_VERSION,
 
         LATENCY,
         LATENCY_HELP,
@@ -377,9 +375,8 @@ namespace Garnet.server
     /// </summary>
     public static class RespCommandExtensions
     {
-        private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
-        private static readonly RespCommand[] ExpandedDebug = [RespCommand.DEBUG_SEGFAULT, RespCommand.DEBUG_VERSION];
         private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
+        private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
 
         // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
         private static readonly RespCommand[] AofIndependentCommands = [
@@ -492,7 +489,6 @@ namespace Garnet.server
                     RespCommand.SETKEEPTTL => RespCommand.SET,
                     RespCommand.SETKEEPTTLXX => RespCommand.SET,
                     RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR => RespCommand.BITOP,
-                    RespCommand.DEBUG_SEGFAULT or RespCommand.DEBUG_VERSION => RespCommand.DEBUG,
                     _ => cmd
                 };
         }
@@ -507,7 +503,6 @@ namespace Garnet.server
                 {
                     RespCommand.SET => ExpandedSET,
                     RespCommand.BITOP => ExpandedBITOP,
-                    RespCommand.DEBUG => ExpandedDebug,
                     _ => default
                 };
         }
@@ -2422,35 +2417,7 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.DEBUG))
             {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CONFIG)));
-                    return RespCommand.INVALID;
-                }
-
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-                AsciiUtils.ToUpperInPlace(subCommand);
-                if (subCommand.SequenceEqual(CmdStrings.SEGFAULT))
-                {
-                    return RespCommand.DEBUG_SEGFAULT;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.VERSION))
-                {
-                    return RespCommand.DEBUG_VERSION;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.UTF8.GetString(subCommand), "CLUSTER");
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
+                return RespCommand.DEBUG;
             }
             else
             {

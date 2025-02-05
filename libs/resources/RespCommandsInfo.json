@@ -1081,6 +1081,7 @@
   {
     "Command": "DEBUG",
     "Name": "DEBUG",
+    "IsInternal": true,
     "Arity": -2,
     "Flags": "Admin, Noscript, Loading, Stale",
     "AclCategories": "Admin, Dangerous, Slow"

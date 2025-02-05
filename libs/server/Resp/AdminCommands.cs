@@ -66,8 +66,7 @@ namespace Garnet.server
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
                 RespCommand.ACL_USERS => NetworkAclUsers(),
                 RespCommand.ACL_SAVE => NetworkAclSave(),
-                RespCommand.DEBUG_SEGFAULT => NetworkPANIC(),
-                RespCommand.DEBUG_VERSION => NetworkVERSION(),
+                RespCommand.DEBUG => NetworkDebug(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
@@ -654,25 +653,27 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkPANIC()
+        private bool NetworkDebug()
         {
-            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForAll) ||
-                    ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) &&
-                     networkSender.IsLocalConnection())
+            if ((storeWrapper.serverOptions.EnableDebugCommand != ConnectionProtectionOption.AllowForAll) &&
+                 ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) ||
+                !networkSender.IsLocalConnection())
                )
             {
-                throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
+                return true;
             }
 
-            return true;
-        }
+            if (parseState.Count == 0)
+            {
+                return true;
+            }
 
-        private bool NetworkVERSION()
-        {
-            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForAll) ||
-                    ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) &&
-                     networkSender.IsLocalConnection())
-               )
+            var command = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SEGFAULT))
+                throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.VERSION))
             {
                 while (!RespWriteUtils.TryWriteAsciiBulkString(storeWrapper.version, ref dcurr, dend))
                     SendAndReset();
