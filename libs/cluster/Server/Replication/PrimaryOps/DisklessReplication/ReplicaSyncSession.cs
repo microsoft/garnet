@@ -293,6 +293,7 @@ namespace Garnet.cluster
             }
             finally
             {
+                AofSyncTask.garnetClient.Dispose();
                 AofSyncTask = null;
             }
         }
