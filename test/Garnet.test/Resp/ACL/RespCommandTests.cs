@@ -93,6 +93,7 @@ namespace Garnet.test.Resp.ACL
             {
                 // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
                 IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
+                var x = advertisedCommands.Except(withOnlySubCommands).Union(subCommands);
                 IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
                 IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
@@ -1006,6 +1007,7 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
+        [Test]
         public async Task ClusterAttachSyncACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
