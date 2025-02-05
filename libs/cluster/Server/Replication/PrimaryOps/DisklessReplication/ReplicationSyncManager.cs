@@ -121,7 +121,7 @@ namespace Garnet.cluster
                 if (replicaSyncSession.Failed)
                 {
                     replicaSyncSession.LogError();
-                    replicaSyncSession.Dispose();
+                    replicaSyncSession.Dispose(true);
                     return replicaSyncSession.GetSyncStatusInfo;
                 }
 

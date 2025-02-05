@@ -48,8 +48,11 @@ namespace Garnet.cluster
 
         public string errorMsg = default;
 
-        public void Dispose()
+        public void Dispose() => Dispose(false);
+
+        public void Dispose(bool disposeAofSyncTask)
         {
+            if (disposeAofSyncTask) AofSyncTask?.Dispose();
             AofSyncTask = null;
             cts.Cancel();
             cts.Dispose();
