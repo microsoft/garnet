@@ -2,17 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Reflection.Metadata.Ecma335;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -114,7 +109,7 @@ namespace Garnet.server
         /// <summary>
         /// Number of current logical databases
         /// </summary>
-        public int databaseCount = 1;
+        public int databaseCount;
 
         /// <summary>
         /// Delegate for creating a new logical database
@@ -122,7 +117,12 @@ namespace Garnet.server
         internal readonly DatabaseCreatorDelegate createDatabasesDelegate;
 
         readonly bool allowMultiDb;
-        internal ExpandableMap<GarnetDatabase> databases;
+        ExpandableMap<GarnetDatabase> databases;
+        int[] activeDbIds = null;
+        int activeDbIdsLength;
+        Task[] checkpointTasks = null;
+        Task[] aofTasks = null;
+        object activeDbIdsLock = new();
 
         string databaseIdsFileName = "dbIds.dat";
         string aofDatabaseIdsPath;
@@ -177,7 +177,7 @@ namespace Garnet.server
                 checkpointDatabaseIdsPath = storeCheckpointDir == null ? null : Path.Combine(storeCheckpointDir, databaseIdsFileName);
                 aofDatabaseIdsPath = aofPath == null ? null : Path.Combine(aofPath, databaseIdsFileName);
 
-                if (!databases.TrySetValue(0, ref db))
+                if (!this.TrySetDatabase(0, ref db))
                     throw new GarnetException("Failed to set initial database in databases map");
 
                 this.InitializeFieldsFromDatabase(databases.Map[0]);
@@ -276,7 +276,7 @@ namespace Garnet.server
                 var db = databasesMapSnapshot[dbId];
                 var dbCopy = new GarnetDatabase(db.MainStore, db.ObjectStore, db.ObjectSizeTracker,
                     recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null);
-                databases.TrySetValue(dbId, ref dbCopy);
+                this.TrySetDatabase(dbId, ref dbCopy);
             }
 
             InitializeFieldsFromDatabase(databases.Map[0]);
@@ -327,9 +327,9 @@ namespace Garnet.server
             if (dbId == 0)
                 return new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
             
-            if (!databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId, out _, out _), out var db, out _))
+            if (!this.TryGetOrSetDatabase(dbId, out var db))
                 throw new GarnetException($"Database with ID {dbId} was not found.");
-            
+
             return new(db.AppendOnlyFile, db.VersionMap, customCommandManager, null, db.ObjectSizeTracker,
                 GarnetObjectSerializer);
         }
@@ -407,11 +407,14 @@ namespace Garnet.server
             }
         }
 
-        private void WriteDatabaseIdsSnapshot(int[] activeDbIds, int offset, int actualLength, string path)
+        private void WriteDatabaseIdsSnapshot(string path)
         {
-            var dbIdsWithLength = new int[actualLength + 1];
-            dbIdsWithLength[0] = actualLength;
-            Array.Copy(activeDbIds, offset, dbIdsWithLength, 1, actualLength);
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+
+            var dbIdsWithLength = new int[activeDbIdsSize];
+            dbIdsWithLength[0] = activeDbIdsSize - 1;
+            Array.Copy(activeDbIdsSnapshot, 1, dbIdsWithLength, 1, activeDbIdsSize - 1);
 
             var dbIdData = new byte[sizeof(int) * dbIdsWithLength.Length];
 
@@ -439,8 +442,7 @@ namespace Garnet.server
                     if (dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault()) 
                         continue;
 
-                    var db = createDatabasesDelegate(dbId, out _, out _);
-                    databases.TrySetValue(dbId, ref db);
+                    this.TryGetOrSetDatabase(dbId, out _);
                 }
             }
         }
@@ -499,19 +501,28 @@ namespace Garnet.server
                 // So initialize local AofProcessor with recordToAof: false.
                 var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
 
-                var databasesMapSize = databases.ActualSize;
                 var databasesMapSnapshot = databases.Map;
 
-                for (var dbId = 0; dbId < databasesMapSize; dbId++)
+                var activeDbIdsSize = activeDbIdsLength;
+                var activeDbIdsSnapshot = activeDbIds;
+
+                for (var i = 0; i < activeDbIdsSize; i++)
                 {
-                    if (databasesMapSnapshot[dbId].IsDefault()) continue;
+                    var dbId = activeDbIdsSnapshot[i];
+
                     aofProcessor.Recover(dbId, dbId == 0 ? untilAddress : -1);
+
+                    var lastSave = DateTimeOffset.UtcNow;
+                    databasesMapSnapshot[dbId].LastSaveTime = lastSave;
+
                     if (dbId == 0)
+                    {
                         replicationOffset = aofProcessor.ReplicationOffset;
+                        this.lastSaveTime = lastSave;
+                    }
                 }
 
                 aofProcessor.Dispose();
-                lastSaveTime = DateTimeOffset.UtcNow;
             }
             catch (Exception ex)
             {
@@ -519,6 +530,7 @@ namespace Garnet.server
                 if (serverOptions.FailOnRecoveryError)
                     throw;
             }
+
             return replicationOffset;
         }
 
@@ -526,32 +538,57 @@ namespace Garnet.server
         {
             try
             {
+                int[] dbIdsToCheckpoint = null;
+
                 while (true)
                 {
-                    await Task.Delay(1000);
+                    await Task.Delay(1000, token);
                     if (token.IsCancellationRequested) break;
 
                     var aofSizeAtLimit = -1l;
                     var databasesMapSize = databases.ActualSize;
-                    var databasesMapSnapshot = databases.Map;
 
-                    for (var i = 0; i < databasesMapSize; i++)
+                    if (!allowMultiDb || databasesMapSize == 1)
                     {
-                        var db = databasesMapSnapshot[i];
-                        if (db.IsDefault()) continue;
+                        var dbAofSize = appendOnlyFile.TailAddress - appendOnlyFile.BeginAddress;
+                        if (dbAofSize > aofSizeLimit)
+                            aofSizeAtLimit = dbAofSize;
+
+                        if (aofSizeAtLimit != -1)
+                        {
+                            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
+                            await CheckpointTask(StoreType.All, logger: logger);
+                        }
+
+                        return;
+                    }
+
+                    var databasesMapSnapshot = databases.Map;
+                    var activeDbIdsSize = activeDbIdsLength;
+                    var activeDbIdsSnapshot = activeDbIds;
+
+                    if (dbIdsToCheckpoint == null || dbIdsToCheckpoint.Length < databasesMapSize)
+                        dbIdsToCheckpoint = new int[activeDbIdsSize];
+
+                    var dbIdsIdx = 0;
+                    for (var i = 0; i < activeDbIdsSize; i++)
+                    {
+                        var dbId = activeDbIdsSnapshot[i];
+                        var db = databasesMapSnapshot[dbId];
+                        Debug.Assert(!db.IsDefault());
 
                         var dbAofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
                         if (dbAofSize > aofSizeLimit)
                         {
-                            aofSizeAtLimit = dbAofSize;
+                            dbIdsToCheckpoint[dbIdsIdx++] = dbId;
                             break;
                         }
                     }
                     
-                    if (aofSizeAtLimit != -1)
+                    if (dbIdsIdx > 0)
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                        TakeCheckpoint(false, logger: logger);
+                        TakeCheckpoint(false, ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
                     }
                 }
             }
@@ -565,9 +602,6 @@ namespace Garnet.server
         {
             try
             {
-                int[] activeDbIds = null;
-                Task[] tasks = null;
-
                 while (true)
                 {
                     if (token.IsCancellationRequested) break;
@@ -587,7 +621,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            MultiDatabaseCommit(ref activeDbIds, ref tasks, token);
+                            MultiDatabaseCommit(ref aofTasks, token);
                         }
 
                         await Task.Delay(commitFrequencyMs, token);
@@ -600,36 +634,32 @@ namespace Garnet.server
             }
         }
 
-        void MultiDatabaseCommit(ref int[] activeDbIds, ref Task[] tasks, CancellationToken token)
+        void MultiDatabaseCommit(ref Task[] tasks, CancellationToken token)
         {
-            var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
-            if (activeDbIds == null || activeDbIds.Length < databasesMapSize)
-            {
-                activeDbIds = new int[databasesMapSize];
-                tasks = new Task[databasesMapSize];
-            }
 
-            var dbIdsIdx = 0;
-            for (var dbId = 0; dbId < databasesMapSize; dbId++)
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+
+            tasks ??= new Task[activeDbIdsSize];
+
+            for (var i = 0; i < activeDbIdsSize; i++)
             {
+                var dbId = activeDbIdsSnapshot[i];
                 var db = databasesMapSnapshot[dbId];
-                if (db.IsDefault()) continue;
+                Debug.Assert(!db.IsDefault());
 
-                tasks[dbIdsIdx] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
-                activeDbIds[dbIdsIdx] = dbId;
-
-                dbIdsIdx++;
+                tasks[i] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
             }
 
-            for (var i = 0; i < dbIdsIdx; i++)
+            for (var i = 0; i < activeDbIdsSize; i++)
             {
                 tasks[i].Wait(token);
                 tasks[i] = null;
             }
 
-            if (aofDatabaseIdsPath != null && dbIdsIdx != 0)
-                WriteDatabaseIdsSnapshot(activeDbIds, 1, dbIdsIdx - 1, aofDatabaseIdsPath);
+            if (aofDatabaseIdsPath != null)
+                WriteDatabaseIdsSnapshot(aofDatabaseIdsPath);
         }
 
         async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
@@ -641,13 +671,16 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    var databasesMapSize = databases.ActualSize;
                     var databasesMapSnapshot = databases.Map;
 
-                    for (var i = 0; i < databasesMapSize; i++)
+                    var activeDbIdsSize = activeDbIdsLength;
+                    var activeDbIdsSnapshot = activeDbIds;
+
+                    for (var i = 0; i < activeDbIdsSize; i++)
                     {
-                        var db = databasesMapSnapshot[i];
-                        if (db.IsDefault()) continue;
+                        var dbId = activeDbIdsSnapshot[i];
+                        var db = databasesMapSnapshot[dbId];
+                        Debug.Assert(!db.IsDefault());
 
                         DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
                     }
@@ -855,10 +888,9 @@ namespace Garnet.server
                 return;
             }
 
-            int[] activeDbIds = null;
             Task[] tasks = null;
 
-            MultiDatabaseCommit(ref activeDbIds, ref tasks, CancellationToken.None);
+            MultiDatabaseCommit(ref tasks, CancellationToken.None);
         }
 
         internal void Start()
@@ -901,19 +933,9 @@ namespace Garnet.server
         {
             try
             {
+                var databaseDataInitialized = new bool[serverOptions.MaxDatabases];
                 var databaseMainStoreIndexMaxedOut = new bool[serverOptions.MaxDatabases];
                 var databaseObjectStoreIndexMaxedOut = new bool[serverOptions.MaxDatabases];
-
-                var databasesMapSize = databases.ActualSize;
-                var databasesMapSnapshot = databases.Map;
-
-                for (var i = 0; i < databasesMapSize; i++)
-                {
-                    if (databasesMapSnapshot[i].IsDefault()) continue;
-
-                    databaseMainStoreIndexMaxedOut[i] = serverOptions.AdjustedIndexMaxCacheLines == 0;
-                    databaseObjectStoreIndexMaxedOut[i] = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
-                }
 
                 var allIndexesMaxedOut = false;
 
@@ -925,31 +947,42 @@ namespace Garnet.server
 
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
-                    databasesMapSize = databases.ActualSize;
-                    databasesMapSnapshot = databases.Map;
+                    var databasesMapSnapshot = databases.Map;
 
-                    for (var i = 0; i < databasesMapSize; i++)
+                    var activeDbIdsSize = activeDbIdsLength;
+                    var activeDbIdsSnapshot = activeDbIds;
+
+                    for (var i = 0; i < activeDbIdsSize; i++)
                     {
-                        if (!databaseMainStoreIndexMaxedOut[i])
+                        var dbId = activeDbIdsSnapshot[i];
+                        if (!databaseDataInitialized[dbId])
                         {
-                            var dbMainStore = databasesMapSnapshot[i].MainStore;
-                            databaseMainStoreIndexMaxedOut[i] = GrowIndexIfNeeded(StoreType.Main,
+                            Debug.Assert(!databasesMapSnapshot[dbId].IsDefault());
+                            databaseMainStoreIndexMaxedOut[dbId] = serverOptions.AdjustedIndexMaxCacheLines == 0;
+                            databaseObjectStoreIndexMaxedOut[dbId] = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
+                            databaseDataInitialized[dbId] = true;
+                        }
+
+                        if (!databaseMainStoreIndexMaxedOut[dbId])
+                        {
+                            var dbMainStore = databasesMapSnapshot[dbId].MainStore;
+                            databaseMainStoreIndexMaxedOut[dbId] = GrowIndexIfNeeded(StoreType.Main,
                                 serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
                                 () => dbMainStore.IndexSize, () => dbMainStore.GrowIndex());
 
-                            if (!databaseMainStoreIndexMaxedOut[i])
+                            if (!databaseMainStoreIndexMaxedOut[dbId])
                                 allIndexesMaxedOut = false;
                         }
 
-                        if (!databaseObjectStoreIndexMaxedOut[i])
+                        if (!databaseObjectStoreIndexMaxedOut[dbId])
                         {
-                            var dbObjectStore = databasesMapSnapshot[i].ObjectStore;
-                            databaseObjectStoreIndexMaxedOut[i] = GrowIndexIfNeeded(StoreType.Object,
+                            var dbObjectStore = databasesMapSnapshot[dbId].ObjectStore;
+                            databaseObjectStoreIndexMaxedOut[dbId] = GrowIndexIfNeeded(StoreType.Object,
                                 serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
                                 dbObjectStore.OverflowBucketAllocations,
                                 () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndex());
 
-                            if (!databaseObjectStoreIndexMaxedOut[i])
+                            if (!databaseObjectStoreIndexMaxedOut[dbId])
                                 allIndexesMaxedOut = false;
                         }
                     }
@@ -1030,89 +1063,181 @@ namespace Garnet.server
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
         /// </summary>
         /// <param name="entryTime"></param>
+        /// <param name="dbId"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime)
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
         {
             // Take lock to ensure no other task will be taking a checkpoint
             while (!TryPauseCheckpoints())
                 await Task.Yield();
 
             // If an external task has taken a checkpoint beyond the provided entryTime return
-            if (this.lastSaveTime > entryTime)
+            if (databases.Map[dbId].LastSaveTime > entryTime)
             {
                 ResumeCheckpoints();
                 return;
             }
 
             // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-            await CheckpointTask(StoreType.All, logger: logger);
+            await CheckpointTask(StoreType.All, dbId, logger: logger);
         }
 
         /// <summary>
         /// Take checkpoint
         /// </summary>
         /// <param name="background"></param>
+        /// <param name="tasks"></param>
         /// <param name="storeType"></param>
         /// <param name="logger"></param>
+        /// <param name="dbIds"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null)
+        public bool TakeCheckpoint(bool background, ref int[] dbIds, ref Task[] tasks, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
         {
             // Prevent parallel checkpoint
             if (!TryPauseCheckpoints()) return false;
-            if (background)
-                Task.Run(async () => await CheckpointTask(storeType, logger));
-            else
-                CheckpointTask(storeType, logger).ConfigureAwait(false).GetAwaiter().GetResult();
+
+            MultiDatabaseCheckpoint(storeType, ref dbIds, ref tasks, background, logger, token);
             return true;
         }
 
-        private async Task CheckpointTask(StoreType storeType, ILogger logger = null)
+        /// <summary>
+        /// Take checkpoint of all active databases
+        /// </summary>
+        /// <param name="background"></param>
+        /// <param name="storeType"></param>
+        /// <param name="logger"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
+        {
+            var aofSizeAtLimit = -1l;
+            var databasesMapSize = databases.ActualSize;
+
+            if (!allowMultiDb || databasesMapSize == 1)
+            {
+                var checkpointTask = Task.Run(async () => await CheckpointTask(StoreType.All, logger: logger), token);
+                if (background)
+                    return true;
+                
+                checkpointTask.Wait(token);
+                return true;
+            }
+
+            var databasesMapSnapshot = databases.Map;
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+
+            var tasks = new Task[activeDbIdsSize];
+
+            var dbIdsIdx = 0;
+            for (var i = 0; i < activeDbIdsSize; i++)
+            {
+                var dbId = activeDbIdsSnapshot[i];
+                var db = databasesMapSnapshot[dbId];
+                Debug.Assert(!db.IsDefault());
+
+                dbIdsIdx++;
+            }
+
+            if (dbIdsIdx > 0)
+            {
+                return TakeCheckpoint(false, ref activeDbIds, ref tasks, logger: logger, token: token);
+            }
+
+            return true;
+        }
+
+        private async Task CheckpointDatabaseTask(int dbId, StoreType storeType, ILogger logger)
+        {
+            var databasesMapSnapshot = databases.Map;
+            var db = databasesMapSnapshot[dbId];
+            if (db.IsDefault()) return;
+
+            DoCompaction(ref db);
+            var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
+            var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
+
+            var full = db.LastSaveStoreTailAddress == 0 ||
+                       lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval ||
+                       (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
+                                                   lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
+
+            var tryIncremental = serverOptions.EnableIncrementalSnapshots;
+            if (db.MainStore.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                tryIncremental = false;
+            if (db.ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                tryIncremental = false;
+
+            var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
+            await InitiateCheckpoint(dbId, db, full, checkpointType, tryIncremental, storeType, logger);
+            if (full)
+            {
+                if (storeType is StoreType.Main or StoreType.All)
+                    db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
+                if (storeType is StoreType.Object or StoreType.All)
+                    db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
+            }
+
+            var lastSave = DateTimeOffset.UtcNow;
+            if (dbId == 0)
+                lastSaveTime = lastSave;
+            db.LastSaveTime = lastSave;
+        }
+
+        private async Task CheckpointTask(StoreType storeType, int dbId = 0, ILogger logger = null)
         {
             try
             {
-                var databasesMapSize = databases.ActualSize;
-                var databasesMapSnapshot = databases.Map;
+                await CheckpointDatabaseTask(dbId, storeType, logger);
 
-                var activeDbIds = allowMultiDb ? new List<int>() : null;
+                if (checkpointDatabaseIdsPath != null)
+                    WriteDatabaseIdsSnapshot(checkpointDatabaseIdsPath);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Checkpointing threw exception");
+            }
+            finally
+            {
+                ResumeCheckpoints();
+            }
+        }
 
-                for (var dbId = 0; dbId < databasesMapSize; dbId++)
+        private void MultiDatabaseCheckpoint(StoreType storeType, ref int[] dbIds, ref Task[] tasks, bool background, ILogger logger = null, CancellationToken token = default)
+        {
+            try
+            {
+                Debug.Assert(tasks != null);
+
+                var currIdx = 0;
+                if (dbIds == null)
                 {
-                    var db = databasesMapSnapshot[dbId];
-                    if (db.IsDefault()) continue;
-
-                    DoCompaction(ref db);
-                    var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
-                    var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
-
-                    var full = db.LastSaveStoreTailAddress == 0 ||
-                               lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval || 
-                               (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
-                                    lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
-
-                    var tryIncremental = serverOptions.EnableIncrementalSnapshots;
-                    if (db.MainStore.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                        tryIncremental = false;
-                    if (db.ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                        tryIncremental = false;
-
-                    var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                    await InitiateCheckpoint(dbId, db, full, checkpointType, tryIncremental, storeType, logger);
-                    if (full)
+                    var activeDbIdsSize = activeDbIdsLength;
+                    var activeDbIdsSnapshot = activeDbIds;
+                    while(currIdx < activeDbIdsSize)
                     {
-                        if (storeType is StoreType.Main or StoreType.All)
-                            db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
-                        if (storeType is StoreType.Object or StoreType.All)
-                            db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
+                        var dbId = activeDbIdsSnapshot[currIdx];
+                        tasks[currIdx] = CheckpointDatabaseTask(dbId, storeType, logger);
+                        currIdx++;
                     }
-
-                    if(allowMultiDb && dbId != 0)
-                        activeDbIds!.Add(dbId);
+                }
+                else
+                {
+                    while (currIdx < dbIds.Length && (currIdx == 0 || dbIds[currIdx] != 0))
+                    {
+                        tasks[currIdx] = CheckpointDatabaseTask(dbIds[currIdx], storeType, logger);
+                        currIdx++;
+                    }
                 }
 
-                if (allowMultiDb && checkpointDatabaseIdsPath != null && activeDbIds!.Count > 0)
-                    WriteDatabaseIdsSnapshot(activeDbIds.ToArray(), 0, activeDbIds.Count, checkpointDatabaseIdsPath);
+                if (background) return;
 
-                lastSaveTime = DateTimeOffset.UtcNow;
+                for (var i = 0; i < currIdx; i++)
+                    tasks[i].Wait(token);
+
+                if (checkpointDatabaseIdsPath != null)
+                    WriteDatabaseIdsSnapshot(checkpointDatabaseIdsPath);
             }
             catch (Exception ex)
             {
@@ -1246,6 +1371,54 @@ namespace Garnet.server
             }
         }
 
+        private void HandleDatabaseAdded(int dbId)
+        {
+            lock (activeDbIdsLock)
+            {
+                databaseCount++;
+
+                if (activeDbIds != null && databaseCount < activeDbIds.Length)
+                {
+                    activeDbIds[databaseCount - 1] = dbId;
+                    activeDbIdsLength++;
+                    return;
+                }
+
+                var newSize = activeDbIds?.Length ?? 1;
+                while (databaseCount >= newSize)
+                {
+                    newSize = Math.Min(this.serverOptions.MaxDatabases, newSize * 2);
+                }
+
+                var activeDbIdsUpdated = new int[newSize];
+                var databasesMapSize = databases.ActualSize;
+                var databasesMapSnapshot = databases.Map;
+
+                var activeDbIdsIdx = 0;
+                for (var i = 0; i < databasesMapSize; i++)
+                {
+                    var currDb = databasesMapSnapshot[i];
+                    if (currDb.IsDefault())
+                        continue;
+                    activeDbIdsUpdated[activeDbIdsIdx++] = i;
+                }
+
+                checkpointTasks = new Task[newSize];
+                aofTasks = new Task[newSize];
+                activeDbIds = activeDbIdsUpdated;
+                activeDbIdsLength = activeDbIdsIdx;
+            }
+        }
+
+        public bool TrySetDatabase(int dbId, ref GarnetDatabase db)
+        {
+            if (!allowMultiDb || !databases.TrySetValue(dbId, ref db))
+                return false;
+
+            HandleDatabaseAdded(dbId);
+            return true;
+        }
+
         public bool TryGetOrSetDatabase(int dbId, out GarnetDatabase db)
         {
             db = default;
@@ -1254,7 +1427,7 @@ namespace Garnet.server
                 return false;
 
             if (added)
-                Interlocked.Increment(ref databaseCount);
+                HandleDatabaseAdded(dbId);
             
             return true;
         }

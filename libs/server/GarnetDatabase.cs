@@ -60,6 +60,11 @@ namespace Garnet.server
         /// </summary>
         public long LastSaveObjectStoreTailAddress;
 
+        /// <summary>
+        /// Last time checkpoint of database was taken
+        /// </summary>
+        public DateTimeOffset LastSaveTime;
+
         bool disposed = false;
 
         public GarnetDatabase(TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,

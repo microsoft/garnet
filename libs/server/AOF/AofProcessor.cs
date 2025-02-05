@@ -113,7 +113,9 @@ namespace Garnet.server
             try
             {
                 int count = 0;
-                var appendOnlyFile = storeWrapper.databases.Map[dbId].AppendOnlyFile;
+                storeWrapper.TryGetOrSetDatabase(dbId, out var db);
+                var appendOnlyFile = db.AppendOnlyFile;
+
                 SwitchActiveDatabaseContext(dbId);
 
                 if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
