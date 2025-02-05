@@ -1030,7 +1030,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "4", "field1", "field5", "nonexistfield");
+            var result = db.Execute("HEXPIRE", "myhash", "4", "FIELDS", "3", "field1", "field5", "nonexistfield");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(3, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1085,7 +1085,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(3500);
+            await Task.Delay(4500);
 
             var items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(2, items.Length);
