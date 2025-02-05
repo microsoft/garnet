@@ -468,6 +468,49 @@ namespace Garnet.server
             }
         }
 
+        async Task SortedSetCollectTask(int sortedSetCollectFrequencySecs, CancellationToken token = default)
+        {
+            Debug.Assert(sortedSetCollectFrequencySecs > 0);
+            try
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
+
+                if (objectStore is null)
+                {
+                    logger?.LogWarning("SortedSetCollectFrequencySecs option is configured but Object store is disabled. Stopping the background sortedSet collect task.");
+                    return;
+                }
+
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
+
+                    ExecuteSortedSetCollect(scratchBufferManager, storageSession);
+
+                    await Task.Delay(TimeSpan.FromSeconds(sortedSetCollectFrequencySecs), token);
+                }
+            }
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background sortedSet collect task. SortedSet collect task won't be resumed.");
+            }
+
+            static void ExecuteSortedSetCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
+            {
+                var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
+                var input = new ObjectInput(header);
+
+                ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
+                storageSession.SortedSetCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+                scratchBufferManager.Reset();
+            }
+        }
+
         void DoCompaction()
         {
             // Periodic compaction -> no need to compact before checkpointing
@@ -625,6 +668,11 @@ namespace Garnet.server
             if (serverOptions.HashCollectFrequencySecs > 0)
             {
                 Task.Run(async () => await HashCollectTask(serverOptions.HashCollectFrequencySecs, ctsCommit.Token));
+            }
+
+            if (serverOptions.SortedSetCollectFrequencySecs > 0)
+            {
+                Task.Run(async () => await SortedSetCollectTask(serverOptions.SortedSetCollectFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

@@ -1682,5 +1682,265 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Sets an expiration time for a member in the SortedSet stored at key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SortedSetExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 4)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            long expireAt = 0;
+            var isMilliseconds = false;
+            if (!parseState.TryGetLong(1, out expireAt))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (expireAt < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+            }
+
+            switch (command)
+            {
+                case RespCommand.ZEXPIRE:
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireAt;
+                    isMilliseconds = false;
+                    break;
+                case RespCommand.ZPEXPIRE:
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireAt;
+                    isMilliseconds = true;
+                    break;
+                case RespCommand.ZPEXPIREAT:
+                    isMilliseconds = true;
+                    break;
+                default: // RespCommand.ZEXPIREAT
+                    break;
+            }
+
+            var currIdx = 2;
+            if (parseState.TryGetExpireOption(currIdx, out var expireOption))
+            {
+                currIdx++; // If expire option is present, move to next argument else continue with the current argument
+            }
+
+            var fieldOption = parseState.GetArgSliceByRef(currIdx++);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEMBERS))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMandatoryMissing, "MEMBERS")));
+            }
+
+            if (!parseState.TryGetInt(currIdx++, out var numMembers))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numMembers")));
+            }
+
+            if (parseState.Count != currIdx + numMembers)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers")));
+            }
+
+            var membersParseState = parseState.Slice(currIdx, numMembers);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
+            var input = new ObjectInput(header, ref membersParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numMembers; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the time to live (TTL) for the specified members in the SortedSet stored at the given key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi">The type of the storage API.</typeparam>
+        /// <param name="command">The RESP command indicating the type of TTL operation.</param>
+        /// <param name="storageApi">The storage API instance to interact with the underlying storage.</param>
+        /// <returns>True if the operation was successful; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown when the object store is disabled.</exception>
+        private unsafe bool SortedSetTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 3)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var fieldOption = parseState.GetArgSliceByRef(1);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEMBERS))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMandatoryMissing, "MEMBERS")));
+            }
+
+            if (!parseState.TryGetInt(2, out var numMembers))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numMembers")));
+            }
+
+            if (parseState.Count != 3 + numMembers)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers")));
+            }
+
+            var isMilliseconds = false;
+            var isTimestamp = false;
+            switch (command)
+            {
+                case RespCommand.ZPTTL:
+                    isMilliseconds = true;
+                    isTimestamp = false;
+                    break;
+                case RespCommand.ZEXPIRETIME:
+                    isMilliseconds = false;
+                    isTimestamp = true;
+                    break;
+                case RespCommand.ZPEXPIRETIME:
+                    isMilliseconds = true;
+                    isTimestamp = true;
+                    break;
+                default: // RespCommand.ZTTL
+                    break;
+            }
+
+            var membersParseState = parseState.Slice(3, numMembers);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
+            var input = new ObjectInput(header, ref membersParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numMembers; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Removes the expiration time from the specified members in the sorted set stored at the given key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi">The type of the storage API.</typeparam>
+        /// <param name="storageApi">The storage API instance to interact with the underlying storage.</param>
+        /// <returns>True if the operation was successful; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown when the object store is disabled.</exception>
+        private unsafe bool SortedSetPersist<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZPERSIST));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var fieldOption = parseState.GetArgSliceByRef(1);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEMBERS))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMandatoryMissing, "MEMBERS")));
+            }
+
+            if (!parseState.TryGetInt(2, out var numMembers))
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numMembers")));
+            }
+
+            if (parseState.Count != 3 + numMembers)
+            {
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers")));
+            }
+
+            var membersParseState = parseState.Slice(3, numMembers);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
+            var input = new ObjectInput(header, ref membersParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetPersist(key, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numMembers; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
     }
 }

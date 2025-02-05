@@ -1,0 +1,849 @@
+diff --git a/libs/server/Objects/Hash/HashObject.cs b/libs/server/Objects/Hash/HashObject.cs
+index bfa3a8b4..8ba8c21b 100644
+--- a/libs/server/Objects/Hash/HashObject.cs
++++ b/libs/server/Objects/Hash/HashObject.cs
+@@ -5,6 +5,8 @@ using System;
+ using System.Collections.Generic;
+ using System.Diagnostics;
+ using System.IO;
++using System.Linq;
++using System.Runtime.CompilerServices;
+ using Garnet.common;
+ using Tsavorite.core;
+ 
+@@ -17,6 +19,10 @@ namespace Garnet.server
+     /// </summary>
+     public enum HashOperation : byte
+     {
++        HCOLLECT,
++        HEXPIRE,
++        HTTL,
++        HPERSIST,
+         HGET,
+         HMGET,
+         HSET,
+@@ -42,6 +48,11 @@ namespace Garnet.server
+     public unsafe partial class HashObject : GarnetObjectBase
+     {
+         readonly Dictionary<byte[], byte[]> hash;
++        Dictionary<byte[], long> expirationTimes;
++        PriorityQueue<byte[], long> expirationQueue;
++
++        // Byte #31 is used to denote if key has expiration (1) or not (0) 
++        private const int ExpirationBitMask = 1 << 31;
+ 
+         /// <summary>
+         ///  Constructor
+@@ -63,9 +74,29 @@ namespace Garnet.server
+             int count = reader.ReadInt32();
+             for (int i = 0; i < count; i++)
+             {
+-                var item = reader.ReadBytes(reader.ReadInt32());
++                var keyLength = reader.ReadInt32();
++                var hasExpiration = (keyLength & ExpirationBitMask) != 0;
++                keyLength &= ~ExpirationBitMask;
++                var item = reader.ReadBytes(keyLength);
+                 var value = reader.ReadBytes(reader.ReadInt32());
+-                hash.Add(item, value);
++
++                if (hasExpiration)
++                {
++                    var expiration = reader.ReadInt64();
++                    var isExpired = expiration < DateTimeOffset.UtcNow.Ticks;
++                    if (!isExpired)
++                    {
++                        hash.Add(item, value);
++                        InitializeExpirationStructures();
++                        expirationTimes.Add(item, expiration);
++                        expirationQueue.Enqueue(item, expiration);
++                        UpdateExpirationSize(item, true);
++                    }
++                }
++                else
++                {
++                    hash.Add(item, value);
++                }
+ 
+                 this.UpdateSize(item, value);
+             }
+@@ -74,10 +105,12 @@ namespace Garnet.server
+         /// <summary>
+         /// Copy constructor
+         /// </summary>
+-        public HashObject(Dictionary<byte[], byte[]> hash, long expiration, long size)
++        public HashObject(Dictionary<byte[], byte[]> hash, Dictionary<byte[], long> expirationTimes, PriorityQueue<byte[], long> expirationQueue, long expiration, long size)
+             : base(expiration, size)
+         {
+             this.hash = hash;
++            this.expirationTimes = expirationTimes;
++            this.expirationQueue = expirationQueue;
+         }
+ 
+         /// <inheritdoc />
+@@ -88,16 +121,30 @@ namespace Garnet.server
+         {
+             base.DoSerialize(writer);
+ 
+-            int count = hash.Count;
++            DeleteExpiredItems();
++
++            int count = hash.Count; // Since expired items are already deleted, no need to worry about expiring items
+             writer.Write(count);
+             foreach (var kvp in hash)
+             {
++                if (expirationTimes is not null && expirationTimes.TryGetValue(kvp.Key, out var expiration))
++                {
++                    writer.Write(kvp.Key.Length | ExpirationBitMask);
++                    writer.Write(kvp.Key);
++                    writer.Write(kvp.Value.Length);
++                    writer.Write(kvp.Value);
++                    writer.Write(expiration);
++                    count--;
++                    continue;
++                }
++
+                 writer.Write(kvp.Key.Length);
+                 writer.Write(kvp.Key);
+                 writer.Write(kvp.Value.Length);
+                 writer.Write(kvp.Value);
+                 count--;
+             }
++
+             Debug.Assert(count == 0);
+         }
+ 
+@@ -105,7 +152,7 @@ namespace Garnet.server
+         public override void Dispose() { }
+ 
+         /// <inheritdoc />
+-        public override GarnetObjectBase Clone() => new HashObject(hash, Expiration, Size);
++        public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, Expiration, Size);
+ 
+         /// <inheritdoc />
+         public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+@@ -152,6 +199,15 @@ namespace Garnet.server
+                     case HashOperation.HEXISTS:
+                         HashExists(ref input, _output);
+                         break;
++                    case HashOperation.HEXPIRE:
++                        HashExpire(ref input, ref output);
++                        break;
++                    case HashOperation.HTTL:
++                        HashTimeToLive(ref input, ref output);
++                        break;
++                    case HashOperation.HPERSIST:
++                        HashPersist(ref input, ref output);
++                        break;
+                     case HashOperation.HKEYS:
+                         HashGetKeysOrValues(ref input, ref output);
+                         break;
+@@ -170,6 +226,9 @@ namespace Garnet.server
+                     case HashOperation.HRANDFIELD:
+                         HashRandomField(ref input, ref output);
+                         break;
++                    case HashOperation.HCOLLECT:
++                        HashCollect(ref input, _output);
++                        break;
+                     case HashOperation.HSCAN:
+                         if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                                 out var patternLength, out var limitCount, out bool isNoValue, out var error))
+@@ -202,6 +261,38 @@ namespace Garnet.server
+             Debug.Assert(this.Size >= MemoryUtils.DictionaryOverhead);
+         }
+ 
++        [MethodImpl(MethodImplOptions.AggressiveInlining)]
++        private void InitializeExpirationStructures()
++        {
++            if (expirationTimes is null)
++            {
++                expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
++                expirationQueue = new PriorityQueue<byte[], long>();
++                this.Size += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
++            }
++        }
++
++        [MethodImpl(MethodImplOptions.AggressiveInlining)]
++        private void UpdateExpirationSize(ReadOnlySpan<byte> key, bool add = true)
++        {
++            // Account for dictionary entry and priority queue entry
++            var size = IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead
++                + IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
++            this.Size += add ? size : -size;
++        }
++
++        [MethodImpl(MethodImplOptions.AggressiveInlining)]
++        private void CleanupExpirationStructures()
++        {
++            if (expirationTimes.Count == 0)
++            {
++                this.Size -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
++                this.Size -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
++                expirationTimes = null;
++                expirationQueue = null;
++            }
++        }
++
+         /// <inheritdoc />
+         public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
+         {
+@@ -217,8 +308,15 @@ namespace Garnet.server
+             // Hashset has key and value, so count is multiplied by 2
+             count = isNoValue ? count : count * 2;
+             int index = 0;
++            var expiredKeysCount = 0;
+             foreach (var item in hash)
+             {
++                if (IsExpired(item.Key))
++                {
++                    expiredKeysCount++;
++                    continue;
++                }
++
+                 if (index < start)
+                 {
+                     index++;
+@@ -256,8 +354,241 @@ namespace Garnet.server
+             }
+ 
+             // Indicates end of collection has been reached.
+-            if (cursor == hash.Count)
++            if (cursor + expiredKeysCount == hash.Count)
+                 cursor = 0;
+         }
++
++        [MethodImpl(MethodImplOptions.AggressiveInlining)]
++        private bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
++
++        private void DeleteExpiredItems()
++        {
++            if (expirationTimes is null)
++                return;
++
++            while (expirationQueue.TryPeek(out var key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks)
++            {
++                // expirationTimes and expirationQueue will be out of sync when user is updating the expire time of key which already has some TTL.
++                // PriorityQueue Doesn't have update option, so we will just enqueue the new expiration and already treat expirationTimes as the source of truth
++                if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
++                {
++                    expirationTimes.Remove(key);
++                    expirationQueue.Dequeue();
++                    UpdateExpirationSize(key, false);
++                    if (hash.TryGetValue(key, out var value))
++                    {
++                        hash.Remove(key);
++                        UpdateSize(key, value, false);
++                    }
++                }
++                else
++                {
++                    expirationQueue.Dequeue();
++                    this.Size -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
++                }
++            }
++
++            CleanupExpirationStructures();
++        }
++
++        private bool TryGetValue(byte[] key, out byte[] value)
++        {
++            value = default;
++            if (IsExpired(key))
++            {
++                return false;
++            }
++            return hash.TryGetValue(key, out value);
++        }
++
++        private bool Remove(byte[] key, out byte[] value)
++        {
++            DeleteExpiredItems();
++            var result = hash.Remove(key, out value);
++            if (result)
++            {
++                UpdateSize(key, value, false);
++            }
++            return result;
++        }
++
++        private int Count()
++        {
++            if (expirationTimes is null)
++            {
++                return hash.Count;
++            }
++
++            var expiredKeysCount = 0;
++            foreach (var item in expirationTimes)
++            {
++                if (IsExpired(item.Key))
++                {
++                    expiredKeysCount++;
++                }
++            }
++
++            return hash.Count - expiredKeysCount;
++        }
++
++        [MethodImpl(MethodImplOptions.AggressiveInlining)]
++        private bool HasExpirableItems()
++        {
++            return expirationTimes is not null;
++        }
++
++        private bool ContainsKey(byte[] key)
++        {
++            var result = hash.ContainsKey(key);
++            if (result && IsExpired(key))
++            {
++                return false;
++            }
++
++            return result;
++        }
++
++        [MethodImpl(MethodImplOptions.AggressiveInlining)]
++        private void Add(byte[] key, byte[] value)
++        {
++            DeleteExpiredItems();
++            hash.Add(key, value);
++            UpdateSize(key, value);
++        }
++
++        private void Set(byte[] key, byte[] value)
++        {
++            DeleteExpiredItems();
++            hash[key] = value;
++            // Skip overhead as existing item is getting replaced.
++            this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
++                         Utility.RoundUp(value.Length, IntPtr.Size);
++
++            // To persist the key, if it has an expiration
++            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
++            {
++                expirationTimes.Remove(key);
++                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
++                CleanupExpirationStructures();
++            }
++        }
++
++        private void SetWithoutPersist(byte[] key, byte[] value)
++        {
++            DeleteExpiredItems();
++            hash[key] = value;
++            // Skip overhead as existing item is getting replaced.
++            this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
++                         Utility.RoundUp(value.Length, IntPtr.Size);
++        }
++
++        private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
++        {
++            if (!ContainsKey(key))
++            {
++                return (int)ExpireResult.KeyNotFound;
++            }
++
++            if (expiration <= DateTimeOffset.UtcNow.Ticks)
++            {
++                Remove(key, out _);
++                return (int)ExpireResult.KeyAlreadyExpired;
++            }
++
++            InitializeExpirationStructures();
++
++            if (expirationTimes.TryGetValue(key, out var currentExpiration))
++            {
++                if (expireOption.HasFlag(ExpireOption.NX) ||
++                    (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
++                    (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
++                {
++                    return (int)ExpireResult.ExpireConditionNotMet;
++                }
++
++                expirationTimes[key] = expiration;
++                expirationQueue.Enqueue(key, expiration);
++                // Size of dictionary entry already accounted for as the key already exists
++                this.Size += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
++            }
++            else
++            {
++                if (expireOption.HasFlag(ExpireOption.XX) || expireOption.HasFlag(ExpireOption.GT))
++                {
++                    return (int)ExpireResult.ExpireConditionNotMet;
++                }
++
++                expirationTimes[key] = expiration;
++                expirationQueue.Enqueue(key, expiration);
++                UpdateExpirationSize(key);
++            }
++
++            return (int)ExpireResult.ExpireUpdated;
++        }
++
++        private int Persist(byte[] key)
++        {
++            if (!ContainsKey(key))
++            {
++                return -2;
++            }
++
++            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
++            {
++                expirationTimes.Remove(key);
++                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
++                CleanupExpirationStructures();
++                return 1;
++            }
++
++            return -1;
++        }
++
++        private long GetExpiration(byte[] key)
++        {
++            if (!ContainsKey(key))
++            {
++                return -2;
++            }
++
++            if (expirationTimes.TryGetValue(key, out var expiration))
++            {
++                return expiration;
++            }
++
++            return -1;
++        }
++
++        private KeyValuePair<byte[], byte[]> ElementAt(int index)
++        {
++            if (HasExpirableItems())
++            {
++                var currIndex = 0;
++                foreach (var item in hash)
++                {
++                    if (IsExpired(item.Key))
++                    {
++                        continue;
++                    }
++
++                    if (currIndex++ == index)
++                    {
++                        return item;
++                    }
++                }
++
++                throw new ArgumentOutOfRangeException("index is outside the bounds of the source sequence.");
++            }
++
++            return hash.ElementAt(index);
++        }
++    }
++
++    enum ExpireResult
++    {
++        KeyNotFound = -2,
++        ExpireConditionNotMet = 0,
++        ExpireUpdated = 1,
++        KeyAlreadyExpired = 2,
+     }
+ }
+\ No newline at end of file
+diff --git a/libs/server/Objects/Hash/HashObjectImpl.cs b/libs/server/Objects/Hash/HashObjectImpl.cs
+index 674aebfd..14f6a84a 100644
+--- a/libs/server/Objects/Hash/HashObjectImpl.cs
++++ b/libs/server/Objects/Hash/HashObjectImpl.cs
+@@ -33,7 +33,7 @@ namespace Garnet.server
+             {
+                 var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+ 
+-                if (hash.TryGetValue(key, out var hashValue))
++                if (TryGetValue(key, out var hashValue))
+                 {
+                     while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
+                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+@@ -75,7 +75,7 @@ namespace Garnet.server
+                 {
+                     var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+ 
+-                    if (hash.TryGetValue(key, out var hashValue))
++                    if (TryGetValue(key, out var hashValue))
+                     {
+                         while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
+                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+@@ -115,17 +115,24 @@ namespace Garnet.server
+             {
+                 if (respProtocolVersion < 3)
+                 {
+-                    while (!RespWriteUtils.WriteArrayLength(hash.Count * 2, ref curr, end))
++                    while (!RespWriteUtils.WriteArrayLength(Count() * 2, ref curr, end))
+                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                 }
+                 else
+                 {
+-                    while (!RespWriteUtils.WriteMapLength(hash.Count, ref curr, end))
++                    while (!RespWriteUtils.WriteMapLength(Count(), ref curr, end))
+                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                 }
+ 
++                var isExpirable = HasExpirableItems();
++
+                 foreach (var item in hash)
+                 {
++                    if (isExpirable && IsExpired(item.Key))
++                    {
++                        continue;
++                    }
++
+                     while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                     while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+@@ -151,17 +158,16 @@ namespace Garnet.server
+             {
+                 var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+ 
+-                if (hash.Remove(key, out var hashValue))
++                if (Remove(key, out var hashValue))
+                 {
+                     _output->result1++;
+-                    this.UpdateSize(key, hashValue, false);
+                 }
+             }
+         }
+ 
+         private void HashLength(byte* output)
+         {
+-            ((ObjectOutputHeader*)output)->result1 = hash.Count;
++            ((ObjectOutputHeader*)output)->result1 = Count();
+         }
+ 
+         private void HashStrLength(ref ObjectInput input, byte* output)
+@@ -170,7 +176,7 @@ namespace Garnet.server
+             *_output = default;
+ 
+             var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+-            _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
++            _output->result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+         }
+ 
+         private void HashExists(ref ObjectInput input, byte* output)
+@@ -179,7 +185,7 @@ namespace Garnet.server
+             *_output = default;
+ 
+             var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+-            _output->result1 = hash.ContainsKey(field) ? 1 : 0;
++            _output->result1 = ContainsKey(field) ? 1 : 0;
+         }
+ 
+         private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
+@@ -204,11 +210,21 @@ namespace Garnet.server
+             {
+                 if (includedCount)
+                 {
+-                    if (countParameter > 0 && countParameter > hash.Count)
+-                        countParameter = hash.Count;
++                    var count = Count();
++
++                    if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
++                    {
++                        while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
++                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++                        _output.result1 = 0;
++                        return;
++                    }
++
++                    if (countParameter > 0 && countParameter > count)
++                        countParameter = count;
+ 
+                     var absCount = Math.Abs(countParameter);
+-                    var indexes = RandomUtils.PickKRandomIndexes(hash.Count, absCount, seed, countParameter > 0);
++                    var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
+ 
+                     // Write the size of the array reply
+                     while (!RespWriteUtils.WriteArrayLength(withValues ? absCount * 2 : absCount, ref curr, end))
+@@ -216,7 +232,7 @@ namespace Garnet.server
+ 
+                     foreach (var index in indexes)
+                     {
+-                        var pair = hash.ElementAt(index);
++                        var pair = ElementAt(index);
+                         while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
+                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+ 
+@@ -232,8 +248,17 @@ namespace Garnet.server
+                 else // No count parameter is present, we just return a random field
+                 {
+                     // Write a bulk string value of a random field from the hash value stored at key.
+-                    var index = RandomUtils.PickRandomIndex(hash.Count, seed);
+-                    var pair = hash.ElementAt(index);
++                    var count = Count();
++                    if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
++                    {
++                        while (!RespWriteUtils.WriteNull(ref curr, end))
++                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++                        _output.result1 = 0;
++                        return;
++                    }
++
++                    var index = RandomUtils.PickRandomIndex(count, seed);
++                    var pair = ElementAt(index);
+                     while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
+                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                     countDone = 1;
+@@ -262,26 +287,31 @@ namespace Garnet.server
+                 var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
+ 
+-                if (!hash.TryGetValue(key, out var hashValue))
++                if (!TryGetValue(key, out var hashValue))
+                 {
+-                    hash.Add(key, value);
+-                    this.UpdateSize(key, value);
++                    Add(key, value);
+                     _output->result1++;
+                 }
+-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default &&
+-                         !hashValue.AsSpan().SequenceEqual(value))
++                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
+                 {
+-                    hash[key] = value;
+-                    // Skip overhead as existing item is getting replaced.
+-                    this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+-                                 Utility.RoundUp(hashValue.Length, IntPtr.Size);
++                    Set(key, value);
+                 }
+             }
+         }
+ 
++        private void HashCollect(ref ObjectInput input, byte* output)
++        {
++            var _output = (ObjectOutputHeader*)output;
++            *_output = default;
++
++            DeleteExpiredItems();
++
++            _output->result1 = 1;
++        }
++
+         private void HashGetKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
+         {
+-            var count = hash.Count;
++            var count = Count();
+             var op = input.header.HashOp;
+ 
+             var isMemory = false;
+@@ -297,8 +327,15 @@ namespace Garnet.server
+                 while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+ 
++                var isExpirable = HasExpirableItems();
++
+                 foreach (var item in hash)
+                 {
++                    if (isExpirable && IsExpired(item.Key))
++                    {
++                        continue;
++                    }
++
+                     if (HashOperation.HKEYS == op)
+                     {
+                         while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+@@ -343,7 +380,7 @@ namespace Garnet.server
+                 var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                 var incrSlice = input.parseState.GetArgSliceByRef(1);
+ 
+-                var valueExists = hash.TryGetValue(key, out var value);
++                var valueExists = TryGetValue(key, out var value);
+                 if (op == HashOperation.HINCRBY)
+                 {
+                     if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out int incr))
+@@ -376,15 +413,12 @@ namespace Garnet.server
+                         resultSpan = resultSpan.Slice(0, bytesWritten);
+ 
+                         resultBytes = resultSpan.ToArray();
+-                        hash[key] = resultBytes;
+-                        Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
+-                                Utility.RoundUp(value.Length, IntPtr.Size);
++                        SetWithoutPersist(key, resultBytes);
+                     }
+                     else
+                     {
+                         resultBytes = incrSlice.SpanByte.ToByteArray();
+-                        hash.Add(key, resultBytes);
+-                        UpdateSize(key, resultBytes);
++                        Add(key, resultBytes);
+                     }
+ 
+                     while (!RespWriteUtils.WriteIntegerFromBytes(resultBytes, ref curr, end))
+@@ -417,15 +451,12 @@ namespace Garnet.server
+                         result += incr;
+ 
+                         resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
+-                        hash[key] = resultBytes;
+-                        Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
+-                                Utility.RoundUp(value.Length, IntPtr.Size);
++                        SetWithoutPersist(key, resultBytes);
+                     }
+                     else
+                     {
+                         resultBytes = incrSlice.SpanByte.ToByteArray();
+-                        hash.Add(key, resultBytes);
+-                        UpdateSize(key, resultBytes);
++                        Add(key, resultBytes);
+                     }
+ 
+                     while (!RespWriteUtils.WriteBulkString(resultBytes, ref curr, end))
+@@ -444,5 +475,138 @@ namespace Garnet.server
+                 output.Length = (int)(curr - ptr);
+             }
+         }
++
++        private void HashExpire(ref ObjectInput input, ref SpanByteAndMemory output)
++        {
++            var isMemory = false;
++            MemoryHandle ptrHandle = default;
++            var ptr = output.SpanByte.ToPointer();
++
++            var curr = ptr;
++            var end = curr + output.Length;
++
++            ObjectOutputHeader _output = default;
++            try
++            {
++                DeleteExpiredItems();
++
++                var expireOption = (ExpireOption)input.arg1;
++                var expiration = input.parseState.GetLong(0);
++                var numFields = input.parseState.Count - 1;
++                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
++                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++
++                foreach (var item in input.parseState.Parameters.Slice(1))
++                {
++                    var result = SetExpiration(item.ToArray(), expiration, expireOption);
++                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
++                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++                    _output.result1++;
++                }
++            }
++            finally
++            {
++                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
++                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++
++                if (isMemory) ptrHandle.Dispose();
++                output.Length = (int)(curr - ptr);
++            }
++        }
++
++        private void HashTimeToLive(ref ObjectInput input, ref SpanByteAndMemory output)
++        {
++            var isMemory = false;
++            MemoryHandle ptrHandle = default;
++            var ptr = output.SpanByte.ToPointer();
++
++            var curr = ptr;
++            var end = curr + output.Length;
++
++            ObjectOutputHeader _output = default;
++            try
++            {
++                DeleteExpiredItems();
++
++                var isMilliseconds = input.arg1 == 1;
++                var isTimestamp = input.arg2 == 1;
++                var numFields = input.parseState.Count;
++                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
++                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++
++                foreach (var item in input.parseState.Parameters)
++                {
++                    var result = GetExpiration(item.ToArray());
++
++                    if (result >= 0)
++                    {
++                        if (isTimestamp && isMilliseconds)
++                        {
++                            result = ConvertUtils.UnixTimeInMillisecondsFromTicks(result);
++                        }
++                        else if (isTimestamp && !isMilliseconds)
++                        {
++                            result = ConvertUtils.UnixTimeInSecondsFromTicks(result);
++                        }
++                        else if (!isTimestamp && isMilliseconds)
++                        {
++                            result = ConvertUtils.MillisecondsFromDiffUtcNowTicks(result);
++                        }
++                        else if (!isTimestamp && !isMilliseconds)
++                        {
++                            result = ConvertUtils.SecondsFromDiffUtcNowTicks(result);
++                        }
++                    }
++
++                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
++                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++                    _output.result1++;
++                }
++            }
++            finally
++            {
++                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
++                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++
++                if (isMemory) ptrHandle.Dispose();
++                output.Length = (int)(curr - ptr);
++            }
++        }
++
++        private void HashPersist(ref ObjectInput input, ref SpanByteAndMemory output)
++        {
++            var isMemory = false;
++            MemoryHandle ptrHandle = default;
++            var ptr = output.SpanByte.ToPointer();
++
++            var curr = ptr;
++            var end = curr + output.Length;
++
++            ObjectOutputHeader _output = default;
++            try
++            {
++                DeleteExpiredItems();
++
++                var numFields = input.parseState.Count;
++                while (!RespWriteUtils.WriteArrayLength(numFields, ref curr, end))
++                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++
++                foreach (var item in input.parseState.Parameters)
++                {
++                    var result = Persist(item.ToArray());
++                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
++                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++                    _output.result1++;
++                }
++            }
++            finally
++            {
++                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
++                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
++
++                if (isMemory) ptrHandle.Dispose();
++                output.Length = (int)(curr - ptr);
++            }
++        }
+     }
+ }
+\ No newline at end of file
+diff --git a/libs/server/Objects/Types/GarnetObject.cs b/libs/server/Objects/Types/GarnetObject.cs
+index f5366dff..7474d547 100644
+--- a/libs/server/Objects/Types/GarnetObject.cs
++++ b/libs/server/Objects/Types/GarnetObject.cs
+@@ -66,6 +66,12 @@ namespace Garnet.server
+                     SetOperation.SPOP => false,
+                     _ => true,
+                 },
++                GarnetObjectType.Hash => header.HashOp switch
++                {
++                    HashOperation.HEXPIRE => false,
++                    HashOperation.HCOLLECT => false,
++                    _ => true,
++                },
+                 GarnetObjectType.Expire => false,
+                 GarnetObjectType.PExpire => false,
+                 GarnetObjectType.Persist => false,

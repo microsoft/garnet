@@ -243,6 +243,13 @@ namespace Garnet.server
             return garnetApi.SortedSetIntersectLength(keys, limit, out count);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+        }
+
         #endregion
 
         #region List Methods

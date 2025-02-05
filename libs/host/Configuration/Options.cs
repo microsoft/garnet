@@ -239,6 +239,10 @@ namespace Garnet
         [Option("hcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand.")]
         public int HashCollectFrequencySecs { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("zcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Sorted Set collection. 0 = disabled. Sorted Set collect is used to delete expired members from Sorted Set without waiting for a write operation. Use the ZCOLLECT API to collect on-demand.")]
+        public int SortedSetCollectFrequencySecs { get; set; }
+
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
 
@@ -701,6 +705,7 @@ namespace Garnet
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
                 HashCollectFrequencySecs = HashCollectFrequencySecs,
+                SortedSetCollectFrequencySecs = SortedSetCollectFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,

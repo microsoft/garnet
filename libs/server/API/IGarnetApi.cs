@@ -543,6 +543,34 @@ namespace Garnet.server
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
         GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
 
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
+        /// <param name="expireOption">The expiration option to apply.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Persists the specified sorted set member, removing any expiration time set on it.
+        /// </summary>
+        /// <param name="key">The key of the sorted set to persist.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Deletes already expired members from the sorted set.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted set members to check for expiration.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input);
+
         #endregion
 
         #region Set Methods
@@ -1396,6 +1424,17 @@ namespace Garnet.server
         /// <param name="count">The count of elements in the intersection</param>
         /// <returns>Operation status</returns>
         GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
+
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
+        /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 
