@@ -121,13 +121,11 @@ namespace Garnet.cluster
                 if (replicaSyncSession.Failed)
                 {
                     replicaSyncSession.LogError();
-                    replicaSyncSession.Dispose(true);
                     return replicaSyncSession.GetSyncStatusInfo;
                 }
 
                 // Start AOF sync background task for this replica
                 await replicaSyncSession.BeginAofSync();
-
                 return replicaSyncSession.GetSyncStatusInfo;
             }
             finally

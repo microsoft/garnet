@@ -289,12 +289,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.BeginAofSync)}");
                 SetStatus(SyncStatus.FAILED, "Failed to begin AOF sync");
-                Dispose(true);
-            }
-            finally
-            {
-                AofSyncTask.garnetClient.Dispose();
-                AofSyncTask = null;
+                AofSyncTask?.Dispose();
             }
         }
     }
