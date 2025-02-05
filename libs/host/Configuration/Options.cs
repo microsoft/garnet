@@ -318,6 +318,14 @@ namespace Garnet
         public bool? LatencyMonitor { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
+        public int SlowLogThreshold { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-max-len", Required = false, HelpText = "Maximum number of slow log entries to keep.")]
+        public int SlowLogMaxEntries { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
         public int MetricsSamplingFrequency { get; set; }
 
@@ -658,6 +666,11 @@ namespace Garnet
                 CompactionForceDelete = true;
             }
 
+            if (SlowLogThreshold > 0)
+            {
+                if (SlowLogThreshold < 100)
+                    throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
+            }
             return new GarnetServerOptions(logger)
             {
                 EndPoint = endpoint,
@@ -728,6 +741,8 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                SlowLogThreshold = SlowLogThreshold,
+                SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,
