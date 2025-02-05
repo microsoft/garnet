@@ -406,6 +406,24 @@ namespace Garnet.common
         /// <summary>
         /// Write integer
         /// </summary>
+        public static bool TryWriteInt32Direct(int value, ref byte* curr, byte* end)
+        {
+            var integerLen = NumUtils.CountDigits((long)value);
+            var sign = (byte)(value < 0 ? 1 : 0);
+
+            // integer
+            var totalLen = sign + integerLen;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            NumUtils.WriteInt32(value, integerLen, ref curr);
+            return true;
+        }
+
+
+        /// <summary>
+        /// Write integer
+        /// </summary>
         public static bool TryWriteInt64(long value, ref byte* curr, byte* end)
         {
             var integerLen = NumUtils.CountDigits(value);
@@ -419,6 +437,23 @@ namespace Garnet.common
             *curr++ = (byte)':';
             NumUtils.WriteInt64(value, integerLen, ref curr);
             WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write integer
+        /// </summary>
+        public static bool TryWriteInt64Direct(long value, ref byte* curr, byte* end)
+        {
+            var integerLen = NumUtils.CountDigits(value);
+            var sign = (byte)(value < 0 ? 1 : 0);
+
+            // integer
+            var totalLen = sign + integerLen;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            NumUtils.WriteInt64(value, integerLen, ref curr);
             return true;
         }
 

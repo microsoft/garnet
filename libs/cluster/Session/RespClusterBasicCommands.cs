@@ -263,10 +263,24 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo(clusterProvider);
-            while (!RespWriteUtils.TryWriteAsciiBulkString(nodes, ref dcurr, dend))
-                SendAndReset();
-
+            var buffer = scratchBufferManager.ViewRemainingArgSlice();
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            ushort index = 1;
+            while (config.GetClusterInfo(clusterProvider, ref index, out var info))
+            {
+                var ptr = buffer.Pointer;
+                var end = ptr + buffer.Length;
+                while (!config.TryWriteNodeInfo(index, info, ref ptr, end))
+                {
+                    scratchBufferManager.GrowBuffer();
+                    buffer = scratchBufferManager.ViewRemainingArgSlice();
+                    ptr = buffer.Pointer;
+                    end = ptr + buffer.Length;
+                }
+                while (!RespWriteUtils.TryWriteBulkString(buffer.ReadOnlySpan.Slice(0, (int)(ptr - buffer.Pointer)), ref dcurr, dend))
+                    SendAndReset();
+                scratchBufferManager.Reset();
+            }
             return true;
         }
 

@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Net;
+using Garnet.common;
 
 namespace Garnet.cluster
 {
@@ -499,6 +500,100 @@ namespace Garnet.cluster
             return nodes;
         }
 
+        public bool GetClusterInfo(ClusterProvider clusterProvider, ref ushort index, out ConnectionInfo info)
+        {
+            info = default;
+            if (index > NumWorkers)
+            {
+                return false;
+            }
+            _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[index].Nodeid, out info);
+            index++;
+            return true;
+        }
+
+        public unsafe bool TryWriteNodeInfo(ushort workerId, ConnectionInfo info, ref byte* dcurr, byte* dend)
+        {
+            var ptr = dcurr;
+            if (!RespWriteUtils.TryWriteAsciiDirect(workers[workerId].Nodeid, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(" "u8,ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteAsciiDirect(workers[workerId].Address, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(":"u8, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteInt32Direct(workers[workerId].Port, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect("@"u8, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteInt32Direct(workers[workerId].Port + 10000, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(","u8, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteAsciiDirect(workers[workerId].hostname, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                return false;
+            if (workerId == 1)
+            {
+                if (!RespWriteUtils.TryWriteDirect("myself,"u8, ref ptr, dend))
+                    return false;
+            }
+            if (workers[workerId].Role == NodeRole.PRIMARY)
+            {
+                if (!RespWriteUtils.TryWriteDirect("master "u8, ref ptr, dend))
+                    return false;
+            }
+            else
+            {
+                if (!RespWriteUtils.TryWriteDirect("slave "u8, ref ptr, dend))
+                    return false;
+            }
+            if (workers[workerId].Role == NodeRole.REPLICA)
+            {
+                if (!RespWriteUtils.TryWriteAsciiDirect(workers[workerId].ReplicaOfNodeId, ref ptr, dend))
+                    return false;
+            }
+            else
+            {
+                if (!RespWriteUtils.TryWriteDirect("-"u8, ref ptr, dend))
+                    return false;
+            }
+            if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteInt64Direct(info.ping, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteInt64Direct(info.pong, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteInt64Direct(workers[workerId].ConfigEpoch, ref ptr, dend))
+                return false;
+            if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                return false;
+            if (info.connected || workerId == 1)
+            {
+                if (!RespWriteUtils.TryWriteDirect("connected"u8, ref ptr, dend))
+                    return false;
+            }
+            else
+            {
+                if (!RespWriteUtils.TryWriteDirect("disconnected"u8, ref ptr, dend))
+                    return false;
+            }
+
+            if (!TryWriteSlotRange(workerId, ref ptr, dend))
+                return false;
+            if (!TryWriteSpecialStates(workerId, ref ptr, dend))
+                return false;
+
+            dcurr = ptr;
+            return true;
+        }
+
         /// <summary>
         /// Get formatted (using CLUSTER NODES format) worker info.
         /// </summary>
@@ -527,6 +622,44 @@ namespace Garnet.cluster
                 $"{(info.connected || workerId == 1 ? "connected" : "disconnected")}" +
                 $"{GetSlotRange(workerId)}" +
                 $"{GetSpecialStates(workerId)}\n";
+        }
+
+        private unsafe bool TryWriteSpecialStates(ushort workerId, ref byte* dcurr, byte* dend)
+        {
+            var ptr = dcurr;
+            if (workerId != 1)
+                return true;
+            for (var slot = 0; slot < slotMap.Length; slot++)
+            {
+                var _workerId = slotMap[slot]._workerId;
+                var _state = slotMap[slot]._state;
+                if (_state == SlotState.STABLE) continue;
+                if (_workerId > NumWorkers) continue;
+                var _nodeId = workers[_workerId].Nodeid;
+                if (_nodeId == null) continue;
+                if (!RespWriteUtils.TryWriteDirect(" ["u8, ref ptr, dend))
+                    return false;
+                if (!RespWriteUtils.TryWriteInt32Direct(slot, ref ptr, dend))
+                    return false;
+                if (_state == SlotState.MIGRATING)
+                {
+                    if (!RespWriteUtils.TryWriteDirect("->-"u8, ref ptr, dend))
+                        return false;
+                    if (!RespWriteUtils.TryWriteAsciiDirect(_nodeId, ref ptr, dend))
+                        return false;
+                }
+                else if (_state == SlotState.IMPORTING)
+                {
+                    if (!RespWriteUtils.TryWriteDirect("-<-"u8, ref ptr, dend))
+                        return false;
+                    if (!RespWriteUtils.TryWriteAsciiDirect(_nodeId, ref ptr, dend))
+                        return false;
+                }
+                if (!RespWriteUtils.TryWriteDirect("]"u8, ref ptr, dend))
+                    return false;
+            }
+            dcurr = ptr;
+            return true;
         }
 
         private string GetSpecialStates(ushort workerId)
@@ -719,6 +852,67 @@ namespace Garnet.cluster
             //Console.WriteLine(completeSlotInfo);
 
             return completeSlotInfo;
+        }
+
+        public unsafe bool TryWriteSlotRange(ushort workerId, ref byte* dcurr, byte* dend)
+        {
+            var ptr = dcurr;
+
+            ushort start = ushort.MaxValue, end = 0;
+            for (ushort i = 0; i < MAX_HASH_SLOT_VALUE; i++)
+            {
+                if (slotMap[i].workerId == workerId)
+                {
+                    if (i < start) start = i;
+                    if (i > end) end = i;
+                }
+                else
+                {
+                    if (start != ushort.MaxValue)
+                    {
+                        if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                            return false;
+                        if (end == start)
+                        {
+                            if (!RespWriteUtils.TryWriteInt32Direct(start, ref ptr, dend))
+                                return false;
+                        }
+                        else
+                        {
+                            if (!RespWriteUtils.TryWriteInt32Direct(start, ref ptr, dend))
+                                return false;
+                            if (!RespWriteUtils.TryWriteDirect("-"u8, ref ptr, dend))
+                                return false;
+                            if (!RespWriteUtils.TryWriteInt32Direct(end, ref ptr, dend))
+                                return false;
+                        }
+                        start = ushort.MaxValue;
+                        end = 0;
+                    }
+                }
+            }
+            if (start != ushort.MaxValue)
+            {
+                if (!RespWriteUtils.TryWriteDirect(" "u8, ref ptr, dend))
+                    return false;
+                if (end == start)
+                {
+                    if (!RespWriteUtils.TryWriteInt32Direct(start, ref ptr, dend))
+                        return false;
+                }
+                else
+                {
+                    if (!RespWriteUtils.TryWriteInt32Direct(start, ref ptr, dend))
+                        return false;
+                    if (!RespWriteUtils.TryWriteDirect("-"u8, ref ptr, dend))
+                        return false;
+                    if (!RespWriteUtils.TryWriteInt32Direct(end, ref ptr, dend))
+                        return false;
+                }
+            }
+
+            dcurr = ptr;
+            return true;
         }
 
         private string GetSlotRange(ushort workerId)

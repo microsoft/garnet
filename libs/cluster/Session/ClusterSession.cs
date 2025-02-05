@@ -26,6 +26,7 @@ namespace Garnet.cluster
         readonly GarnetSessionMetrics sessionMetrics;
         BasicGarnetApi basicGarnetApi;
         readonly INetworkSender networkSender;
+        readonly ScratchBufferManager scratchBufferManager;
         readonly ILogger logger;
         ClusterSlotVerificationInput csvi;
 
@@ -51,7 +52,7 @@ namespace Garnet.cluster
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ScratchBufferManager scratchBufferManager, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -60,6 +61,7 @@ namespace Garnet.cluster
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
             this.networkSender = networkSender;
+            this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
         }
 

@@ -50,6 +50,11 @@ namespace Garnet.server
         public readonly int Length => length;
 
         /// <summary>
+        /// Get pointer to ArgSlice
+        /// </summary>
+        public readonly byte* Pointer => ptr;
+
+        /// <summary>
         /// Get slice as ReadOnlySpan
         /// </summary>
         public readonly ReadOnlySpan<byte> ReadOnlySpan => new(ptr, length);
