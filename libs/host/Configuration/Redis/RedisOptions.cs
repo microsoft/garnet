@@ -88,6 +88,12 @@ Specify your subject name via the cert-subject-name command line argument, if ap
 
         [RedisOption("unixsocketperm", nameof(Options.UnixSocketPermission))]
         public Option<int> UnixSocketPermission { get; set; }
+
+        [RedisOption("slowlog-log-slower-than", nameof(Options.SlowLogThreshold))]
+        public Option<int> SlowLogLogSlowerThan { get; set; }
+
+        [RedisOption("slowlog-max-len", nameof(Options.SlowLogMaxEntries))]
+        public Option<int> SlowLogMaxLen { get; set; }
     }
 
     /// <summary>
