@@ -588,7 +588,7 @@ namespace Garnet.server
                     if (dbIdsIdx > 0)
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                        TakeCheckpoint(false, ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
+                        TakeCheckpoint( ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
                     }
                 }
             }
@@ -634,7 +634,7 @@ namespace Garnet.server
             }
         }
 
-        void MultiDatabaseCommit(ref Task[] tasks, CancellationToken token)
+        void MultiDatabaseCommit(ref Task[] tasks, CancellationToken token, bool spinWait = true)
         {
             var databasesMapSnapshot = databases.Map;
 
@@ -652,14 +652,16 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
             }
 
-            for (var i = 0; i < activeDbIdsSize; i++)
+            var completion = Task.WhenAll(tasks).ContinueWith(_ =>
             {
-                tasks[i].Wait(token);
-                tasks[i] = null;
-            }
+                if (aofDatabaseIdsPath != null)
+                    WriteDatabaseIdsSnapshot(aofDatabaseIdsPath);
+            }, token);
 
-            if (aofDatabaseIdsPath != null)
-                WriteDatabaseIdsSnapshot(aofDatabaseIdsPath);
+            if (!spinWait)
+                return;
+
+            completion.Wait(token);
         }
 
         async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
@@ -890,7 +892,7 @@ namespace Garnet.server
 
             Task[] tasks = null;
 
-            MultiDatabaseCommit(ref tasks, CancellationToken.None);
+            MultiDatabaseCommit(ref tasks, CancellationToken.None, spinWait);
         }
 
         internal void Start()
@@ -1092,12 +1094,12 @@ namespace Garnet.server
         /// <param name="dbIds"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public bool TakeCheckpoint(bool background, ref int[] dbIds, ref Task[] tasks, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
+        public bool TakeCheckpoint(ref int[] dbIds, ref Task[] tasks, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
         {
             // Prevent parallel checkpoint
             if (!TryPauseCheckpoints()) return false;
 
-            MultiDatabaseCheckpoint(storeType, ref dbIds, ref tasks, background, logger, token);
+            MultiDatabaseCheckpoint(storeType, ref dbIds, ref tasks, logger, token);
             return true;
         }
 
@@ -1111,7 +1113,6 @@ namespace Garnet.server
         /// <returns></returns>
         public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
         {
-            var aofSizeAtLimit = -1l;
             var databasesMapSize = databases.ActualSize;
 
             if (!allowMultiDb || databasesMapSize == 1)
@@ -1124,28 +1125,11 @@ namespace Garnet.server
                 return true;
             }
 
-            var databasesMapSnapshot = databases.Map;
             var activeDbIdsSize = activeDbIdsLength;
             var activeDbIdsSnapshot = activeDbIds;
 
             var tasks = new Task[activeDbIdsSize];
-
-            var dbIdsIdx = 0;
-            for (var i = 0; i < activeDbIdsSize; i++)
-            {
-                var dbId = activeDbIdsSnapshot[i];
-                var db = databasesMapSnapshot[dbId];
-                Debug.Assert(!db.IsDefault());
-
-                dbIdsIdx++;
-            }
-
-            if (dbIdsIdx > 0)
-            {
-                return TakeCheckpoint(false, ref activeDbIds, ref tasks, logger: logger, token: token);
-            }
-
-            return true;
+            return TakeCheckpoint(ref activeDbIdsSnapshot, ref tasks, logger: logger, token: token);
         }
 
         private async Task CheckpointDatabaseTask(int dbId, StoreType storeType, ILogger logger)
@@ -1204,7 +1188,7 @@ namespace Garnet.server
             }
         }
 
-        private void MultiDatabaseCheckpoint(StoreType storeType, ref int[] dbIds, ref Task[] tasks, bool background, ILogger logger = null, CancellationToken token = default)
+        private void MultiDatabaseCheckpoint(StoreType storeType, ref int[] dbIds, ref Task[] tasks, ILogger logger = null, CancellationToken token = default)
         {
             try
             {
@@ -1230,8 +1214,6 @@ namespace Garnet.server
                         currIdx++;
                     }
                 }
-
-                if (background) return;
 
                 for (var i = 0; i < currIdx; i++)
                     tasks[i].Wait(token);
