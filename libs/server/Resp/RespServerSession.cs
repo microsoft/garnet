@@ -12,6 +12,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using HdrHistogram;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -196,6 +197,11 @@ namespace Garnet.server
         /// </summary>
         public string AclSubscriberKey { get; }
 
+        // Track start time (in ticks) of last command for slow log purposes
+        long slowLogStartTime;
+        // Threshold for slow log in ticks (0 means disabled)
+        readonly long slowLogThreshold;
+
         public RespServerSession(
             long id,
             INetworkSender networkSender,
@@ -248,6 +254,8 @@ namespace Garnet.server
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
+            if (storeWrapper.serverOptions.SlowLogThreshold > 0)
+                slowLogThreshold = (long)(storeWrapper.serverOptions.SlowLogThreshold * OutputScalingFactor.TimeStampToMicroseconds);
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
@@ -322,6 +330,10 @@ namespace Garnet.server
             try
             {
                 latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                if (slowLogThreshold > 0)
+                {
+                    slowLogStartTime = latencyMetrics != null ? latencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
+                }
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
@@ -529,6 +541,7 @@ namespace Garnet.server
 
                 // Handle metrics and special cases
                 if (latencyMetrics != null) opCount++;
+                if (slowLogThreshold > 0) HandleSlowLog(cmd);
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed++;
