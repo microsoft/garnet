@@ -48,7 +48,7 @@ namespace Embedded.server
 
         public string LocalEndpointName => "";
 
-        public bool IsLoopback()
+        public bool IsLocalConnection()
         {
             return true;
         }

@@ -50,7 +50,7 @@ namespace Garnet.networking
         public abstract string LocalEndpointName { get; }
 
         /// <inheritdoc />
-        public abstract bool IsLoopback();
+        public abstract bool IsLocalConnection();
 
         /// <inheritdoc />
         public abstract void Enter();

@@ -22,7 +22,7 @@ namespace Embedded.server
         public override string RemoteEndpointName => throw new NotImplementedException();
         public override string LocalEndpointName => throw new NotImplementedException();
 
-        public override bool IsLoopback()
+        public override bool IsLocalConnection()
         {
             return false;
         }

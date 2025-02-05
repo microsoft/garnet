@@ -45,7 +45,7 @@ namespace Garnet.server
         public string LocalEndpointName => "";
 
         /// <inheritdoc />
-        public bool IsLoopback()
+        public bool IsLocalConnection()
         {
             return true;
         }

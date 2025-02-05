@@ -30,7 +30,7 @@ namespace Garnet.networking
         /// Is the remote endpoint local?
         /// </summary>
         /// <returns></returns>
-        bool IsLoopback();
+        bool IsLocalConnection();
 
         /// <summary>
         /// Enter exclusive use of network sender.

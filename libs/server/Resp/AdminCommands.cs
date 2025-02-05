@@ -658,7 +658,7 @@ namespace Garnet.server
         {
             if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForAll) ||
                     ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) &&
-                     networkSender.IsLoopback())
+                     networkSender.IsLocalConnection())
                )
             {
                 throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
@@ -669,8 +669,14 @@ namespace Garnet.server
 
         private bool NetworkVERSION()
         {
-            while (!RespWriteUtils.TryWriteAsciiBulkString(storeWrapper.version, ref dcurr, dend))
-                SendAndReset();
+            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForAll) ||
+                    ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) &&
+                     networkSender.IsLocalConnection())
+               )
+            {
+                while (!RespWriteUtils.TryWriteAsciiBulkString(storeWrapper.version, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
