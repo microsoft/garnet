@@ -674,6 +674,7 @@ namespace Garnet
 
             return ValidationResult.Success;
         }
+    }
 
     /// <summary>
     /// Forbids a config option from being set if the current OS platform is not supported.
