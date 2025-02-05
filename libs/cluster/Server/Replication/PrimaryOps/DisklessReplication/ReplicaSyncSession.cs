@@ -248,9 +248,9 @@ namespace Garnet.cluster
         /// </summary>
         public async Task BeginAofSync()
         {
+            var aofSyncTask = AofSyncTask;
             try
             {
-                var aofSyncTask = AofSyncTask;
                 var mmr = clusterProvider.serverOptions.MainMemoryReplication;
                 var aofNull = clusterProvider.serverOptions.UseAofNullDevice;
 
@@ -280,10 +280,17 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                if (!clusterProvider.replicationManager.TryAddReplicationTask(replicaSyncMetadata.originNodeId, syncFromAofAddress, out var aofSyncTaskInfo))
+                if (!clusterProvider.replicationManager.TryAddReplicationTask(replicaSyncMetadata.originNodeId, syncFromAofAddress, out aofSyncTask))
                     throw new GarnetException("Failed trying to try update replication task");
-                if (!clusterProvider.replicationManager.TryConnectToReplica(replicaSyncMetadata.originNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
+                if (!clusterProvider.replicationManager.TryConnectToReplica(replicaSyncMetadata.originNodeId, syncFromAofAddress, aofSyncTask, out _))
                     throw new GarnetException("Failed connecting to replica for aofSync");
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.BeginAofSync)}");
+                SetStatus(SyncStatus.FAILED, "Failed to begin AOF sync");
+                aofSyncTask?.Dispose();
+                Dispose();
             }
             finally
             {
