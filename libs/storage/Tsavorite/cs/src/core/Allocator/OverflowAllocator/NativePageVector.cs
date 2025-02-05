@@ -40,11 +40,11 @@ namespace Tsavorite.core
             {
                 // Increment the page index to "claim the lock".
                 PageOffset newPageOffset = new() { Page = localPageOffset.Page + 1, Offset = 0 };
-                TailPageOffset.PageAndOffset = Interlocked.CompareExchange(ref TailPageOffset.PageAndOffset, newPageOffset.PageAndOffset, localPageOffset.PageAndOffset);
-                if (TailPageOffset.PageAndOffset != localPageOffset.PageAndOffset)
+                var tempPageAndOffset = Interlocked.CompareExchange(ref TailPageOffset.PageAndOffset, newPageOffset.PageAndOffset, localPageOffset.PageAndOffset);
+                if (tempPageAndOffset != localPageOffset.PageAndOffset)
                 {
                     // Someone else incremented the page (or maybe someone else sneaked in with a smaller request and allocated from the end of the page).
-                    // Yield to give them a chance to do the actual page allocation, then retry.
+                    // Yield to give them a chance to do the actual page allocation, then return false to caller to retry the outer allocation logic.
                     _ = Thread.Yield();
                     blockPtr = default;
                     pageSlot = 0;
@@ -66,8 +66,8 @@ namespace Tsavorite.core
                 blockPtr = AllocatePage(newPageOffset.Page, size);
                 pageSlot = newPageOffset.Page;
 
-                // Update tailPageOffset and return.
-                TailPageOffset.PageAndOffset = newPageOffset.PageAndOffset;
+                // Update the caller's localPageOffset and return.
+                localPageOffset.PageAndOffset = newPageOffset.PageAndOffset;
                 return true;
             }
 

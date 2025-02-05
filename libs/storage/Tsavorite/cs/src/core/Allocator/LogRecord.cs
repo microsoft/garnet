@@ -619,6 +619,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration)
         {
+            // An overflow value will take 
+            if (Info.ValueIsOverflow)
+                newValueLen = SpanField.OverflowInlineSize;
+
             var growth = newValueLen - InlineValueSize;
             if (Info.HasETag != withETag)
                 growth += withETag ? LogRecord.ETagSize : -LogRecord.ETagSize;
@@ -644,7 +648,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetValueObject(TValue valueObject, long? eTag, long? expiration)
         {
-            if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, eTag.HasValue, expiration.HasValue))
+            if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, eTag.HasValue, expiration.HasValue))  // TODO should not need this; we already allocated space for the ObjectId and value/expiration
                 return false;
             _ = TrySetValueObject(valueObject);
             return SetOptionals(eTag, expiration);
@@ -674,7 +678,7 @@ namespace Tsavorite.core
             }
             else
             {
-                if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, srcRecordInfo.HasETag, srcRecordInfo.HasExpiration))
+                if (!HasEnoughSpace(ObjectIdMap.ObjectIdSize, srcRecordInfo.HasETag, srcRecordInfo.HasExpiration))  // TODO should not need this; we already allocated space for the ObjectId and value/expiration
                     return false;
                 if (!TrySetValueObject(srcLogRecord.ValueObject))
                     return false;

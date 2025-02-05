@@ -215,12 +215,6 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(DisposeReason reason)
-        {
-            // TODO: If Object LogRecord, get IHeapObject Value and call StoreFunctions.DisposeObjectValue(value);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

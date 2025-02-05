@@ -48,8 +48,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static byte* Initialize(BlockHeader* blockPtr, int allocatedSize, int userSizeOrSlot, bool zeroInit)
             {
-                allocatedSize -= sizeof(BlockHeader);
                 blockPtr->AllocatedSize = allocatedSize;
+                allocatedSize -= sizeof(BlockHeader);
 
                 // Update the union; both elements are int, so just pick one for the lhs
                 blockPtr->UserSize = userSizeOrSlot;

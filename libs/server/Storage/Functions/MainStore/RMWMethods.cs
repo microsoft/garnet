@@ -402,12 +402,12 @@ namespace Garnet.server
                     return true;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    valuePtr = logRecord.ValueSpan.ToPointer();
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length) && !logRecord.TrySetValueSpanLength(BitmapManager.LengthFromType(bitFieldArgs)))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
 
+                    valuePtr = logRecord.ValueSpan.ToPointer();
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, logRecord.ValueSpan.Length);
 
                     if (!overflow)

@@ -213,9 +213,14 @@ namespace Tsavorite.core
                 return newPointer;
             }
 
-            // Free the current allocation then insert a new one
-            allocator.Free(address);
-            return ConvertToOverflow(address, newLength, allocator);
+            // Allocate and insert a new block, copy to it, then free the current allocation
+            var oldPtr = (byte*)GetOverflowPointer(address);
+            var oldLength = BlockHeader.GetUserSize((long)oldPtr);
+            var newPtr = SetOverflowAllocation(address, newLength, allocator);
+            var copyLength = oldLength < newLength ? oldLength : newLength;
+            Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
+            allocator.Free((long)oldPtr);
+            return newPtr;
         }
     }
 }
