@@ -655,15 +655,28 @@ namespace Garnet.server
 
         private bool NetworkDebug()
         {
-            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Block) ||
-                (parseState.Count == 0))
+            if (parseState.Count == 0)
             {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            if (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Block)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
+                    SendAndReset();
+
                 return true;
             }
 
             if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections)
               && !networkSender.IsLocalConnection())
             {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
+                    SendAndReset();
+
                 return true;
             }
 
