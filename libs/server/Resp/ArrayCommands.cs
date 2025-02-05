@@ -157,7 +157,10 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count % 2 == 0);
+            if (parseState.Count == 0 || parseState.Count % 2 != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
+            }
 
             for (int c = 0; c < parseState.Count; c += 2)
             {
@@ -176,23 +179,16 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var anyValuesSet = false;
-            var input = new RawStringInput(RespCommand.SETEXNX);
-
-            for (var c = 0; c < parseState.Count; c += 2)
+            if (parseState.Count == 0 || parseState.Count % 2 != 0)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-
-                input.parseState = parseState.Slice(c + 1, 1);
-                var status = storageApi.SET_Conditional(ref key, ref input);
-
-                // Status tells us whether an old image was found during RMW or not
-                // For a "set if not exists", NOTFOUND means that the operation succeeded
-                if (status == GarnetStatus.NOTFOUND)
-                    anyValuesSet = true;
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            while (!RespWriteUtils.TryWriteInt32(anyValuesSet ? 1 : 0, ref dcurr, dend))
+            var input = new RawStringInput(RespCommand.MSETNX, ref parseState);
+            var status = storageApi.MSET_Conditional(ref input);
+
+            // For a "set if not exists", NOTFOUND means that the operation succeeded
+            while (!RespWriteUtils.TryWriteInt32(status == GarnetStatus.NOTFOUND ? 1 : 0, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

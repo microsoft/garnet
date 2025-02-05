@@ -58,6 +58,13 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long Get(LatencyMetricsType cmd)
+        {
+            int idx = (int)cmd;
+            return metrics[idx].startTimestamp;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void StopAndSwitch(LatencyMetricsType oldCmd, LatencyMetricsType newCmd)
         {
             int old_idx = (int)oldCmd;
