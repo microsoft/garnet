@@ -655,15 +655,14 @@ namespace Garnet.server
 
         private bool NetworkDebug()
         {
-            if ((storeWrapper.serverOptions.EnableDebugCommand != ConnectionProtectionOption.AllowForAll) &&
-                 ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) ||
-                !networkSender.IsLocalConnection())
-               )
+            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Block) ||
+                (parseState.Count == 0))
             {
                 return true;
             }
 
-            if (parseState.Count == 0)
+            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections)
+              && !networkSender.IsLocalConnection())
             {
                 return true;
             }
