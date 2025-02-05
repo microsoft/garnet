@@ -15,7 +15,7 @@ namespace Garnet.server
     /// <summary>
     /// Broker used for pub/sub
     /// </summary>
-    public sealed class SubscribeBroker : IDisposable, IBulkLogEntryConsumer
+    public sealed class SubscribeBroker : IDisposable, ILogEntryConsumer
     {
         int sid = 0;
         ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>> subscriptions;
@@ -120,7 +120,7 @@ namespace Garnet.server
                 while (!disposed)
                 {
                     if (cts.Token.IsCancellationRequested) break;
-                    await iterator.BulkConsumeAllAsync(this, token: cts.Token).ConfigureAwait(false);
+                    await iterator.ConsumeAllAsync(this, token: cts.Token).ConfigureAwait(false);
                 }
             }
             finally
@@ -133,26 +133,12 @@ namespace Garnet.server
         {
             try
             {
-                var src = payloadPtr;
-                while (src < payloadPtr + payloadLength)
-                {
-                    cts.Token.ThrowIfCancellationRequested();
-                    var entryPayloadLength = log.UnsafeGetLength(src);
-                    src += log.HeaderSize;
-                    if (entryPayloadLength > 0)
-                    {
-                        var ptr = src;
-                        var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
-                        ptr += sizeof(int) + key.length;
-                        var value = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
-                        _ = Broadcast(key, value);
-                        src += TsavoriteLog.UnsafeAlign(entryPayloadLength);
-                    }
-                    else
-                    {
-                        src += TsavoriteLog.UnsafeAlign(-entryPayloadLength);
-                    }
-                }
+                cts.Token.ThrowIfCancellationRequested();
+                var ptr = payloadPtr;
+                var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                ptr += sizeof(int) + key.length;
+                var value = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                _ = Broadcast(key, value);
                 if (nextAddress > log.BeginAddress)
                     log.TruncateUntil(nextAddress);
             }
