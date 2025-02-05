@@ -2,13 +2,17 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection.Metadata.Ecma335;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -403,11 +407,11 @@ namespace Garnet.server
             }
         }
 
-        private void WriteDatabaseIdsSnapshot(IList<int> activeDbIds, string path)
+        private void WriteDatabaseIdsSnapshot(int[] activeDbIds, int offset, int actualLength, string path)
         {
-            var dbIdsWithLength = new int[activeDbIds.Count + 1];
-            dbIdsWithLength[0] = activeDbIds.Count;
-            activeDbIds.CopyTo(dbIdsWithLength, 1);
+            var dbIdsWithLength = new int[actualLength + 1];
+            dbIdsWithLength[0] = actualLength;
+            Array.Copy(activeDbIds, offset, dbIdsWithLength, 1, actualLength);
 
             var dbIdData = new byte[sizeof(int) * dbIdsWithLength.Length];
 
@@ -561,6 +565,9 @@ namespace Garnet.server
         {
             try
             {
+                int[] activeDbIds = null;
+                Task[] tasks = null;
+
                 while (true)
                 {
                     if (token.IsCancellationRequested) break;
@@ -573,25 +580,17 @@ namespace Garnet.server
                     else
                     {
                         var databasesMapSize = databases.ActualSize;
-                        var databasesMapSnapshot = databases.Map;
 
-                        var activeDbIds = allowMultiDb ? new List<int>() : null;
-
-                        for (var dbId = 0; dbId < databasesMapSize; dbId++)
+                        if (!allowMultiDb || databasesMapSize == 1)
                         {
-                            var db = databasesMapSnapshot[dbId];
-                            if (db.IsDefault()) continue;
-
-                            await db.AppendOnlyFile.CommitAsync(null, token);
-
-                            if (allowMultiDb && dbId != 0)
-                                activeDbIds!.Add(dbId);
+                            await appendOnlyFile.CommitAsync(null, token);
+                        }
+                        else
+                        {
+                            MultiDatabaseCommit(ref activeDbIds, ref tasks, token);
                         }
 
                         await Task.Delay(commitFrequencyMs, token);
-
-                        if (allowMultiDb && aofDatabaseIdsPath != null && activeDbIds!.Count > 0)
-                            WriteDatabaseIdsSnapshot(activeDbIds, aofDatabaseIdsPath);
                     }
                 }
             }
@@ -599,6 +598,38 @@ namespace Garnet.server
             {
                 logger?.LogError(ex, "CommitTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
             }
+        }
+
+        void MultiDatabaseCommit(ref int[] activeDbIds, ref Task[] tasks, CancellationToken token)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            if (activeDbIds == null || activeDbIds.Length < databasesMapSize)
+            {
+                activeDbIds = new int[databasesMapSize];
+                tasks = new Task[databasesMapSize];
+            }
+
+            var dbIdsIdx = 0;
+            for (var dbId = 0; dbId < databasesMapSize; dbId++)
+            {
+                var db = databasesMapSnapshot[dbId];
+                if (db.IsDefault()) continue;
+
+                tasks[dbIdsIdx] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
+                activeDbIds[dbIdsIdx] = dbId;
+
+                dbIdsIdx++;
+            }
+
+            for (var i = 0; i < dbIdsIdx; i++)
+            {
+                tasks[i].Wait(token);
+                tasks[i] = null;
+            }
+
+            if (aofDatabaseIdsPath != null && dbIdsIdx != 0)
+                WriteDatabaseIdsSnapshot(activeDbIds, 1, dbIdsIdx - 1, aofDatabaseIdsPath);
         }
 
         async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
@@ -818,24 +849,16 @@ namespace Garnet.server
         internal void CommitAOF(bool spinWait)
         {
             var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-
-            var activeDbIds = allowMultiDb ? new List<int>() : null;
-
-            for (var dbId = 0; dbId < databasesMapSize; dbId++)
+            if (!allowMultiDb || databasesMapSize == 1)
             {
-                var db = databasesMapSnapshot[dbId];
-                if (db.IsDefault()) continue;
-
-                if (db.AppendOnlyFile == null) continue;
-                db.AppendOnlyFile.Commit(spinWait);
-
-                if (allowMultiDb && dbId != 0)
-                    activeDbIds!.Add(dbId);
+                appendOnlyFile.Commit(spinWait);
+                return;
             }
 
-            if (allowMultiDb && aofDatabaseIdsPath != null && activeDbIds!.Count > 0)
-                WriteDatabaseIdsSnapshot(activeDbIds, aofDatabaseIdsPath);
+            int[] activeDbIds = null;
+            Task[] tasks = null;
+
+            MultiDatabaseCommit(ref activeDbIds, ref tasks, CancellationToken.None);
         }
 
         internal void Start()
@@ -1087,7 +1110,7 @@ namespace Garnet.server
                 }
 
                 if (allowMultiDb && checkpointDatabaseIdsPath != null && activeDbIds!.Count > 0)
-                    WriteDatabaseIdsSnapshot(activeDbIds, checkpointDatabaseIdsPath);
+                    WriteDatabaseIdsSnapshot(activeDbIds.ToArray(), 0, activeDbIds.Count, checkpointDatabaseIdsPath);
 
                 lastSaveTime = DateTimeOffset.UtcNow;
             }
