@@ -37,6 +37,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SETNAME => "SETNAME"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
         public static ReadOnlySpan<byte> info => "info"u8;
+        public static ReadOnlySpan<byte> DEBUG => "DEBUG"u8;
+        public static ReadOnlySpan<byte> SEGFAULT => "SEGFAULT"u8;
+        public static ReadOnlySpan<byte> VERSION => "VERSION"u8;
         public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
         public static ReadOnlySpan<byte> docs => "docs"u8;
         public static ReadOnlySpan<byte> GETKEYS => "GETKEYS"u8;

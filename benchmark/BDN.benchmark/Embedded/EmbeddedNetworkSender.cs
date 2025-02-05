@@ -48,6 +48,11 @@ namespace Embedded.server
 
         public string LocalEndpointName => "";
 
+        public bool IsLoopback()
+        {
+            return true;
+        }
+
         /// <summary>
         /// Cleanup this DummyNetworkSender instance
         /// </summary>

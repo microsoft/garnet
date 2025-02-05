@@ -9,6 +9,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
+using Garnet.server.Auth.Settings;
 using Garnet.server.Custom;
 
 namespace Garnet.server
@@ -65,6 +66,8 @@ namespace Garnet.server
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
                 RespCommand.ACL_USERS => NetworkAclUsers(),
                 RespCommand.ACL_SAVE => NetworkAclSave(),
+                RespCommand.DEBUG_SEGFAULT => NetworkPANIC(),
+                RespCommand.DEBUG_VERSION => NetworkVERSION(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
@@ -648,6 +651,27 @@ namespace Garnet.server
             }
 
             clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
+            return true;
+        }
+
+        private bool NetworkPANIC()
+        {
+            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForAll) ||
+                    ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections) &&
+                     networkSender.IsLoopback())
+               )
+            {
+                throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
+            }
+
+            return true;
+        }
+
+        private bool NetworkVERSION()
+        {
+            while (!RespWriteUtils.TryWriteAsciiBulkString(storeWrapper.version, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 
