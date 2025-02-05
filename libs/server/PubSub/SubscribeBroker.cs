@@ -24,7 +24,9 @@ namespace Garnet.server
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
+        long previousAddress = 0;
         bool disposed = false;
+        readonly int pageSizeBits;
         readonly ILogger logger;
 
         /// <summary>
@@ -39,6 +41,7 @@ namespace Garnet.server
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
+            pageSizeBits = log.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
             this.logger = logger;
@@ -134,6 +137,18 @@ namespace Garnet.server
             try
             {
                 cts.Token.ThrowIfCancellationRequested();
+
+                if (previousAddress > 0 && currentAddress > previousAddress)
+                {
+                    if (
+                        (currentAddress % (1 << pageSizeBits) != 0) || // the skip was to a non-page-boundary
+                        (currentAddress >= previousAddress + payloadLength) // we skipped beyond the expected next address
+                    )
+                    {
+                        logger?.LogWarning("SubscribeBroker: Skipping from {previousAddress} to {currentAddress}", previousAddress, currentAddress);
+                    }
+                }
+
                 var ptr = payloadPtr;
                 var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
                 ptr += sizeof(int) + key.length;
@@ -141,16 +156,13 @@ namespace Garnet.server
                 _ = Broadcast(key, value);
                 if (nextAddress > log.BeginAddress)
                     log.TruncateUntil(nextAddress);
+                previousAddress = nextAddress;
             }
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at SubscribeBroker.Consume");
                 throw;
             }
-        }
-
-        public void Throttle()
-        {
         }
 
         void Initialize()
