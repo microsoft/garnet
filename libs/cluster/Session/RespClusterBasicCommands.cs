@@ -265,22 +265,31 @@ namespace Garnet.cluster
 
             var buffer = scratchBufferManager.ViewRemainingArgSlice();
             var config = clusterProvider.clusterManager.CurrentConfig;
-            ushort index = 1;
+            ushort index = 0;
+            var ptr = buffer.Pointer;
+            var end = ptr + buffer.Length;
             while (config.GetClusterInfo(clusterProvider, ref index, out var info))
             {
-                var ptr = buffer.Pointer;
-                var end = ptr + buffer.Length;
                 while (!config.TryWriteNodeInfo(index, info, ref ptr, end))
                 {
-                    scratchBufferManager.GrowBuffer();
+                    int len = (int)(ptr - buffer.Pointer);
+                    scratchBufferManager.GrowBuffer(len);
                     buffer = scratchBufferManager.ViewRemainingArgSlice();
-                    ptr = buffer.Pointer;
+                    ptr = buffer.Pointer + len;
                     end = ptr + buffer.Length;
                 }
-                while (!RespWriteUtils.TryWriteBulkString(buffer.ReadOnlySpan.Slice(0, (int)(ptr - buffer.Pointer)), ref dcurr, dend))
-                    SendAndReset();
-                scratchBufferManager.Reset();
+                while (!RespWriteUtils.TryWriteDirect("\n"u8, ref ptr, end))
+                {
+                    int len = (int)(ptr - buffer.Pointer);
+                    scratchBufferManager.GrowBuffer(len);
+                    buffer = scratchBufferManager.ViewRemainingArgSlice();
+                    ptr = buffer.Pointer + len;
+                    end = ptr + buffer.Length;
+                }
             }
+            while (!RespWriteUtils.TryWriteBulkString(buffer.ReadOnlySpan.Slice(0, (int)(ptr - buffer.Pointer)), ref dcurr, dend))
+                SendAndReset();
+            scratchBufferManager.Reset();
             return true;
         }
 

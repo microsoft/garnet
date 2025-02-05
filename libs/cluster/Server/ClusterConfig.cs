@@ -502,13 +502,13 @@ namespace Garnet.cluster
 
         public bool GetClusterInfo(ClusterProvider clusterProvider, ref ushort index, out ConnectionInfo info)
         {
+            index++;
             info = default;
             if (index > NumWorkers)
             {
                 return false;
             }
             _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[index].Nodeid, out info);
-            index++;
             return true;
         }
 
