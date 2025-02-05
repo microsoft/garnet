@@ -467,6 +467,11 @@ namespace Garnet.test
                 RespCommand.LATENCY_HELP,
                 RespCommand.LATENCY_HISTOGRAM,
                 RespCommand.LATENCY_RESET,
+                // Slowlog
+                RespCommand.SLOWLOG_HELP,
+                RespCommand.SLOWLOG_LEN,
+                RespCommand.SLOWLOG_GET,
+                RespCommand.SLOWLOG_RESET,
                 // Transactions
                 RespCommand.MULTI,
             ];
