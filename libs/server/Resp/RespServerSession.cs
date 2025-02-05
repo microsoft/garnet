@@ -96,9 +96,9 @@ namespace Garnet.server
 
         readonly IGarnetAuthenticator _authenticator;
 
+        internal int activeDbId;
         readonly bool allowMultiDb;
         readonly int maxDbs;
-        int activeDbId;
         ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
         /// <summary>
@@ -1240,7 +1240,8 @@ namespace Garnet.server
 
             return header;
         }
-        private bool TrySwitchActiveDatabaseSession(int dbId)
+
+        internal bool TrySwitchActiveDatabaseSession(int dbId)
         {
             if (!allowMultiDb) return false;
 

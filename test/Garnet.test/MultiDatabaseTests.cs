@@ -135,8 +135,8 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
-            response = lightClientRequest.SendCommand($"SPOP {db2Key2}", 2);
-            expectedResponse = "$8\r\ndb2:val2\r\n";
+            response = lightClientRequest.SendCommand($"SISMEMBER {db2Key2} db2:val2");
+            expectedResponse = ":1\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
@@ -237,6 +237,54 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseAofRecoverRawStringTest()
+        {
+            var db1Key = "db1:key1";
+            var db2Key = "db2:key1";
+            var db1data = new RedisValue("db1:a");
+            var db2data = new RedisValue("db2:a");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+                var result = db1.StringSet(db1Key, db1data);
+                ClassicAssert.IsTrue(result);
+
+                var value = db1.StringGet(db1Key);
+                ClassicAssert.IsTrue(value.HasValue);
+                ClassicAssert.AreEqual(db1data, value.ToString());
+
+                var db2 = redis.GetDatabase(1);
+                result = db2.StringSet(db2Key, db2data);
+                ClassicAssert.IsTrue(result);
+
+                value = db2.StringGet(db2Key);
+                ClassicAssert.IsTrue(value.HasValue);
+                ClassicAssert.AreEqual(db2data, value.ToString());
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+
+                var value = db1.StringGet(db1Key);
+                ClassicAssert.IsTrue(value.HasValue);
+                ClassicAssert.AreEqual(db1data, value.ToString());
+
+                var db2 = redis.GetDatabase(1);
+
+                value = db2.StringGet(db2Key);
+                ClassicAssert.IsTrue(value.HasValue);
+                ClassicAssert.AreEqual(db2data, value.ToString());
+            }
+        }
+
+        [Test]
         public void MultiDatabaseAofRecoverObjectTest()
         {
             var db1Key = "db1:key1";
@@ -251,7 +299,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(3, added);
 
                 var score = db1.SortedSetScore(db1Key, "db1:a");
-                ClassicAssert.True(score.HasValue);
+                ClassicAssert.IsTrue(score.HasValue);
                 ClassicAssert.AreEqual(1, score.Value);
 
                 var db2 = redis.GetDatabase(1);
@@ -259,7 +307,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(3, added);
 
                 score = db2.SortedSetScore(db2Key, "db2:a");
-                ClassicAssert.True(score.HasValue);
+                ClassicAssert.IsTrue(score.HasValue);
                 ClassicAssert.AreEqual(-1, score.Value);
             }
 
@@ -273,13 +321,13 @@ namespace Garnet.test
                 var db1 = redis.GetDatabase(0);
 
                 var score = db1.SortedSetScore(db1Key, "db1:a");
-                ClassicAssert.True(score.HasValue);
+                ClassicAssert.IsTrue(score.HasValue);
                 ClassicAssert.AreEqual(1, score.Value);
 
                 var db2 = redis.GetDatabase(1);
 
                 score = db2.SortedSetScore(db2Key, "db2:a");
-                ClassicAssert.True(score.HasValue);
+                ClassicAssert.IsTrue(score.HasValue);
                 ClassicAssert.AreEqual(-1, score.Value);
             }
         }

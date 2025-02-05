@@ -446,8 +446,8 @@ namespace Garnet.server
         /// </summary>
         public void RecoverAOF()
         {
-            if (allowMultiDb && checkpointDatabaseIdsPath != null)
-                RecoverDatabases(checkpointDatabaseIdsPath);
+            if (allowMultiDb && aofDatabaseIdsPath != null)
+                RecoverDatabases(aofDatabaseIdsPath);
 
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
@@ -494,9 +494,19 @@ namespace Garnet.server
                 // When replaying AOF we do not want to write record again to AOF.
                 // So initialize local AofProcessor with recordToAof: false.
                 var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
-                aofProcessor.Recover(untilAddress);
+
+                var databasesMapSize = databases.ActualSize;
+                var databasesMapSnapshot = databases.Map;
+
+                for (var dbId = 0; dbId < databasesMapSize; dbId++)
+                {
+                    if (databasesMapSnapshot[dbId].IsDefault()) continue;
+                    aofProcessor.Recover(dbId, dbId == 0 ? untilAddress : -1);
+                    if (dbId == 0)
+                        replicationOffset = aofProcessor.ReplicationOffset;
+                }
+
                 aofProcessor.Dispose();
-                replicationOffset = aofProcessor.ReplicationOffset;
                 lastSaveTime = DateTimeOffset.UtcNow;
             }
             catch (Exception ex)
