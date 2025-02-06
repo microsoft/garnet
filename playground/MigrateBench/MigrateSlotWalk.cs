@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -32,7 +33,7 @@ namespace MigrateBench
                 var endpoint = endpoints[i].Split(':');
                 nodes[i].address = endpoint[0];
                 nodes[i].port = endpoint[1];
-                nodes[i].gc = new GarnetClientSession(nodes[i].address, int.Parse(nodes[i].port), new NetworkBufferSettings(1 << 22));
+                nodes[i].gc = new GarnetClientSession(new IPEndPoint(IPAddress.Parse(nodes[i].address), int.Parse(nodes[i].port)), new NetworkBufferSettings(1 << 22));
             }
             this.logger = logger;
         }

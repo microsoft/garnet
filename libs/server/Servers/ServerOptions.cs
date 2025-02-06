@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Net;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -14,14 +15,9 @@ namespace Garnet.server
     public class ServerOptions
     {
         /// <summary>
-        /// Port to run server on.
+        /// Endpoint to bind server to.
         /// </summary>
-        public int Port = 6379;
-
-        /// <summary>
-        /// IP address to bind server to.
-        /// </summary>
-        public string Address = "127.0.0.1";
+        public EndPoint EndPoint { get; set; } = new IPEndPoint(IPAddress.Loopback, 6379);
 
         /// <summary>
         /// Total log memory used in bytes (rounds down to power of 2).

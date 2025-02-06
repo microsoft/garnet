@@ -11,7 +11,7 @@ namespace GarnetClientStress
         public int Port { get; set; }
 
         [Option('h', "host", Required = false, Default = "127.0.0.1", HelpText = "IP address to connect to")]
-        public string? Address { get; set; }
+        public string Address { get; set; } = "127.0.0.1";
 
         [Option("dbsize", Required = false, Default = 1 << 10, HelpText = "DB size")]
         public int DbSize { get; set; }
