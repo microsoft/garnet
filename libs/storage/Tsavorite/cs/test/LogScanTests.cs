@@ -192,10 +192,10 @@ namespace Tsavorite.test
 
             public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
             {
-                if (currentEntry < payloadLength)
+                if (currentEntry < entryLength)
                 {
                     // Span Batch only added first entry several times so have separate verification
-                    ClassicAssert.AreEqual((byte)entryFlag, *payloadPtr);
+                    ClassicAssert.AreEqual((byte)entryFlag, *(payloadPtr+currentEntry));
                     currentEntry++;
                 }
             }
