@@ -2788,15 +2788,19 @@ namespace Garnet.test.cluster
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
         {
             long primaryReplicationOffset;
+            long secondaryReplicationOffset1;
             while (true)
             {
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
-                var secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
+                secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
                     break;
-                BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]{secondaryReplicationOffset1}");
+
+                var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger);
+                var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, isMainStore: true, logger);
+                BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]: {primaryMainStoreVersion},{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]: {replicaMainStoreVersion},{secondaryReplicationOffset1}");
             }
-            logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
+            logger?.LogInformation("[{primaryEndpoint}]{primaryReplicationOffset} ?? [{endpoints[secondaryEndpoint}]{secondaryReplicationOffset1}", endpoints[primaryIndex], primaryReplicationOffset, endpoints[secondaryIndex], secondaryReplicationOffset1);
         }
 
         public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)

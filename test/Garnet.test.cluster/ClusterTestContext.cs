@@ -41,7 +41,7 @@ namespace Garnet.test.cluster
 
         public CancellationTokenSource cts;
 
-        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
+        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 30)
         {
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
@@ -468,7 +468,7 @@ namespace Garnet.test.cluster
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out _, out _, out responseState, logger: logger);
-                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token, msg: $"{clusterTestUtils.GetEndPoint(primaryIndex)} > {clusterTestUtils.GetEndPoint(replicaIndex)}");
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
