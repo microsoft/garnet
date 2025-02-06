@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -61,8 +62,7 @@ namespace Garnet.cluster
             }
 
             GarnetClientSession gcs = new(
-                address,
-                port,
+                new IPEndPoint(IPAddress.Parse(address), port),
                 clusterProvider.replicationManager.GetRSSNetworkBufferSettings,
                 clusterProvider.replicationManager.GetNetworkPool,
                 tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,

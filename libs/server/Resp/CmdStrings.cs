@@ -15,6 +15,9 @@ namespace Garnet.server
         /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
         public static ReadOnlySpan<byte> SUBSCRIBE => "SUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> subscribe => "subcribe"u8;
+        public static ReadOnlySpan<byte> SSUBSCRIBE => "SSUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> ssubscribe => "ssubcribe"u8;
         public static ReadOnlySpan<byte> RUNTXP => "RUNTXP"u8;
         public static ReadOnlySpan<byte> GET => "GET"u8;
         public static ReadOnlySpan<byte> get => "get"u8;
@@ -40,6 +43,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETKEYSANDFLAGS => "GETKEYSANDFLAGS"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
+        public static ReadOnlySpan<byte> SLOWLOG => "SLOWLOG"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         public static ReadOnlySpan<byte> PURGEBP => "PURGEBP"u8;
@@ -52,10 +56,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
+        public static ReadOnlySpan<byte> SCRIPT => "SCRIPT"u8;
         public static ReadOnlySpan<byte> HELLO => "HELLO"u8;
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
+        public static ReadOnlySpan<byte> ROLE => "ROLE"u8;
         public static ReadOnlySpan<byte> QUIT => "QUIT"u8;
         public static ReadOnlySpan<byte> SAVE => "SAVE"u8;
         public static ReadOnlySpan<byte> LASTSAVE => "LASTSAVE"u8;
@@ -255,6 +261,7 @@ namespace Garnet.server
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
         public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
+        public const string GenericErrUnknownSubCommandNoHelp = "ERR unknown subcommand '{0}'.";
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
@@ -315,6 +322,8 @@ namespace Garnet.server
         // subcommand parsing strings
         public static ReadOnlySpan<byte> CAT => "CAT"u8;
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
+        public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
@@ -361,6 +370,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> delkeysinslotrange => "DELKEYSINSLOTRANGE"u8;
         public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
         public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
+        public static ReadOnlySpan<byte> publish => "PUBLISH"u8;
+        public static ReadOnlySpan<byte> spublish => "SPUBLISH"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;

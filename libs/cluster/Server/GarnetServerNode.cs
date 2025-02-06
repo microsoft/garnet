@@ -2,11 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -22,7 +24,7 @@ namespace Garnet.cluster
         CancellationTokenSource internalCts = new();
         volatile int initialized = 0;
         readonly ILogger logger = null;
-        int disposeCount = 0;
+        SingleWriterMultiReaderLock dispose;
 
         /// <summary>
         /// Last transmitted configuration
@@ -50,32 +52,37 @@ namespace Garnet.cluster
         public string NodeId;
 
         /// <summary>
-        /// Address of remote node
+        /// EndPoint of remote node
         /// </summary>
-        public string Address;
+        public EndPoint EndPoint;
 
         /// <summary>
-        /// Port of remote node
+        /// Default send page size for GarnetClient
         /// </summary>
-        public int Port;
+        const int defaultSendPageSize = 1 << 17;
+
+        /// <summary>
+        /// Default max outstanding tasks for GarnetClient
+        /// </summary>
+        const int defaultMaxOutstandingTask = 8;
 
         /// <summary>
         /// GarnetServerNode constructor
         /// </summary>
         /// <param name="clusterProvider"></param>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
+        /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
         /// <param name="logger"></param>
-        public GarnetServerNode(ClusterProvider clusterProvider, string address, int port, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
+        public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
         {
+            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
-            this.Address = address;
-            this.Port = port;
+            this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                address, port, tlsOptions,
-                sendPageSize: 1 << 17,
-                maxOutstandingTasks: 8,
+                endpoint, tlsOptions,
+                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
+                maxOutstandingTasks: defaultMaxOutstandingTask,
+                timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 logger: logger);
@@ -93,7 +100,7 @@ namespace Garnet.cluster
         public Task InitializeAsync()
         {
             // Ensure initialize executes only once
-            if (Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
 
             cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
             return gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
@@ -101,8 +108,13 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            if (Interlocked.Increment(ref disposeCount) != 1)
+            // Single write lock acquisition only
+            if (!dispose.CloseLock())
+            {
                 logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
+                return;
+            }
+
             try
             {
                 cts?.Cancel();
@@ -146,9 +158,9 @@ namespace Garnet.cluster
             byte[] byteArray;
             if (conf != lastConfig)
             {
-                if (clusterProvider.replicationManager != null) conf.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
-                byteArray = conf.ToByteArray();
                 lastConfig = conf;
+                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                byteArray = lastConfig.ToByteArray();
             }
             else
             {
@@ -246,6 +258,10 @@ namespace Garnet.cluster
             return false;
         }
 
+        /// <summary>
+        /// Get connection info
+        /// </summary>
+        /// <returns></returns>
         public ConnectionInfo GetConnectionInfo()
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
@@ -258,6 +274,33 @@ namespace Garnet.cluster
                 connected = gc.IsConnected,
                 lastIO = last_io_seconds,
             };
+        }
+
+        /// <summary>
+        /// Send a CLUSTER PUBLISH message to another remote node
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        {
+            var locked = false;
+            try
+            {
+                // Try to acquire dispose lock to avoid a dispose during publish forwarding
+                if (!dispose.TryReadLock())
+                {
+                    logger?.LogWarning("Could not acquire readLock for publish forwarding");
+                    return;
+                }
+
+                locked = true;
+                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+            }
+            finally
+            {
+                if (locked) dispose.ReadUnlock();
+            }
         }
     }
 }

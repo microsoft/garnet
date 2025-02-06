@@ -14,14 +14,12 @@ namespace Garnet.test
     public class RespInfoTests
     {
         GarnetServer server;
-        Random r;
 
         [SetUp]
         public void Setup()
         {
-            r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true, latencyMonitor: true, metricsSamplingFreq: 1, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true, latencyMonitor: true, metricsSamplingFreq: 1, disableObjects: true);
             server.Start();
         }
 

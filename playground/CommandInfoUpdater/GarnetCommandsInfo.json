@@ -208,6 +208,43 @@
         "SubCommands": null
       },
       {
+        "Command": "CLUSTER_PUBLISH",
+        "Name": "CLUSTER|PUBLISH",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Loading, NoScript, PubSub, Stale",
+        "FirstKey": 1,
+        "LastKey": 1,
+        "Step": 1,
+        "AclCategories": "Admin, PubSub, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Loading, NoScript, PubSub, Stale",
+        "FirstKey": 1,
+        "LastKey": 1,
+        "Step": 1,
+        "AclCategories": "Admin, PubSub, Slow, Garnet",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 1
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO"
+          }
+        ]
+      },
+      {
         "Command": "CLUSTER_SEND_CKPT_FILE_SEGMENT",
         "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT",
         "IsInternal": true,

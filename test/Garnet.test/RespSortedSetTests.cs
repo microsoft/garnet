@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -268,7 +269,7 @@ namespace Garnet.test
             testArgs = [key, "INCR", "3.5", "a"];
 
             resp = db.Execute("ZADD", testArgs);
-            ClassicAssert.IsTrue(double.TryParse(resp.ToString(), out var newVal));
+            ClassicAssert.IsTrue(double.TryParse(resp.ToString(), CultureInfo.InvariantCulture, out var newVal));
             ClassicAssert.AreEqual(4.5, newVal);
         }
 

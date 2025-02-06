@@ -287,7 +287,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |
 |  | RESTORE-ASKING | ➖ |  |
-|  | ROLE | ➖ |  |
+|  | [ROLE](server.md#role) | ➕ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
 |  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |
@@ -314,10 +314,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
 |  | SUNSUBSCRIBE | ➖ |  |
-| <span id="sorted-set">**SLOWLOG**</span> | GET | ➖ |  |
-|  | HELP | ➖ |  |
-|  | LEN | ➖ |  |
-|  | RESET | ➖ |  |
+| <span id="sorted-set">**SLOWLOG**</span> | GET | ➕ |  |
+|  | HELP | ➕ |  |
+|  | LEN | ➕ |  |
+|  | RESET | ➕ |  |
 | <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](data-structures.md#bzmpop) | ➕ |  |
 |  | [BZPOPMAX](data-structures.md#bzpopmax) | ➕ |  |
 |  | [BZPOPMIN](data-structures.md#bzpopmin) | ➕ |  |

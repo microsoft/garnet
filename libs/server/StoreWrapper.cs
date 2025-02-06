@@ -47,12 +47,18 @@ namespace Garnet.server
         /// Server options
         /// </summary>
         public readonly GarnetServerOptions serverOptions;
+
+        /// <summary>
+        /// Subscribe broker
+        /// </summary>
+        public readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+
         internal readonly IClusterProvider clusterProvider;
 
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp GetTcpServer() => (GarnetServerTcp)server;
+        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
 
         /// <summary>
         /// Access control list governing all commands
@@ -98,6 +104,7 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string run_id;
         private SingleWriterMultiReaderLock _checkpointTaskLock;
+        internal readonly SlowLogContainer slowLogContainer;
 
         /// <summary>
         /// Lua script cache
@@ -124,6 +131,7 @@ namespace Garnet.server
             CustomCommandManager customCommandManager,
             TsavoriteLog appendOnlyFile,
             GarnetServerOptions serverOptions,
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null
@@ -137,6 +145,7 @@ namespace Garnet.server
             this.objectStore = objectStore;
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
+            this.subscribeBroker = subscribeBroker;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
@@ -150,6 +159,8 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
+            if (serverOptions.SlowLogThreshold > 0)
+                this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
 
@@ -196,7 +207,9 @@ namespace Garnet.server
         /// <returns></returns>
         public string GetIp()
         {
-            var localEndpoint = GetTcpServer().GetEndPoint;
+            if (TcpServer.EndPoint is not IPEndPoint localEndpoint)
+                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
+
             if (localEndpoint.Address.Equals(IPAddress.Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))

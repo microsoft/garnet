@@ -231,6 +231,43 @@ Reset latency data of one or more ```<event>``` (default: reset all data for all
 Simple string reply: OK.
 
 ---
+### SLOWLOG GET
+#### Syntax
+
+```bash
+SLOWLOG GET [count]
+```
+
+Returns entries in the slow log. The default is to return the latest 10 entries. Use a negative count to return all entries.
+
+---
+### SLOWLOG LEN
+#### Syntax
+```bash
+SLOWLOG LEN
+```
+
+Returns the length of the slow queries log.
+
+---
+### SLOWLOG RESET
+#### Syntax
+```bash
+SLOWLOG RESET
+```
+
+Reset the slow log (discard all existing entries).
+
+---
+### SLOWLOG HELP
+#### Syntax
+```bash
+SLOWLOG HELP
+```
+
+Returns a list of supported SLOWLOG sub-commands.
+
+---
 ### MEMORY USAGE
 #### Syntax
 
@@ -261,6 +298,40 @@ The REPLICAOF command can change the replication settings of a replica on the fl
 #### Resp Reply
 
 Simple string reply: OK.
+
+---
+
+### ROLE
+
+#### Syntax
+
+```bash
+ROLE
+```
+
+Provide information on the role of a Redis instance in the context of replication, by returning if the instance is currently a master, slave, or sentinel. The command also returns additional information about the state of the replication (if the role is master or slave) or the list of monitored master names (if the role is sentinel).
+
+#### Resp Reply
+
+The command returns an array of elements. The elements of the array depends on the role.
+
+## Master output
+
+The master output is composed of the following parts:
+
+1. The string `master`.
+2. The current master replication offset, which is an offset that masters and replicas share to understand, in partial resynchronizations, the part of the replication stream the replicas needs to fetch to continue.
+3. An array composed of three elements array representing the connected replicas. Every sub-array contains the replica IP, port, and the last acknowledged replication offset.
+
+## Output of the command on replicas
+
+The replica output is composed of the following parts:
+
+1. The string `slave`, because of backward compatibility (see note at the end of this page).
+2. The IP of the master.
+3. The port number of the master.
+4. The state of the replication from the point of view of the master, that can be `connect` (the instance needs to connect to its master), `connecting` (the master-replica connection is in progress), `sync` (the master and replica are trying to perform the synchronization), `connected` (the replica is online).
+5. The amount of data received from the replica so far in terms of master replication offset.
 
 ---
 
