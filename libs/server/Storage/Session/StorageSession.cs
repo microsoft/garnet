@@ -73,11 +73,13 @@ namespace Garnet.server
 
             var functions = new MainSessionFunctions(functionsState);
 
-            storeWrapper.GetDatabaseStores(dbId, out var mainStore, out var objStore);
-            var session = mainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            Debug.Assert(dbFound);
+
+            var session = db.MainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = objStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
+            var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
@@ -87,7 +89,7 @@ namespace Garnet.server
                 objectStoreLockableContext = objectStoreSession.LockableContext;
             }
 
-            HeadAddress = mainStore.Log.HeadAddress;
+            HeadAddress = db.MainStore.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
 

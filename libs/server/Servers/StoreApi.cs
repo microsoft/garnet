@@ -50,9 +50,11 @@ namespace Garnet.server
         /// </summary>
         public void FlushDB(int dbId = 0, bool unsafeTruncateLog = false)
         {
-            storeWrapper.GetDatabaseStores(dbId, out var mainStore, out var objStore);
-            mainStore.Log.ShiftBeginAddress(mainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            objStore?.Log.ShiftBeginAddress(objStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            if (!dbFound) return;
+
+            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
     }
 }

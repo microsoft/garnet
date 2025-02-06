@@ -1450,10 +1450,12 @@ namespace Garnet.server
         {
             if (slots.Count > 0)
             {
-                GetDatabaseStores(dbId, out var dbMainStore, out var dbObjectStore);
+                var dbFound = TryGetDatabase(dbId, out var db);
+                Debug.Assert(dbFound);
+
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = dbMainStore.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
+                    using var iter = db.MainStore.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
                         ref var key = ref iter.GetKey();
@@ -1465,11 +1467,11 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots && dbObjectStore != null)
+                if (!hasKeyInSlots && db.ObjectStore != null)
                 {
                     var functionsState = CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
-                    var objectStoreSession = dbObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
                     var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
@@ -1489,27 +1491,32 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get database stores by DB ID
+        /// Get database DB ID
         /// </summary>
         /// <param name="dbId">DB Id</param>
-        /// <param name="mainStore">Main store</param>
-        /// <param name="objStore">Object store</param>
-        public void GetDatabaseStores(int dbId,
-            out TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
-            out TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objStore)
+        /// <param name="db">Database</param>
+        /// <returns>True if database found</returns>
+        public bool TryGetDatabase(int dbId, out GarnetDatabase db)
         {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+
             if (dbId == 0)
             {
-                mainStore = this.store;
-                objStore = this.objectStore;
+                db = databasesMapSnapshot[0];
+                Debug.Assert(!db.IsDefault());
+                return true;
             }
-            else
+
+            // Check if database already exists
+            if (dbId < databasesMapSize)
             {
-                var dbFound = this.TryGetOrAddDatabase(dbId, out var db);
-                Debug.Assert(dbFound);
-                mainStore = db.MainStore;
-                objStore = db.ObjectStore;
+                db = databasesMapSnapshot[dbId];
+                if (!db.IsDefault()) return true;
             }
+
+            // Try to retrieve or add database
+            return this.TryGetOrAddDatabase(dbId, out db);
         }
 
         /// <summary>

@@ -1668,9 +1668,10 @@ namespace Garnet.server
 
         void ExecuteFlushDb(bool unsafeTruncateLog)
         {
-            storeWrapper.GetDatabaseStores(activeDbId, out var mainStore, out var objStore);
-            mainStore.Log.ShiftBeginAddress(mainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            objStore?.Log.ShiftBeginAddress(objStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            var dbFound = storeWrapper.TryGetDatabase(activeDbId, out var db);
+            Debug.Assert(dbFound);
+            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <summary>
