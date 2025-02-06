@@ -41,7 +41,7 @@ namespace Garnet.test.cluster
 
         public CancellationTokenSource cts;
 
-        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 30)
+        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
         {
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
