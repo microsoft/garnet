@@ -3,10 +3,106 @@
 
 using System.IO;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    sealed class SyncMetadata(
+    internal static class SyncMetadataLoggingExtensions
+    {
+        /// <summary>
+        /// Log sync metadata
+        /// </summary>
+        /// <param name="log"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="msg"></param>
+        /// <param name="syncMetadata"></param>
+        public static void LogSyncMetadata(this ILogger log, LogLevel logLevel, string msg, SyncMetadata syncMetadata)
+        {
+            log.Log(logLevel,
+                "\n" +
+                "[{msg}]\n" +
+                "fullSync:{fullSync}\n" +
+                "originNodeRole:{originNodeRole}\n" +
+                "originNodeId:{originNodeId}\n" +
+                "currentPrimaryReplId:{currentPrimaryReplId}\n" +
+                "currentStoreVersion:{currentStoreVersion}\n" +
+                "currentObjectStoreVersion:{currentObjectStoreVersion}\n" +
+                "currentAofBeginAddress:{currentAofBeginAddress}\n" +
+                "currentAofTailAddress:{currentAofTailAddress}\n" +
+                "currentReplicationOffset:{currentReplicationOffset}\n" +
+                "checkpointEntry:{checkpointEntry}",
+                msg,
+                syncMetadata.fullSync,
+                syncMetadata.originNodeRole,
+                syncMetadata.originNodeId,
+                syncMetadata.currentPrimaryReplId,
+                syncMetadata.currentStoreVersion,
+                syncMetadata.currentObjectStoreVersion,
+                syncMetadata.currentAofBeginAddress,
+                syncMetadata.currentAofTailAddress,
+                syncMetadata.currentReplicationOffset,
+                syncMetadata.checkpointEntry);
+        }
+
+        /// <summary>
+        /// Log sync metadata
+        /// </summary>
+        /// <param name="log"></param>
+        /// <param name="logLevel"></param>
+        /// <param name="msg"></param>
+        /// <param name="origin"></param>
+        /// <param name="local"></param>
+        public static void LogSyncMetadata(this ILogger log, LogLevel logLevel, string msg, SyncMetadata origin, SyncMetadata local)
+        {
+            log.Log(logLevel,
+                "\n" +
+                "[{msg}]\n" +
+                "fullSync:{fullSync}\n" +
+                "originNodeRole:{originNodeRole}\n" +
+                "originNodeId:{originNodeId}\n" +
+                "currentPrimaryReplId:{currentPrimaryReplId}\n" +
+                "currentStoreVersion:{currentStoreVersion}\n" +
+                "currentObjectStoreVersion:{currentObjectStoreVersion}\n" +
+                "currentAofBeginAddress:{currentAofBeginAddress}\n" +
+                "currentAofTailAddress:{currentAofTailAddress}\n" +
+                "currentReplicationOffset:{currentReplicationOffset}\n" +
+                "checkpointEntry:{checkpointEntry}\n" +
+                "??\n" +
+                "recoverFullSync:{fullSync}\n" +
+                "recoverOriginNodeRole:{originNodeRole}\n" +
+                "recoverOriginNodeId:{originNodeId}\n" +
+                "recoverCurrentPrimaryReplId:{currentPrimaryReplId}\n" +
+                "recoverCurrentStoreVersion:{currentStoreVersion}\n" +
+                "recoverCurrentObjectStoreVersion:{currentObjectStoreVersion}\n" +
+                "recoverCurrentAofBeginAddress:{currentAofBeginAddress}\n" +
+                "recoverCurrentAofTailAddress:{currentAofTailAddress}\n" +
+                "recoverCurrentReplicationOffset:{currentReplicationOffset}\n" +
+                "recoverCheckpointEntry:{checkpointEntry}",
+                msg,
+                origin.fullSync,
+                origin.originNodeRole,
+                origin.originNodeId,
+                origin.currentPrimaryReplId,
+                origin.currentStoreVersion,
+                origin.currentObjectStoreVersion,
+                origin.currentAofBeginAddress,
+                origin.currentAofTailAddress,
+                origin.currentReplicationOffset,
+                origin.checkpointEntry,
+                local.fullSync,
+                local.originNodeRole,
+                local.originNodeId,
+                local.currentPrimaryReplId,
+                local.currentStoreVersion,
+                local.currentObjectStoreVersion,
+                local.currentAofBeginAddress,
+                local.currentAofTailAddress,
+                local.currentReplicationOffset,
+                local.checkpointEntry);
+        }
+    }
+
+    internal sealed class SyncMetadata(
         bool fullSync,
         NodeRole originNodeRole,
         string originNodeId,
