@@ -1030,26 +1030,26 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "3", "field1", "field5", "nonexistfield");
+            var result = db.Execute("HEXPIRE", "myhash", "4", "FIELDS", "3", "field1", "field5", "nonexistfield");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(3, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            result = db.Execute("HPEXPIRE", "myhash", "3000", "FIELDS", "2", "field2", "nonexistfield");
+            result = db.Execute("HPEXPIRE", "myhash", "4000", "FIELDS", "2", "field2", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "FIELDS", "2", "field3", "nonexistfield");
+            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString(), "FIELDS", "2", "field3", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            result = db.Execute("HPEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "FIELDS", "2", "field4", "nonexistfield");
+            result = db.Execute("HPEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString(), "FIELDS", "2", "field4", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1057,25 +1057,25 @@ namespace Garnet.test
 
             var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 3);
+            ClassicAssert.LessOrEqual((long)ttl[0], 4);
             ClassicAssert.Greater((long)ttl[0], 1);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HPTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 3000);
+            ClassicAssert.LessOrEqual((long)ttl[0], 4000);
             ClassicAssert.Greater((long)ttl[0], 1000);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds());
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds());
             ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds());
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HPEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds());
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds());
             ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds());
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
@@ -1085,7 +1085,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(3500);
+            await Task.Delay(4500);
 
             var items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(2, items.Length);
@@ -1113,7 +1113,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var server = redis.GetServer(TestUtils.Address, TestUtils.Port);
+            var server = redis.GetServer(TestUtils.EndPoint);
 
             string[] smallExpireKeys = ["user:user0", "user:user1"];
             string[] largeExpireKeys = ["user:user2", "user:user3"];

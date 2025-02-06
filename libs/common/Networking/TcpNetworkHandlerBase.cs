@@ -23,8 +23,6 @@ namespace Garnet.common
     {
         readonly ILogger logger;
         readonly Socket socket;
-        readonly string remoteEndpoint;
-        readonly string localEndpoint;
         int closeRequested;
 
         /// <summary>
@@ -37,16 +35,14 @@ namespace Garnet.common
             this.socket = socket;
             this.closeRequested = 0;
 
-            remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";
-            localEndpoint = socket.LocalEndPoint is IPEndPoint local ? $"{local.Address}:{local.Port}" : "";
             AllocateNetworkReceiveBuffer();
         }
 
         /// <inheritdoc />
-        public override string RemoteEndpointName => remoteEndpoint;
+        public override string RemoteEndpointName => socket.RemoteEndPoint.ToString();
 
         /// <inheritdoc />
-        public override string LocalEndpointName => localEndpoint;
+        public override string LocalEndpointName => socket.LocalEndPoint.ToString();
 
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
