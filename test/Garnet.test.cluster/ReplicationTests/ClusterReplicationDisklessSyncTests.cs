@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -26,15 +27,18 @@ namespace Garnet.test.cluster
         protected bool useTLS = false;
         protected bool asyncReplay = false;
 
+        int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
+        int testTimeout = (int)TimeSpan.FromSeconds(120).TotalSeconds;
+
         public Dictionary<string, LogLevel> monitorTests = new(){
-            { "ClusterDisklessSyncFailover", LogLevel.Trace }
+            { "ClusterDisklessSyncFailover", LogLevel.Error }
         };
 
         [SetUp]
         public virtual void Setup()
         {
             context = new ClusterTestContext();
-            context.Setup(monitorTests);
+            context.Setup(monitorTests, testTimeoutSeconds: testTimeout);
         }
 
         [TearDown]
@@ -105,7 +109,7 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaIndex = 1;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -146,7 +150,7 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaIndex = 1;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -201,7 +205,7 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaOneIndex = 1;
             var replicaTwoIndex = 2;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -275,7 +279,7 @@ namespace Garnet.test.cluster
             var replicaOneIndex = 1;
             var replicaTwoIndex = 2;
             var replicaThreeIndex = 3;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
@@ -318,7 +322,7 @@ namespace Garnet.test.cluster
 
             int[] nOffsets = [primary, replicaOne, replicaTwo];
 
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica
