@@ -106,8 +106,8 @@ namespace Garnet.cluster
                 // Started syncing
                 replicaSyncSession.SetStatus(SyncStatus.INPROGRESS);
 
-                var isLeader = GetSessionStore.GetSessions()[0] == replicaSyncSession;
                 // Only one thread will acquire this lock
+                var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
                 if (isLeader)
                 {
                     // Launch a background task to sync the attached replicas using streaming snapshot
@@ -141,13 +141,21 @@ namespace Garnet.cluster
             var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
             var disableObjects = ClusterProvider.serverOptions.DisableObjects;
 
-            NumSessions = GetSessionStore.GetNumSessions();
-            Sessions = GetSessionStore.GetSessions();
-
             try
             {
                 // Lock to avoid the addition of new replica sync sessions while sync is in progress
                 syncInProgress.WriteLock();
+
+                // Get sync session info
+                NumSessions = GetSessionStore.GetNumSessions();
+                Sessions = GetSessionStore.GetSessions();
+
+                // Wait for all replicas to reach initializing state
+                for (var i = 0; i < NumSessions; i++)
+                {
+                    while (!Sessions[i].InProgress)
+                        await Task.Yield();
+                }
 
                 // Take lock to ensure no other task will be taking a checkpoint
                 while (!ClusterProvider.storeWrapper.TryPauseCheckpoints())
@@ -158,25 +166,6 @@ namespace Garnet.cluster
 
                 // Stream checkpoint to replicas
                 await TakeStreamingCheckpoint();
-
-                // Stream Diskless
-                async Task TakeStreamingCheckpoint()
-                {
-                    // Main snapshot iterator manager
-                    var manager = new SnapshotIteratorManager(this, cts.Token, logger);
-
-                    // Iterate through main store
-                    var mainStoreResult = await ClusterProvider.storeWrapper.store.
-                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
-
-                    if (!ClusterProvider.serverOptions.DisableObjects)
-                    {
-                        // Iterate through object store
-                        var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
-                    }
-
-                    ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
-                }
 
                 // Notify sync session of success success
                 for (var i = 0; i < NumSessions; i++)
@@ -255,6 +244,25 @@ namespace Garnet.cluster
                     await WaitForFlush();
                     #endregion
                 }
+            }
+
+            // Stream Diskless
+            async Task TakeStreamingCheckpoint()
+            {
+                // Main snapshot iterator manager
+                var manager = new SnapshotIteratorManager(this, cts.Token, logger);
+
+                // Iterate through main store
+                var mainStoreResult = await ClusterProvider.storeWrapper.store.
+                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
+
+                if (!ClusterProvider.serverOptions.DisableObjects)
+                {
+                    // Iterate through object store
+                    var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
+                }
+
+                ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
             }
         }
     }
