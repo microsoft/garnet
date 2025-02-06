@@ -25,6 +25,7 @@ namespace Garnet.server
         public long TargetSize;
         public long ReadCacheTargetSize;
 
+        int isStarted = 0;
         private const int deltaFraction = 10; // 10% of target size
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
 
@@ -89,6 +90,10 @@ namespace Garnet.server
 
         public void Start(CancellationToken token)
         {
+            // Prevent multiple calls to Start
+            var prevIsStarted = Interlocked.CompareExchange(ref isStarted, 1, 0);
+            if (prevIsStarted == 1) return;
+
             mainLogTracker?.Start(token);
             readCacheTracker?.Start(token);
         }
