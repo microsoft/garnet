@@ -256,12 +256,15 @@ namespace Garnet.cluster
 
                 // Iterate through main store
                 var mainStoreResult = await ClusterProvider.storeWrapper.store.
-                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
+                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator).
+                    AsTask().WaitAsync(clusterTimeout, cts.Token);
 
                 if (!ClusterProvider.serverOptions.DisableObjects)
                 {
                     // Iterate through object store
-                    var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
+                    var objectStoreResult = await ClusterProvider.storeWrapper.objectStore.
+                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator).
+                        AsTask().WaitAsync(clusterTimeout, cts.Token);
                 }
 
                 ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
