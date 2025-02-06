@@ -195,7 +195,7 @@ namespace Tsavorite.test
                 if (currentEntry < entryLength)
                 {
                     // Span Batch only added first entry several times so have separate verification
-                    ClassicAssert.AreEqual((byte)entryFlag, *(payloadPtr+currentEntry));
+                    ClassicAssert.AreEqual((byte)entryFlag, *(payloadPtr + currentEntry));
                     currentEntry++;
                 }
             }
