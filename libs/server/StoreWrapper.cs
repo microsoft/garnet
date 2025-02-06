@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -228,19 +229,6 @@ namespace Garnet.server
                 databaseIdsStreamProvider = serverOptions.StreamProviderCreator();
             }
 
-            if (logger != null)
-            {
-                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
-                                        (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
-                if (objectStore != null)
-                    configMemoryLimit += (objectStore.IndexSize * 64) + objectStore.Log.MaxMemorySizeBytes +
-                                         (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                         (objectStoreSizeTracker?.TargetSize ?? 0) +
-                                         (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
-                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-            }
-
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
 
@@ -302,7 +290,6 @@ namespace Garnet.server
             null,
             storeWrapper.loggerFactory)
         {
-            this.clusterProvider = storeWrapper.clusterProvider;
             this.CopyDatabases(storeWrapper, recordToAof);
         }
 
@@ -618,7 +605,7 @@ namespace Garnet.server
                     if (dbIdsIdx > 0)
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                        TakeCheckpoint( ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
+                        CheckpointDatabases(StoreType.All, ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
                     }
                 }
             }
@@ -1179,17 +1166,17 @@ namespace Garnet.server
             // Wait for checkpoints to complete and disable checkpointing
             checkpointTaskLock.WriteLock();
 
-            // Disable changes to databases map and dispose all databases
-            databases.mapLock.WriteLock();
-            foreach (var db in databases.Map)
-                db.Dispose();
-
             itemBroker?.Dispose();
             monitor?.Dispose();
             ctsCommit?.Cancel();
 
             while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)
                 Thread.Yield();
+
+            // Disable changes to databases map and dispose all databases
+            databases.mapLock.WriteLock();
+            foreach (var db in databases.Map)
+                db.Dispose();
 
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
@@ -1228,25 +1215,7 @@ namespace Garnet.server
             }
 
             // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-            await CheckpointTask(StoreType.All, dbId, logger: logger);
-        }
-
-        /// <summary>
-        /// Take checkpoint
-        /// </summary>
-        /// <param name="tasks"></param>
-        /// <param name="storeType"></param>
-        /// <param name="logger"></param>
-        /// <param name="dbIds"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public bool TakeCheckpoint(ref int[] dbIds, ref Task[] tasks, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
-        {
-            // Prevent parallel checkpoint
-            if (!TryPauseCheckpoints()) return false;
-
-            MultiDatabaseCheckpoint(storeType, ref dbIds, ref tasks, logger, token);
-            return true;
+            await CheckpointTask(StoreType.All, dbId, lockAcquired: true, logger: logger);
         }
 
         /// <summary>
@@ -1264,7 +1233,8 @@ namespace Garnet.server
 
             if (!allowMultiDb || activeDbIdsSize == 1 || dbId != -1)
             {
-                var checkpointTask = Task.Run(async () => await CheckpointTask(StoreType.All, dbId, logger: logger), token);
+                if (dbId == -1) dbId = 0;
+                var checkpointTask = Task.Run(async () => await CheckpointTask(storeType, dbId, logger: logger), token);
                 if (background)
                     return true;
                 
@@ -1275,50 +1245,28 @@ namespace Garnet.server
             var activeDbIdsSnapshot = activeDbIds;
 
             var tasks = new Task[activeDbIdsSize];
-            return TakeCheckpoint(ref activeDbIdsSnapshot, ref tasks, logger: logger, token: token);
+            return CheckpointDatabases(storeType, ref activeDbIdsSnapshot, ref tasks, logger: logger, token: token);
         }
 
-        private async Task CheckpointDatabaseTask(int dbId, StoreType storeType, ILogger logger)
-        {
-            var databasesMapSnapshot = databases.Map;
-            var db = databasesMapSnapshot[dbId];
-            if (db.IsDefault()) return;
-
-            DoCompaction(ref db);
-            var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
-            var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
-
-            var full = db.LastSaveStoreTailAddress == 0 ||
-                       lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval ||
-                       (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
-                                                   lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
-
-            var tryIncremental = serverOptions.EnableIncrementalSnapshots;
-            if (db.MainStore.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                tryIncremental = false;
-            if (db.ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                tryIncremental = false;
-
-            var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-            await InitiateCheckpoint(dbId, db, full, checkpointType, tryIncremental, storeType, logger);
-            if (full)
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                    db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
-                if (storeType is StoreType.Object or StoreType.All)
-                    db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
-            }
-
-            var lastSave = DateTimeOffset.UtcNow;
-            if (dbId == 0)
-                lastSaveTime = lastSave;
-            db.LastSaveTime = lastSave;
-        }
-
-        private async Task CheckpointTask(StoreType storeType, int dbId = 0, ILogger logger = null)
+        /// <summary>
+        /// Asynchronously checkpoint a single database
+        /// </summary>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="dbId">ID of database to checkpoint (default: DB 0)</param>
+        /// <param name="lockAcquired">True if lock previously acquired</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        private async Task CheckpointTask(StoreType storeType, int dbId = 0, bool lockAcquired = false, ILogger logger = null)
         {
             try
             {
+                if (!lockAcquired)
+                {
+                    // Take lock to ensure no other task will be taking a checkpoint
+                    while (!TryPauseCheckpoints())
+                        await Task.Yield();
+                }
+
                 await CheckpointDatabaseTask(dbId, storeType, logger);
 
                 if (checkpointDatabaseIdsPath != null)
@@ -1334,11 +1282,23 @@ namespace Garnet.server
             }
         }
 
-        private void MultiDatabaseCheckpoint(StoreType storeType, ref int[] dbIds, ref Task[] tasks, ILogger logger = null, CancellationToken token = default)
+        /// <summary>
+        /// Asynchronously checkpoint multiple databases and wait for all to complete
+        /// </summary>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="dbIds">IDs of active databases to checkpoint</param>
+        /// <param name="tasks">Optional tasks to use for asynchronous execution (must be the same size as dbIds)</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if checkpointing already in progress</returns>
+        private bool CheckpointDatabases(StoreType storeType, ref int[] dbIds, ref Task[] tasks, ILogger logger = null, CancellationToken token = default)
         {
             try
             {
                 Debug.Assert(tasks != null);
+
+                // Prevent parallel checkpoint
+                if (!TryPauseCheckpoints()) return false;
 
                 var currIdx = 0;
                 if (dbIds == null)
@@ -1375,6 +1335,52 @@ namespace Garnet.server
             {
                 ResumeCheckpoints();
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Asynchronously checkpoint a single database
+        /// </summary>
+        /// <param name="dbId">ID of database to checkpoint</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        private async Task CheckpointDatabaseTask(int dbId, StoreType storeType, ILogger logger)
+        {
+            var databasesMapSnapshot = databases.Map;
+            var db = databasesMapSnapshot[dbId];
+            if (db.IsDefault()) return;
+
+            DoCompaction(ref db);
+            var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
+            var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
+
+            var full = db.LastSaveStoreTailAddress == 0 ||
+                       lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval ||
+                       (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
+                                                   lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
+
+            var tryIncremental = serverOptions.EnableIncrementalSnapshots;
+            if (db.MainStore.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                tryIncremental = false;
+            if (db.ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
+                tryIncremental = false;
+
+            var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
+            await InitiateCheckpoint(dbId, db, full, checkpointType, tryIncremental, storeType, logger);
+            if (full)
+            {
+                if (storeType is StoreType.Main or StoreType.All)
+                    db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
+                if (storeType is StoreType.Object or StoreType.All)
+                    db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
+            }
+
+            var lastSave = DateTimeOffset.UtcNow;
+            if (dbId == 0)
+                lastSaveTime = lastSave;
+            db.LastSaveTime = lastSave;
         }
 
         private async Task InitiateCheckpoint(int dbId, GarnetDatabase db, bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
@@ -1541,6 +1547,20 @@ namespace Garnet.server
             this.objectStoreSizeTracker = db.ObjectStoreSizeTracker;
             this.appendOnlyFile = db.AppendOnlyFile;
             this.versionMap = db.VersionMap;
+
+            // Log configured memory limit for each database
+            if (logger != null)
+            {
+                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
+                                        (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                        (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+                if (objectStore != null)
+                    configMemoryLimit += (objectStore.IndexSize * 64) + objectStore.Log.MaxMemorySizeBytes +
+                                         (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                         (objectStoreSizeTracker?.TargetSize ?? 0) +
+                                         (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
+                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+            }
         }
 
         /// <summary>

@@ -2228,7 +2228,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var reply = db.Execute("SELECT", "0");
             ClassicAssert.IsTrue(reply.ToString() == "OK");
-            Assert.Throws<RedisServerException>(() => db.Execute("SELECT", "1"));
+            Assert.Throws<RedisServerException>(() => db.Execute("SELECT", "17"));
 
             //select again the def db
             db.Execute("SELECT", "0");
@@ -2240,7 +2240,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = "-ERR invalid database index.\r\n+PONG\r\n";
-            var response = lightClientRequest.Execute("SELECT 1", "PING", expectedResponse.Length);
+            var response = lightClientRequest.Execute("SELECT 17", "PING", expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, response);
         }
 
