@@ -1169,7 +1169,7 @@ namespace Garnet.server
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (waitForAofBlocking)
                 {
-                    var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
+                    var task = storeWrapper.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);
@@ -1189,7 +1189,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
                 {
-                    var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
+                    var task = storeWrapper.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);

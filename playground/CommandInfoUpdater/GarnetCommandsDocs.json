@@ -612,6 +612,23 @@
     ]
   },
   {
+    "Command": "SAVE",
+    "Name": "SAVE",
+    "Summary": "Synchronously saves the database(s) to disk.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the total number of keys in all databases",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "SET",
     "Name": "SET",
     "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn\u0027t exist.",

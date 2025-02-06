@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -33,7 +34,7 @@ namespace Garnet.server
         /// <summary>
         /// Size Tracker for Object Store
         /// </summary>
-        public CacheSizeTracker ObjectSizeTracker;
+        public CacheSizeTracker ObjectStoreSizeTracker;
 
         /// <summary>
         /// Device used for AOF logging
@@ -69,16 +70,17 @@ namespace Garnet.server
 
         public GarnetDatabase(TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-            CacheSizeTracker objectSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile)
+            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile)
         {
             MainStore = mainStore;
             ObjectStore = objectStore;
-            ObjectSizeTracker = objectSizeTracker;
+            ObjectStoreSizeTracker = objectStoreSizeTracker;
             AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
             VersionMap = new WatchVersionMap(DefaultVersionMapSize);
             LastSaveStoreTailAddress = 0;
             LastSaveObjectStoreTailAddress = 0;
+            LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
         }
 
         public bool IsDefault() => MainStore == null;
@@ -91,6 +93,12 @@ namespace Garnet.server
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
+
+            if (ObjectStoreSizeTracker != null)
+            {
+                while (!ObjectStoreSizeTracker.Stopped)
+                    Thread.Yield();
+            }
 
             disposed = true;
         }

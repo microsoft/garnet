@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -156,7 +155,7 @@ namespace Garnet.server
 
         void CommitAof()
         {
-            storeWrapper.appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            storeWrapper.CommitAOFAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         private bool NetworkMonitor()
@@ -649,12 +648,18 @@ namespace Garnet.server
 
         private bool NetworkSAVE()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
+            var dbId = -1;
+            if (parseState.Count == 1)
+            {
+                parseState.TryGetInt(0, out dbId);
+            }
+
+            if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
@@ -689,7 +694,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);
+            var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger: logger);
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))

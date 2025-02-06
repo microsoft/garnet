@@ -3,7 +3,6 @@
 
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -32,17 +31,17 @@ namespace Garnet.server
         /// <summary>
         /// Wait for commit
         /// </summary>
-        public ValueTask WaitForCommitAsync(CancellationToken token = default) => storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.WaitForCommitAsync(token: token) : ValueTask.CompletedTask;
+        public ValueTask WaitForCommitAsync(CancellationToken token = default) => storeWrapper.WaitForCommitAsync(token: token);
 
         /// <summary>
         /// Wait for commit
         /// </summary>
-        public void WaitForCommit() => storeWrapper.appendOnlyFile?.WaitForCommit();
+        public void WaitForCommit() => storeWrapper.WaitForCommit();
 
         /// <summary>
         /// Commit AOF
         /// </summary>
-        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.CommitAsync(null, token) : ValueTask.CompletedTask;
+        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.CommitAOFAsync(token);
 
         /// <summary>
         /// Flush DB (delete all keys)
