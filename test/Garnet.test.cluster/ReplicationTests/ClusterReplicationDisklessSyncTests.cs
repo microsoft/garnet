@@ -26,7 +26,9 @@ namespace Garnet.test.cluster
         protected bool useTLS = false;
         protected bool asyncReplay = false;
 
-        public Dictionary<string, LogLevel> monitorTests = [];
+        public Dictionary<string, LogLevel> monitorTests = new(){
+            { "ClusterDisklessSyncFailover", LogLevel.Trace }
+        };
 
         [SetUp]
         public virtual void Setup()
