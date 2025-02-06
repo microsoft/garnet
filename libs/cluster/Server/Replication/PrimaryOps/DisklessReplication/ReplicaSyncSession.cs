@@ -27,6 +27,8 @@ namespace Garnet.cluster
 
         public bool Failed => ssInfo.syncStatus == SyncStatus.FAILED;
 
+        public bool InProgress => ssInfo.syncStatus == SyncStatus.INPROGRESS;
+
         public SyncStatusInfo GetSyncStatusInfo => ssInfo;
 
         public long currentStoreVersion;
