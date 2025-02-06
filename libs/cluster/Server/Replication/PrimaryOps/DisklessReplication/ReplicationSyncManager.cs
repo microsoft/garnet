@@ -120,8 +120,10 @@ namespace Garnet.cluster
                 // If session faulted return early
                 if (replicaSyncSession.Failed)
                 {
-                    replicaSyncSession.LogError();
-                    return replicaSyncSession.GetSyncStatusInfo;
+                    var status = replicaSyncSession.GetSyncStatusInfo;
+                    var msg = $"{status.syncStatus}:{status.error}";
+                    logger?.LogSyncMetadata(LogLevel.Error, msg, replicaSyncSession.replicaSyncMetadata);
+                    return status;
                 }
 
                 // Start AOF sync background task for this replica

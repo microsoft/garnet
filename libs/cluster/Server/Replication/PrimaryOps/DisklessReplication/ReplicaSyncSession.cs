@@ -43,13 +43,15 @@ namespace Garnet.cluster
         /// <summary>
         /// LogError
         /// </summary>
-        public void LogError()
+        public void LogMetadata(LogLevel logLevel)
         {
-            logger?.LogError("{msg} > " +
+            logger?.Log(logLevel,
+                "{status} {msg} > " +
                 "originNodeId: {originNodeId}, " +
                 "currentPrimaryReplId: {currentPrimaryReplId}, " +
                 "currentAofBeginAddress: {currentAofBeginAddress}, " +
                 "currentAofTailAddress: {currentAofTailAddress}, ",
+                ssInfo.syncStatus,
                 ssInfo.error,
                 replicaSyncMetadata.originNodeId,
                 replicaSyncMetadata.currentPrimaryReplId,
@@ -278,6 +280,8 @@ namespace Garnet.cluster
                     SetStatus(SyncStatus.FAILED, "Failed to parse recovery offset");
                     return;
                 }
+
+                logger?.LogSyncMetadata(LogLevel.Trace, "BeginAofSync", replicaSyncMetadata, recoverSyncMetadata);
 
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
