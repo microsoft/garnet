@@ -67,8 +67,7 @@ dotnet run -c Release -f net8.0 -- -i 512m
 
 Garnet uses the RESP protocol, so you can use any Redis client in your favorite client language to talk to the Garnet server. For C# applications, you can either use StackExchange.Redis or our own C# client, called GarnetClient.
 
-On Windows, Yon use <a href="https://github.com/RedisInsight/RedisInsight" target="_blank">RedisInsight</a> which has a graphical interface and a cli, or install 
-<a href="https://www.memurai.com/" target="_blank">Memurai</a> (which offers Redis on Windows) and use their **memurai-cli** command line tool. You can also use **redis-cli** on WSL with below configuration. If it doesn't work then you use [Mirrored networking mode](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) in Windows 11 22H2 or later.
+On Windows, Yon use <a href="https://github.com/RedisInsight/RedisInsight" target="_blank">RedisInsight</a> which has a graphical interface and a cli, or install <a href="https://www.memurai.com/" target="_blank">Memurai</a> (which offers Redis on Windows) and use their **memurai-cli** command line tool. You can also use **redis-cli** on WSL with below configuration. If it doesn't work then you use [Mirrored networking mode](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) in Windows 11 22H2 or later.
 
 - Start GarnetServer in Windows, listening to `0.0.0.0` (IPAddress.Any). Use the argument `--bind 0.0.0.0` if necessary.
 - Add `GarnetServer.exe` to firewall exceptions (Windows Defender Firewall -> Allow an app through Windows Firewall)
