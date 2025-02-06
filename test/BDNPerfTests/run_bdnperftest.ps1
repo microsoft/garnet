@@ -9,7 +9,7 @@
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
 
-    NOTE: If adding a new BDN perf test to the BDN_Benchmark_Config.json, then need to add to the "test: [..." line in the ce-bdnbenchmark.yml
+    NOTE: If adding a new BDN perf test to the BDN_Benchmark_Config.json, then need to add to the "test: [..." line in the ci-bdnbenchmark.yml
     
 .EXAMPLE
     ./run_bdnperftest.ps1
@@ -140,7 +140,7 @@ $testProperties = $json.$currentTest
 
 # create a matrix of expected results for specific test
 $splitTextArray = New-Object 'string[]' 3
-$expectedResultsArray = New-Object 'string[,]' 70, 3
+$expectedResultsArray = New-Object 'string[,]' 100, 3
 
 [int]$currentRow = 0
 
