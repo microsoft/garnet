@@ -1,10 +1,14 @@
 ﻿using System.Linq;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Garnet.common;
 
 namespace Garnet.test
 {
@@ -27,7 +31,9 @@ namespace Garnet.test
             var db1Key1 = "db1:key1";
             var db1Key2 = "db1:key2";
             var db2Key1 = "db2:key1";
-            var db2Key2 = "db2:key1";
+            var db2Key2 = "db2:key2";
+            var db12Key1 = "db12:key1";
+            var db12Key2 = "db12:key1";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db1 = redis.GetDatabase(0);
@@ -44,6 +50,34 @@ namespace Garnet.test
 
             ClassicAssert.IsFalse(db1.KeyExists(db2Key1));
             ClassicAssert.IsFalse(db1.KeyExists(db2Key2));
+
+            var db12 = redis.GetDatabase(11);
+            ClassicAssert.IsFalse(db12.KeyExists(db1Key1));
+            ClassicAssert.IsFalse(db12.KeyExists(db1Key2));
+
+            db2.StringSet(db12Key2, "db12:value2");
+            db2.SetAdd(db12Key2, [new RedisValue("db12:val2"), new RedisValue("db12:val2")]);
+
+            ClassicAssert.IsFalse(db12.KeyExists(db12Key1));
+            ClassicAssert.IsFalse(db12.KeyExists(db12Key2));
+        }
+
+        [Test]
+        public void MultiDatabaseBasicSelectErroneousTestSE()
+        {
+            var db1Key1 = "db1:key1";
+            var db1Key2 = "db1:key2";
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key1";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db1 = redis.GetDatabase(0);
+
+            db1.StringSet(db1Key1, "db1:value1");
+            db1.ListLeftPush(db1Key2, [new RedisValue("db1:val1"), new RedisValue("db1:val2")]);
+
+            var db17 = redis.GetDatabase(17);
+            Assert.Throws<RedisCommandException>(() => db17.StringSet(db1Key1, "db1:value1"), "The database does not exist on the server: 17");
         }
 
         [Test]
@@ -53,16 +87,22 @@ namespace Garnet.test
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db1 = redis.GetDatabase(0);
-            db1.StringSet(key1, "db1:value1");
+            db1.StringSet(key1, "db1:val1");
 
             var db2 = redis.GetDatabase(1);
-            db2.SetAdd(key1, [new RedisValue("db2:val2"), new RedisValue("db2:val2")]);
+            db2.SetAdd(key1, [new RedisValue("db2:val1"), new RedisValue("db2:val2")]);
+
+            var db12 = redis.GetDatabase(11);
+            db12.ListLeftPush(key1, [new RedisValue("db12:val1"), new RedisValue("db12:val2")]);
 
             var db1val = db1.StringGet(key1);
-            ClassicAssert.AreEqual("db1:value1", db1val.ToString());
+            ClassicAssert.AreEqual("db1:val1", db1val.ToString());
 
-            var db2val = db2.SetPop(key1);
-            ClassicAssert.AreEqual("db2:val2", db2val.ToString());
+            var db2val = db2.SetMembers(key1);
+            CollectionAssert.AreEquivalent(db2val, new[] {new RedisValue("db2:val1"), new RedisValue("db2:val2")});
+
+            var db12val = db12.ListLeftPop(key1);
+            ClassicAssert.AreEqual("db12:val2", db12val.ToString());
         }
 
         [Test]
@@ -139,6 +179,118 @@ namespace Garnet.test
             expectedResponse = ":1\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void MultiDatabaseSelectMultithreadedTestSE()
+        {
+            // Create a set of tuples (db-id, key, value)
+            var dbCount = 16;
+            var keyCount = 16;
+            var tuples = GenerateDataset(dbCount, keyCount);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            // In parallel, add each (key, value) pair to a database of id db-id
+            var kvBag = new ConcurrentBag<(int, string, string)>(tuples);
+            var tasks = new Task[dbCount * keyCount];
+            for (var i = 0; i < tasks.Length; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    kvBag.TryTake(out var tup);
+                    var db = redis.GetDatabase(tup.Item1);
+                    return db.StringSet(tup.Item2, tup.Item3);
+                });
+            }
+
+            // Wait for all tasks to finish
+            Task.WaitAll(tasks);
+
+            // Check that all tasks successfully entered the data to the respective database
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
+
+            // In parallel, retrieve the actual value for each db-id and key
+            kvBag = new(tuples);
+            for (var i = 0; i < tasks.Length; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    kvBag.TryTake(out var tup);
+                    var db = redis.GetDatabase(tup.Item1);
+                    var actualValue = db.StringGet(tup.Item2);
+                    return (tup.Item1, tup.Item2, actualValue.ToString());
+                });
+            }
+
+            // Wait for all tasks to finish
+            Task.WaitAll(tasks);
+
+            // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
+            var results = tasks.Select(t => ((Task<(int, string, string)>)t).Result);
+            Assert.That(results, Is.EquivalentTo(tuples));
+        }
+
+        [Test]
+        public void MultiDatabaseSelectMultithreadedTestLC()
+        {
+            // Create a set of tuples (db-id, key, value)
+            var dbCount = 16;
+            var keyCount = 16;
+            var tuples = GenerateDataset(dbCount, keyCount);
+
+            // Create multiple LC request objects to be used
+            var lcRequests = new BlockingCollection<LightClientRequest>();
+            for (var i = 0; i < 16; i++)
+            {
+                lcRequests.Add(TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes));
+            }
+
+            // In parallel, add each (key, value) pair to a database of id db-id
+            var kvBag = new ConcurrentBag<(int, string, string)>(tuples);
+            var tasks = new Task[dbCount * keyCount];
+            for (var i = 0; i < tasks.Length; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    kvBag.TryTake(out var tup);
+                    var expectedResponse = "+OK\r\n+OK\r\n";
+                    var lcRequest = lcRequests.Take();
+                    var response = lcRequest.Execute($"SELECT {tup.Item1}", $"SET {tup.Item2} {tup.Item3}", expectedResponse.Length);
+                    lcRequests.Add(lcRequest);
+                    return expectedResponse == response;
+                });
+            }
+
+            // Wait for all tasks to finish
+            Task.WaitAll(tasks);
+
+            // Check that all tasks successfully entered the data to the respective database
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
+
+            // In parallel, retrieve the actual value for each db-id and key
+            kvBag = new(tuples);
+            for (var i = 0; i < tasks.Length; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    kvBag.TryTake(out var tup);
+                    var expectedResponse = $"+OK\r\n${tup.Item3.Length}\r\n{tup.Item3}\r\n";
+                    var lcRequest = lcRequests.Take();
+                    var response = lcRequest.Execute($"SELECT {tup.Item1}", $"GET {tup.Item2}", expectedResponse.Length);
+                    lcRequests.Add(lcRequest);
+                    return expectedResponse == response;
+                });
+            }
+
+            // Wait for all tasks to finish
+            Task.WaitAll(tasks);
+
+            // Check that all the tasks retrieved the correct value successfully
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
+
+            while (lcRequests.TryTake(out var client))
+                client.Dispose();
         }
 
         [Test]
@@ -337,6 +489,21 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        private List<(int, string, string)> GenerateDataset(int dbCount, int keyCount)
+        {
+            var data = new List<(int, string, string)>();
+
+            for (var dbId = 0; dbId < dbCount; dbId++)
+            {
+                for (var keyId = 0; keyId < keyCount; keyId++)
+                {
+                    data.Add((dbId, $"key{keyId}", $"db{dbId}:val{keyId}"));
+                }
+            }
+
+            return data;
         }
     }
 }
