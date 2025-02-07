@@ -321,9 +321,9 @@ namespace Garnet
             mainStoreCheckpointDir = Path.Combine(checkpointDir, "Store");
             var baseName = Path.Combine(mainStoreCheckpointDir, $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
-            
-            kvSettings.CheckpointManager = opts.EnableCluster ? 
-                clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: true, logger) : 
+
+            kvSettings.CheckpointManager = opts.EnableCluster ?
+                clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: true, logger) :
                 new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
 
             return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
@@ -348,7 +348,7 @@ namespace Garnet
             var baseName = Path.Combine(checkpointDir, "ObjectStore", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
-            objKvSettings.CheckpointManager = opts.EnableCluster ? 
+            objKvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: false, logger) :
                 new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
 

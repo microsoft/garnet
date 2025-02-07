@@ -14,7 +14,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using static System.Collections.Specialized.BitVector32;
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
@@ -33,7 +32,7 @@ namespace Garnet.server
         private readonly ObjectInput objectStoreInput;
         private readonly CustomProcedureInput customProcInput;
         private readonly SessionParseState parseState;
-        
+
         int activeDbId;
 
         /// <summary>

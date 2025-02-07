@@ -1,14 +1,14 @@
-﻿using System.Linq;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Garnet.common;
 
 namespace Garnet.test
 {
@@ -21,7 +21,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory:true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -99,7 +99,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("db1:val1", db1val.ToString());
 
             var db2val = db2.SetMembers(key1);
-            CollectionAssert.AreEquivalent(db2val, new[] {new RedisValue("db2:val1"), new RedisValue("db2:val2")});
+            CollectionAssert.AreEquivalent(db2val, new[] { new RedisValue("db2:val1"), new RedisValue("db2:val2") });
 
             var db12val = db12.ListLeftPop(key1);
             ClassicAssert.AreEqual("db12:val2", db12val.ToString());
@@ -441,8 +441,8 @@ namespace Garnet.test
         {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
-            var db1data = new SortedSetEntry[]{ new("db1:a", 1), new("db1:b", 2), new("db1:c", 3) };
-            var db2data = new SortedSetEntry[]{ new("db2:a", -1), new("db2:b", -2), new("db2:c", -3) };
+            var db1data = new SortedSetEntry[] { new("db1:a", 1), new("db1:b", 2), new("db1:c", 3) };
+            var db2data = new SortedSetEntry[] { new("db2:a", -1), new("db2:b", -2), new("db2:c", -3) };
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {

@@ -6,7 +6,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -142,10 +141,10 @@ namespace Garnet.server
 
         // True if this server supports more than one logical database
         readonly bool allowMultiDb;
-        
+
         // Map of databases by database ID (by default: of size 1, contains only DB 0)
-        ExpandableMap<GarnetDatabase> databases; 
-        
+        ExpandableMap<GarnetDatabase> databases;
+
         // Array containing active database IDs
         int[] activeDbIds;
 
@@ -169,7 +168,7 @@ namespace Garnet.server
 
         // Path of serialization for the DB IDs file used when committing / recovering to / from AOF
         readonly string aofDatabaseIdsPath;
-        
+
         // Path of serialization for the DB IDs file used when committing / recovering to / from a checkpoint
         readonly string checkpointDatabaseIdsPath;
 
@@ -341,7 +340,7 @@ namespace Garnet.server
 
             if (dbId == 0)
                 return new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
-            
+
             if (!this.TryGetOrAddDatabase(dbId, out var db))
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
@@ -615,7 +614,7 @@ namespace Garnet.server
                             break;
                         }
                     }
-                    
+
                     if (dbIdsIdx > 0)
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
@@ -1251,7 +1250,7 @@ namespace Garnet.server
                 var checkpointTask = Task.Run(async () => await CheckpointTask(storeType, dbId, logger: logger), token);
                 if (background)
                     return true;
-                
+
                 checkpointTask.Wait(token);
                 return true;
             }
@@ -1319,7 +1318,7 @@ namespace Garnet.server
                 {
                     var activeDbIdsSize = activeDbIdsLength;
                     var activeDbIdsSnapshot = activeDbIds;
-                    while(currIdx < activeDbIdsSize)
+                    while (currIdx < activeDbIdsSize)
                     {
                         var dbId = activeDbIdsSnapshot[currIdx];
                         tasks[currIdx] = CheckpointDatabaseTask(dbId, storeType, logger);
@@ -1650,7 +1649,7 @@ namespace Garnet.server
                 // Set an updated instance of activeDbIds
                 var activeDbIdsSnapshot = activeDbIds;
                 var activeDbIdsUpdated = new int[newSize];
-                
+
                 if (activeDbIdsSnapshot != null)
                 {
                     Array.Copy(activeDbIdsSnapshot, activeDbIdsUpdated, dbIdIdx);
