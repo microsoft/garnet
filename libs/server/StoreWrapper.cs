@@ -57,14 +57,14 @@ namespace Garnet.server
         public DateTimeOffset lastSaveTime;
 
         /// <summary>
+        /// Object store size tracker (of DB 0)
+        /// </summary>
+        public CacheSizeTracker objectStoreSizeTracker;
+
+        /// <summary>
         /// Version map (of DB 0)
         /// </summary>
         internal WatchVersionMap versionMap;
-
-        /// <summary>
-        /// Object store size tracker (of DB 0)
-        /// </summary>
-        internal CacheSizeTracker objectStoreSizeTracker;
 
         /// <summary>
         /// Server options
@@ -72,9 +72,14 @@ namespace Garnet.server
         public readonly GarnetServerOptions serverOptions;
 
         /// <summary>
+        /// Subscribe broker
+        /// </summary>
+        public readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+
+        /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp GetTcpServer() => (GarnetServerTcp)server;
+        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
 
         /// <summary>
         /// Access control list governing all commands
@@ -125,6 +130,7 @@ namespace Garnet.server
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly IClusterProvider clusterProvider;
+        internal readonly SlowLogContainer slowLogContainer;
         internal readonly ILogger sessionLogger;
         internal long safeAofAddress = -1;
 
@@ -180,6 +186,7 @@ namespace Garnet.server
             DatabaseCreatorDelegate createsDatabaseDelegate,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
             bool createDefaultDatabase = true,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
@@ -190,6 +197,7 @@ namespace Garnet.server
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.serverOptions = serverOptions;
+            this.subscribeBroker = subscribeBroker;
             this.lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
             this.createDatabasesDelegate = createsDatabaseDelegate;
@@ -228,6 +236,9 @@ namespace Garnet.server
             {
                 databaseIdsStreamProvider = serverOptions.StreamProviderCreator();
             }
+
+            if (serverOptions.SlowLogThreshold > 0)
+                this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
@@ -285,6 +296,7 @@ namespace Garnet.server
             storeWrapper.createDatabasesDelegate,
             storeWrapper.customCommandManager,
             storeWrapper.serverOptions,
+            storeWrapper.subscribeBroker,
             createDefaultDatabase: false,
             storeWrapper.accessControlList,
             null,
@@ -299,7 +311,9 @@ namespace Garnet.server
         /// <returns></returns>
         public string GetIp()
         {
-            var localEndpoint = GetTcpServer().GetEndPoint;
+            if (TcpServer.EndPoint is not IPEndPoint localEndpoint)
+                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
+
             if (localEndpoint.Address.Equals(IPAddress.Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
@@ -1554,20 +1568,6 @@ namespace Garnet.server
             this.objectStoreSizeTracker = db.ObjectStoreSizeTracker;
             this.appendOnlyFile = db.AppendOnlyFile;
             this.versionMap = db.VersionMap;
-
-            // Log configured memory limit for each database
-            if (logger != null)
-            {
-                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes +
-                                        (store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
-                if (objectStore != null)
-                    configMemoryLimit += (objectStore.IndexSize * 64) + objectStore.Log.MaxMemorySizeBytes +
-                                         (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                         (objectStoreSizeTracker?.TargetSize ?? 0) +
-                                         (objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
-                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
-            }
         }
 
         /// <summary>

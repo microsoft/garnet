@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -18,6 +19,7 @@ using Tsavorite.core;
 
 namespace Garnet
 {
+    using static System.Formats.Asn1.AsnWriter;
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
@@ -166,18 +168,20 @@ namespace Garnet
                 var magenta = "\u001b[35m";
                 var normal = "\u001b[0m";
 
-                Console.WriteLine($@"{red}    _________
-   /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
-   '. \   / .'      {normal}Port: {opts.Port}{red}
-     '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
-       '.'
-{normal}");
+                Console.WriteLine($"""
+                    {red}    _________
+                       /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
+                       '. \   / .'      {normal}Listening on: {opts.EndPoint}{red}
+                         '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
+                           '.'
+                    {normal}
+                    """);
             }
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
-            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Port: {port}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.Port);
+            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoint);
 
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
@@ -228,11 +232,33 @@ namespace Garnet
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
+            if (opts.EndPoint is UnixDomainSocketEndPoint)
+            {
+                // Delete existing unix socket file, if it exists.
+                File.Delete(opts.UnixSocketPath);
+            }
+
             // Create Garnet TCP server if none was provided.
-            this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
+            this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax,
+                opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
 
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, createDatabaseDelegate,
-                customCommandManager, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+                customCommandManager, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+
+            if (logger != null)
+            {
+                var configMemoryLimit = (storeWrapper.store.IndexSize * 64) +
+                                        storeWrapper.store.Log.MaxMemorySizeBytes +
+                                        (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                        (storeWrapper.appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+                if (storeWrapper.objectStore != null)
+                    configMemoryLimit += storeWrapper.objectStore.IndexSize * 64 +
+                                         storeWrapper.objectStore.Log.MaxMemorySizeBytes +
+                                         (storeWrapper.objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
+                                         (storeWrapper.objectStoreSizeTracker?.TargetSize ?? 0) +
+                                         (storeWrapper.objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
+                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+            }
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
@@ -247,7 +273,8 @@ namespace Garnet
             LoadModules(customCommandManager);
         }
 
-        private GarnetDatabase CreateDatabase(int dbId, ClusterFactory clusterFactory, CustomCommandManager customCommandManager, out string storeCheckpointDir, out string aofDir)
+        private GarnetDatabase CreateDatabase(int dbId, ClusterFactory clusterFactory,
+            CustomCommandManager customCommandManager, out string storeCheckpointDir, out string aofDir)
         {
             var store = CreateMainStore(dbId, clusterFactory, out var checkpointDir, out storeCheckpointDir);
             var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, checkpointDir,

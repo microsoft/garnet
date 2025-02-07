@@ -618,6 +618,43 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
+        "Command": "CLUSTER_PUBLISH",
+        "Name": "CLUSTER|PUBLISH",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Loading, NoScript, PubSub, Stale",
+        "FirstKey": 1,
+        "LastKey": 1,
+        "Step": 1,
+        "AclCategories": "Admin, PubSub, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Loading, NoScript, PubSub, Stale",
+        "FirstKey": 1,
+        "LastKey": 1,
+        "Step": 1,
+        "AclCategories": "Admin, PubSub, Slow, Garnet",
+        "KeySpecifications": [
+          {
+            "BeginSearch": {
+              "TypeDiscriminator": "BeginSearchIndex",
+              "Index": 1
+            },
+            "FindKeys": {
+              "TypeDiscriminator": "FindKeysRange",
+              "LastKey": 0,
+              "KeyStep": 1,
+              "Limit": 0
+            },
+            "Flags": "RO"
+          }
+        ]
+      },
+      {
         "Command": "CLUSTER_BUMPEPOCH",
         "Name": "CLUSTER|BUMPEPOCH",
         "Arity": 2,
@@ -1724,7 +1761,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Hash, Write, Admin, Garnet",
+    "AclCategories": "Admin, Hash, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -4116,6 +4153,55 @@
     "AclCategories": "Admin, Dangerous, Slow"
   },
   {
+    "Command": "SLOWLOG",
+    "Name": "SLOWLOG",
+    "Arity": -2,
+    "AclCategories": "Slow",
+    "SubCommands": [
+      {
+        "Command": "SLOWLOG_GET",
+        "Name": "SLOWLOG|GET",
+        "Arity": -2,
+        "Flags": "Admin, Loading, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "nondeterministic_output"
+        ]
+      },
+      {
+        "Command": "SLOWLOG_HELP",
+        "Name": "SLOWLOG|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
+        "Command": "SLOWLOG_LEN",
+        "Name": "SLOWLOG|LEN",
+        "Arity": 2,
+        "Flags": "Admin, Loading, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:agg_sum",
+          "nondeterministic_output"
+        ]
+      },
+      {
+        "Command": "SLOWLOG_RESET",
+        "Name": "SLOWLOG|RESET",
+        "Arity": 2,
+        "Flags": "Admin, Loading, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      }
+    ]
+  },
+  {
     "Command": "SMEMBERS",
     "Name": "SMEMBERS",
     "Arity": 2,
@@ -4348,6 +4434,56 @@
     "AclCategories": "PubSub, Slow"
   },
   {
+    "Command": "SSUBSCRIBE",
+    "Name": "SSUBSCRIBE",
+    "Arity": -2,
+    "Flags": "Loading, NoScript, PubSub, Stale",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "PubSub, Slow, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "SPUBLISH",
+    "Name": "SPUBLISH",
+    "Arity": 3,
+    "Flags": "Loading, NoScript, PubSub, Stale",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "PubSub, Slow, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ]
+  },
+  {
     "Command": "SUBSTR",
     "Name": "SUBSTR",
     "Arity": 4,
@@ -4500,6 +4636,13 @@
         "Flags": "RO"
       }
     ]
+  },
+  {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Arity": 1,
+    "Flags": "NoScript, Loading, Stale, Fast",
+    "AclCategories": "Admin, Fast, Dangerous"
   },
   {
     "Command": "UNLINK",

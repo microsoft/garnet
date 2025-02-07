@@ -102,6 +102,15 @@ namespace Garnet.server
 
         #endregion
 
+        #region MSETNX
+        /// <summary>
+        /// MSETNX
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        GarnetStatus MSET_Conditional(ref RawStringInput input);
+        #endregion
+
         #region APPEND
 
         /// <summary>
@@ -1270,6 +1279,16 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns the number of elements in the sorted set at key with a score between min and max.
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="minScore">Min Score</param>
+        /// <param name="maxScore">Max score</param>
+        /// <param name="numElements">Number of elements</param>
+        /// <returns></returns>
+        GarnetStatus SortedSetCount(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements);
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.

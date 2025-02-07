@@ -317,7 +317,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2data, db2DataBeforeRecovery);
 
                 // Issue and wait for DB save
-                var garnetServer = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 garnetServer.Save(SaveType.BackgroundSave);
                 while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
@@ -365,7 +365,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2data, db2DataBeforeRecovery);
 
                 // Issue and wait for DB save
-                var garnetServer = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 garnetServer.Save(SaveType.BackgroundSave);
                 while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }

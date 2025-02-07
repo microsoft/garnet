@@ -7,6 +7,7 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
@@ -314,6 +315,14 @@ namespace Garnet
         public bool? LatencyMonitor { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
+        public int SlowLogThreshold { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-max-len", Required = false, HelpText = "Maximum number of slow log entries to keep.")]
+        public int SlowLogMaxEntries { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
         public int MetricsSamplingFrequency { get; set; }
 
@@ -526,6 +535,16 @@ namespace Garnet
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 
+        [FilePathValidation(false, true, false)]
+        [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
+        public string UnixSocketPath { get; set; }
+
+
+        [IntRangeValidation(0, 777, isRequired: false)]
+        [SupportedOSValidation(isRequired: false, nameof(OSPlatform.Linux), nameof(OSPlatform.OSX), nameof(OSPlatform.FreeBSD))]
+        [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
+        public int UnixSocketPermission { get; set; }
+
         [IntRangeValidation(1, 256, isRequired: false)]
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
@@ -589,9 +608,30 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            var address = !string.IsNullOrEmpty(this.Address) && this.Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                ? IPAddress.Loopback.ToString()
-                : this.Address;
+            EndPoint endpoint;
+            if (!string.IsNullOrEmpty(UnixSocketPath))
+            {
+                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
+            }
+            else
+            {
+                IPAddress address;
+                if (string.IsNullOrEmpty(Address))
+                {
+                    address = IPAddress.Any;
+                }
+                else
+                {
+                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
+                        address = IPAddress.Loopback;
+                    else
+                        address = IPAddress.Parse(Address);
+                }
+                endpoint = new IPEndPoint(address, Port);
+            }
+
+            // Unix file permission octal to UnixFileMode
+            var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
 
             var revivBinRecordSizes = this.RevivBinRecordSizes?.ToArray();
             var revivBinRecordCounts = this.RevivBinRecordCounts?.ToArray();
@@ -635,10 +675,14 @@ namespace Garnet
                 CompactionForceDelete = true;
             }
 
+            if (SlowLogThreshold > 0)
+            {
+                if (SlowLogThreshold < 100)
+                    throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
+            }
             return new GarnetServerOptions(logger)
             {
-                Port = Port,
-                Address = address,
+                EndPoint = endpoint,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
@@ -705,6 +749,8 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                SlowLogThreshold = SlowLogThreshold,
+                SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,
@@ -746,6 +792,8 @@ namespace Garnet
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
+                UnixSocketPath = UnixSocketPath,
+                UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
             };
         }

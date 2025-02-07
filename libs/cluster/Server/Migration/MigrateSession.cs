@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -150,8 +151,7 @@ namespace Garnet.cluster
 
             // Single key value size + few bytes for command header and arguments
             _gcs = new(
-                _targetAddress,
-                _targetPort,
+                new IPEndPoint(IPAddress.Parse(_targetAddress), _targetPort),
                 networkBufferSettings: GetNetworkBufferSettings,
                 networkPool: GetNetworkPool,
                 clusterProvider?.serverOptions.TlsOptions?.TlsClientOptions,
