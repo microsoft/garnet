@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -23,23 +22,19 @@ namespace Garnet.cluster
             errorMessage = null;
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
             {
-                var status = TryAttachDisklessSync(replicaSyncMetadata).GetAwaiter().GetResult();
+                if (!replicationSyncManager.AddReplicaSyncSession(replicaSyncMetadata, out var replicaSyncSession))
+                {
+                    replicaSyncSession?.Dispose();
+                    errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
+                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
+                }
+
+                var status = replicationSyncManager.ReplicationSyncDriver(replicaSyncSession).GetAwaiter().GetResult();
                 if (status.syncStatus == SyncStatus.FAILED)
                     errorMessage = Encoding.ASCII.GetBytes(status.error);
             }
 
             return true;
-
-            async Task<SyncStatusInfo> TryAttachDisklessSync(SyncMetadata replicaSyncMetadata)
-            {
-                if (!replicationSyncManager.AddSyncSession(replicaSyncMetadata, out var replicaSyncSession))
-                {
-                    replicaSyncSession?.Dispose();
-                    return new() { syncStatus = SyncStatus.FAILED, error = "failed to add sync session" };
-                }
-
-                return await replicationSyncManager.MainDisklessSync(replicaSyncSession);
-            }
         }
 
         /// <summary>
