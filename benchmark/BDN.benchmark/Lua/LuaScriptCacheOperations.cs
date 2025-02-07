@@ -46,7 +46,7 @@ namespace BDN.benchmark.Lua
 
             server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = options });
             storeWrapper = server.StoreWrapper;
-            sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator());
+            sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator(), null);
             session = server.GetRespSession();
 
             outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);

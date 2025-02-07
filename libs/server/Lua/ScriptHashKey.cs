@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace Garnet.server
 {
@@ -44,15 +45,20 @@ namespace Garnet.server
         {
             Debug.Assert(SessionScriptCache.SHA1Len == 40, "Making a hard assumption that we're comparing 40 bytes");
 
+            // We make an assumption that, since we're comparing hashes, if this is called
+            // it will _probably_ return true.  So unconditionally check all 40 bytes in
+            // as few instructions as possible.
+
             var a = ptr;
             var b = other.ptr;
 
-            return
-                *(a++) == *(b++) &&
-                *(a++) == *(b++) &&
-                *(a++) == *(b++) &&
-                *(a++) == *(b++) &&
-                *(a++) == *(b++);
+            var aVec1 = Vector256.Load(a);
+            var aVec2 = Vector256.Load(a + 1);
+
+            var bVec1 = Vector256.Load(b);
+            var bVec2 = Vector256.Load(b + 1);
+
+            return Vector256.EqualsAll(aVec1, bVec1) & Vector256.EqualsAll(aVec2, bVec2);
         }
 
         /// <inheritdoc />
