@@ -19,7 +19,6 @@ using Tsavorite.core;
 
 namespace Garnet
 {
-    using static System.Formats.Asn1.AsnWriter;
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
