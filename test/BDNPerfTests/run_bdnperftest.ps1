@@ -219,8 +219,8 @@ Get-Content $resultsFile | ForEach-Object {
     # Get a value
     for ($currentExpectedProp = 0; $currentExpectedProp -lt $totalExpectedResultValues; $currentExpectedProp++) {
 
-        # Check if the line contains the method name
-        if ($line -match [regex]::Escape($expectedResultsArray[$currentExpectedProp, 0])) {
+        # Check if the line contains the exact method name by using word boundaries
+        if ($line -match [regex]::Escape($expectedResultsArray[$currentExpectedProp, 0]) + "\b") {
 
             # Found the method in the results, now check the param we looking for is in the line
             if ($line -match [regex]::Escape($expectedResultsArray[$currentExpectedProp, 1])) {
