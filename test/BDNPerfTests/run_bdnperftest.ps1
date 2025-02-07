@@ -216,6 +216,11 @@ $testSuiteResult = $true
 Get-Content $resultsFile | ForEach-Object {
     $line = $_
 
+    # Skip lines that don't start with |
+    if (-not $line.StartsWith("|")) {
+        return
+    }
+    
     # Get a value
     for ($currentExpectedProp = 0; $currentExpectedProp -lt $totalExpectedResultValues; $currentExpectedProp++) {
 
