@@ -25,7 +25,7 @@ namespace GarnetJSON
                 return;
             }
 
-            var jsonFactory = new JsonObjectFactory();
+            var jsonFactory = new GarnetJsonObjectFactory();
             status = context.RegisterType(jsonFactory);
             if (status == ModuleActionStatus.Success)
             {

@@ -682,7 +682,7 @@ namespace Garnet.test
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             // Register sample custom command on object 2
-            var jsonFactory = new JsonObjectFactory();
+            var jsonFactory = new GarnetJsonObjectFactory();
             server.Register.NewCommand("JSON.SET", CommandType.ReadModifyWrite, jsonFactory, new JsonSET());
             server.Register.NewCommand("JSON.GET", CommandType.Read, jsonFactory, new JsonGET());
 
