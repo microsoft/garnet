@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -26,14 +27,14 @@ namespace Tsavorite.core
         /// <param name="fixedPageSize">The size of a page for fixed-size allocations in this allocator</param>
         internal OverflowAllocator(int fixedPageSize)
         {
-            System.Diagnostics.Debug.Assert(fixedPageSize >= FixedSizePages.MaxBlockSize && Utility.IsPowerOfTwo(fixedPageSize), "PageSize must be > FixedSizeLimit and a power of 2");
+            Debug.Assert(fixedPageSize >= FixedSizePages.MaxBlockSize && Utility.IsPowerOfTwo(fixedPageSize), "PageSize must be > FixedSizeLimit and a power of 2");
             fixedSizePages = new(fixedPageSize);
             oversizePages = new();
         }
 
         public byte* Allocate(int size, bool zeroInit)
         {
-            System.Diagnostics.Debug.Assert(size > 0, "Cannot have negative allocation size");
+            Debug.Assert(size > 0, "Cannot have negative allocation size");
 
             if (size <= FixedSizePages.MaxBlockSize)
                 return fixedSizePages.Allocate(size, zeroInit);
@@ -42,7 +43,7 @@ namespace Tsavorite.core
 
         /// <summary>Get the allocated size of this block. In-use size is tracked by caller.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetAllocatedSize(long address) => (*((BlockHeader*)address - 1)).AllocatedSize;
+        public int GetAllocatedSize(long address) => BlockHeader.FromUserAddress(address)->AllocatedSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Free(long address)

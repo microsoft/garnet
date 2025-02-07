@@ -322,28 +322,28 @@ namespace Tsavorite.core
             public readonly void PostSingleDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo) { }
             public readonly bool ConcurrentDeleter(ref LogRecord<TValue> logRecord, ref DeleteInfo deleteInfo) => true;
 
-            public readonly bool SingleWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
-            public readonly bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public readonly bool SingleWriter(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
+            public readonly bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
                 where TSourceLogRecord : ISourceLogRecord<TValue>
                 => true;
-            public readonly void PostSingleWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public readonly bool ConcurrentWriter(ref LogRecord<TValue> dstLogRecord, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+            public readonly void PostSingleWriter(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+            public readonly bool ConcurrentWriter(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
 
-            public readonly bool InPlaceUpdater(ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+            public readonly bool InPlaceUpdater(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
             public readonly bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
                 where TSourceLogRecord : ISourceLogRecord<TValue>
                 => true;
-            public readonly bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            public readonly bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
                 where TSourceLogRecord : ISourceLogRecord<TValue>
                 => true;
-            public readonly bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            public readonly bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
                 where TSourceLogRecord : ISourceLogRecord<TValue>
                 => true;
 
             public readonly bool NeedInitialUpdate(SpanByte key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
-            public readonly bool InitialUpdater(ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
-            public readonly void PostInitialUpdater(ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) { }
+            public readonly bool InitialUpdater(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
+            public readonly void PostInitialUpdater(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) { }
 
             public readonly void RMWCompletionCallback(ref DiskLogRecord<TValue> diskLogRecord, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 

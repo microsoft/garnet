@@ -300,9 +300,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>Return an abbreviated string representation of this <see cref="SpanByte"/></summary>
-        public string ToShortString(int maxLen) 
-            => Length > maxLen
-                ? FromPinnedSpan(AsReadOnlySpan().Slice(0, maxLen)).ToString() + "..."
-                : ToString();
+        public string ToShortString(int maxLen)
+        {
+            var valueString = Length > maxLen
+                        ? FromPinnedSpan(AsReadOnlySpan().Slice(0, maxLen)).ToString() + "..."
+                        : ToString();
+            return $"len: {Length}, isSer {Serialized}, {valueString}";
+        }
     }
 }

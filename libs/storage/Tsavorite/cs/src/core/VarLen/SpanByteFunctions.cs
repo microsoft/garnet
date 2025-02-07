@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
+using System.IO;
 
 namespace Tsavorite.core
 {
@@ -50,17 +51,17 @@ namespace Tsavorite.core
     public class SimpleRMWSpanByteFunctions : SessionFunctionsBase<SpanByte, SpanByte, Empty, Empty>
     {
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueSpan(input);
+        public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
+            => logRecord.TrySetValueSpan(input, ref sizeInfo);
 
         /// <inheritdoc/>
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
-            => dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan);
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
+            => dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
 
         /// <inheritdoc/>
         // The default implementation of IPU simply writes input to destination, if there is space
-        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueSpan(input);
+        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref Empty output, ref RMWInfo rmwInfo)
+            => logRecord.TrySetValueSpan(input, ref sizeInfo);
 
         /// <summary>
         /// Length of resulting object when doing RMW with given value and input. Here we set the length

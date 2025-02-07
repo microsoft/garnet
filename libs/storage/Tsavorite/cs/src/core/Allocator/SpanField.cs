@@ -14,10 +14,10 @@ namespace Tsavorite.core
     /// <list type="bullet">
     ///     <item>Inline: [int Length][data bytes]</item>
     ///     <item>Overflow: [<see cref="IntPtr"/> Length][<see cref="IntPtr"/> to overflow allocation containing data bytes]</item>
-    ///     <br>The data bytes are laid out as in the <see cref="OverflowAllocator.BlockHeader"/> description:</br>
+    ///     <br>The data bytes are laid out as in the <see cref="BlockHeader"/> description:</br>
     ///     <list type="bullet">
-    ///         <item>[int allocatedSize][int userSize] for fixed-length data (less than or equal to <see cref="OverflowAllocator.FixedSizePages.MaxBlockSize"/>)</item>
-    ///         <item>[int allocatedSize][int nextFreeSlot] for oversize data (greater than <see cref="OverflowAllocator.FixedSizePages.MaxBlockSize"/>)</item>
+    ///         <item>[int allocatedSize][int userSize] for fixed-length data (less than or equal to <see cref="FixedSizePages.MaxBlockSize"/>)</item>
+    ///         <item>[int allocatedSize][int nextFreeSlot] for oversize data (greater than <see cref="FixedSizePages.MaxBlockSize"/>)</item>
     ///     </list>
     /// </list>
     /// The [<see cref="IntPtr"/> size] prefix for Overflow is necessary to ensure proper zero-initialization layout of the record if a checkpoint is happening 
@@ -30,12 +30,12 @@ namespace Tsavorite.core
     ///         due to size changes altering whether the Value overflows is handled as part of normal Value-sizechange operations</item>
     /// </list>
     /// </remarks>
-    internal unsafe struct SpanField
+    public unsafe struct SpanField
     {
         /// <summary>
         /// This is the size of the length prefix on Span field.
         /// </summary>
-        internal const int FieldLengthPrefixSize = sizeof(int);
+        public const int FieldLengthPrefixSize = sizeof(int);
 
         /// <summary>
         /// This is the size of the overflow pointer if <see cref="RecordInfo.KeyIsOverflow"/> or if <see cref="RecordInfo.ValueIsOverflow"/>.
@@ -72,7 +72,7 @@ namespace Tsavorite.core
         /// Size of the actual data (not including the length prefix).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetDataSize(long address, bool isOverflow) => !isOverflow ? GetLengthRef(address) : OverflowAllocator.BlockHeader.GetUserSize((long)GetOverflowPointer(address));
+        internal static int GetDataSize(long address, bool isOverflow) => !isOverflow ? GetLengthRef(address) : BlockHeader.GetUserSize(GetOverflowPointer(address));
 
         /// <summary>
         /// Total inline size of the field: The length prefix plus: length of byte stream if not overflow, else length of the pointer to overflow data.
@@ -91,7 +91,7 @@ namespace Tsavorite.core
             if (!isOverflow)
                 return new(dataAddress, GetLengthRef(address));
             dataAddress = *(byte**)dataAddress;     // dataAddress contains the pointer
-            return new(dataAddress, OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress));
+            return new(dataAddress, BlockHeader.GetUserSize((long)dataAddress));
         }
 
         /// <summary>
@@ -105,7 +105,7 @@ namespace Tsavorite.core
             if (!isOverflow)
                 return new(GetLengthRef(address), (IntPtr)dataAddress);
             dataAddress = *(byte**)dataAddress;     // dataAddress contains the pointer
-            return new(OverflowAllocator.BlockHeader.GetUserSize((long)dataAddress), (IntPtr)dataAddress);
+            return new(BlockHeader.GetUserSize((long)dataAddress), (IntPtr)dataAddress);
         }
 
         /// <summary>
@@ -128,22 +128,37 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* ConvertToOverflow(long address, int newLength, OverflowAllocator allocator)
         {
+            // First copy the data
+            byte* newPtr = allocator.Allocate(newLength, zeroInit: false);
+            var oldLength = GetLengthRef(address);
+            var copyLength = oldLength < newLength ? oldLength : newLength;
+            var oldPtr = (byte*)GetDataAddress(address);
+            Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
+
             // If "shrinking" the allocation because the overflow pointer size is less than the current inline size, we must zeroinit the extra space.
             var clearLength = GetLengthRef(address) - OverflowDataPtrSize;
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize, clearLength);
 
-            return SetOverflowAllocation(address, newLength, allocator);
+            return SetOverflowAllocation(address, newPtr);
         }
 
         /// <summary>
         /// Utility function to set the overflow allocation at the given Span field's address. Assumes caller has ensured no existing overflow
         /// allocation is there; e.g. SerializeKey and InitializeValue.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* SetOverflowAllocation(long address, int newLength, OverflowAllocator allocator)
+            => SetOverflowAllocation(address, allocator.Allocate(newLength, zeroInit: false));
+
+        /// <summary>
+        /// Utility function to set the overflow allocation at the given Span field's address. Assumes caller has ensured no existing overflow
+        /// allocation is there; e.g. SerializeKey and InitializeValue.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static byte* SetOverflowAllocation(long address, byte* ptr)
         {
             GetLengthRef(address) = sizeof(IntPtr);                         // actual length (i.e. the size of the out-of-line allocation)
-            byte* ptr = allocator.Allocate(newLength, zeroInit: false);
             SetOverflowPointer(address, (IntPtr)ptr);                       // out-of-line data pointer
             return ptr;
         }
@@ -158,13 +173,20 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* ConvertToInline(long address, int newLength, OverflowAllocator allocator)
         {
+            // First copy the data
+            var oldPtr = (byte*)GetOverflowPointer(address);
+            var oldLength = BlockHeader.GetUserSize((long)oldPtr);
+            var copyLength = oldLength < newLength ? oldLength : newLength;
+            var newPtr = SetInlineDataLength(address, newLength);
+            Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
+            allocator.Free((long)oldPtr);
+
             // If "shrinking" the allocation because the new inline size is less than the inline size of the pointer, we must zeroinit the extra space.
             var clearLength = OverflowDataPtrSize - newLength;
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize - clearLength, clearLength);
 
-            allocator.Free(address);
-            return SetInlineDataLength(address, newLength);
+            return newPtr;
         }
 
         /// <summary>
@@ -184,7 +206,7 @@ namespace Tsavorite.core
         /// and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ShrinkInline(long address, int newLength)
+        internal static byte* AdjustInlineLength(long address, int newLength)
         {
             // Zeroinit the extra space.
             var clearLength = GetLengthRef(address) - newLength;
@@ -207,14 +229,15 @@ namespace Tsavorite.core
         {
             // First see if the existing allocation is large enough. If we are shrinking we don't need to zeroinit in the oversize allocations
             // because there is no "log scan to next record" there.
-            if (allocator.TryRealloc(GetOverflowPointer(address), newLength, out byte* newPointer))
+            var oldPtr = (byte*)GetOverflowPointer(address);
+            if (allocator.TryRealloc((long)oldPtr, newLength, out byte* newPointer))
             {
+                // TODO: Verify NativeMemory.AlignedRealloc copies the existing data to the new allocation if it has to grow
                 SetOverflowPointer(address, (IntPtr)newPointer);
                 return newPointer;
             }
 
             // Allocate and insert a new block, copy to it, then free the current allocation
-            var oldPtr = (byte*)GetOverflowPointer(address);
             var oldLength = BlockHeader.GetUserSize((long)oldPtr);
             var newPtr = SetOverflowAllocation(address, newLength, allocator);
             var copyLength = oldLength < newLength ? oldLength : newLength;

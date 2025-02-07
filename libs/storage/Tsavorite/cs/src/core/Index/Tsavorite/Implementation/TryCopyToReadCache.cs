@@ -43,7 +43,7 @@ namespace Tsavorite.core
             readcache.InitializeValue(newPhysicalAddress, ref sizeInfo);
 
             TOutput output = default;
-            if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref upsertInfo, WriteReason.CopyToReadCache))
+            if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref upsertInfo, WriteReason.CopyToReadCache))
             {
                 stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                 return false;
@@ -74,7 +74,7 @@ namespace Tsavorite.core
                 if (success)
                     newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, srcLogRecord.GetReadOnlyValueRef(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcLogRecord.GetReadOnlyValueRef(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 stackCtx.ClearNewRecord();
                 return true;
             }

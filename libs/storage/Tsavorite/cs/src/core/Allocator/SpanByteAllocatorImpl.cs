@@ -101,7 +101,7 @@ namespace Tsavorite.core
         internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress, GetOverflowAllocator(logicalAddress), maxInlineValueSize);
+        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress, GetOverflowAllocator(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
@@ -183,6 +183,7 @@ namespace Tsavorite.core
                 valueSize = SpanField.OverflowInlineSize;
                 sizeInfo.ValueIsOverflow = true;
             }
+            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }

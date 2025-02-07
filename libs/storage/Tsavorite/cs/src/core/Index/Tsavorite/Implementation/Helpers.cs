@@ -34,7 +34,7 @@ namespace Tsavorite.core
             // Release any overflow allocations for Key and possibly Value spans.
             logRecord.FreeKeyOverflow();
 
-            if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
+            if (logRecord.IsObjectRecord && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
             {
                 // Clear the IHeapObject, but leave the ObjectId in the record, along with any overflow Key and possibly Value spans.  TODO make sure this a freelist
                 ref var heapObj = ref logRecord.ObjectRef;

@@ -99,10 +99,10 @@ namespace Tsavorite.core
                 // The bin count is small enough we can just linear-scan both to get to the first big-enough slot (we are optimized for small keys,
                 // so this is likely to be faster than Utility.GetLogBase2), and from there to end of list if we need to search higher bins.
                 Debug.Assert(size <= MaxBlockSize && IsPowerOfTwo(size), $"Size is {size}; it should be a power of 2 <= MaxBlockSize {MaxBlockSize}");
-                var bin = 0;
+                var bin = MinPowerOf2;
                 for (; 1 << bin < size; ++bin)
                     ;
-                return bin;
+                return bin - MinPowerOf2;
             }
 
             private byte* PopFromFreeList(int blockSize, int userSize, bool zeroInit)

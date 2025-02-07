@@ -119,8 +119,8 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    // upsertInfo's lengths are filled in and GetValueLengths and SetLength are called inside ConcurrentWriter.
-                    if (sessionFunctions.ConcurrentWriter(ref srcLogRecord, ref input, value, ref output, ref upsertInfo))
+                    var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, value, ref input, sessionFunctions);
+                    if (sessionFunctions.ConcurrentWriter(ref srcLogRecord, ref sizeInfo, ref input, value, ref output, ref upsertInfo))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -217,7 +217,7 @@ namespace Tsavorite.core
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();
-                    if (sessionFunctions.SingleWriter(ref logRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
+                    if (sessionFunctions.SingleWriter(ref logRecord, ref sizeInfo, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -311,7 +311,7 @@ namespace Tsavorite.core
             hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
-            if (!sessionFunctions.SingleWriter(ref newLogRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
+            if (!sessionFunctions.SingleWriter(ref newLogRecord, ref sizeInfo, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert))
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
                 if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
@@ -331,7 +331,7 @@ namespace Tsavorite.core
             {
                 PostCopyToTail(ref srcLogRecord, ref stackCtx);
 
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, value, ref output, ref upsertInfo, WriteReason.Upsert);
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.

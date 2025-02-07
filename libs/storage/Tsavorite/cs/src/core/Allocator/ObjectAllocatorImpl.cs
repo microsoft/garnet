@@ -208,6 +208,7 @@ namespace Tsavorite.core
                 keySize = SpanField.OverflowInlineSize;
                 sizeInfo.KeyIsOverflow = true;
             }
+            sizeInfo.MaxInlineValueSpanSize = ObjectIdMap.ObjectIdSize;
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + ObjectIdMap.ObjectIdSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }

@@ -62,7 +62,7 @@ namespace Garnet.server
             var fieldInfo = new RecordFieldInfo()
             {
                 KeySize = key.TotalSize,
-                ValueSize = sizeof(int)     // initialize to size of the Length field
+                ValueSize = SpanField.FieldLengthPrefixSize
             };
 
             switch (cmd)
@@ -150,7 +150,7 @@ namespace Garnet.server
             var fieldInfo = new RecordFieldInfo()
             {
                 KeySize = srcLogRecord.Key.TotalSize,
-                ValueSize = sizeof(int),    // initialize to size of the Length field
+                ValueSize = SpanField.FieldLengthPrefixSize,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 

@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.IO;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -319,14 +320,14 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord<SpanByte> logRecord, ExpireOption optionType, long newExpiry, SpanByte newValue, ref SpanByteAndMemory output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, SpanByte newValue, ref SpanByteAndMemory output)
         {
             var expiryExists = logRecord.Info.HasExpiration;
             var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
 
             // TODO ETag?
-            if (!logRecord.TrySetValueSpan(newValue))
+            if (!logRecord.TrySetValueSpan(newValue, ref sizeInfo))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
                 return false;
@@ -416,13 +417,13 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
             => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
-        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var fNeg = false;
             var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
             ndigits += fNeg ? 1 : 0;
 
-            if (!logRecord.TrySetValueSpanLength(ndigits))
+            if (!logRecord.TrySetValueSpanLength(ndigits, ref sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
@@ -434,11 +435,11 @@ namespace Garnet.server
             return true;
         }
 
-        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var ndigits = NumUtils.NumOfCharInDouble(val, out var _, out var _, out var _);
 
-            if (!logRecord.TrySetValueSpanLength(ndigits))
+            if (!logRecord.TrySetValueSpanLength(ndigits, ref sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
@@ -450,7 +451,7 @@ namespace Garnet.server
             return true;
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
         {
             // Check if value contains a valid number
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
@@ -467,10 +468,10 @@ namespace Garnet.server
                 return true;
             }
 
-            return InPlaceUpdateNumber(ref logRecord, val, ref output, ref rmwInfo);
+            return InPlaceUpdateNumber(ref logRecord, ref sizeInfo, val, ref output, ref rmwInfo);
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
         {
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
 
@@ -486,7 +487,7 @@ namespace Garnet.server
                 return true;
             }
 
-            return InPlaceUpdateNumber(ref logRecord, val, ref output, ref rmwInfo);
+            return InPlaceUpdateNumber(ref logRecord, ref sizeInfo, val, ref output, ref rmwInfo);
         }
 
         static bool TryCopyUpdateNumber(long next, SpanByte newValue, ref SpanByteAndMemory output)
@@ -512,9 +513,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="srcLogRecord">The source log record, either in-memory or from disk</param>
         /// <param name="dstLogRecord">The destination log record</param>
+        /// <param name="sizeInfo">Size info for record fields</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref SpanByteAndMemory output, long input)
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, long input)
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
@@ -527,7 +529,7 @@ namespace Garnet.server
             {
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan);
+                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
             }
 
             // Check operation overflow
@@ -550,9 +552,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="srcLogRecord">The source log record, either in-memory or from disk</param>
         /// <param name="dstLogRecord">The destination log record</param>
+        /// <param name="sizeInfo">Size information for record fields</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref SpanByteAndMemory output, double input)
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, double input)
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
             if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
@@ -565,7 +568,7 @@ namespace Garnet.server
             {
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan);
+                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
             }
 
             val += input;

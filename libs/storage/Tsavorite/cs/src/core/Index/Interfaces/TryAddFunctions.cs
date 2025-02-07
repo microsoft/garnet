@@ -13,7 +13,7 @@ namespace Tsavorite.core
     public class TryAddFunctions<TValue, TContext> : SimpleSessionFunctions<TValue, TContext>
     {
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref TValue input, ref TValue output, ref RMWInfo rmwInfo) => true;
+        public override bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TValue input, ref TValue output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc />
         public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TValue input, ref TValue output, ref RMWInfo rmwInfo) => false;
     }

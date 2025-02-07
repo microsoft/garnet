@@ -1320,7 +1320,7 @@ namespace Garnet.test
         #region ExpireTime
 
         [Test]
-        public void ExpiretimeWithStingValue()
+        public void ExpiretimeWithStringValue()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

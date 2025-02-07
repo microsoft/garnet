@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -8,10 +10,10 @@ namespace Tsavorite.core
     /// </summary>
     public struct RecordFieldInfo
     {
-        /// <summary>The length of the key for the new record.</summary>
+        /// <summary>The length of the key for the new record, including the length prefix. May become overflow; see <see cref="RecordSizeInfo.InlineKeySize"/></summary>
         public int KeySize;
 
-        /// <summary>The length of the value for the new record.</summary>
+        /// <summary>The length of the value for the new record, including any length prefix. May become overflow; see <see cref="RecordSizeInfo.InlineValueSize"/></summary>
         public int ValueSize;
 
         /// <summary>Whether the new record will have an ETag.</summary>

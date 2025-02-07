@@ -131,8 +131,8 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater.
-                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref input, ref output, ref rmwInfo, out status)
+                    var sizeInfo = hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions);
+                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo, out status)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -248,7 +248,7 @@ namespace Tsavorite.core
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();
-                    if (sessionFunctions.InitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
+                    if (sessionFunctions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -389,7 +389,7 @@ namespace Tsavorite.core
 
             if (!doingCU)
             {
-                if (sessionFunctions.InitialUpdater(ref newLogRecord, ref input, ref output, ref rmwInfo))
+                if (sessionFunctions.InitialUpdater(ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                 {
                     status = forExpiration
                         ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
@@ -404,7 +404,7 @@ namespace Tsavorite.core
             }
             else
             {
-                if (sessionFunctions.CopyUpdater(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref rmwInfo))
+                if (sessionFunctions.CopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                 {
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
 
@@ -470,12 +470,12 @@ namespace Tsavorite.core
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    sessionFunctions.PostInitialUpdater(ref newLogRecord, ref input, ref output, ref rmwInfo);
+                    sessionFunctions.PostInitialUpdater(ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
                 }
                 else
                 {
                     // Else it was a CopyUpdater so call PCU
-                    if (!sessionFunctions.PostCopyUpdater(ref srcLogRecord, ref newLogRecord, ref input, ref output, ref rmwInfo))
+                    if (!sessionFunctions.PostCopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -546,11 +546,11 @@ namespace Tsavorite.core
             // TODO: account for out-of-line key/value allocations
             if (currentSize >= sizeInfo.ActualInlineRecordSize)
             {
-                if (sessionFunctions.InitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
+                if (sessionFunctions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                 {
                     // If IPU path, we need to complete PostInitialUpdater as well
                     if (isIpu)
-                        sessionFunctions.PostInitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
+                        sessionFunctions.PostInitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
 
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                     return true;

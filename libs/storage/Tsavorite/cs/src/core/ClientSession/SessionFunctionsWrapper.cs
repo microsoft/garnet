@@ -41,25 +41,25 @@ namespace Tsavorite.core
 
         #region Upserts
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref LogRecord<TValue> logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.SingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
+        public bool SingleWriter(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => _clientSession.functions.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord<TValue>
-            => _clientSession.functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref upsertInfo, reason);
+            => _clientSession.functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleWriter(ref LogRecord<TValue> logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostSingleWriter(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostSingleWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostSingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref LogRecord<TValue> logRecord, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool ConcurrentWriter(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
+            if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
@@ -73,14 +73,14 @@ namespace Tsavorite.core
             => _clientSession.functions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialUpdater(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.InitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
+        public bool InitialUpdater(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+            => _clientSession.functions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialUpdater(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+        public void PostInitialUpdater(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
+            _clientSession.functions.PostInitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion InitialUpdater
 
@@ -91,25 +91,25 @@ namespace Tsavorite.core
             => _clientSession.functions.NeedCopyUpdate(ref srcLogRecord, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord<TValue>
-            => _clientSession.functions.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref rmwInfo);
+            => _clientSession.functions.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
+        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             dstLogRecord.InfoRef.SetDirtyAndModified();
-            return _clientSession.functions.PostCopyUpdater(ref srcLogRecord, ref dstLogRecord, ref input, ref output, ref rmwInfo);
+            return _clientSession.functions.PostCopyUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion CopyUpdater
 
         #region InPlaceUpdater
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
+        public bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
         {
             // This wraps the ISessionFunctions call to provide expiration logic.
-            if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
+            if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
                 logRecord.InfoRef.SetDirtyAndModified();
