@@ -40,25 +40,6 @@ namespace Garnet.cluster
         /// </summary>
         public long checkpointCoveredAofAddress;
 
-        /// <summary>
-        /// LogError
-        /// </summary>
-        public void LogMetadata(LogLevel logLevel)
-        {
-            logger?.Log(logLevel,
-                "{status} {msg} > " +
-                "originNodeId: {originNodeId}, " +
-                "currentPrimaryReplId: {currentPrimaryReplId}, " +
-                "currentAofBeginAddress: {currentAofBeginAddress}, " +
-                "currentAofTailAddress: {currentAofTailAddress}, ",
-                ssInfo.syncStatus,
-                ssInfo.error,
-                replicaSyncMetadata.originNodeId,
-                replicaSyncMetadata.currentPrimaryReplId,
-                replicaSyncMetadata.currentAofBeginAddress,
-                replicaSyncMetadata.currentAofTailAddress);
-        }
-
         #region NetworkMethods
         /// <summary>
         /// Connect client
@@ -222,9 +203,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool NeedToFullSync()
         {
-            // TODO: consolidate disk-based logic
+            // TODO: consolidate disk-based logic if possible
             return clusterProvider.serverOptions.ReplicaDisklessSync ?
-                ShouldStreamDisklessCheckpoint() : true;
+                ShouldStreamDisklessCheckpoint() : throw new NotImplementedException();
 
             bool ShouldStreamDisklessCheckpoint()
             {

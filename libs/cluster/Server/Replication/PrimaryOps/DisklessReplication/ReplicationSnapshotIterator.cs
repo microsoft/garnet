@@ -38,13 +38,24 @@ namespace Garnet.cluster
             CheckpointCoveredAddress = replicationSyncManager.ClusterProvider.storeWrapper.appendOnlyFile.TailAddress;
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
+                if (!replicationSyncManager.IsActive(i)) continue;
                 sessions[i].checkpointCoveredAofAddress = CheckpointCoveredAddress;
             }
 
             mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
             if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
                 objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
+        }
+
+        void WaitForFlushAll()
+        {
+            // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
+            for (var i = 0; i < numSessions; i++)
+            {
+                if (!replicationSyncManager.IsActive(i)) continue;
+                sessions[i].WaitForFlush().GetAwaiter().GetResult();
+                if (sessions[i].Failed) sessions[i] = null;
+            }
         }
 
         public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion, bool isMainStore)
@@ -54,7 +65,7 @@ namespace Garnet.cluster
 
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
+                if (!replicationSyncManager.IsActive(i)) continue;
                 sessions[i].InitializeIterationBuffer();
                 if (isMainStore)
                     sessions[i].currentStoreVersion = targetVersion;
@@ -68,24 +79,14 @@ namespace Garnet.cluster
             return true;
         }
 
-        void WaitForFlushAll()
-        {
-            // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-            for (var i = 0; i < numSessions; i++)
-            {
-                if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
-                sessions[i].WaitForFlush().GetAwaiter().GetResult();
-                if (sessions[i].Failed) sessions[i] = null;
-            }
-        }
-
         public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
         {
             if (!firstRead)
             {
-                logger?.LogTrace("First Read {key} {value}", key.ToString(), value.ToString());
+                logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }
+
             var needToFlush = false;
             while (true)
             {
@@ -95,7 +96,7 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
+                    if (!replicationSyncManager.IsActive(i)) continue;
 
                     // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader(isMainStore: true);
@@ -120,6 +121,12 @@ namespace Garnet.cluster
 
         public bool Reader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords)
         {
+            if (!firstRead)
+            {
+                logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
+                firstRead = true;
+            }
+
             var needToFlush = false;
             var objectData = GarnetObjectSerializer.Serialize(value);
             while (true)
@@ -130,7 +137,7 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
+                    if (!replicationSyncManager.IsActive(i)) continue;
 
                     // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader(isMainStore: false);
@@ -157,7 +164,7 @@ namespace Garnet.cluster
             // Flush remaining data
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActiveSyncSession(i)) continue;
+                if (!replicationSyncManager.IsActive(i)) continue;
                 sessions[i].SendAndResetIterationBuffer();
             }
 
@@ -170,6 +177,7 @@ namespace Garnet.cluster
             logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
                 nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
 
+            // Reset read marker
             firstRead = false;
         }
     }
