@@ -44,37 +44,11 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Begin background replica sync session
+        /// Check if sync session is active
         /// </summary>
-        /// <param name="replicaSyncMetadata">Replica sync metadata</param>
-        /// <param name="replicaSyncSession">Replica sync session created</param>
+        /// <param name="offset"></param>
         /// <returns></returns>
-        public bool AddSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
-        {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, clusterTimeout, cts.Token, logger: logger);
-            replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
-            try
-            {
-                syncInProgress.ReadLock();
-                return GetSessionStore.TryAddReplicaSyncSession(replicaSyncSession);
-            }
-            finally
-            {
-                syncInProgress.ReadUnlock();
-            }
-        }
-
-        public async Task WaitForFlush()
-        {
-            for (var i = 0; i < NumSessions; i++)
-            {
-                // Wait for network flush
-                await Sessions[i].WaitForFlush();
-                if (Sessions[i].Failed) Sessions[i] = null;
-            }
-        }
-
-        public bool IsActiveSyncSession(int offset)
+        public bool IsActive(int offset)
         {
             // Check if session is null if an error occurred earlier and session was broken
             if (Sessions[offset] == null)
@@ -91,12 +65,50 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Wait for network flush to complete for all sessions
+        /// </summary>
+        /// <returns></returns>
+        public async Task WaitForFlush()
+        {
+            for (var i = 0; i < NumSessions; i++)
+            {
+                if (!IsActive(i)) continue;
+                // Wait for network flush
+                await Sessions[i].WaitForFlush();
+                if (Sessions[i].Failed) Sessions[i] = null;
+            }
+        }
+
+        /// <summary>
+        /// Create and add ReplicaSyncSession to store
+        /// </summary>
+        /// <param name="replicaSyncMetadata">Replica sync metadata</param>
+        /// <param name="replicaSyncSession">Replica sync session created</param>
+        /// <returns></returns>
+        public bool AddReplicaSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
+        {
+            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, clusterTimeout, cts.Token, logger: logger);
+            replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
+            try
+            {
+                syncInProgress.ReadLock();
+                return GetSessionStore.TryAddReplicaSyncSession(replicaSyncSession);
+            }
+            finally
+            {
+                syncInProgress.ReadUnlock();
+            }
+        }
+
+        /// <summary>
         /// Start sync session
         /// </summary>
         /// <param name="replicaSyncSession"></param>
         /// <returns></returns>
-        public async Task<SyncStatusInfo> MainDisklessSync(ReplicaSyncSession replicaSyncSession)
+        public async Task<SyncStatusInfo> ReplicationSyncDriver(ReplicaSyncSession replicaSyncSession)
         {
+            var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
+
             try
             {
                 // Give opportunity to other replicas to attach for streaming sync
@@ -106,12 +118,20 @@ namespace Garnet.cluster
                 // Started syncing
                 replicaSyncSession.SetStatus(SyncStatus.INPROGRESS);
 
-                // Only one thread will acquire this lock
+                // Only one thread should be the leader who initiates the sync driver
                 var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
                 if (isLeader)
                 {
-                    // Launch a background task to sync the attached replicas using streaming snapshot
-                    _ = Task.Run(() => StreamingSnapshotSync());
+                    if (disklessRepl)
+                    {
+                        // Launch a background task to sync the attached replicas using streaming snapshot
+                        _ = Task.Run(() => StreamingSnapshotDriver());
+                    }
+                    else
+                    {
+                        // TODO: refactor to use disk-based replication
+                        throw new NotImplementedException();
+                    }
                 }
 
                 // Wait for main sync task to complete
@@ -136,8 +156,11 @@ namespace Garnet.cluster
             }
         }
 
-        // Main streaming snapshot task
-        async Task StreamingSnapshotSync()
+        /// <summary>
+        /// Streaming snapshot driver
+        /// </summary>
+        /// <returns></returns>
+        async Task StreamingSnapshotDriver()
         {
             // Parameters for sync operation
             var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
@@ -175,7 +198,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method} faulted", nameof(StreamingSnapshotSync));
+                logger?.LogError(ex, "{method} faulted", nameof(StreamingSnapshotDriver));
                 for (var i = 0; i < NumSessions; i++)
                     Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
             }
