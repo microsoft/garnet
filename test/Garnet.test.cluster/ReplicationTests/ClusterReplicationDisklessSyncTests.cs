@@ -31,7 +31,7 @@ namespace Garnet.test.cluster
         int testTimeout = (int)TimeSpan.FromSeconds(120).TotalSeconds;
 
         public Dictionary<string, LogLevel> monitorTests = new(){
-            { "ClusterDisklessSyncFailover", LogLevel.Error }
+            { "ClusterDisklessSyncFailover", LogLevel.Trace }
         };
 
         [SetUp]

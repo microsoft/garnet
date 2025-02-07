@@ -22,6 +22,8 @@ namespace Garnet.cluster
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
 
+        bool firstRead = false;
+
         public long CheckpointCoveredAddress { get; private set; }
 
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
@@ -79,6 +81,11 @@ namespace Garnet.cluster
 
         public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
         {
+            if (!firstRead)
+            {
+                logger?.LogTrace("First Read {key} {value}", key.ToString(), value.ToString());
+                firstRead = true;
+            }
             var needToFlush = false;
             while (true)
             {
@@ -162,6 +169,8 @@ namespace Garnet.cluster
 
             logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
                 nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
+
+            firstRead = false;
         }
     }
 
