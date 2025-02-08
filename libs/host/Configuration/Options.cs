@@ -12,6 +12,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
@@ -544,6 +545,10 @@ namespace Garnet
         [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
         public int UnixSocketPermission { get; set; }
 
+        [IntRangeValidation(1, 256, isRequired: false)]
+        [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
+        public int MaxDatabases { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -758,6 +763,8 @@ namespace Garnet
                 DeviceFactoryCreator = useAzureStorage
                     ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
                     : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                StreamProviderCreator = () => StreamProviderFactory.GetStreamProvider(
+                    useAzureStorage ? FileLocationType.AzureStorage : FileLocationType.Local, AzureStorageConnectionString),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -786,7 +793,8 @@ namespace Garnet
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
                 UnixSocketPath = UnixSocketPath,
-                UnixSocketPermission = unixSocketPermissions
+                UnixSocketPermission = unixSocketPermissions,
+                MaxDatabases = MaxDatabases,
             };
         }
 

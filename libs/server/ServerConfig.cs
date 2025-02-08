@@ -89,7 +89,7 @@ namespace Garnet.server
 
                     ReadOnlySpan<byte> GetDatabases()
                     {
-                        var databases = storeWrapper.databaseNum.ToString();
+                        var databases = storeWrapper.serverOptions.MaxDatabases.ToString();
                         return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
                     }
 

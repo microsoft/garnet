@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Garnet.common;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -282,6 +283,11 @@ namespace Garnet.server
         public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
 
         /// <summary>
+        /// Creator of stream providers
+        /// </summary>
+        public Func<IStreamProvider> StreamProviderCreator = null;
+
+        /// <summary>
         /// Whether and by how much should we throttle the disk IO for checkpoints (default = 0)
         /// -1   - disable throttling
         /// >= 0 - run checkpoint flush in separate task, sleep for specified time after each WRiteAsync
@@ -432,6 +438,11 @@ namespace Garnet.server
         public UnixFileMode UnixSocketPermission { get; set; }
 
         /// <summary>
+        /// Max number of logical databases allowed
+        /// </summary>
+        public int MaxDatabases = 16;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -496,6 +507,7 @@ namespace Garnet.server
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
             DeviceFactoryCreator ??= () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            StreamProviderCreator ??= () => StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -715,14 +727,16 @@ namespace Garnet.server
         /// <summary>
         /// Get AOF settings
         /// </summary>
-        /// <param name="tsavoriteLogSettings"></param>
-        public void GetAofSettings(out TsavoriteLogSettings tsavoriteLogSettings)
+        /// <param name="dbId">DB ID</param>
+        /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
+        /// <param name="aofDir"></param>
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings, out string aofDir)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
                 MemorySizeBits = AofMemorySizeBits(),
                 PageSizeBits = AofPageSizeBits(),
-                LogDevice = GetAofDevice(),
+                LogDevice = GetAofDevice(dbId),
                 TryRecoverLatest = false,
                 SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
@@ -734,9 +748,11 @@ namespace Garnet.server
                 logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
+
+            aofDir = Path.Combine(CheckpointDir, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 MainMemoryReplication ? new NullNamedDeviceFactory() : DeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
+                    new DefaultCheckpointNamingScheme(aofDir),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
         }
@@ -822,12 +838,26 @@ namespace Garnet.server
         /// Get device for AOF
         /// </summary>
         /// <returns></returns>
-        IDevice GetAofDevice()
+        IDevice GetAofDevice(int dbId)
         {
             if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
-            else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
+
+            return GetInitializedDeviceFactory(CheckpointDir)
+                .Get(new FileDescriptor($"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}", "aof.log"));
+        }
+
+        /// <summary>
+        /// Get device for logging database IDs
+        /// </summary>
+        /// <returns></returns>
+        public IDevice GetDatabaseIdsDevice()
+        {
+            if (MaxDatabases == 1) return new NullDevice();
+
+            return GetInitializedDeviceFactory(CheckpointDir)
+                .Get(new FileDescriptor($"databases", "ids.dat"));
         }
 
         /// <summary>

@@ -182,14 +182,14 @@ namespace Garnet.cluster
                     return false;
 
                 // Migrate main store keys
-                _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequncy);
+                _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
                 if (!MigrateKeysFromMainStore())
                     return false;
 
                 // Migrate object store keys
                 if (!clusterProvider.serverOptions.DisableObjects)
                 {
-                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequncy);
+                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
                     if (!MigrateKeysFromObjectStore())
                         return false;
                 }

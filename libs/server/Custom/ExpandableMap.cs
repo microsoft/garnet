@@ -77,6 +77,47 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// If value exists for specified ID, return it,
+        /// otherwise set it using the provided value factory
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <param name="valueFactory">Value factory</param>
+        /// <param name="value">Returned value</param>
+        /// <param name="added">True if item was not previously set, but was set by this method</param>
+        /// <returns>True if item was previously initialized or set successfully</returns>
+        public bool TryGetOrSet(int id, Func<T> valueFactory, out T value, out bool added)
+        {
+            added = false;
+
+            // Try to get the current value, if value is already set, return it
+            if (this.TryGetValue(id, out var currValue) && !currValue.Equals(default(T)))
+            {
+                value = currValue;
+                return true;
+            }
+
+            mapLock.WriteLock();
+            try
+            {
+                // Try to get the current value, if value is already set, return it
+                if (this.TryGetValue(id, out currValue) && !currValue.Equals(default(T)))
+                {
+                    value = currValue;
+                    return true;
+                }
+
+                // Try to set value with expanding the map, if needed
+                value = valueFactory();
+                added = this.TrySetValueUnsafe(id, ref value, noExpansion: false);
+                return added;
+            }
+            finally
+            {
+                mapLock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
         /// Try to set item by ID
         /// </summary>
         /// <param name="id">Item ID</param>
