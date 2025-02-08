@@ -24,7 +24,7 @@ namespace Garnet
             return opt switch
             {
                 RedisConnectionProtectionOption.Yes or RedisConnectionProtectionOption.All =>
-                    ConnectionProtectionOption.AllowForAll,                
+                    ConnectionProtectionOption.AllowForAll,
                 RedisConnectionProtectionOption.Local => ConnectionProtectionOption.AllowForLocalConnections,
                 _ => ConnectionProtectionOption.Block
             };
