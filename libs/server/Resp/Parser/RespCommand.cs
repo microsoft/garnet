@@ -91,6 +91,7 @@ namespace Garnet.server
         ZMSCORE,
         ZRANDMEMBER,
         ZRANGE,
+        ZRANGEBYLEX,
         ZRANGEBYSCORE,
         ZRANK,
         ZREVRANGE,
@@ -1577,6 +1578,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8))
                                 {
                                     return RespCommand.ZRANGESTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("EBYLEX\r\n"u8))
+                                {
+                                    return RespCommand.ZRANGEBYLEX;
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
