@@ -33,7 +33,6 @@ Returns Integer reply of number of total commands in this Garnet server.
 
 Integer reply: the number of commands returned by COMMAND.
 
----
 ### COMMAND DOCS
 #### Syntax
 
@@ -158,6 +157,16 @@ Return the number of keys in the currently-selected database.
 #### Resp Reply
 
 Integer reply: the number of keys in the currently-selected database.
+
+---
+### DEBUG
+#### Syntax
+
+```bash
+DEBUG [subcommand [...]]
+```
+
+The DEBUG command is an internal command. It is meant to be used for developing and testing the server and its clients. See DEBUG HELP for subcommand list. It's disabled by default unless EnableDebugCommand option is set or --enable-debug-command command line option is used.
 
 ---
 ### FLUSHALL

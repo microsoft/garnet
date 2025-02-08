@@ -167,7 +167,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("127.0.0.1", options.Address);
-            ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
+            ClassicAssert.AreEqual(ConnectionProtectionOption.AllowForLocalConnections, options.EnableDebugCommand);
             ClassicAssert.AreEqual(6379, options.Port);
             ClassicAssert.AreEqual("20gb", options.MemorySize);
             ClassicAssert.AreEqual("./garnet-log", options.FileLogger);

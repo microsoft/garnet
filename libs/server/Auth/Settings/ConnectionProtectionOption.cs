@@ -3,10 +3,14 @@
 
 namespace Garnet.server.Auth.Settings
 {
+    /// <summary>
+    /// Certain commands can be set at configuration to be limited to a particular connection type.
+    /// They can be blocked for all connections, allowed only for local connections or be allowed for all connections.
+    /// </summary>
     public enum ConnectionProtectionOption
     {
-        No = 0, // Block
-        Local = 1, // AllowForLocalConnections
-        Yes = 2 // AllowForAll
+        Block = 0,
+        AllowForLocalConnections = 1,
+        AllowForAll = 2
     }
 }

@@ -499,8 +499,8 @@ namespace Garnet
         public int ObjectScanCountLimit { get; set; }
 
         [OptionValidation]
-        [Option("enable-debug-command", Required = false, HelpText = "Enable DEBUG command for 'no', 'local' or 'all' connections", Hidden = true)]
-        public ConnectionProtectionOption EnableDebugCommand { get; set; }
+        [Option("enable-debug-command", Required = false, HelpText = "Enable DEBUG command for 'no', 'local' or 'all' connections")]
+        public RedisConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [DirectoryPathsValidation(true, false)]
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
@@ -781,7 +781,7 @@ namespace Garnet
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
-                EnableDebugCommand = EnableDebugCommand,
+                EnableDebugCommand = EnableDebugCommand.ToGarnetOption(),
                 ExtensionBinPaths = ExtensionBinPaths?.ToArray(),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
