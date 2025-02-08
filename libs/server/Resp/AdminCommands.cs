@@ -720,6 +720,8 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteSimpleString(line, ref dcurr, dend))
                         SendAndReset();
                 }
+
+                return true;
             }
 
             var error = string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG));
