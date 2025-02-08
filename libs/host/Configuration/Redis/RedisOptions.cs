@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Garnet.server.Auth.Settings;
 
 namespace Garnet
 {
@@ -29,7 +28,7 @@ Specify your subject name via the cert-subject-name command line argument, if ap
         public Option<string[]> Bind { get; set; }
 
         [RedisOption("enable-debug-command", nameof(Options.EnableDebugCommand))]
-        public Option<ConnectionProtectionOption> EnableDebugCommand { get; set; }
+        public Option<RedisConnectionProtectionOption> EnableDebugCommand { get; set; }
 
         [RedisOption("port", nameof(Options.Port))]
         public Option<int> Port { get; set; }
