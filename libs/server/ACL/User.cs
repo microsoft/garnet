@@ -428,18 +428,16 @@ namespace Garnet.server.ACL
                 stringBuilder.Append($" {permsStr}");
             }
 
-
             return stringBuilder.ToString();
         }
 
         /// <summary>
         /// Returns the current version of the <see cref="User"/> with the latest modifications.
+        ///
+        /// This must be invoked prior to making an access control decision pertaining to a <see cref="User"/>.
         /// </summary>
         /// <returns>Returns the current version of the <see cref="User"/> with the latest modifications.</returns>
-        public User GetEffectiveUser()
-        {
-            return _effectiveUser ?? this;
-        }
+        public User GetEffectiveUser() => _effectiveUser ?? this;
 
         /// <summary>
         /// Attempts to set the effective <see cref="User"/>.
@@ -448,7 +446,8 @@ namespace Garnet.server.ACL
         /// <param name="replacedEffectiveUser">The effective <see cref="User"/> expected to be replaced.</param>
         /// <returns>True if the assignment was performed; otherwise false.</returns>
         public bool TrySetEffectiveUser(User effectiveUser, User replacedEffectiveUser)
-            => Interlocked.CompareExchange(ref _effectiveUser, effectiveUser, replacedEffectiveUser) != replacedEffectiveUser;
+            => Interlocked.CompareExchange(ref _effectiveUser, effectiveUser, null) == null ||
+                Interlocked.CompareExchange(ref _effectiveUser, effectiveUser, replacedEffectiveUser) == replacedEffectiveUser;
 
         /// <summary>
         /// Determine the command / sub command pairs that are associated with this command information entries

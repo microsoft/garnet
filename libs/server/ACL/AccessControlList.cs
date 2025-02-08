@@ -58,7 +58,7 @@ namespace Garnet.server.ACL
         {
             if (_users.TryGetValue(username, out var user))
             {
-                return user.GetEffectiveUser();
+                return user;
             }
             return null;
         }
@@ -69,7 +69,7 @@ namespace Garnet.server.ACL
         /// <returns>The default user of this access control list.</returns>
         public User GetDefaultUser()
         {
-            return _defaultUser.GetEffectiveUser();
+            return _defaultUser;
         }
 
         /// <summary>

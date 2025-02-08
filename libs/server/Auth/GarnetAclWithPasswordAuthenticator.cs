@@ -29,7 +29,10 @@ namespace Garnet.server.Auth
         {
             // Try to authenticate user
             ACLPassword passwordHash = ACLPassword.ACLPasswordFromString(Encoding.ASCII.GetString(password));
-            if (user.IsEnabled && user.ValidatePassword(passwordHash))
+
+            // Authentication and authorization checks must be performed against the effective user.
+            var effectiveUser = user.GetEffectiveUser();
+            if (effectiveUser.IsEnabled && effectiveUser.ValidatePassword(passwordHash))
             {
                 _user = user;
                 return true;

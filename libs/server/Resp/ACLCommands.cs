@@ -71,7 +71,7 @@ namespace Garnet.server
 
                 foreach (var user in users)
                 {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.Value.DescribeUser(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.Value.GetEffectiveUser().DescribeUser(), ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -190,10 +190,12 @@ namespace Garnet.server
                     }
 
                     User newUser;
+                    User effectiveUser;
                     do
                     {
-                        user = user.GetEffectiveUser();
-                        newUser = new User(user);
+                        // Modifications to user permissions must be performed against the effective user.
+                        effectiveUser = user.GetEffectiveUser();
+                        newUser = new User(effectiveUser);
 
                         // Remaining parameters are ACL operations
                         for (var i = 1; i < ops.Length; i++)
@@ -201,7 +203,7 @@ namespace Garnet.server
                             ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
                         }
 
-                    } while(!user.TrySetEffectiveUser(newUser, user));
+                    } while(!user.TrySetEffectiveUser(newUser, effectiveUser));
                 }
                 catch (ACLException exception)
                 {

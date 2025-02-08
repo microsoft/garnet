@@ -88,7 +88,7 @@ namespace Garnet.server.Auth
         /// <returns>Authorized user or null if not authorized</returns>
         public User GetUser()
         {
-            return _user.GetEffectiveUser();
+            return _user;
         }
 
         /// <summary>
