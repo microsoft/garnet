@@ -211,14 +211,24 @@ namespace Garnet.server
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.store.CurrentVersion)
-                            storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
+                        {
+                            if (storeWrapper.serverOptions.ReplicaDisklessSync)
+                                storeWrapper.store.SetVersion(header.storeVersion);
+                            else
+                                storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
+                        }
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
-                            storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
+                        {
+                            if (storeWrapper.serverOptions.ReplicaDisklessSync)
+                                storeWrapper.objectStore.SetVersion(header.storeVersion);
+                            else
+                                storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
+                        }
                     }
                     break;
                 default:

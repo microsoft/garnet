@@ -6,6 +6,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -86,14 +87,18 @@ namespace Garnet.cluster
             }
             else
             {
-                if (!clusterProvider.replicationManager.TryBeginReplicate(this, nodeId, background: background, force: false, out var errorMessage))
+                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, nodeId, background: background, force: false, out var errorMessage) :
+                    clusterProvider.replicationManager.TryBeginReplicate(this, nodeId, background: background, force: false, out errorMessage);
+
+                if (success)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -212,8 +217,8 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var nodeId = parseState.GetString(0);
-            var primaryReplicaId = parseState.GetString(1);
+            var replicaNodeId = parseState.GetString(0);
+            var replicaAssignedPrimaryId = parseState.GetString(1);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
 
             if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
@@ -224,10 +229,15 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var remoteEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
+            var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            if (!clusterProvider.replicationManager.TryBeginReplicaSyncSession(
-                nodeId, primaryReplicaId, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress, out var errorMessage))
+            if (!clusterProvider.replicationManager.TryBeginPrimarySync(
+                replicaNodeId,
+                replicaAssignedPrimaryId,
+                replicaCheckpointEntry,
+                replicaAofBeginAddress,
+                replicaAofTailAddress,
+                out var errorMessage))
             {
                 while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -363,6 +373,107 @@ namespace Garnet.cluster
                 beginAddress,
                 tailAddress);
             while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER attach_sync command (only for internode use)
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterAttachSync(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 1 arguments
+            if (parseState.Count != 1)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
+
+            ReadOnlySpan<byte> errorMessage = default;
+            long replicationOffset = -1;
+            if (syncMetadata.originNodeRole == NodeRole.REPLICA)
+                _ = clusterProvider.replicationManager.TryAttachSync(syncMetadata, out errorMessage);
+            else
+                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata);
+
+            if (errorMessage != default)
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER SYNC
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterSync(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 3 arguments
+            if (parseState.Count != 3)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var primaryNodeId = parseState.GetString(0);
+            var storeTypeSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            var payload = parseState.GetArgSliceByRef(2).SpanByte;
+            var payloadPtr = payload.ToPointer();
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
+
+            var keyValuePairCount = *(int*)payloadPtr;
+            var i = 0;
+            payloadPtr += 4;
+            if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
+            {
+                TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
+                while (i < keyValuePairCount)
+                {
+                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                    payloadPtr += key.TotalSize;
+                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                    payloadPtr += value.TotalSize;
+
+                    _ = basicGarnetApi.SET(ref key, ref value);
+                    i++;
+                }
+            }
+            else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
+            {
+                TrackImportProgress(keyValuePairCount, isMainStore: false, keyValuePairCount == 0);
+                while (i < keyValuePairCount)
+                {
+                    if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
+                        return false;
+
+                    var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
+                    value.Expiration = expiration;
+                    _ = basicGarnetApi.SET(key, value);
+                    i++;
+                }
+            }
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
