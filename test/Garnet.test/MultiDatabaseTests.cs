@@ -197,13 +197,17 @@ namespace Garnet.test
             }
 
             // In parallel, add each (key, value) pair to a database of id db-id
-            var kvBag = new ConcurrentBag<(int, string, string)>(tuples);
+            var kvCollection = new BlockingCollection<(int, string, string)>();
+            foreach (var t in tuples)
+                kvCollection.Add(t);
+            kvCollection.CompleteAdding();
+
             var tasks = new Task[dbCount * keyCount];
             for (var i = 0; i < tasks.Length; i++)
             {
                 tasks[i] = Task.Run(() =>
                 {
-                    kvBag.TryTake(out var tup);
+                    var tup = kvCollection.Take();
                     var db = dbConnections[tup.Item1];
                     return db.StringSet(tup.Item2, tup.Item3);
                 });
@@ -217,12 +221,16 @@ namespace Garnet.test
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
             // In parallel, retrieve the actual value for each db-id and key
-            kvBag = new(tuples);
+            kvCollection = new BlockingCollection<(int, string, string)>();
+            foreach (var t in tuples)
+                kvCollection.Add(t);
+            kvCollection.CompleteAdding();
+
             for (var i = 0; i < tasks.Length; i++)
             {
                 tasks[i] = Task.Run(() =>
                 {
-                    kvBag.TryTake(out var tup);
+                    var tup = kvCollection.Take();
                     var db = dbConnections[tup.Item1];
                     var actualValue = db.StringGet(tup.Item2);
                     return (tup.Item1, tup.Item2, actualValue.ToString());
@@ -255,13 +263,17 @@ namespace Garnet.test
             }
 
             // In parallel, add each (key, value) pair to a database of id db-id
-            var kvBag = new ConcurrentBag<(int, string, string)>(tuples);
+            var kvCollection = new BlockingCollection<(int, string, string)>();
+            foreach (var t in tuples)
+                kvCollection.Add(t);
+            kvCollection.CompleteAdding();
+
             var tasks = new Task[dbCount * keyCount];
             for (var i = 0; i < tasks.Length; i++)
             {
                 tasks[i] = Task.Run(() =>
                 {
-                    kvBag.TryTake(out var tup);
+                    var tup = kvCollection.Take();
                     var expectedResponse = "+OK\r\n+OK\r\n";
                     var lcRequest = lcRequests.Take();
                     string response;
@@ -287,12 +299,16 @@ namespace Garnet.test
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
 
             // In parallel, retrieve the actual value for each db-id and key
-            kvBag = new(tuples);
+            kvCollection = new BlockingCollection<(int, string, string)>();
+            foreach (var t in tuples)
+                kvCollection.Add(t);
+            kvCollection.CompleteAdding();
+
             for (var i = 0; i < tasks.Length; i++)
             {
                 tasks[i] = Task.Run(() =>
                 {
-                    kvBag.TryTake(out var tup);
+                    var tup = kvCollection.Take();
                     var expectedResponse = $"+OK\r\n${tup.Item3.Length}\r\n{tup.Item3}\r\n";
                     var lcRequest = lcRequests.Take();
                     string response;
