@@ -2622,7 +2622,7 @@ namespace Garnet.test.Resp.ACL
 
             async Task DoDebugAsync(GarnetClient client)
             {
-                string res = await client.ExecuteForStringResultAsync("DEBUG", ["VERSION"]);
+                string res = await client.ExecuteForStringResultAsync("DEBUG", ["HELP"]);
                 ClassicAssert.NotNull(res.ToString());
             }
         }

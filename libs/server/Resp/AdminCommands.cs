@@ -663,16 +663,13 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Block)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
-            }
-
-            if ((storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections)
-              && !networkSender.IsLocalConnection())
+            if (
+                    (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.No)
+                 || (
+                        (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Local)
+                      && !networkSender.IsLocalConnection()
+                    )
+               )
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
                     SendAndReset();
@@ -682,14 +679,52 @@ namespace Garnet.server
 
             var command = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SEGFAULT))
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PANIC))
+                // Throwing an exception is intentional and desirable for this command.
                 throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
 
-            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.VERSION))
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ERROR))
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(storeWrapper.version, ref dcurr, dend))
+                if (parseState.Count != 2)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
+                }
+
+                while (!RespWriteUtils.TryWriteError(parseState.GetString(1), ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
+            {
+                var help = new List<string>()
+                {
+                    "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                    "PANIC",
+                    "\tCrash the server simulating a panic.",
+                    "ERROR <string>",
+                    "\tReturn a Redis protocol error with <string> as message. Useful for clients",
+                    "\tunit tests to simulate Redis errors.",
+                    "HELP",
+                    "\tPrints this help"
+                };
+
+                while (!RespWriteUtils.TryWriteArrayLength(help.Count, ref dcurr, dend))
+                    SendAndReset();
+
+                foreach (var line in help)
+                {
+                    while (!RespWriteUtils.TryWriteSimpleString(line, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
+            var error = string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG));
+            while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
