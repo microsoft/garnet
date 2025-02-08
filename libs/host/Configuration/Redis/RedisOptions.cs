@@ -27,6 +27,9 @@ Specify your subject name via the cert-subject-name command line argument, if ap
         [RedisOption("bind", nameof(Options.Address), BindWarning, typeof(ArrayToFirstItemTransformer<string>))]
         public Option<string[]> Bind { get; set; }
 
+        [RedisOption("enable-debug-command", nameof(Options.EnableDebugCommand))]
+        public Option<RedisConnectionProtectionOption> EnableDebugCommand { get; set; }
+
         [RedisOption("port", nameof(Options.Port))]
         public Option<int> Port { get; set; }
 

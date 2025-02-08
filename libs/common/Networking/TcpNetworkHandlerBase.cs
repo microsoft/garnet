@@ -45,6 +45,22 @@ namespace Garnet.common
         public override string LocalEndpointName => socket.LocalEndPoint.ToString();
 
         /// <inheritdoc />
+        public override bool IsLocalConnection()
+        {
+            if (socket.RemoteEndPoint is IPEndPoint ip)
+            {
+                return IPAddress.IsLoopback(ip.Address);
+            }
+
+            if (socket.RemoteEndPoint is UnixDomainSocketEndPoint)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
             Start(tlsOptions != null);

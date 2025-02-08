@@ -27,6 +27,12 @@ namespace Garnet.networking
         string LocalEndpointName { get; }
 
         /// <summary>
+        /// Is the remote endpoint local?
+        /// </summary>
+        /// <returns></returns>
+        bool IsLocalConnection();
+
+        /// <summary>
         /// Enter exclusive use of network sender.
         /// </summary>
         void Enter();
