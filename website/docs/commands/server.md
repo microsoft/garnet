@@ -33,6 +33,7 @@ Returns Integer reply of number of total commands in this Garnet server.
 
 Integer reply: the number of commands returned by COMMAND.
 
+---
 ### COMMAND DOCS
 #### Syntax
 
