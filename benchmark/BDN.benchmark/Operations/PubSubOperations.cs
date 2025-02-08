@@ -32,17 +32,12 @@ namespace BDN.benchmark.Operations
             subscribeSession = server.GetRespSession();
 
             SetupOperation(ref publish, PUBLISH);
-            SetupOperation(ref subscribe, SUBSCRIBE);
+            SetupOperation(ref subscribe, SUBSCRIBE, batchSize: 1);
 
             // Subscribe to secondary session
             _ = subscribeSession.TryConsumeMessages(subscribe.bufferPtr, subscribe.buffer.Length);
 
             // Warm up
-            SlowConsumeMessage(new Span<byte>(publish.bufferPtr, publish.buffer.Length));
-            SlowConsumeMessage(new Span<byte>(publish.bufferPtr, publish.buffer.Length));
-            SlowConsumeMessage(new Span<byte>(publish.bufferPtr, publish.buffer.Length));
-            SlowConsumeMessage(new Span<byte>(publish.bufferPtr, publish.buffer.Length));
-            SlowConsumeMessage(new Span<byte>(publish.bufferPtr, publish.buffer.Length));
             SlowConsumeMessage(new Span<byte>(publish.bufferPtr, publish.buffer.Length));
         }
 

@@ -15,7 +15,7 @@ namespace Embedded.server
     internal sealed class EmbeddedRespServer : GarnetServer
     {
         readonly GarnetServerEmbedded garnetServerEmbedded;
-        readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        readonly SubscribeBroker subscribeBroker;
 
         /// <summary>
         /// Creates an EmbeddedRespServer instance
@@ -27,8 +27,7 @@ namespace Embedded.server
         {
             this.garnetServerEmbedded = server;
             this.subscribeBroker = opts.DisablePubSub ? null :
-                new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(
-                    new SpanByteKeySerializer(),
+                new SubscribeBroker(
                     null,
                     opts.PubSubPageSizeBytes(),
                     opts.SubscriberRefreshFrequencyMs,

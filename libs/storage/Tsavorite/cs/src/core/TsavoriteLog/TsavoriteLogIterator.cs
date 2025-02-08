@@ -404,42 +404,65 @@ namespace Tsavorite.core
 
             epoch.Resume();
             // Continue looping until we find a record that is not a commit record
-            while (true)
+            try
             {
-                long physicalAddress;
-                bool isCommitRecord;
-                int entryLength;
-                try
+                while (true)
                 {
-                    var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
-                        out nextAddress,
-                        out isCommitRecord, out _);
-                    if (!hasNext)
+                    long physicalAddress;
+                    bool isCommitRecord;
+                    int entryLength;
+                    bool onFrame = false;
+                    try
                     {
-                        epoch.Suspend();
+                        var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
+                            out nextAddress,
+                            out isCommitRecord, out onFrame);
+                        if (!hasNext)
+                        {
+                            return false;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Throw upwards
+                        throw;
+                    }
+
+                    if (isCommitRecord)
+                    {
+                        TsavoriteLogRecoveryInfo info = new();
+                        info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
+                        if (info.CommitNum != long.MaxValue) continue;
+
+                        // Otherwise, no more entries
                         return false;
                     }
-                }
-                catch (Exception)
-                {
-                    // Throw upwards, but first, suspend the epoch we are in 
-                    epoch.Suspend();
-                    throw;
-                }
 
-                if (isCommitRecord)
-                {
-                    TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
-                    if (info.CommitNum != long.MaxValue) continue;
-
-                    // Otherwise, no more entries
-                    epoch.Suspend();
-                    return false;
+                    // Consume the chunk
+                    if (onFrame)
+                    {
+                        // Record in frame, so we do no need epoch protection to access it
+                        epoch.Suspend();
+                        try
+                        {
+                            consumer.Consume((byte*)(physicalAddress + headerSize), entryLength, currentAddress, nextAddress, isProtected: false);
+                        }
+                        finally
+                        {
+                            epoch.Resume();
+                        }
+                    }
+                    else
+                    {
+                        // Consume the chunk (warning: we are under epoch protection here, as we are consuming directly from main memory log buffer)
+                        consumer.Consume((byte*)(physicalAddress + headerSize), entryLength, currentAddress, nextAddress, isProtected: true);
+                    }
+                    return true;
                 }
-                consumer.Consume(new ReadOnlySpan<byte>((void*)(headerSize + physicalAddress), entryLength), currentAddress, nextAddress);
+            }
+            finally
+            {
                 epoch.Suspend();
-                return true;
             }
         }
 
