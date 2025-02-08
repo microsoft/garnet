@@ -163,33 +163,39 @@ namespace Garnet.server
                 // REQUIRED: username
                 var username = parseState.GetString(0);
 
-                // Modify or create the user with the given username
-                var user = aclAuthenticator.GetAccessControlList().GetUser(username);
-
-                try
+                lock (aclAuthenticator.GetAccessControlList().GetUserLockObject(username))
                 {
-                    if (user == null)
+                    // Modify or create the user with the given username
+                    var user = aclAuthenticator.GetAccessControlList().GetUser(username);
+
+                    try
                     {
-                        user = new User(username);
-                        aclAuthenticator.GetAccessControlList().AddUser(user);
-                    }
+                        if (user == null)
+                        {
+                            user = new User(username);
+                        }
+                        else
+                        {
+                            user = new User(user);
+                        }
 
-                    // Remaining parameters are ACL operations
-                    for (var i = 1; i < parseState.Count; i++)
+                        // Remaining parameters are ACL operations
+                        for (var i = 1; i < parseState.Count; i++)
+                        {
+                            var op = parseState.GetString(i);
+                            ACLParser.ApplyACLOpToUser(ref user, op);
+                        }
+
+                        aclAuthenticator.GetAccessControlList().AddOrReplaceUser(user);
+                    }
+                    catch (ACLException exception)
                     {
-                        var op = parseState.GetString(i);
-                        ACLParser.ApplyACLOpToUser(ref user, op);
+                        // Abort command execution
+                        while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                            SendAndReset();
+
+                        return true;
                     }
-                }
-                catch (ACLException exception)
-                {
-                    logger?.LogDebug("ACLException: {message}", exception.Message);
-
-                    // Abort command execution
-                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
                 }
 
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

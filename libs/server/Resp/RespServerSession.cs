@@ -102,6 +102,12 @@ namespace Garnet.server
         /// </summary>
         User _user = null;
 
+        /// <summary>
+        /// Flag to indicate <see cref="RespServerSession"/> user is inconsistent with most recent <see cref="User"/> in
+        /// the <see cref="AccessControlList"/>.
+        /// </summary>
+        bool _isUserAclStale = true;
+
         readonly ILogger logger = null;
 
         /// <summary>
@@ -186,6 +192,11 @@ namespace Garnet.server
         /// </summary>
         public long CreationTicks { get; }
 
+        /// <summary>
+        /// Subscriber key for receiving <see cref="AccessControlList"/> notifications.
+        /// </summary>
+        public string AclSubscriberKey { get; }
+
         // Track start time (in ticks) of last command for slow log purposes
         long slowLogStartTime;
         // Threshold for slow log in ticks (0 means disabled)
@@ -207,6 +218,7 @@ namespace Garnet.server
 
             this.Id = id;
             this.CreationTicks = Environment.TickCount64;
+            this.AclSubscriberKey = $"{id}";
 
             logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
@@ -228,6 +240,8 @@ namespace Garnet.server
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
+            this.storeWrapper.accessControlList.Subscribe(this);
+
 
             txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
@@ -248,6 +262,12 @@ namespace Garnet.server
             {
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
+            }
+
+            // Ensure user was not updated during initialization.
+            if (_authenticator is GarnetACLAuthenticator aclAuthenticator && _user != aclAuthenticator.GetUser())
+            {
+                this.RefreshUser();
             }
         }
 
@@ -296,20 +316,7 @@ namespace Garnet.server
 
             if (success)
             {
-                // Set authenticated user or fall back to default user, if separate users are not supported
-                // NOTE: Currently only GarnetACLAuthenticator supports multiple users
-                if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
-                {
-                    this._user = aclAuthenticator.GetUser();
-                }
-                else
-                {
-                    this._user = this.storeWrapper.accessControlList.GetDefaultUser();
-                }
-
-                // Propagate authentication to cluster session
-                clusterSession?.SetUser(this._user);
-                sessionScriptCache?.SetUser(this._user);
+                RefreshUser(true);
             }
 
             return _authenticator.CanAuthenticate ? success : false;
@@ -406,6 +413,12 @@ namespace Garnet.server
             return readHead;
         }
 
+        /// <inheritdoc/>
+        public void NotifyAclChange(User user)
+        {
+            _isUserAclStale = _user?.Name == user.Name;
+        }
+
         /// <summary>
         /// For testing purposes, call <see cref="INetworkSender.EnterAndGetResponseObject"/> and update state accordingly.
         /// </summary>
@@ -423,6 +436,30 @@ namespace Garnet.server
 
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
+
+        private void RefreshUser(bool force = false)
+        {
+            if (!_isUserAclStale && !force)
+            {
+                return;
+            }
+
+            // Set authenticated user or fall back to default user, if separate users are not supported
+            // NOTE: Currently only GarnetACLAuthenticator supports multiple users
+            if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
+            {
+                this._user = aclAuthenticator.GetUser();
+            }
+            else
+            {
+                this._user = this.storeWrapper.accessControlList.GetDefaultUser();
+            }
+
+            // Propagate authentication to cluster session
+            clusterSession?.SetUser(this._user);
+            sessionScriptCache?.SetUser(this._user);
+            _isUserAclStale = false;
+        }
 
         private void ProcessMessages()
         {
@@ -450,6 +487,11 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
                 {
+                    if (_isUserAclStale && cmd != RespCommand.AUTH)
+                    {
+                        RefreshUser();
+                    }
+
                     var noScriptPassed = true;
 
                     if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
@@ -1009,7 +1051,19 @@ namespace Garnet.server
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
-        => networkSender.TryClose();
+        {
+            if (!networkSender.TryClose())
+            {
+                return false;
+            }
+
+            if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
+            {
+                aclAuthenticator.GetAccessControlList().Unsubscribe(this);
+            }
+
+            return true;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)

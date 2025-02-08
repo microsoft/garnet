@@ -19,14 +19,29 @@ namespace Garnet.server.ACL
         const string DefaultUserName = "default";
 
         /// <summary>
+        /// Arbitrary Key for new user lock object.
+        /// </summary>
+        const string NewUserLockObjectKey = "441a61e2-4d4e-498e-8ca0-715cf550e5be";
+
+        /// <summary>
         /// Dictionary containing all users defined in the ACL
         /// </summary>
         ConcurrentDictionary<string, User> _users = new();
 
         /// <summary>
+        /// Dictionary containing stable lock objects for each user in the ACL.
+        /// </summary>
+        ConcurrentDictionary<string, object> _userLockObjects = new();
+
+        /// <summary>
         /// The currently configured default user (for fast default lookups)
         /// </summary>
         User _defaultUser;
+
+        /// <summary>
+        /// The <see cref="RespServerSession"/>s that will receive access control list change notifications.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, RespServerSession> _subscribedSessions = new();
 
         /// <summary>
         /// Creates a new Access Control List from an optional ACL configuration file
@@ -47,6 +62,7 @@ namespace Garnet.server.ACL
                 // If no ACL file is defined, only create the default user
                 _defaultUser = CreateDefaultUser(defaultPassword);
             }
+            _userLockObjects[NewUserLockObjectKey] = new object();
         }
 
         /// <summary>
@@ -64,6 +80,33 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Returns the lock object for the user with the given name. This allows user level locks, which should only be
+        /// used for rare cases where modifications must be made to a user object, most notably ACL SETUSER.
+        ///
+        /// If modifications to a user are necessary the following pattern is suggested:
+        ///
+        /// 1. Obtain the lock object for the user using this method.
+        /// 2. Immediately take a lock on the object.
+        /// 3. Read the user from the <see cref="AccessControlList"/> and make a copy with the copy constructor.
+        /// 4. Modify the copy of the user object.
+        /// 5. Replace the user in the <see cref="AccessControlList"/> using the AddOrReplace(User user) method.
+        ///
+        /// Note: This pattern will make the critical section under lock single threaded across all sessions, use very
+        /// sparingly.
+        /// </summary>
+        /// <param name="username">Username of the user to retrieve.</param>
+        /// <returns>Matching user lock object.</returns>
+        public object GetUserLockObject(string username)
+        {
+            if (_userLockObjects.TryGetValue(username, out var userLockObject))
+            {
+                return userLockObject;
+            }
+
+            return _userLockObjects[NewUserLockObjectKey];
+        }
+
+        /// <summary>
         /// Returns the currently configured default user.
         /// </summary>
         /// <returns>The default user of this access control list.</returns>
@@ -73,17 +116,15 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Adds the given user to the ACL.
+        /// Adds or replaces the given user in the ACL.
         /// </summary>
-        /// <param name="user">User to add to the list.</param>
-        /// <exception cref="ACLUserAlreadyExistsException">Thrown if a user with the given username already exists.</exception>
-        public void AddUser(User user)
+        /// <param name="user">User to add or replaces in the list.</param>
+        public void AddOrReplaceUser(User user)
         {
-            // If a user with the given name already exists in the ACL, the new user cannot be added
-            if (!_users.TryAdd(user.Name, user))
-            {
-                throw new ACLUserAlreadyExistsException(user.Name);
-            }
+            // If a user with the given name already exists replace the user, otherwise add the new user.
+            _users[user.Name] = user;
+            _ = _userLockObjects.TryAdd(user.Name, new object());
+            this.NotifySubscribers(user);
         }
 
         /// <summary>
@@ -98,7 +139,15 @@ namespace Garnet.server.ACL
             {
                 throw new ACLException("The special 'default' user cannot be removed from the system");
             }
-            return _users.TryRemove(username, out _);
+
+            bool userDeleted = _users.TryRemove(username, out _);
+
+            if (userDeleted)
+            {
+                _userLockObjects.TryRemove(username, out _);
+            }
+
+            return userDeleted;
         }
 
         /// <summary>
@@ -150,7 +199,7 @@ namespace Garnet.server.ACL
                 // Add the user to the user list
                 try
                 {
-                    AddUser(defaultUser);
+                    AddOrReplaceUser(defaultUser);
                     break;
                 }
                 catch (ACLUserAlreadyExistsException)
@@ -280,6 +329,37 @@ namespace Garnet.server.ACL
                 {
                     throw new ACLParsingException(exception.Message, configurationFile, curLine);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Registers a <see cref="RespServerSession"/> to receive notifications when modifications are performed to the <see cref="AccessControlList"/>.
+        /// </summary>
+        /// <param name="respSession">The <see cref="RespServerSession"/> to register.</param>
+        internal void Subscribe(RespServerSession respSession)
+        {
+            _subscribedSessions[respSession.AclSubscriberKey] = respSession;
+        }
+
+        /// <summary>
+        /// Unregisters a <see cref="RespServerSession"/> to receive notifications when modifications are performed to the <see cref="AccessControlList"/>.
+        /// </summary>
+        /// <param name="respSession">The <see cref="RespServerSession"/> to register.</param>
+        internal void Unsubscribe(RespServerSession respSession)
+        {
+            _ = _subscribedSessions.TryRemove(respSession.AclSubscriberKey, out _);
+        }
+
+
+        /// <summary>
+        /// Notify the registered <see cref="RespServerSession"/> when modifications are performed to the <see cref="AccessControlList"/>.
+        /// </summary>
+        /// <param name="user">The created or updated <see cref="User"/> that triggered the notification.</param>
+        private void NotifySubscribers(User user)
+        {
+            foreach (RespServerSession respSession in _subscribedSessions.Values)
+            {
+                respSession.NotifyAclChange(user);
             }
         }
     }
