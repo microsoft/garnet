@@ -120,7 +120,7 @@ namespace Garnet.server
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
-            if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
+            if ((!_authenticator.IsAuthenticated || !_user.GetEffectiveUser().CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
                 OnACLOrNoScriptFailure(this, cmd);
                 return false;

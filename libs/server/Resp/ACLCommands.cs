@@ -163,28 +163,48 @@ namespace Garnet.server
                 // REQUIRED: username
                 var username = parseState.GetString(0);
 
-                // Modify or create the user with the given username
-                var user = aclAuthenticator.GetAccessControlList().GetUser(username);
+                var ops = new string[parseState.Count];
+                for (var i = 1; i < parseState.Count; i++)
+                {
+                    ops[i] = parseState.GetString(i);
+                }
 
                 try
                 {
+                    // Modify or create the user with the given username
+                    var user = aclAuthenticator.GetAccessControlList().GetUser(username);
+
                     if (user == null)
                     {
                         user = new User(username);
-                        aclAuthenticator.GetAccessControlList().AddUser(user);
+
+                        try
+                        {
+                            aclAuthenticator.GetAccessControlList().AddUser(user);
+                        }
+                        catch (ACLUserAlreadyExistsException)
+                        {
+                            // If AddUser failed, retrieve the concurrently created user
+                            user = aclAuthenticator.GetAccessControlList().GetUser(username);
+                        }
                     }
 
-                    // Remaining parameters are ACL operations
-                    for (var i = 1; i < parseState.Count; i++)
+                    User newUser;
+                    do
                     {
-                        var op = parseState.GetString(i);
-                        ACLParser.ApplyACLOpToUser(ref user, op);
-                    }
+                        user = user.GetEffectiveUser();
+                        newUser = new User(user);
+
+                        // Remaining parameters are ACL operations
+                        for (var i = 1; i < ops.Length; i++)
+                        {
+                            ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
+                        }
+
+                    } while(!user.TrySetEffectiveUser(newUser, user));
                 }
                 catch (ACLException exception)
                 {
-                    logger?.LogDebug("ACLException: {message}", exception.Message);
-
                     // Abort command execution
                     while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
