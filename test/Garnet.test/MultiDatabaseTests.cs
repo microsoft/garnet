@@ -190,6 +190,11 @@ namespace Garnet.test
             var tuples = GenerateDataset(dbCount, keyCount);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbConnections = new IDatabase[dbCount];
+            for (var i = 0; i < dbCount; i++)
+            {
+                dbConnections[i] = redis.GetDatabase(i);
+            }
 
             // In parallel, add each (key, value) pair to a database of id db-id
             var kvBag = new ConcurrentBag<(int, string, string)>(tuples);
@@ -199,16 +204,17 @@ namespace Garnet.test
                 tasks[i] = Task.Run(() =>
                 {
                     kvBag.TryTake(out var tup);
-                    var db = redis.GetDatabase(tup.Item1);
+                    var db = dbConnections[tup.Item1];
                     return db.StringSet(tup.Item2, tup.Item3);
                 });
             }
 
             // Wait for all tasks to finish
-            Task.WaitAll(tasks);
+            var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(completed);
 
             // Check that all tasks successfully entered the data to the respective database
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
             // In parallel, retrieve the actual value for each db-id and key
             kvBag = new(tuples);
@@ -217,14 +223,16 @@ namespace Garnet.test
                 tasks[i] = Task.Run(() =>
                 {
                     kvBag.TryTake(out var tup);
-                    var db = redis.GetDatabase(tup.Item1);
+                    var db = dbConnections[tup.Item1];
                     var actualValue = db.StringGet(tup.Item2);
                     return (tup.Item1, tup.Item2, actualValue.ToString());
                 });
             }
 
             // Wait for all tasks to finish
-            Task.WaitAll(tasks);
+            completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(completed);
+            ClassicAssert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
 
             // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
             var results = tasks.Select(t => ((Task<(int, string, string)>)t).Result);
@@ -256,14 +264,24 @@ namespace Garnet.test
                     kvBag.TryTake(out var tup);
                     var expectedResponse = "+OK\r\n+OK\r\n";
                     var lcRequest = lcRequests.Take();
-                    var response = lcRequest.Execute($"SELECT {tup.Item1}", $"SET {tup.Item2} {tup.Item3}", expectedResponse.Length);
-                    lcRequests.Add(lcRequest);
-                    return expectedResponse == response;
+                    string response;
+                    try
+                    {
+                        response = lcRequest.Execute($"SELECT {tup.Item1}", $"SET {tup.Item2} {tup.Item3}", expectedResponse.Length);
+                    }
+                    finally
+                    {
+                        lcRequests.Add(lcRequest);
+                    }
+
+                    return response != null && expectedResponse == response;
                 });
             }
 
             // Wait for all tasks to finish
-            Task.WaitAll(tasks);
+            var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(completed);
+            ClassicAssert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
 
             // Check that all tasks successfully entered the data to the respective database
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
@@ -277,14 +295,24 @@ namespace Garnet.test
                     kvBag.TryTake(out var tup);
                     var expectedResponse = $"+OK\r\n${tup.Item3.Length}\r\n{tup.Item3}\r\n";
                     var lcRequest = lcRequests.Take();
-                    var response = lcRequest.Execute($"SELECT {tup.Item1}", $"GET {tup.Item2}", expectedResponse.Length);
-                    lcRequests.Add(lcRequest);
-                    return expectedResponse == response;
+                    string response;
+                    try
+                    {
+                        response = lcRequest.Execute($"SELECT {tup.Item1}", $"GET {tup.Item2}", expectedResponse.Length);
+                    }
+                    finally
+                    {
+                        lcRequests.Add(lcRequest);
+                    }
+
+                    return response != null && expectedResponse == response;
                 });
             }
 
             // Wait for all tasks to finish
-            Task.WaitAll(tasks);
+            completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
+            ClassicAssert.IsTrue(completed);
+            ClassicAssert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
 
             // Check that all the tasks retrieved the correct value successfully
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
