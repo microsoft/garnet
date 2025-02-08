@@ -144,6 +144,7 @@ namespace Garnet.server
                 RespCommand.GETWITHETAG => SingleKey(1, false, LockType.Shared),
                 RespCommand.SET => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETIFMATCH => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETIFGREATER => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
                 RespCommand.SETRANGE => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),

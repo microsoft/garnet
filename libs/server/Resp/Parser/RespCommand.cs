@@ -173,6 +173,7 @@ namespace Garnet.server
         SETEXXX,
         SETNX,
         SETIFMATCH,
+        SETIFGREATER,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -2436,6 +2437,10 @@ namespace Garnet.server
                 else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
                 {
                     return RespCommand.SETIFMATCH;
+                }
+                else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
+                {
+                    return RespCommand.SETIFGREATER;
                 }
                 else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
                 {
