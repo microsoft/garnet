@@ -6404,6 +6404,27 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZRangeByLexACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZRANGEBYLEX",
+                [DoZRangeByLexAsync, DoZRangeByLexLimitAsync]
+            );
+
+            static async Task DoZRangeByLexAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoZRangeByLexLimitAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20", "LIMIT", "2", "3"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
         public async Task ZRangeByScoreACLsAsync()
         {
             await CheckCommandsAsync(
