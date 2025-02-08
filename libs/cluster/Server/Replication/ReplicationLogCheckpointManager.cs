@@ -11,12 +11,12 @@ using Tsavorite.core;
 namespace Garnet.cluster
 {
     internal sealed class ReplicationLogCheckpointManager(
-        INamedDeviceFactory deviceFactory,
+        INamedDeviceFactoryCreator deviceFactoryCreator,
         ICheckpointNamingScheme checkpointNamingScheme,
         bool isMainStore,
         bool removeOutdated = false,
         int fastCommitThrottleFreq = 0,
-        ILogger logger = null) : DeviceLogCommitCheckpointManager(deviceFactory, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger), IDisposable
+        ILogger logger = null) : DeviceLogCommitCheckpointManager(deviceFactoryCreator, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger), IDisposable
     {
         public long CurrentSafeAofAddress = 0;
         public long RecoveredSafeAofAddress = 0;

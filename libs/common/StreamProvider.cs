@@ -149,20 +149,21 @@ namespace Garnet.common
     internal class AzureStreamProvider : StreamProviderBase
     {
         private readonly string _connectionString;
+        private readonly AzureStorageNamedDeviceFactoryCreator azureStorageNamedDeviceFactoryCreator;
 
         public AzureStreamProvider(string connectionString)
         {
             this._connectionString = connectionString;
+            this.azureStorageNamedDeviceFactoryCreator = new AzureStorageNamedDeviceFactoryCreator(this._connectionString, default);
         }
 
         protected override IDevice GetDevice(string path)
         {
             var fileInfo = new FileInfo(path);
-            INamedDeviceFactory settingsDeviceFactoryCreator = new AzureStorageNamedDeviceFactory(this._connectionString, default);
 
             // Get the container info, if it does not exist it will be created
-            settingsDeviceFactoryCreator.Initialize($"{fileInfo.Directory?.Name}");
-            var settingsDevice = settingsDeviceFactoryCreator.Get(new FileDescriptor("", fileInfo.Name));
+            var settingsDeviceFactory = azureStorageNamedDeviceFactoryCreator.Create($"{fileInfo.Directory?.Name}");
+            var settingsDevice = settingsDeviceFactory.Get(new FileDescriptor("", fileInfo.Name));
             settingsDevice.Initialize(MaxConfigFileSizeAligned, epoch: null, omitSegmentIdFromFilename: false);
             return settingsDevice;
         }
@@ -183,19 +184,20 @@ namespace Garnet.common
     internal class LocalFileStreamProvider : StreamProviderBase
     {
         private readonly bool readOnly;
+        private readonly LocalStorageNamedDeviceFactoryCreator localDeviceFactoryCreator;
 
         public LocalFileStreamProvider(bool readOnly = false)
         {
             this.readOnly = readOnly;
+            this.localDeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator(disableFileBuffering: false, readOnly: readOnly);
         }
 
         protected override IDevice GetDevice(string path)
         {
             var fileInfo = new FileInfo(path);
 
-            INamedDeviceFactory settingsDeviceFactoryCreator = new LocalStorageNamedDeviceFactory(disableFileBuffering: false, readOnly: readOnly);
-            settingsDeviceFactoryCreator.Initialize("");
-            var settingsDevice = settingsDeviceFactoryCreator.Get(new FileDescriptor(fileInfo.DirectoryName, fileInfo.Name));
+            var settingsDeviceFactory = localDeviceFactoryCreator.Create("");
+            var settingsDevice = settingsDeviceFactory.Get(new FileDescriptor(fileInfo.DirectoryName, fileInfo.Name));
             settingsDevice.Initialize(-1, epoch: null, omitSegmentIdFromFilename: true);
             return settingsDevice;
         }
