@@ -189,6 +189,9 @@ namespace Garnet.test
             var added = db.SortedSetAdd(key, entries);
             ClassicAssert.AreEqual(entries.Length, added);
 
+            var lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b", "c" }, lex);
+
             // XX - Only update elements that already exist. Don't add new elements.
             var testEntries = new[]
             {
@@ -200,6 +203,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.Exists);
             ClassicAssert.AreEqual(0, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "c", "b" }, lex);
             var scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b")]);
             CollectionAssert.AreEqual(new double[] { 3, 4 }, scores);
             var count = db.SortedSetLength(key);
@@ -216,6 +221,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.NotExists);
             ClassicAssert.AreEqual(2, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "c", "b" }, lex);
             scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("k"), new RedisValue("l")]);
             CollectionAssert.AreEqual(new double[] { 3, 4, 11, 12 }, scores);
             count = db.SortedSetLength(key);
@@ -231,6 +238,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.LessThan);
             ClassicAssert.AreEqual(1, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b", "c" }, lex);
             scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("m")]);
             CollectionAssert.AreEqual(new double[] { 3, 3, 13 }, scores);
             count = db.SortedSetLength(key);
@@ -246,6 +255,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.GreaterThan);
             ClassicAssert.AreEqual(1, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "b", "c", "a" }, lex);
             scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("n")]);
             CollectionAssert.AreEqual(new double[] { 4, 3, 14 }, scores);
             count = db.SortedSetLength(key);
@@ -2044,6 +2055,12 @@ namespace Garnet.test
             expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX board - [c", 4);
+            //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -2082,6 +2099,12 @@ namespace Garnet.test
             expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZREVRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZREVRANGEBYLEX board [c - REV", 4);
+            //expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -2096,6 +2119,12 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("ZRANGE mycity - + BYLEX LIMIT 2 3", 4);
             expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX mycity - + LIMIT 2 3", 4);
+            //expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }

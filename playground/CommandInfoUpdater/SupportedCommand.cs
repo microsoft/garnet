@@ -313,6 +313,7 @@ namespace CommandInfoUpdater
             new("ZPOPMIN", RespCommand.ZPOPMIN),
             new("ZRANDMEMBER", RespCommand.ZRANDMEMBER),
             new("ZRANGE", RespCommand.ZRANGE),
+            new("ZRANGEBYLEX", RespCommand.ZRANGEBYLEX),
             new("ZRANGEBYSCORE", RespCommand.ZRANGEBYSCORE),
             new("ZRANGESTORE", RespCommand.ZRANGESTORE),
             new("ZRANK", RespCommand.ZRANK),

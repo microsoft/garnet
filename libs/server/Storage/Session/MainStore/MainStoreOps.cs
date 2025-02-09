@@ -401,6 +401,57 @@ namespace Garnet.server
             }
         }
 
+        internal GarnetStatus MSET_Conditional<TContext>(ref RawStringInput input, ref TContext ctx)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var error = false;
+            var count = input.parseState.Count;
+
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                for (var i = 0; i < count; i += 2)
+                {
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                    txnManager.SaveKeyEntryToLock(srcKey, false, LockType.Exclusive);
+                    txnManager.SaveKeyEntryToLock(srcKey, true, LockType.Exclusive);
+                }
+                txnManager.Run(true);
+            }
+
+            var context = txnManager.LockableContext;
+            var objContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                for (var i = 0; i < count; i += 2)
+                {
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                    var status = EXISTS(srcKey, StoreType.All, ref context, ref objContext);
+                    if (status != GarnetStatus.NOTFOUND)
+                    {
+                        count = 0;
+                        error = true;
+                    }
+                }
+
+                for (var i = 0; i < count; i += 2)
+                {
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                    var srcVal = input.parseState.GetArgSliceByRef(i + 1);
+                    SET(srcKey, srcVal, ref context);
+                }
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return error ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
         public GarnetStatus SET<TContext>(ArgSlice key, ArgSlice value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {

@@ -614,10 +614,18 @@ namespace Garnet
             }
             else
             {
-                var address = string.IsNullOrEmpty(Address) || Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                    ? IPAddress.Loopback
-                    : IPAddress.Parse(Address);
-
+                IPAddress address;
+                if (string.IsNullOrEmpty(Address))
+                {
+                    address = IPAddress.Any;
+                }
+                else
+                {
+                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
+                        address = IPAddress.Loopback;
+                    else
+                        address = IPAddress.Parse(Address);
+                }
                 endpoint = new IPEndPoint(address, Port);
             }
 
