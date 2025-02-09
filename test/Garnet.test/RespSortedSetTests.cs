@@ -3075,12 +3075,12 @@ namespace Garnet.test
             db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
             db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
 
-            var union = db.SortedSetCombine(SetOperation.Union, [ "key1", "key2" ]);
+            var union = db.SortedSetCombine(SetOperation.Union, ["key1", "key2"]);
             ClassicAssert.AreEqual(5, union.Length);
 
             await Task.Delay(300);
 
-            var unionWithScores = db.SortedSetCombineWithScores(SetOperation.Union, [ "key1", "key2" ]);
+            var unionWithScores = db.SortedSetCombineWithScores(SetOperation.Union, ["key1", "key2"]);
             ClassicAssert.AreEqual(4, unionWithScores.Length);
         }
 
