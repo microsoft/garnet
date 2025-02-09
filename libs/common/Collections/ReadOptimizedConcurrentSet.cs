@@ -76,6 +76,31 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Try to add an item to the set and return the added (or existing) item
+        /// </summary>
+        /// <param name="item">Item to be added</param>
+        /// <param name="addedItem">Added or existing item</param>
+        /// <returns>Whether provided item was added</returns>
+        public bool TryAddAndGet(T item, out T addedItem)
+        {
+            var ret = false;
+            rwLock.WriteLock();
+            var i = list.IndexOf(item); ;
+            if (i == -1)
+            {
+                list.Add(item);
+                addedItem = item;
+                ret = true;
+            }
+            else
+            {
+                addedItem = list[i];
+            }
+            rwLock.WriteUnlock();
+            return ret;
+        }
+
+        /// <summary>
         /// Try to remove an item from the set
         /// </summary>
         /// <param name="item"></param>
@@ -107,6 +132,16 @@ namespace Garnet.common
             rwLock.ReadUnlock();
             item = default;
             return false;
+        }
+
+        /// <summary>
+        /// Clear the set
+        /// </summary>
+        public void Clear()
+        {
+            rwLock.WriteLock();
+            list.Clear();
+            rwLock.WriteUnlock();
         }
     }
 }
