@@ -233,13 +233,12 @@ namespace Garnet.server
         /// <returns></returns>
         public unsafe bool Unsubscribe(ByteArrayWrapper key, ServerSessionBase session)
         {
-            bool ret = false;
-            if (subscriptions == null) return ret;
+            if (subscriptions == null) return false;
             if (subscriptions.TryGetValue(key, out var sessions))
             {
                 return sessions.TryRemove(session);
             }
-            return ret;
+            return false;
         }
 
         /// <summary>
@@ -248,18 +247,18 @@ namespace Garnet.server
         /// <param name="key">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe void PatternUnsubscribe(ByteArrayWrapper key, ServerSessionBase session)
+        public unsafe bool PatternUnsubscribe(ByteArrayWrapper key, ServerSessionBase session)
         {
-            if (patternSubscriptions == null) return;
+            if (patternSubscriptions == null) return false;
             int index = 0;
             while (patternSubscriptions.Iterate(ref index, out var entry))
             {
                 if (entry.pattern.ReadOnlySpan.SequenceEqual(key.ReadOnlySpan))
                 {
-                    entry.subscriptions.TryRemove(session);
-                    break;
+                    return entry.subscriptions.TryRemove(session);
                 }
             }
+            return false;
         }
 
         /// <summary>

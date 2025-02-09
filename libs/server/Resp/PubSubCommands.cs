@@ -322,6 +322,10 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
             }
+
+            if (numActiveChannels == 0)
+                isSubscriptionSession = false;
+
             return true;
         }
 
@@ -349,11 +353,11 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString(channel.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
-                    numActiveChannels--;
+                    if (subscribeBroker.PatternUnsubscribe(channel, this))
+                        numActiveChannels--;
+
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
-
-                    subscribeBroker.PatternUnsubscribe(channel, this);
                 }
 
                 if (numActiveChannels == 0)
@@ -375,11 +379,11 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
 
-                    numActiveChannels--;
+                    if (subscribeBroker.PatternUnsubscribe(new ByteArrayWrapper(key), this))
+                        numActiveChannels--;
+
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
-
-                    subscribeBroker.Unsubscribe(new ByteArrayWrapper(key), this);
                 }
             }
 
@@ -388,6 +392,10 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
                     SendAndReset();
             }
+
+            if (numActiveChannels == 0)
+                isSubscriptionSession = false;
+
             return true;
         }
 
