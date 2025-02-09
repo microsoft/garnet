@@ -13,15 +13,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    struct PatternSubscriptionEntry : IEquatable<PatternSubscriptionEntry>
-    {
-        public ByteArrayWrapper pattern;
-        public ReadOptimizedConcurrentSet<ServerSessionBase> subscriptions;
-
-        bool IEquatable<PatternSubscriptionEntry>.Equals(PatternSubscriptionEntry other)
-            => pattern.ReadOnlySpan.SequenceEqual(other.pattern.ReadOnlySpan);
-    }
-
     /// <summary>
     /// Broker used for pub/sub
     /// </summary>

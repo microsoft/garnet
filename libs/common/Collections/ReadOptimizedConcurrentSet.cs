@@ -85,7 +85,7 @@ namespace Garnet.common
         {
             var ret = false;
             rwLock.WriteLock();
-            var i = list.IndexOf(item); ;
+            var i = list.IndexOf(item);
             if (i == -1)
             {
                 list.Add(item);
