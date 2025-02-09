@@ -203,7 +203,8 @@ namespace Garnet.server
                             ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
                         }
 
-                    } while(!userHandle.TrySetUser(newUser, effectiveUser));
+                    }
+                    while(!userHandle.TrySetUser(newUser, effectiveUser));
                 }
                 catch (ACLException exception)
                 {
