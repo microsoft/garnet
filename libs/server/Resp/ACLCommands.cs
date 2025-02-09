@@ -65,13 +65,13 @@ namespace Garnet.server
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var users = aclAuthenticator.GetAccessControlList().GetUsers();
-                while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
+                var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
+                while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
                     SendAndReset();
 
-                foreach (var user in users)
+                foreach (var userHandle in userHandles)
                 {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.Value.GetEffectiveUser().DescribeUser(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.GetUser().DescribeUser(), ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -97,7 +97,7 @@ namespace Garnet.server
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var users = aclAuthenticator.GetAccessControlList().GetUsers();
+                var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
                 while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
                     SendAndReset();
 
@@ -172,20 +172,20 @@ namespace Garnet.server
                 try
                 {
                     // Modify or create the user with the given username
-                    var user = aclAuthenticator.GetAccessControlList().GetUser(username);
+                    var userHandle = aclAuthenticator.GetAccessControlList().GetUserHandle(username);
 
-                    if (user == null)
+                    if (userHandle == null)
                     {
-                        user = new User(username);
+                        userHandle = new UserHandle(new User(username));
 
                         try
                         {
-                            aclAuthenticator.GetAccessControlList().AddUser(user);
+                            aclAuthenticator.GetAccessControlList().AddUserHandle(userHandle);
                         }
                         catch (ACLUserAlreadyExistsException)
                         {
                             // If AddUser failed, retrieve the concurrently created user
-                            user = aclAuthenticator.GetAccessControlList().GetUser(username);
+                            userHandle = aclAuthenticator.GetAccessControlList().GetUserHandle(username);
                         }
                     }
 
@@ -194,7 +194,7 @@ namespace Garnet.server
                     do
                     {
                         // Modifications to user permissions must be performed against the effective user.
-                        effectiveUser = user.GetEffectiveUser();
+                        effectiveUser = userHandle.GetUser();
                         newUser = new User(effectiveUser);
 
                         // Remaining parameters are ACL operations
@@ -203,7 +203,7 @@ namespace Garnet.server
                             ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
                         }
 
-                    } while(!user.TrySetEffectiveUser(newUser, effectiveUser));
+                    } while(!userHandle.TrySetUser(newUser, effectiveUser));
                 }
                 catch (ACLException exception)
                 {
@@ -248,7 +248,7 @@ namespace Garnet.server
                     {
                         var username = parseState.GetString(i);
 
-                        if (aclAuthenticator.GetAccessControlList().DeleteUser(username))
+                        if (aclAuthenticator.GetAccessControlList().DeleteUserHandle(username))
                         {
                             successfulDeletes += 1;
                         }
@@ -293,9 +293,9 @@ namespace Garnet.server
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 // Return the name of the currently authenticated user.
-                Debug.Assert(aclAuthenticator.GetUser() != null);
+                Debug.Assert(aclAuthenticator.GetUserHandle()?.GetUser() != null);
 
-                while (!RespWriteUtils.TryWriteSimpleString(aclAuthenticator.GetUser().Name, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString(aclAuthenticator.GetUserHandle().GetUser().Name, ref dcurr, dend))
                     SendAndReset();
             }
 

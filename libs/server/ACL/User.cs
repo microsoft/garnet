@@ -432,24 +432,6 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Returns the current version of the <see cref="User"/> with the latest modifications.
-        ///
-        /// This must be invoked prior to making an access control decision pertaining to a <see cref="User"/>.
-        /// </summary>
-        /// <returns>Returns the current version of the <see cref="User"/> with the latest modifications.</returns>
-        public User GetEffectiveUser() => _effectiveUser ?? this;
-
-        /// <summary>
-        /// Attempts to set the effective <see cref="User"/>.
-        /// </summary>
-        /// <param name="effectiveUser">A <see cref="User"/> that should secede this <see cref="User"/>.</param>
-        /// <param name="replacedEffectiveUser">The effective <see cref="User"/> expected to be replaced.</param>
-        /// <returns>True if the assignment was performed; otherwise false.</returns>
-        public bool TrySetEffectiveUser(User effectiveUser, User replacedEffectiveUser)
-            => Interlocked.CompareExchange(ref _effectiveUser, effectiveUser, null) == null ||
-                Interlocked.CompareExchange(ref _effectiveUser, effectiveUser, replacedEffectiveUser) == replacedEffectiveUser;
-
-        /// <summary>
         /// Determine the command / sub command pairs that are associated with this command information entries
         /// </summary>
         internal static IEnumerable<RespCommand> DetermineCommandDetails(IReadOnlyList<RespCommandsInfo> infos)
@@ -525,10 +507,5 @@ namespace Garnet.server.ACL
         /// NOTE: HashSet is not thread-safe, so accesses need to be synchronized
         /// </summary>
         readonly HashSet<ACLPassword> _passwordHashes = [];
-
-        /// <summary>
-        /// The current version of the <see cref="User"/> with the latest modifications is stored here.
-        /// </summary>
-        private User _effectiveUser = null;
     }
 }
