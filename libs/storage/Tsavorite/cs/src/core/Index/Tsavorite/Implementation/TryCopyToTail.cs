@@ -69,7 +69,7 @@ namespace Tsavorite.core
                 PostCopyToTail(ref srcLogRecord, ref stackCtx, pendingContext.InitialEntryAddress);
 
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcLogRecord.GetReadOnlyValueRef(), ref output, ref upsertInfo, reason);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcLogRecord.GetReadOnlyValue(), ref output, ref upsertInfo, reason);
                 stackCtx.ClearNewRecord();
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
             }

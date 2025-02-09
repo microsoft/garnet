@@ -157,15 +157,17 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal bool TryRealloc(BlockHeader* blockPtr, int newSize, out byte* newPtr)
+            internal bool TryRealloc(BlockHeader* blockPtr, int newUserSize, out byte* newPtr)
             {
+                var blockSize = PromoteSize(newUserSize);
+
                 // This can only be done in-place for FixedSizePages
-                if (blockPtr->AllocatedSize < newSize)
+                if (blockPtr->AllocatedSize < blockSize)
                 {
                     newPtr = null;
                     return false;
                 }
-                blockPtr->UserSize = newSize;
+                blockPtr->UserSize = newUserSize;
                 newPtr = (byte*)(blockPtr + 1);
                 return true;
             }

@@ -58,17 +58,20 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    // Get SpanByte from stack if any
-                    ref var value = ref output.SpanByte;
-                    if (!output.IsSpanByte)
+                    // Write key to network buffer. TODOMigrate: include expiration and ETag
+                    // TODOMigrate: Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have returned GarnetStatus.NOTFOUND");
+
+                    // Get SpanByte from stack if it was within size range, else from pinned heap memory
+                    bool ok;
+                    if (output.IsSpanByte)
+                        ok = WriteOrSendMainStoreKeyValuePair(key, output.SpanByte);
+                    else
                     {
-                        // Reinterpret heap memory to SpanByte
-                        value = ref SpanByte.ReinterpretWithoutLength(output.Memory.Memory.Span);
+                        fixed (byte* ptr = output.Memory.Memory.Span)
+                            ok = WriteOrSendMainStoreKeyValuePair(key, SpanByte.FromLengthPrefixedPinnedPointer(ptr));
                     }
 
-                    // Write key to network buffer. If it had expired, we would have received GarnetStatus.NOTFOUND
-                    // TODOMigrate: Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have returned GarnetStatus.NOTFOUND");
-                    if (!WriteOrSendMainStoreKeyValuePair(ref key, ref value))
+                    if (!ok)
                         return false;
 
                     // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it

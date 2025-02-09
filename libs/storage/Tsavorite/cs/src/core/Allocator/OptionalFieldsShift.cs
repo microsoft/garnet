@@ -39,24 +39,22 @@ namespace Tsavorite.core
             }
         }
 
-        internal void Restore(long address, ref RecordInfo recordInfo, int optionalPlusFillerLen)
+        internal void Restore(long address, ref RecordInfo recordInfo, int fillerLen)
         {
             // Restore after shift. See comments in GetAndZero for more details.
             if (recordInfo.HasETag)
             {
                 *(long*)address = ETag;
-                optionalPlusFillerLen -= LogRecord.ETagSize;
                 address += LogRecord.ETagSize;
             }
             if (recordInfo.HasExpiration)
             {
                 *(long*)address = Expiration;
-                optionalPlusFillerLen -= LogRecord.ExpirationSize;
                 address += LogRecord.ExpirationSize;
             }
-            if (optionalPlusFillerLen >= sizeof(int))
+            if (fillerLen >= LogRecord.FillerLengthSize)
             {
-                *(long*)address = optionalPlusFillerLen;
+                *(long*)address = fillerLen;
                 recordInfo.SetHasFiller();
             }
         }

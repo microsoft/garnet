@@ -215,33 +215,42 @@ namespace Tsavorite.core
             if (logRecord.Info.HasETag)
             {
                 *(long*)ptr = logRecord.ETag;
-                ptr += sizeof(long);
+                ptr += LogRecord.ETagSize;
             }
 
             if (logRecord.Info.HasExpiration)
             {
                 *(long*)ptr = logRecord.Expiration;
-                ptr += sizeof(long);
+                ptr += LogRecord.ExpirationSize;
             }
 
             var key = logRecord.Key;
-            (*(SpanByte*)ptr).Length = key.Length;
-            key.CopyTo(ref *(SpanByte*)ptr);
-            ptr += key.TotalSize;
+            *(int*)ptr = key.Length;
+            ptr += SpanField.FieldLengthPrefixSize;
+            key.CopyTo(new Span<byte>(ptr, key.Length));
+            ptr += key.Length;
 
             var value = logRecord.ValueSpan;
-            (*(SpanByte*)ptr).Length = value.Length;
-            value.CopyTo(ref *(SpanByte*)ptr);
-            ptr += value.TotalSize;
+            *(int*)ptr = value.Length;
+            ptr += SpanField.FieldLengthPrefixSize;
+            value.CopyTo(new Span<byte>(ptr, value.Length));
+            ptr += value.Length;
 
             valueObject = default;
         }
 
         /// <inheritdoc/>
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord<SpanByte> diskLogRecord, (byte[] array, long offset) byteStream)
+        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord<SpanByte> diskLogRecord, (byte[] array, long offset) byteStream) { /* This allocator has no IHeapObject */ }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void DisposeRecord(ref LogRecord<SpanByte> logRecord, DisposeReason disposeReason)
         {
-            // Do nothing; we don't create a HeapObject for SpanByteAllocator
+            // Release any overflow allocations for Key and possibly Value spans.
+            logRecord.FreeKeyOverflow();
+            logRecord.FreeValueOverflow();
         }
+
+        internal void DisposeRecord(ref DiskLogRecord<SpanByte> logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
 
         /// <summary>
         /// Dispose memory allocator
@@ -319,9 +328,9 @@ namespace Tsavorite.core
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
         }
 
-        internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
+        internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(key, bufferPool);
 
-        internal IHeapContainer<SpanByte> GetValueContainer(ref SpanByte value) => new SpanByteHeapContainer(ref value, bufferPool);
+        internal IHeapContainer<SpanByte> GetValueContainer(ref SpanByte value) => new SpanByteHeapContainer(value, bufferPool);
 
         internal static long[] GetSegmentOffsets() => null;
 

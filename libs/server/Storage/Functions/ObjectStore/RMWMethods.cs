@@ -203,8 +203,10 @@ namespace Garnet.server
             var oldValueSize = srcLogRecord.ValueObject.Size;
             var value = srcLogRecord.ValueObject.CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
 
-            // Do not set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-            dstLogRecord.TrySetValueObject(value, ref sizeInfo);
+            // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
+            // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
+            if (!dstLogRecord.TrySetValueObject(value, ref sizeInfo))
+                return false;
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
@@ -240,9 +242,10 @@ namespace Garnet.server
                     break;
 
                 case GarnetObjectType.Persist:
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                        return false;
                     if (srcLogRecord.Info.HasExpiration)
                     {
-                        // dstLogRecord probably doesn't have expiration since we didn't set it above, but Remove it to be safe
                         dstLogRecord.RemoveExpiration();
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.spanByteAndMemory);
                     }

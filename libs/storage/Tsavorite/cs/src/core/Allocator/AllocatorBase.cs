@@ -24,7 +24,7 @@ namespace Tsavorite.core
         private readonly bool ownedEpoch;
 
         /// <summary>The store functions for this instance of TsavoriteKV</summary>
-        internal readonly TStoreFunctions _storeFunctions;
+        internal readonly TStoreFunctions storeFunctions;
 
         /// <summary>The fully-derived allocator struct wrapper (so calls on it are inlined rather than virtual) for this log.</summary>
         internal readonly TAllocator _wrapper;
@@ -548,7 +548,7 @@ namespace Tsavorite.core
         /// <summary>Instantiate base allocator implementation</summary>
         private protected AllocatorBase(LogSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
-            _storeFunctions = storeFunctions;
+            this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
             // Validation
@@ -1823,7 +1823,7 @@ namespace Tsavorite.core
                     _wrapper.DeserializeValueObject(ref diskLogRecord, ref ctx);
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ctx.request_key.Get(), diskLogRecord.Key))
+                    if (ctx.request_key is not null && !storeFunctions.KeysEqual(ctx.request_key.Get(), diskLogRecord.Key))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
                         ctx.logicalAddress = diskLogRecord.Info.PreviousAddress;

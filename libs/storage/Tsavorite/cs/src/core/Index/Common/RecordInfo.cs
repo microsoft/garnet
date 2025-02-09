@@ -281,14 +281,14 @@ namespace Tsavorite.core
             set { word = (word & ~kPreviousAddressMaskInWord) | (value & kPreviousAddressMaskInWord); }
         }
 
-        public bool HasDBId => (word & kHasDBIdBitMask) != 0;
+        public readonly bool HasDBId => (word & kHasDBIdBitMask) != 0;
         public void SetHasDBId() => word |= kHasDBIdBitMask;
 
-        public bool HasETag => (word & kHasETagBitMask) != 0;
+        public readonly bool HasETag => (word & kHasETagBitMask) != 0;
         public void SetHasETag() => word |= kHasETagBitMask;
         public void ClearHasETag() => word &= ~kHasETagBitMask;
 
-        public bool HasExpiration => (word & kHasExpirationBitMask) != 0;
+        public readonly bool HasExpiration => (word & kHasExpirationBitMask) != 0;
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
@@ -345,7 +345,7 @@ namespace Tsavorite.core
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {AbsoluteAddress(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
                  + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, KisOF {KeyIsOverflow}, VisOF {ValueIsOverflow},"
-                 + $" Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
+                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
         }
     }
 }

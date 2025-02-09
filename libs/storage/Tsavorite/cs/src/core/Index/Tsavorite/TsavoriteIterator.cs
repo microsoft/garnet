@@ -63,7 +63,6 @@ namespace Tsavorite.core
         private readonly ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempKvSession;
         private readonly BasicContext<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext;
         private ITsavoriteScanIterator<TValue> mainKvIter;
-        private readonly IPushScanIterator<TValue> pushScanIterator;
         private ITsavoriteScanIterator<TValue> tempKvIter;
 
         enum IterationPhase
@@ -92,7 +91,6 @@ namespace Tsavorite.core
             tempKvSession = tempKv.NewSession<TInput, TOutput, TContext, TFunctions>(functions);
             tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);
-            pushScanIterator = mainKvIter as IPushScanIterator<TValue>;
         }
 
         ITsavoriteScanIterator<TValue> CurrentIter => iterationPhase == IterationPhase.MainKv ? mainKvIter : tempKvIter;
@@ -231,7 +229,7 @@ namespace Tsavorite.core
                     _ = tempbContext.Delete(key);
             }
             else
-                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValueRef());
+                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValue());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -281,7 +279,7 @@ namespace Tsavorite.core
         public TValue ValueObject => CurrentIter.ValueObject;
 
         /// <inheritdoc/>
-        public unsafe ref TValue GetReadOnlyValueRef() => ref CurrentIter.GetReadOnlyValueRef();
+        public TValue GetReadOnlyValue() => CurrentIter.GetReadOnlyValue();
 
         /// <inheritdoc/>
         public long ETag => CurrentIter.ETag;

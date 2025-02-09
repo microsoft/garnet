@@ -109,14 +109,23 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Set all data within a field to zero.
+        /// Set all data within a portion of a field to zero.
         /// </summary>
         /// <param name="address">Address of the field</param>
         /// <param name="dataOffset">Starting position in the field to zero</param>
         /// <param name="clearLength">Length of the data from <paramref name="dataOffset"/> to zero</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void ZeroInlineData(long address, int dataOffset, int clearLength) 
-            => new Span<byte>((byte*)(GetDataAddress(address) + dataOffset), clearLength).Clear();
+            => ZeroData(GetDataAddress(address) + dataOffset, clearLength);
+
+        /// <summary>
+        /// Set all data within a portion of a field to zero.
+        /// </summary>
+        /// <param name="clearStart">Address to start clearing at</param>
+        /// <param name="clearLength">Length of the data from <paramref name="clearStart"/> to zero</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ZeroData(long clearStart, int clearLength)
+            => new Span<byte>((byte*)clearStart, clearLength).Clear();
 
         /// <summary>
         /// Convert a Span field from inline to overflow.
@@ -139,6 +148,11 @@ namespace Tsavorite.core
             var clearLength = GetLengthRef(address) - OverflowDataPtrSize;
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize, clearLength);
+
+            // Now clear any extra space in the new allocation beyond what we copied from the old data.
+            clearLength = newLength - copyLength;
+            if (clearLength > 0)
+                ZeroData((long)newPtr + copyLength, clearLength);
 
             return SetOverflowAllocation(address, newPtr);
         }
@@ -181,7 +195,9 @@ namespace Tsavorite.core
             Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
             allocator.Free((long)oldPtr);
 
-            // If "shrinking" the allocation because the new inline size is less than the inline size of the pointer, we must zeroinit the extra space.
+            // We are either making an inline allocation >= old inline length, which was OverflowDataPtrSize, or we are "shrinking" the inline allocation
+            // because the new inline size is less than the inline size of the pointer. In the latter case we must zeroinit the extra space. If we grew the
+            // inline size, we must have already zero-init'd the extra space.
             var clearLength = OverflowDataPtrSize - newLength;
             if (clearLength > 0)
                 ZeroInlineData(address, OverflowDataPtrSize - clearLength, clearLength);
@@ -208,7 +224,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte* AdjustInlineLength(long address, int newLength)
         {
-            // Zeroinit the extra space.
+            // Zeroinit the extra space. Here we are concerned about shrinkage leaving nonzero leftovers, so we clear those.
             var clearLength = GetLengthRef(address) - newLength;
             if (clearLength > 0)
                 ZeroInlineData(address, newLength, clearLength);
@@ -230,18 +246,22 @@ namespace Tsavorite.core
             // First see if the existing allocation is large enough. If we are shrinking we don't need to zeroinit in the oversize allocations
             // because there is no "log scan to next record" there.
             var oldPtr = (byte*)GetOverflowPointer(address);
-            if (allocator.TryRealloc((long)oldPtr, newLength, out byte* newPointer))
+            var oldLength = BlockHeader.GetUserSize((long)oldPtr);
+            if (allocator.TryRealloc((long)oldPtr, newLength, out byte* newPtr))
             {
-                // TODO: Verify NativeMemory.AlignedRealloc copies the existing data to the new allocation if it has to grow
-                SetOverflowPointer(address, (IntPtr)newPointer);
-                return newPointer;
+                SetOverflowPointer(address, (IntPtr)newPtr);
+                var clearLength = newLength - oldLength;
+                if (clearLength > 0)
+                    ZeroData((long)newPtr + oldLength, clearLength);
+                return newPtr;
             }
 
             // Allocate and insert a new block, copy to it, then free the current allocation
-            var oldLength = BlockHeader.GetUserSize((long)oldPtr);
-            var newPtr = SetOverflowAllocation(address, newLength, allocator);
+            newPtr = SetOverflowAllocation(address, newLength, allocator);
             var copyLength = oldLength < newLength ? oldLength : newLength;
             Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
+            if (copyLength < newLength)
+                ZeroData((long)newPtr + copyLength, newLength - copyLength);
             allocator.Free((long)oldPtr);
             return newPtr;
         }

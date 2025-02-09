@@ -292,10 +292,10 @@ namespace Garnet.server
             RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
-            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            var key = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += key.TotalSize;
 
-            ref var value = ref Unsafe.AsRef<SpanByte>(curr);
+            var value = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += value.TotalSize;
 
             // Reconstructing RawStringInput
@@ -312,7 +312,7 @@ namespace Garnet.server
         static unsafe void StoreRMW(BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
-            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            var key = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += key.TotalSize;
 
             // Reconstructing RawStringInput
@@ -331,16 +331,16 @@ namespace Garnet.server
 
         static unsafe void StoreDelete(BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            var key = SpanByte.FromLengthPrefixedPinnedPointer(ptr + sizeof(AofHeader));
             basicContext.Delete(key);
         }
 
         static unsafe void ObjectStoreUpsert(BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
                 GarnetObjectSerializer garnetObjectSerializer, byte* ptr, byte* outputPtr, int outputLength)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            var key = SpanByte.FromLengthPrefixedPinnedPointer(ptr + sizeof(AofHeader));
 
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            var value = SpanByte.FromLengthPrefixedPinnedPointer(ptr + sizeof(AofHeader) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
@@ -353,7 +353,7 @@ namespace Garnet.server
             ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
         {
             var curr = ptr + sizeof(AofHeader);
-            var key = Unsafe.AsRef<SpanByte>(curr);
+            var key = SpanByte.FromLengthPrefixedPinnedPointer(curr);
             curr += key.TotalSize;
 
             // Reconstructing ObjectInput
@@ -372,7 +372,7 @@ namespace Garnet.server
 
         static unsafe void ObjectStoreDelete(BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
         {
-            var key = Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            var key = SpanByte.FromLengthPrefixedPinnedPointer(ptr + sizeof(AofHeader));
             basicContext.Delete(key);
         }
 

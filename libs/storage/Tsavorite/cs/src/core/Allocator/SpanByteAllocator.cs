@@ -137,8 +137,17 @@ namespace Tsavorite.core
         public readonly LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetInitialRecordIOSize() => RecordInfo.GetLength()
             + (1 << LogSettings.kMaxInlineKeySizeBits) * 2  // double to include value as well
             + sizeof(long) * 2;                             // ETag and Expiration
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(ref LogRecord<SpanByte> logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(ref DiskLogRecord<SpanByte> logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
     }
 }

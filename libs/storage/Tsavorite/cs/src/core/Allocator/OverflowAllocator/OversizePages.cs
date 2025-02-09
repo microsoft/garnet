@@ -99,12 +99,14 @@ namespace Tsavorite.core
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal bool TryRealloc(BlockHeader* blockPtr, int newSize, out byte* newPtr)
+            internal bool TryRealloc(BlockHeader* blockPtr, int newUserSize, out byte* newPtr)
             {
+                var blockSize = PromoteSize(newUserSize);
+
                 // For Oversize, this is a reallocation of the single-item page. It thows OOM if unsuccessful.
                 var slot = blockPtr->Slot;
-                var newBlockPtr = PageVector.Realloc(blockPtr, newSize);
-                newBlockPtr->AllocatedSize = newSize;
+                var newBlockPtr = PageVector.Realloc(blockPtr, blockSize);
+                newBlockPtr->AllocatedSize = blockSize;
                 newBlockPtr->Slot = slot;
                 newPtr = (byte*)(newBlockPtr + 1);
                 return true;

@@ -171,5 +171,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly int GetInitialRecordIOSize() => throw new NotImplementedException("Not implemented for AofAllocator");
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(ref LogRecord<AofValue> logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for AofAllocator");
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(ref DiskLogRecord<AofValue> logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for AofAllocator");
     }
 }

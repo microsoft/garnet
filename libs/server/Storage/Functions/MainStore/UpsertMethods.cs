@@ -53,6 +53,7 @@ namespace Garnet.server
         {
             if (!logRecord.TrySetValueSpan(srcValue, ref sizeInfo))
                 return false;
+            // TODO ETag
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
                 sizeInfo.AssertOptionals(logRecord.Info);

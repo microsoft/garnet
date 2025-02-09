@@ -110,14 +110,13 @@ namespace Tsavorite.core
             public readonly SpanByte Key => key.Get();
 
             /// <inheritdoc/>
-            public readonly unsafe SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Cannot use ValueSpan on an Object record") : *(SpanByte*)Unsafe.AsPointer(ref value.Get());
+            public readonly unsafe SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Cannot use ValueSpan on an Object record") : Unsafe.As<TValue, SpanByte>(ref value.Get());
 
             /// <inheritdoc/>
             public readonly TValue ValueObject => value.Get();
 
-            // TV will be TValue, but we don't want LogRecord to require a TValue type parameter just for this one method
             /// <inheritdoc/>
-            public readonly unsafe ref TValue GetReadOnlyValueRef() => ref value.Get();
+            public readonly TValue GetReadOnlyValue() => value.Get();
 
             /// <inheritdoc/>
             public readonly long ETag => eTag;

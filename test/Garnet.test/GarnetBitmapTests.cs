@@ -2123,11 +2123,11 @@ namespace Garnet.test
                     long incrBy = RandomIntBitRange(bitCount, true);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "WRAP", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), value);
-                    ClassicAssert.AreEqual(result, value);
+                    ClassicAssert.AreEqual(value, result);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "WRAP", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), incrBy);
                     (expectedResult, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 0);
-                    ClassicAssert.AreEqual(result, expectedResult);
+                    ClassicAssert.AreEqual(expectedResult, result);
                 }
 
                 //sat incrby

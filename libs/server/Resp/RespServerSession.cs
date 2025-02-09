@@ -933,7 +933,7 @@ namespace Garnet.server
 
             var dest = new SpanByte(length, (IntPtr)dst);
             if (k.IsSpanByte)
-                k.SpanByte.CopyTo(ref dest);
+                k.SpanByte.CopyTo(dest);
             else
                 k.AsMemoryReadOnlySpan().CopyTo(dest.AsSpan());
             return true;

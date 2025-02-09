@@ -74,7 +74,7 @@ namespace Tsavorite.core
                 if (success)
                     newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcLogRecord.GetReadOnlyValueRef(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcLogRecord.GetReadOnlyValue(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 stackCtx.ClearNewRecord();
                 return true;
             }

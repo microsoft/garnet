@@ -61,7 +61,6 @@ namespace Tsavorite.core
         /// </summary>
         public SpanByteAndMemory(IMemoryOwner<byte> memory)
         {
-            SpanByte = default;
             SpanByte.Invalid = true;
             Memory = memory;
         }
@@ -71,7 +70,6 @@ namespace Tsavorite.core
         /// </summary>
         public SpanByteAndMemory(IMemoryOwner<byte> memory, int length)
         {
-            SpanByte = default;
             SpanByte.Invalid = true;
             Memory = memory;
             SpanByte.Length = length;

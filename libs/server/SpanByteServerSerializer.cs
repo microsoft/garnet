@@ -31,40 +31,41 @@ namespace Garnet.server
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadKeyByRef(ref byte* src)
+        public SpanByte ReadKey(ref byte* src)
         {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            var ret = Unsafe.AsRef<SpanByte>(src);
             src += ret.TotalSize;
-            return ref ret;
+            return ret;
         }
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadValueByRef(ref byte* src)
+        public SpanByte ReadValueByRef(ref byte* src)
         {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            var ret = SpanByte.FromLengthPrefixedPinnedPointer(src);
             src += ret.TotalSize;
-            return ref ret;
+            return ret;
         }
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadInputByRef(ref byte* src)
+        public SpanByte ReadInputByRef(ref byte* src)
         {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            var ret = SpanByte.FromLengthPrefixedPinnedPointer(src);
             src += ret.TotalSize;
-            return ref ret;
+            return ret;
         }
 
         /// <inheritdoc />
         public bool Write(SpanByte k, ref byte* dst, int length)
         {
-            if (k.Length > length) return false;
+            if (k.Length > length)
+                return false;
 
             *(int*)dst = k.Length;
             dst += sizeof(int);
             var dest = new SpanByte(k.Length, (IntPtr)dst);
-            k.CopyTo(ref dest);
+            k.CopyTo(dest);
             dst += k.Length;
             return true;
         }
@@ -77,7 +78,7 @@ namespace Garnet.server
 
             var dest = new SpanByte(length, (IntPtr)dst);
             if (k.IsSpanByte)
-                k.SpanByte.CopyTo(ref dest);
+                k.SpanByte.CopyTo(dest);
             else
                 k.AsMemoryReadOnlySpan().CopyTo(dest.AsSpan());
             return true;

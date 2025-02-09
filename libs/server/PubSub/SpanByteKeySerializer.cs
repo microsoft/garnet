@@ -15,11 +15,11 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadKeyByRef(ref byte* src)
+        public SpanByte ReadKey(ref byte* src)
         {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
+            var ret = SpanByte.FromLengthPrefixedPinnedPointer(src);
             src += ret.TotalSize;
-            return ref ret;
+            return ret;
         }
 
         /// <inheritdoc />

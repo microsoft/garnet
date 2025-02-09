@@ -543,8 +543,8 @@ namespace Tsavorite.core
             var currentSize = logRecord.ActualRecordSize;
             var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
 
-            // TODO: account for out-of-line key/value allocations
-            if (currentSize >= sizeInfo.ActualInlineRecordSize)
+            logRecord.ClearOptionals();
+            if (logRecord.TrySetValueSpanLength(ref sizeInfo))
             {
                 if (sessionFunctions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                 {

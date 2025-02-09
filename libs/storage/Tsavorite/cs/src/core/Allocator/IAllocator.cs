@@ -59,5 +59,12 @@ namespace Tsavorite.core
 
         /// <summary>Return the initial IO size when reading a record for this allocator</summary>
         int GetInitialRecordIOSize();
+
+        /// <summary>Dispose an in-memory log record</summary>
+        void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason);
+
+        /// <summary>Dispose an on-disk log record</summary>
+        void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason);
+
     }
 }

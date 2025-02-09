@@ -233,23 +233,24 @@ namespace Tsavorite.core
             if (logRecord.Info.HasETag)
             {
                 *(long*)ptr = logRecord.ETag;
-                ptr += sizeof(long);
+                ptr += LogRecord.ETagSize;
             }
 
             if (logRecord.Info.HasExpiration)
             {
                 *(long*)ptr = logRecord.Expiration;
-                ptr += sizeof(long);
+                ptr += LogRecord.ExpirationSize;
             }
 
             var key = logRecord.Key;
-            (*(SpanByte*)ptr).Length = key.Length;
-            key.CopyTo(ref *(SpanByte*)ptr);
-            ptr += key.TotalSize;
+            *(int*)ptr = key.Length;
+            ptr += SpanField.FieldLengthPrefixSize;
+            key.CopyTo(new Span<byte>(ptr, key.Length));
+            ptr += key.Length;
 
             // Empty value; we'll return the deserialized value object. See note above regarding allocated space for this in the DiskLogRecord.
-            (*(SpanByte*)ptr).Length = 0;
-            ptr += (*(SpanByte*)ptr).TotalSize;
+            *(int*)ptr = 0;
+            ptr += SpanField.FieldLengthPrefixSize;
 
             valueObject = logRecord.ValueObject;
         }
@@ -260,9 +261,34 @@ namespace Tsavorite.core
             // Do nothing; we don't create a HeapObject for SpanByteAllocator
             var stream = new MemoryStream(serializedBytes.array);
             _ = stream.Seek(serializedBytes.offset, SeekOrigin.Begin);
-            var valueSerializer = _storeFunctions.BeginDeserializeValue(stream);
+            var valueSerializer = storeFunctions.BeginDeserializeValue(stream);
             valueSerializer.Deserialize(out diskLogRecord.valueObject);
             valueSerializer.EndDeserialize();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason)
+        {
+            // Release any overflow allocations for Key
+            logRecord.FreeKeyOverflow();
+
+            if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
+            {
+                ref var heapObj = ref logRecord.ObjectRef;
+                if (heapObj is not null)
+                {
+                    storeFunctions.DisposeValueObject(heapObj, disposeReason);
+                    heapObj = default;
+                }
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason)
+        {
+            // Clear the IHeapObject if we deserialized it
+            if (logRecord.IsObjectRecord && logRecord.ValueObject is not null)
+                storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 
         /// <summary>
@@ -946,7 +972,7 @@ namespace Tsavorite.core
             DeserializeFromDiskBuffer(ref diskLogRecord, serializedBytes);
         }
 
-        internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(ref key, bufferPool);
+        internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(key, bufferPool);
 #endregion
 
         public long[] GetSegmentOffsets() => null;

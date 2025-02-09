@@ -33,7 +33,7 @@ namespace Tsavorite.core
         internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, SpanByte key, ref TScanFunctions scanFunctions)
             where TScanFunctions : IScanIteratorFunctions<TValue>
         {
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(_storeFunctions.GetKeyHashCode64(key));
+            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
             if (!store.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -251,7 +251,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(_storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
 
             OperationStatus internalStatus;
             OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);

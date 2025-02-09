@@ -69,9 +69,9 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static int GetUserSize(long address)
             {
-                // UserSize is the same as AllocatedSize for Oversize, so we don't carry a separate UserSize field for that (we union it with the FreeList slots instead).
+                // UserSize is the same as AllocatedSize (less BlockHeader size) for Oversize, so we don't carry a separate UserSize field for that (we union it with the FreeList slots instead).
                 var blockPtr = FromUserAddress(address);
-                return !blockPtr->IsOversize ? blockPtr->UserSize : blockPtr->AllocatedSize;
+                return !blockPtr->IsOversize ? blockPtr->UserSize : blockPtr->AllocatedSize - sizeof(BlockHeader);
             }
 
             /// <inheritdoc/>

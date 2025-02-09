@@ -148,11 +148,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref TValue GetReadOnlyValueRef()
+        public readonly TValue GetReadOnlyValue()
         {
             if (IsObjectRecord)
-                return ref objectIdMap.GetRef(ValueObjectId);
-            return ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+                return objectIdMap.GetRef(ValueObjectId);
+
+            var sb = ValueSpan;
+            return Unsafe.As<SpanByte, TValue>(ref sb);
         }
 
         /// <inheritdoc/>
@@ -272,26 +274,29 @@ namespace Tsavorite.core
             var valueAddress = ValueAddress;
             var oldInlineValueSize = InlineValueSizeAt(valueAddress);
             var newInlineValueSize = sizeInfo.InlineValueSize;
-            var newValueDataLength = sizeInfo.ValueDataSize;
 
             // Growth and fillerLen may be negative if shrinking.
-            var valueGrowth = newInlineValueSize - oldInlineValueSize;
+            var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
             var newOptionalSize = sizeInfo.OptionalSize;
             var oldOptionalSize = OptionalSize;
-            var totalGrowth = valueGrowth + (newOptionalSize - oldOptionalSize);
+            var inlineTotalGrowth = inlineValueGrowth + (newOptionalSize - oldOptionalSize);
 
             var optionalStartAddress = valueAddress + oldInlineValueSize;
             var fillerLenAddress = optionalStartAddress + oldOptionalSize;
             var usedRecordSize = (int)(fillerLenAddress - physicalAddress);
-            var allocatedRecordSize = usedRecordSize + GetFillerLength(fillerLenAddress);
+            var fillerLen = GetFillerLength(fillerLenAddress);
 
             // See if we have enough room for the inline data. Note: We don't consider here things like moving inline data that is less than
             // overflow length into overflow to free up inline space; we calculate the inline size required for the new value (including whether
             // it is overflow) and optionals, and success is based on whether that can fit into the allocated record space.
-            var fillerLen = allocatedRecordSize - usedRecordSize;
-            if (fillerLen < totalGrowth)
+            if (fillerLen < inlineTotalGrowth)
                 return false;
-            fillerLen -= totalGrowth;
+
+            // We know we have enough space for the changed value *and* for whatever changes are coming in for the optionals. However, we aren't
+            // changing the optionals here, so don't adjust fillerLen for them; only adjust it for value length change.
+            fillerLen -= inlineValueGrowth;
+
+            var newValueDataLength = sizeInfo.ValueDataSize;
 
             // We have enough space to handle the changed value size, including changing between inline and overflow or vice-versa, and the new
             // optional space. But we do not count the change in optional space here; we just ensure there is enough, and a later operation will
@@ -307,12 +312,11 @@ namespace Tsavorite.core
                 else
                 {
                     // Both are inline, so resize in place (and adjust filler) if needed.
-                    if (newValueDataLength != SpanField.GetLengthRef(valueAddress))
+                    if (inlineValueGrowth != 0)
                     {
                         var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
                         _ = SpanField.AdjustInlineLength(ValueAddress, newValueDataLength);
-                        optionalStartAddress += valueGrowth;
-                        optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen);
+                        optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                     }
                 }
             }
@@ -329,20 +333,27 @@ namespace Tsavorite.core
                     var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
                     _ = SpanField.ConvertToInline(valueAddress, newValueDataLength, overflowAllocator);
                     InfoRef.ClearValueIsOverflow();
-                    optionalStartAddress += valueGrowth;
-                    optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen);
+                    optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                 }
                 else
                 {
                     // Convert from inline to overflow.
-                    Debug.Assert(valueGrowth == SpanField.OverflowInlineSize - oldInlineValueSize, 
-                                $"ValueGrowth {valueGrowth} does not equal expected {oldInlineValueSize - SpanField.OverflowInlineSize}");
+                    Debug.Assert(inlineValueGrowth == SpanField.OverflowInlineSize - oldInlineValueSize, 
+                                $"ValueGrowth {inlineValueGrowth} does not equal expected {oldInlineValueSize - SpanField.OverflowInlineSize}");
 
-                    var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                    _ = SpanField.ConvertToOverflow(valueAddress, newValueDataLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
-                    InfoRef.SetValueIsOverflow();
-                    optionalStartAddress += valueGrowth;
-                    optionalFields.Restore(optionalStartAddress, ref InfoRef, fillerLen);
+                    // If this is IPU or CU then our inline size is already calculated to be SpanField.OverflowDataPtrSize, so we don't need the optional-shift.
+                    if (inlineValueGrowth != 0)
+                    {
+                        var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                        _ = SpanField.ConvertToOverflow(valueAddress, newValueDataLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
+                        InfoRef.SetValueIsOverflow();
+                        optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                    }
+                    else
+                    {
+                        _ = SpanField.ConvertToOverflow(valueAddress, newValueDataLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
+                        InfoRef.SetValueIsOverflow();
+                    }
                 }
             }
 
@@ -500,14 +511,12 @@ namespace Tsavorite.core
             const int growth = LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
-            var maxLen = recordLen + GetFillerLength(fillerLenAddress);
-            var availableSpace = maxLen - recordLen;
-            if (availableSpace < growth)
+            var fillerLen = GetFillerLength(fillerLenAddress) - growth;
+            if (fillerLen < 0)
                 return false;
 
             // Start at FillerLen address and back up, for speed
             var address = fillerLenAddress;
-            var fillerLen = availableSpace - growth;
 
             // Preserve zero-init by:
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
@@ -549,12 +558,10 @@ namespace Tsavorite.core
             const int growth = -LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
-            var maxLen = recordLen + GetFillerLength(fillerLenAddress);
-            var availableSpace = maxLen - recordLen;
+            var fillerLen = GetFillerLength(fillerLenAddress) - growth; // This will be negative, so adds ETagSize to it
 
             // Start at FillerLen address and back up, for speed
             var address = fillerLenAddress;
-            var fillerLen = availableSpace + growth;
 
             // Preserve zero-init by:
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
@@ -578,9 +585,13 @@ namespace Tsavorite.core
                 address += expirationSize;      // repositions to fillerAddress if expirationSize is nonzero
                 InfoRef.ClearHasETag();
             }
+
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
-                *(int*)address = fillerLen;
+            {
+                InfoRef.SetHasFiller();         // May already be set, but will definitely now be true since we opened up more than FillerLengthSize bytes
+                *(int*)fillerLenAddress = fillerLen;
+            }
             return true;
         }
 
@@ -600,13 +611,11 @@ namespace Tsavorite.core
             const int growth = LogRecord.ExpirationSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
-            var maxLen = recordLen + GetFillerLength(fillerLenAddress);
-            var availableSpace = maxLen - recordLen;
-            if (availableSpace < growth)
+            var fillerLen = GetFillerLength(fillerLenAddress) - growth;
+            if (fillerLen < 0)
                 return false;
 
             // Start at FillerLen address and back up, for speed
-            var fillerLen = availableSpace - growth;
 
             // Preserve zero-init by:
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
@@ -638,12 +647,9 @@ namespace Tsavorite.core
             const int growth = -LogRecord.ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
-            var maxLen = recordLen + GetFillerLength(fillerLenAddress);
-            var availableSpace = maxLen - recordLen;
+            var fillerLen = GetFillerLength(fillerLenAddress) - growth; // This will be negative, so adds ExpirationSize to it
 
             // Start at FillerLen address and back up, for speed
-            var fillerLen = availableSpace + growth;
-
             // Preserve zero-init by:
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
             if (Info.HasFiller)
@@ -656,30 +662,16 @@ namespace Tsavorite.core
 
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
+            {
+                InfoRef.SetHasFiller();         // May already be set, but will definitely now be true since we opened up more than FillerLengthSize bytes
                 *(int*)fillerLenAddress = fillerLen;
+            }
             return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool HasEnoughSpace(int newValueLen, bool withETag, bool withExpiration)
-        {
-            // An overflow value will take 
-            if (Info.ValueIsOverflow)
-                newValueLen = SpanField.OverflowInlineSize;
-
-            var growth = newValueLen - InlineValueSize;
-            if (Info.HasETag != withETag)
-                growth += withETag ? LogRecord.ETagSize : -LogRecord.ETagSize;
-            if (Info.HasExpiration != withExpiration)
-                growth += withExpiration ? LogRecord.ExpirationSize : -LogRecord.ExpirationSize;
-
-            var recordLen = ActualRecordSize;
-            var fillerLenAddress = physicalAddress + recordLen;
-            var maxLen = recordLen + GetFillerLength(fillerLenAddress);
-            var availableSpace = maxLen - recordLen;
-            return availableSpace >= growth;
-        }
-
+        /// <summary>
+        /// Copy the entire record values: Value and optionals (ETag, Expiration)
+        /// </summary>
         public bool TryCopyRecordValues<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
@@ -697,30 +689,26 @@ namespace Tsavorite.core
                     return false;
             }
 
-            // Copy optionals
-            if (!srcRecordInfo.HasETag)
+            return TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo);
+        }
+
+        /// <summary>
+        /// Copy the record optional values (ETag, Expiration)
+        /// </summary>
+        public bool TryCopyRecordOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
+            where TSourceLogRecord : ISourceLogRecord<TValue>
+        {
+            var srcRecordInfo = srcLogRecord.Info;
+
+            // If the source has optionals and the destination wants them, copy them over
+            if (!srcRecordInfo.HasETag || !sizeInfo.FieldInfo.HasETag)
                 _ = RemoveETag();
             else if (!TrySetETag(srcLogRecord.ETag))
                 return false;
 
-            if (!srcRecordInfo.HasExpiration)
+            if (!srcRecordInfo.HasExpiration || !sizeInfo.FieldInfo.HasExpiration)
                 _ = RemoveExpiration();
             else if (!TrySetExpiration(srcLogRecord.Expiration))
-                return false;
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool SetOptionals(long? eTag, long? expiration)
-        {
-            if (!eTag.HasValue)
-                _ = RemoveETag();
-            else if (!TrySetETag(eTag.Value))
-                return false;
-
-            if (!expiration.HasValue)
-                _ = RemoveExpiration();
-            else if (!TrySetExpiration(expiration.Value))
                 return false;
             return true;
         }
@@ -737,7 +725,7 @@ namespace Tsavorite.core
         {
             if (!Info.KeyIsOverflow)
                 return;
-            overflowAllocator.Free(KeyAddress);
+            overflowAllocator.Free(SpanField.GetOverflowPointer(KeyAddress));
             InfoRef.ClearKeyIsOverflow();
         }
 
@@ -746,7 +734,7 @@ namespace Tsavorite.core
         {
             if (!Info.ValueIsOverflow)
                 return;
-            overflowAllocator.Free(ValueAddress);
+            overflowAllocator.Free(SpanField.GetOverflowPointer(ValueAddress));
             InfoRef.ClearValueIsOverflow();
         }
 

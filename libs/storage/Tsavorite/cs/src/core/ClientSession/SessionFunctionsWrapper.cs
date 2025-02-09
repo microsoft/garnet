@@ -210,7 +210,7 @@ namespace Tsavorite.core
         public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
         {
             if (typeof(TInput) == typeof(SpanByte))
-                return new SpanByteHeapContainer(ref Unsafe.As<TInput, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<TInput>;
+                return new SpanByteHeapContainer(Unsafe.As<TInput, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<TInput>;
             return new StandardHeapContainer<TInput>(ref input);
         }
 

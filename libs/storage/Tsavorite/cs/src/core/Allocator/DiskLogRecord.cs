@@ -61,19 +61,20 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
         /// <inheritdoc/>
-        public readonly SpanByte Key => *(SpanByte*)KeyAddress;
+        public readonly SpanByte Key => SpanByte.FromLengthPrefixedPinnedPointer((byte*)KeyAddress);
         /// <inheritdoc/>
-        public readonly SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Object LogRecord does not have SpanByte values") : *(SpanByte*)ValueAddress;
+        public readonly SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Object LogRecord does not have SpanByte values") : SpanByte.FromLengthPrefixedPinnedPointer((byte*)ValueAddress);
         /// <inheritdoc/>
         public readonly TValue ValueObject => IsObjectRecord ? valueObject : throw new TsavoriteException("SpanByte LogRecord does not have Object values");
+        
         /// <inheritdoc/>
-        public ref TValue GetReadOnlyValueRef()
+        public TValue GetReadOnlyValue()
         {
             if (IsObjectRecord)
-#pragma warning disable CS9084 // Struct member returns 'this' or other instance members by reference; OK here because we only use it on direct calls where the stack remains intact
-                return ref valueObject;
-#pragma warning restore CS9084
-            return ref Unsafe.AsRef<TValue>((void*)ValueAddress);
+                return valueObject;
+
+            var sb = ValueSpan;
+            return Unsafe.As<SpanByte, TValue>(ref sb);
         }
 
         /// <inheritdoc/>
@@ -98,7 +99,7 @@ namespace Tsavorite.core
             };
         #endregion //IReadOnlyRecord
 
-        public readonly int SerializedRecordLength => DiskLogRecord.GetSerializedLength(physicalAddress);
+        public readonly long SerializedRecordLength => DiskLogRecord.GetSerializedLength(physicalAddress);
 
         readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
@@ -120,7 +121,7 @@ namespace Tsavorite.core
         internal static SpanByte GetContextRecordKey(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).Key;
 
         internal static SpanByte GetContextRecordValue(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).ValueSpan;
-
+#if false
         /// <inheritdoc/>
         public override readonly string ToString()
         {
@@ -129,5 +130,6 @@ namespace Tsavorite.core
 
             return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
         }
+#endif
     }
 }

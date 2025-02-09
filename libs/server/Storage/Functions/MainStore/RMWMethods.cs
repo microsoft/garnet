@@ -310,7 +310,7 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.SETEXNX:
-                    // Check if SetGet flag is set
+                    // Check if SetGet flag is set. We don't set the value or expiration because it exists, so NX is not true
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
@@ -322,34 +322,27 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     var setValue = input.parseState.GetArgSliceByRef(0);
 
-                    // Need CU if no space for new value
-                    if (!logRecord.HasEnoughSpace(setValue.Length, logRecord.Info.HasETag, withExpiration: input.arg1 != 0))
-                        return false;
-
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                         CopyRespTo(logRecord.ValueSpan, ref output);
 
-                    // Copy input to value
-                    _ = logRecord.TrySetValueSpan(setValue.SpanByte, ref sizeInfo);
-                    if (input.arg1 != 0)
-                        _ = logRecord.TrySetExpiration(input.arg1);
+                    if (!logRecord.TrySetValueSpan(setValue.SpanByte, ref sizeInfo))
+                        return false;
+                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+                        return false;
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     setValue = input.parseState.GetArgSliceByRef(0);
 
-                    // Need CU if no space for new value. We're not changing whether the Expiration is there or not.
-                    if (!logRecord.HasEnoughSpace(setValue.Length, logRecord.Info.HasETag, logRecord.Info.HasExpiration))
-                        return false;
-
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                         CopyRespTo(logRecord.ValueSpan, ref output);
 
                     // Copy input to value
-                    _ = logRecord.TrySetValueSpan(setValue.SpanByte, ref sizeInfo);
+                    if (!logRecord.TrySetValueSpan(setValue.SpanByte, ref sizeInfo))
+                        return false;
                     break;
 
                 case RespCommand.PEXPIRE:
@@ -361,7 +354,9 @@ namespace Garnet.server
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
                     var expireOption = (ExpireOption)input.arg1;
 
-                    return EvaluateExpireInPlace(ref logRecord, expireOption, expiryTicks, ref output);
+                    if (!EvaluateExpireInPlace(ref logRecord, expireOption, expiryTicks, ref output))
+                        return false;
+                    break;
 
                 case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIREAT:
@@ -371,7 +366,9 @@ namespace Garnet.server
                         : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
                     expireOption = (ExpireOption)input.arg1;
 
-                    return EvaluateExpireInPlace(ref logRecord, expireOption, expiryTicks, ref output);
+                    if (!EvaluateExpireInPlace(ref logRecord, expireOption, expiryTicks, ref output))
+                        return false;
+                    break;
 
                 case RespCommand.PERSIST:
                     _ = logRecord.RemoveExpiration();
@@ -644,19 +641,21 @@ namespace Garnet.server
                         CopyRespTo(oldValue, ref output);
                     }
 
-                    // Copy input to value
-                    var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    var newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
                     Debug.Assert(newInputValue.Length == dstLogRecord.ValueSpan.Length);
 
-                    if (input.arg1 != 0)
-                        _ = dstLogRecord.TrySetExpiration(input.arg1);
-                    // TODO ETag?
-                    newInputValue.CopyTo(dstLogRecord.ValueSpan.AsSpan());
+                    // Copy input to value, along with optionals from source record including Expiration.
+                    if (!dstLogRecord.TrySetValueSpan(newInputValue, ref sizeInfo) || !dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+                        return false;
+
+                    // Update expiration if it was supplied.
+                    if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                        return false;
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
-                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    var setValue = input.parseState.GetArgSliceByRef(0).SpanByte;
                     Debug.Assert(setValue.Length == dstLogRecord.ValueSpan.Length);
 
                     // Check if SetGet flag is set
@@ -666,11 +665,9 @@ namespace Garnet.server
                         CopyRespTo(oldValue, ref output);
                     }
 
-                    // Copy input to value, retain metadata of oldValue
-                    if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                    // Copy input to value, retaining optionals. TrySetValueSpan ensures enough space for the optionals if desired.
+                    if (!dstLogRecord.TrySetValueSpan(setValue, ref sizeInfo) || !dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                         return false;
-                    // TODO ETag?
-                    setValue.CopyTo(dstLogRecord.ValueSpan.AsSpan());
                     break;
 
                 case RespCommand.EXPIRE:
@@ -681,6 +678,10 @@ namespace Garnet.server
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
                     var expireOption = (ExpireOption)input.arg1;
+
+                    // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                        return false;
 
                     if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
                         return false;
@@ -694,6 +695,10 @@ namespace Garnet.server
                         : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
                     expireOption = (ExpireOption)input.arg1;
 
+                    // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                        return false;
+
                     if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
                         return false;
                     break;
@@ -702,11 +707,13 @@ namespace Garnet.server
                     if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
                         return false;
                     if (srcLogRecord.Info.HasExpiration)
+                    { 
+                        dstLogRecord.RemoveExpiration();
                         output.SpanByte.AsSpan()[0] = 1;
+                    }
                     break;
 
                 case RespCommand.INCR:
-                    // TODO ETag on all of these?
                     if (!TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref output, input: 1))
                         return false;
                     break;
@@ -764,7 +771,6 @@ namespace Garnet.server
 
                     newValue = dstLogRecord.ValueSpan;
                     newValuePtr = newValue.ToPointer();
-                    Buffer.MemoryCopy(oldValue.ToPointer(), newValuePtr, newValue.Length, oldValue.Length);
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValue.Length);
 
                     if (!overflow)
@@ -779,8 +785,7 @@ namespace Garnet.server
                     newValuePtr = newValue.ToPointer();
                     var oldValuePtr = oldValue.ToPointer();
 
-                    // TODO ETag?
-                    if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                    if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     if (newValue.Length != oldValue.Length)
@@ -795,8 +800,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
-                    // TODO ETag?
-                    if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                    if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     //srcA offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
@@ -815,7 +819,7 @@ namespace Garnet.server
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
-                    newInputValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                    newInputValue = input.parseState.GetArgSliceByRef(1).SpanByte;
                     newInputValue.CopyTo(newValue.AsSpan().Slice(offset));
 
                     _ = CopyValueLengthToOutput(newValue, ref output);
@@ -831,6 +835,9 @@ namespace Garnet.server
                 case RespCommand.GETEX:
                     CopyRespTo(oldValue, ref output);
 
+                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                        return false;
+
                     newValue = dstLogRecord.ValueSpan;
                     Debug.Assert(newValue.Length == oldValue.Length);
                     if (input.arg1 > 0)
@@ -842,12 +849,9 @@ namespace Garnet.server
                             return false;
                     }
 
-                    oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-
                     if (input.parseState.Count > 0)
                     {
-                        var persist = input.parseState.GetArgSliceByRef(0).ReadOnlySpan
-                            .EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST);
+                        var persist = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST);
                         if (persist) // Persist the key
                             _ = dstLogRecord.RemoveExpiration();
                     }
@@ -869,16 +873,15 @@ namespace Garnet.server
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions;
+
+                        // We want to retain the old expiration, if any; this does so
+                        if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+                            return false;
+
                         var expiration = input.arg1;
-                        if (expiration == 0)
+                        if (expiration > 0)
                         {
-                            // We want to retain the old expiration, if any. TODO: ETag update?
-                            if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
-                                return false;
-                        }
-                        else if (expiration > 0)
-                        {
-                            // We want to add the given expiration
+                            // We want to update to the given expiration
                             if (!dstLogRecord.TrySetExpiration(expiration))
                                 return false;
                         }

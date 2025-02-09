@@ -11,19 +11,19 @@ namespace Garnet.common
     public unsafe interface IKeySerializer
     {
         /// <summary>
-        /// Read key by reference, from given location
+        /// Read key from given location pointer and increment that pointer past the key
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Key</returns>
-        ref SpanByte ReadKeyByRef(ref byte* src);
+        SpanByte ReadKey(ref byte* src);
 
         /// <summary>
         /// Match pattern with key used for pub-sub
         /// </summary>
-        /// <param name="k">key to be published</param>
+        /// <param name="key">key to be published</param>
         /// <param name="asciiKey">whether key is ascii</param>
         /// <param name="pattern">pattern to check</param>
         /// <param name="asciiPattern">whether pattern is ascii</param>
-        bool Match(SpanByte k, bool asciiKey, SpanByte pattern, bool asciiPattern);
+        bool Match(SpanByte key, bool asciiKey, SpanByte pattern, bool asciiPattern);
     }
 }

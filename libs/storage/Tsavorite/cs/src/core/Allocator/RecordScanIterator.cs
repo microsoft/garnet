@@ -81,7 +81,11 @@ namespace Tsavorite.core
 
         private bool InitializeGetNext(out long headAddress, out long currentPage)
         {
-            store.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+            if (diskLogRecord.IsSet)
+            {
+                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+                diskLogRecord = default;
+            }
             diskLogRecord = default;
             currentAddress = nextAddress;
             var stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
@@ -116,7 +120,7 @@ namespace Tsavorite.core
         internal long SnapToLogicalAddressBoundary(ref long logicalAddress, long headAddress, long currentPage)
         {
             var offset = logicalAddress & hlogBase.PageSizeMask;
-            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset;
+            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset, out long allocatedSize) - offset;
             long totalSizes = 0;
             if (currentPage == 0)
             {
@@ -130,7 +134,6 @@ namespace Tsavorite.core
             {
                 while (totalSizes <= offset)
                 {
-                    var (_, allocatedSize) = new LogRecord<TValue>(physicalAddress).GetInlineRecordSizes();
                     if (totalSizes + allocatedSize > offset)
                         break;
                     totalSizes += allocatedSize;
@@ -141,7 +144,6 @@ namespace Tsavorite.core
             {
                 while (totalSizes <= offset)
                 {
-                    var allocatedSize = new DiskLogRecord<TValue>(physicalAddress).SerializedRecordLength;
                     if (totalSizes + allocatedSize > offset)
                         break;
                     totalSizes += allocatedSize;
@@ -164,16 +166,19 @@ namespace Tsavorite.core
                     return false;
 
                 var offset = currentAddress & hlogBase.PageSizeMask;
-                var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
+                var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset, out long allocatedSize);
 
                 // If record did not fit on the page its recordInfo will be Null; skip to the next page if so.
                 var recordInfo = LogRecord<TValue>.GetInfo(physicalAddress);
+
                 if (recordInfo.IsNull)
                 {
                     nextAddress = (1 + (currentAddress >> hlogBase.LogPageSizeBits)) << hlogBase.LogPageSizeBits;
                     epoch?.Suspend();
                     continue;
                 }
+
+                nextAddress = currentAddress + allocatedSize;
 
                 var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
                 if (skipOnScan || recordInfo.IsNull)
@@ -254,7 +259,7 @@ namespace Tsavorite.core
                 logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
                 nextAddress = logRecord.Info.PreviousAddress;
                 var skipOnScan = includeSealedRecords ? logRecord.Info.Invalid : logRecord.Info.SkipOnScan;
-                if (skipOnScan || logRecord.Info.IsNull || !hlogBase._storeFunctions.KeysEqual(logRecord.Key, key))
+                if (skipOnScan || logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -269,13 +274,17 @@ namespace Tsavorite.core
         void IPushScanIterator<TValue>.EndGetPrevInMemory() => epoch?.Suspend();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
+        long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset, out long allocatedSize)
         {
-            long physicalAddress;
             if (currentAddress >= headAddress || assumeInMemory)
-                physicalAddress = hlogBase._wrapper.GetPhysicalAddress(currentAddress);
-            else
-                physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
+            {
+                var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
+                (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
+                return logRecord.physicalAddress;
+            }
+
+            long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
+            allocatedSize = new DiskLogRecord<TValue>(physicalAddress).SerializedRecordLength;
             return physicalAddress;
         }
 
@@ -307,7 +316,7 @@ namespace Tsavorite.core
         public TValue ValueObject => diskLogRecord.ValueObject;
 
         /// <inheritdoc/>
-        public ref TValue GetReadOnlyValueRef() => ref diskLogRecord.GetReadOnlyValueRef();
+        public TValue GetReadOnlyValue() => diskLogRecord.GetReadOnlyValue();
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;
@@ -338,7 +347,8 @@ namespace Tsavorite.core
         public override void Dispose()
         {
             base.Dispose();
-            store.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+            if (diskLogRecord.IsSet)
+                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             frame?.Dispose();

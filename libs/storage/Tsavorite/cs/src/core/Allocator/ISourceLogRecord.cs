@@ -36,8 +36,8 @@ namespace Tsavorite.core
         /// <summary>The value object, if this is an Object LogRecord; an exception is thrown if it is a String LogRecord.</summary>
         TValue ValueObject { get; }
 
-        /// <summary>Get a reference to the value; useful when the generic type is needed.</summary>
-        ref TValue GetReadOnlyValueRef();
+        /// <summary>Get a copy of the value; useful when the generic type is needed.</summary>
+        TValue GetReadOnlyValue();
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }

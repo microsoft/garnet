@@ -16,14 +16,14 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendMainStoreKeyValuePair(ref SpanByte key, ref SpanByte value)
+        private bool WriteOrSendMainStoreKeyValuePair(SpanByte key, SpanByte value)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.InitMigrateCommand)
                 _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: true);
 
             // Try write serialized key value to client buffer
-            while (!_gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
+            while (!_gcs.TryWriteKeyValueSpanByte(key, value, out var task))
             {
                 // Flush key value pairs in the buffer
                 if (!HandleMigrateTaskResponse(task))
@@ -42,7 +42,7 @@ namespace Garnet.cluster
         /// <param name="value"></param>
         /// <param name="expiration"></param>
         /// <returns></returns>
-        private bool WriteOrSendObjectStoreKeyValuePair(byte[] key, byte[] value, long expiration)
+        private bool WriteOrSendObjectStoreKeyValuePair(SpanByte key, byte[] value, long expiration)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.InitMigrateCommand)

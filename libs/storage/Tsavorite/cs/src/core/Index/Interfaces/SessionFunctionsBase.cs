@@ -118,7 +118,7 @@ namespace Tsavorite.core
         public virtual bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref SpanByte input, ref SpanByte output, ref ReadInfo readInfo)
         {
             Debug.Assert(!logRecord.IsObjectRecord, "IHeapObject form of ConcurrentReader should not be called for SpanByte LogRecord");
-            return logRecord.ValueSpan.TryCopyTo(ref output);
+            return logRecord.ValueSpan.TryCopyTo(output);
         }
         /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref IHeapObject input, ref TValue output, ref ReadInfo readInfo)
@@ -135,7 +135,7 @@ namespace Tsavorite.core
                 output = logRecord.ValueObject;
                 return true;
             }
-            return logRecord.ValueSpan.TryCopyTo(ref Unsafe.As<TValue, SpanByte>(ref output));
+            return logRecord.ValueSpan.TryCopyTo(Unsafe.As<TValue, SpanByte>(ref output));
         }
 
         /// <inheritdoc/>
@@ -146,7 +146,7 @@ namespace Tsavorite.core
                 output = srcLogRecord.ValueObject;
                 return true;
             }
-            return srcLogRecord.ValueSpan.TryCopyTo(ref Unsafe.As<TValue, SpanByte>(ref output));
+            return srcLogRecord.ValueSpan.TryCopyTo(Unsafe.As<TValue, SpanByte>(ref output));
         }
 
         public override bool SingleWriter(ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TValue input, TValue srcValue, ref TValue output, ref UpsertInfo upsertInfo, WriteReason reason)

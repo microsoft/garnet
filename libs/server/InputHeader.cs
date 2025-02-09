@@ -262,10 +262,10 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
-            curr += sbHeader.TotalSize;
-            header = h;
+            var header = SpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
 
             // Deserialize arg1
             arg1 = *(int*)curr;
@@ -387,10 +387,10 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
-            curr += sbHeader.TotalSize;
-            header = h;
+            var header = SpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
 
             // Deserialize arg1
             arg1 = *(long*)curr;

@@ -50,7 +50,7 @@ namespace Tsavorite.core
                 while (iter1.GetNext())
                 {
                     var key = iter1.Key;
-                    var value = iter1.GetReadOnlyValueRef();
+                    var value = iter1.GetReadOnlyValue();
 
                     if (!iter1.Info.Tombstone && !cf.IsDeleted(key, value))
                     {
@@ -102,7 +102,7 @@ namespace Tsavorite.core
                     while (iter1.GetNext())
                     {
                         var key = iter1.Key;
-                        var value = iter1.GetReadOnlyValueRef();
+                        var value = iter1.GetReadOnlyValue();
 
                         if (iter1.Info.Tombstone || cf.IsDeleted(key, value))
                             _ = tempbContext.Delete(key);

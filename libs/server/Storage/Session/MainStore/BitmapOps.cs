@@ -162,7 +162,7 @@ namespace Garnet.server
                         var valPtr = dstBitmapPtr;
                         valPtr -= sizeof(int);
                         *(int*)valPtr = maxBitmapLen;
-                        status = SET(dstKey, Unsafe.AsRef<SpanByte>(valPtr), ref uc);
+                        status = SET(dstKey, SpanByte.FromLengthPrefixedPinnedPointer(valPtr), ref uc);
                     }
                 }
                 else

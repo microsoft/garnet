@@ -103,7 +103,7 @@ namespace Garnet.server
                 case RespCommand.MIGRATE:
                     if (value.Length <= dst.Length)
                     {
-                        value.CopyTo(ref dst.SpanByte);
+                        value.CopyTo(dst.SpanByte);
                         dst.Length = value.Length;
                         return;
                     }
@@ -519,7 +519,7 @@ namespace Garnet.server
         static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, long input)
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
-            if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+            if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                 return false;
 
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
@@ -558,7 +558,7 @@ namespace Garnet.server
         static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, double input)
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
-            if (!dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+            if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                 return false;
 
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan

@@ -52,21 +52,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Key</returns>
-        ref SpanByte ReadKeyByRef(ref byte* src);
+        SpanByte ReadKey(ref byte* src);
 
         /// <summary>
         /// Read value by reference, from given location
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Value</returns>
-        ref TValue ReadValueByRef(ref byte* src);
+        TValue ReadValueByRef(ref byte* src);
 
         /// <summary>
         /// Read input by reference, from given location
         /// </summary>
         /// <param name="src">Memory location</param>
         /// <returns>Input</returns>
-        ref TInput ReadInputByRef(ref byte* src);
+        TInput ReadInputByRef(ref byte* src);
 
         /// <summary>
         /// Read memory as output (by reference), at given location

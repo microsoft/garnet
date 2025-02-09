@@ -71,9 +71,9 @@ namespace Garnet.cluster
                 TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
-                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                    var key = SpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
                     payloadPtr += key.TotalSize;
-                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                    var value = SpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
                     payloadPtr += value.TotalSize;
 
                     // An error has occurred

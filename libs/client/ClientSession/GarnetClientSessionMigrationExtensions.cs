@@ -351,11 +351,11 @@ namespace Garnet.client
         /// <param name="value"></param>
         /// <param name="migrateTask"></param>
         /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> migrateTask)
+        public bool TryWriteKeyValueSpanByte(SpanByte key, SpanByte value, out Task<string> migrateTask)
         {
             migrateTask = null;
             // Try write key value pair directly to client buffer
-            if (!WriteSerializedSpanByte(ref key, ref value))
+            if (!WriteSerializedSpanByte(key, value))
             {
                 // If failed to write because no space left send outstanding data and retrieve task
                 // Caller is responsible for retrying
@@ -375,7 +375,7 @@ namespace Garnet.client
         /// <param name="expiration"></param>
         /// <param name="migrateTask"></param>
         /// <returns></returns>
-        public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> migrateTask)
+        public bool TryWriteKeyValueByteArray(SpanByte key, byte[] value, long expiration, out Task<string> migrateTask)
         {
             migrateTask = null;
             // Try write key value pair directly to client buffer
@@ -391,7 +391,7 @@ namespace Garnet.client
             return true;
         }
 
-        private bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
+        private bool WriteSerializedSpanByte(SpanByte key, SpanByte value)
         {
             var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
             if (totalLen > (int)(end - curr))
@@ -404,7 +404,7 @@ namespace Garnet.client
             return true;
         }
 
-        private bool WriteSerializedKeyValueByteArray(byte[] key, byte[] value, long expiration)
+        private bool WriteSerializedKeyValueByteArray(SpanByte key, byte[] value, long expiration)
         {
             // We include space for newline at the end, to be added before sending
             int totalLen = 4 + key.Length + 4 + value.Length + 8 + 2;
@@ -413,8 +413,7 @@ namespace Garnet.client
 
             *(int*)curr = key.Length;
             curr += 4;
-            fixed (byte* keyPtr = key)
-                Buffer.MemoryCopy(keyPtr, curr, key.Length, key.Length);
+            Buffer.MemoryCopy(key.ToPointer(), curr, key.Length, key.Length);
             curr += key.Length;
 
             *(int*)curr = value.Length;

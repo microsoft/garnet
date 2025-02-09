@@ -29,32 +29,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason)
-        {
-            // Release any overflow allocations for Key and possibly Value spans.
-            logRecord.FreeKeyOverflow();
-
-            if (logRecord.IsObjectRecord && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
-            {
-                // Clear the IHeapObject, but leave the ObjectId in the record, along with any overflow Key and possibly Value spans.  TODO make sure this a freelist
-                ref var heapObj = ref logRecord.ObjectRef;
-                if (heapObj is not null)
-                {
-                    storeFunctions.DisposeValueObject(heapObj, disposeReason);
-                    heapObj = default;
-                }
-            }
-            else
-                logRecord.FreeValueOverflow();
-        }
+        void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason)
-        {
-            // Clear the IHeapObject if we deserialized it
-            if (logRecord.IsObjectRecord && logRecord.ValueObject is not null)
-                storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
-        }
+        internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)

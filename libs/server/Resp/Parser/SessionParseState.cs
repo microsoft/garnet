@@ -27,7 +27,7 @@ namespace Garnet.server
         public int Count;
 
         /// <summary>
-        /// Pointer to accessible buffer
+        /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
         /// </summary>
         ArgSlice* bufferPtr;
 
@@ -37,7 +37,7 @@ namespace Garnet.server
         int rootCount;
 
         /// <summary>
-        /// Arguments original buffer
+        /// Arguments original buffer (always pinned)
         /// </summary>
         ArgSlice[] rootBuffer;
 
@@ -316,9 +316,9 @@ namespace Garnet.server
 
             for (var i = 0; i < argCount; i++)
             {
-                ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                *(bufferPtr + i) = new ArgSlice(sbArgument);
-                curr += sbArgument.TotalSize;
+                var argument = SpanByte.FromLengthPrefixedPinnedPointer(curr);
+                *(bufferPtr + i) = new ArgSlice(argument);
+                curr += argument.TotalSize;
             }
 
             return (int)(src - curr);
@@ -335,23 +335,17 @@ namespace Garnet.server
 
             // Parse RESP string header
             if (!RespReadUtils.ReadUnsignedLengthHeader(out slice.length, ref ptr, end))
-            {
                 return false;
-            }
 
             slice.ptr = ptr;
 
             // Parse content: ensure that input contains key + '\r\n'
             ptr += slice.length + 2;
             if (ptr > end)
-            {
                 return false;
-            }
 
             if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
 
             return true;
         }
