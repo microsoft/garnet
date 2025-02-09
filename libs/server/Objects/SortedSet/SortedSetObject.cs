@@ -457,7 +457,7 @@ namespace Garnet.server
                 {
                     items.Add(item.Key);
                     addToList = true;
-                    }
+                }
                 else
                 {
                     fixed (byte* keyPtr = item.Key)
@@ -466,9 +466,9 @@ namespace Garnet.server
                         {
                             items.Add(item.Key);
                             addToList = true;
-                            }
                         }
                     }
+                }
 
                 if (addToList)
                 {
@@ -696,7 +696,7 @@ namespace Garnet.server
                 return -2;
             }
 
-            return TryRemoveExpiration(key) ? 1 : - 1;
+            return TryRemoveExpiration(key) ? 1 : -1;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
