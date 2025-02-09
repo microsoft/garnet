@@ -190,9 +190,28 @@ namespace Garnet.server
         public override byte Type => (byte)GarnetObjectType.SortedSet;
 
         /// <summary>
-        /// Get sorted set as a dictionary
+        /// Get sorted set as a dictionary.
         /// </summary>
-        public Dictionary<byte[], double> Dictionary => sortedSetDict;
+        public Dictionary<byte[], double> Dictionary
+        {
+            get
+            {
+                if (!HasExpirableItems() || (expirationQueue.TryPeek(out _, out var expiration) && expiration > DateTimeOffset.UtcNow.Ticks))
+                {
+                    return sortedSetDict;
+                }
+
+                var result = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                foreach (var kvp in sortedSetDict)
+                {
+                    if (!IsExpired(kvp.Key))
+                    {
+                        result.Add(kvp.Key, kvp.Value);
+                    }
+                }
+                return result;
+            }
+        }
 
         /// <summary>
         /// Serialize
@@ -412,14 +431,14 @@ namespace Garnet.server
 
             int index = 0;
 
-            if (Dictionary.Count < start)
+            if (sortedSetDict.Count < start)
             {
                 cursor = 0;
                 return;
             }
 
             var expiredKeysCount = 0;
-            foreach (var item in Dictionary)
+            foreach (var item in sortedSetDict)
             {
                 if (IsExpired(item.Key))
                 {
@@ -478,18 +497,32 @@ namespace Garnet.server
         /// <summary>
         /// Compute difference of two dictionaries, with new result
         /// </summary>
-        public static Dictionary<byte[], double> CopyDiff(Dictionary<byte[], double> dict1, Dictionary<byte[], double> dict2)
+        public static Dictionary<byte[], double> CopyDiff(SortedSetObject sortedSetObject1, SortedSetObject sortedSetObject2)
         {
-            if (dict1 == null)
-                return [];
+            if (sortedSetObject1 == null)
+                return new Dictionary<byte[], double>(ByteArrayComparer.Instance);
 
-            if (dict2 == null)
-                return new Dictionary<byte[], double>(dict1, dict1.Comparer);
-
-            var result = new Dictionary<byte[], double>(dict1.Comparer);
-            foreach (var item in dict1)
+            if (sortedSetObject2 == null)
             {
-                if (!dict2.ContainsKey(item.Key))
+                if (sortedSetObject1.expirationTimes is null)
+                {
+                    return new Dictionary<byte[], double>(sortedSetObject1.sortedSetDict, ByteArrayComparer.Instance);
+                }
+                else
+                {
+                    var directResult = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                    foreach (var item in sortedSetObject1.sortedSetDict)
+                    {
+                        if (!sortedSetObject1.IsExpired(item.Key))
+                            directResult.Add(item.Key, item.Value);
+                    }
+                }
+            }
+
+            var result = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+            foreach (var item in sortedSetObject1.sortedSetDict)
+            {
+                if (!sortedSetObject1.IsExpired(item.Key) && !sortedSetObject2.IsExpired(item.Key) && !sortedSetObject2.sortedSetDict.ContainsKey(item.Key))
                     result.Add(item.Key, item.Value);
             }
             return result;
@@ -498,18 +531,57 @@ namespace Garnet.server
         /// <summary>
         /// Remove keys existing in second dictionary, from the first dictionary, if they exist
         /// </summary>
-        public static void InPlaceDiff(Dictionary<byte[], double> dict1, Dictionary<byte[], double> dict2)
+        public static void InPlaceDiff(Dictionary<byte[], double> dict1, SortedSetObject sortedSetObject2)
         {
             Debug.Assert(dict1 != null);
 
-            if (dict2 != null)
+            if (sortedSetObject2 != null)
             {
                 foreach (var item in dict1)
                 {
-                    if (dict2.ContainsKey(item.Key))
+                    if (!sortedSetObject2.IsExpired(item.Key) && sortedSetObject2.sortedSetDict.ContainsKey(item.Key))
                         dict1.Remove(item.Key);
                 }
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetScore(byte[] key, out double value)
+        {
+            value = default;
+            if (IsExpired(key))
+            {
+                return false;
+            }
+
+            return sortedSetDict.TryGetValue(key, out value);
+        }
+
+        public int Count()
+        {
+            if (expirationTimes is null)
+            {
+                return sortedSetDict.Count;
+            }
+            var expiredKeysCount = 0;
+
+            foreach (var item in expirationTimes)
+            {
+                if (IsExpired(item.Key))
+                {
+                    expiredKeysCount++;
+                }
+            }
+            return sortedSetDict.Count - expiredKeysCount;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool HasExpirableItems()
+        {
+            return expirationTimes is not null;
         }
 
         #endregion
@@ -571,38 +643,6 @@ namespace Garnet.server
 
             CleanupExpirationStructures();
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryGetScore(byte[] key, out double value)
-        {
-            value = default;
-            if (IsExpired(key))
-            {
-                return false;
-            }
-
-            return sortedSetDict.TryGetValue(key, out value);
-        }
-
-        private int Count()
-        {
-            if (expirationTimes is null)
-            {
-                return sortedSetDict.Count;
-            }
-            var expiredKeysCount = 0;
-            foreach (var item in expirationTimes)
-            {
-                if (IsExpired(item.Key))
-                {
-                    expiredKeysCount++;
-                }
-            }
-            return sortedSetDict.Count - expiredKeysCount;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
 
         private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
         {
@@ -686,12 +726,6 @@ namespace Garnet.server
             }
 
             return -1;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool HasExpirableItems()
-        {
-            return expirationTimes is not null;
         }
 
         private KeyValuePair<byte[], double> ElementAt(int index)

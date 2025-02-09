@@ -403,7 +403,7 @@ namespace Garnet.server
         {
             result = default;
 
-            if (sortedSetObj.Dictionary.Count == 0) return false;
+            if (sortedSetObj.Count() == 0) return false;
 
             switch (command)
             {
@@ -416,7 +416,7 @@ namespace Garnet.server
                 case RespCommand.BZMPOP:
                     var lowScoresFirst = *(bool*)cmdArgs[0].ptr;
                     var popCount = *(int*)cmdArgs[1].ptr;
-                    popCount = Math.Min(popCount, sortedSetObj.Dictionary.Count);
+                    popCount = Math.Min(popCount, sortedSetObj.Count());
 
                     var scores = new double[popCount];
                     var items = new byte[popCount][];
@@ -546,7 +546,7 @@ namespace Garnet.server
                                 return false;
                         }
                     case SortedSetObject setObj:
-                        currCount = setObj.Dictionary.Count;
+                        currCount = setObj.Count();
                         if (objectType != GarnetObjectType.SortedSet)
                             return false;
                         if (currCount == 0)

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Embedded.server;
 using Garnet.common;
@@ -77,7 +78,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
             server.Start();
         }
 
@@ -113,6 +114,77 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("b", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
                 ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
             }
+        }
+
+        [Test]
+        public unsafe void SortedSetPopWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+
+            // Set expiration for the minimum and maximum items
+            db.Execute("ZPEXPIRE", "key1", "100", "MEMBERS", "2", "a", "c");
+
+            // Wait for expiration
+            Thread.Sleep(200);
+
+            var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var key = Encoding.ASCII.GetBytes("key1");
+            fixed (byte* keyPtr = key)
+            {
+                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out var items);
+                ClassicAssert.AreEqual(1, items.Length);
+                ClassicAssert.AreEqual("b", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+                ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
+
+                var count = (int)db.SortedSetLength("key1");
+                ClassicAssert.AreEqual(0, count);
+            }
+        }
+
+        [Test]
+        public async Task SortedSetAddWithExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
+
+            await Task.Delay(300);
+
+            var ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "c");
+            ClassicAssert.AreEqual(-2, (long)ttl);
+
+            db.SortedSetAdd("key1", "c", 3);
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "b", "c");
+
+            var ttls = db.Execute("ZPTTL", "key1", "MEMBERS", "2", "b", "c");
+            ClassicAssert.LessOrEqual((long)ttls[0], 200);
+            ClassicAssert.Greater((long)ttls[0], 0);
+            ClassicAssert.LessOrEqual((long)ttls[1], 200);
+            ClassicAssert.Greater((long)ttls[1], 0);
+
+            // Add the expiring item "c" again, which should remove the expiration. Score is not changed
+            db.SortedSetAdd("key1", "c", 3);
+            // Add the expiring item "b" again, which should remove the expiration. Score is changed
+            db.SortedSetAdd("key1", "b", 1);
+
+            ttls = db.Execute("ZPTTL", "key1", "MEMBERS", "2", "b", "c");
+            ClassicAssert.AreEqual(-1, (long)ttls[0]);
+            ClassicAssert.AreEqual(-1, (long)ttls[1]);
+
+            var items = db.SortedSetRangeByRankWithScores("key1");
+            ClassicAssert.AreEqual(2, items.Length);
+            ClassicAssert.AreEqual("b", items[0].Element.ToString());
+            ClassicAssert.AreEqual(1, items[0].Score);
+            ClassicAssert.AreEqual("c", items[1].Element.ToString());
+            ClassicAssert.AreEqual(3, items[1].Score);
         }
 
         [Test]
@@ -361,6 +433,34 @@ namespace Garnet.test
             //using infinity
             card = db.SortedSetLength(new RedisKey(key), min: -1);
             ClassicAssert.IsTrue(10 == card);
+        }
+
+        [Test]
+        public async Task ZCountAndZCardWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for the minimum, maximum and middle items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "3", "a", "e", "c");
+
+            await Task.Delay(300);
+
+            // ZCARD
+            var count = db.SortedSetLength("key1");
+            ClassicAssert.AreEqual(2, count); // Only "b" and "d" should remain
+
+            // Check the count of items within a score range
+            // ZCOUNT
+            var rangeCount = db.SortedSetLength("key1", 3, 5);
+            ClassicAssert.AreEqual(1, rangeCount); // Only "d" should remain within the range
         }
 
         [Test]
@@ -1755,6 +1855,1268 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(expectedScores[i], result[i].Score);
                 ClassicAssert.AreEqual(expectedElements[i], result[i].Element.ToString());
             }
+        }
+
+        [Test]
+        public async Task CanDoSortedSetCollect()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers().First();
+            db.SortedSetAdd("mysortedset",
+            [
+                new SortedSetEntry("member1", 1),
+                new SortedSetEntry("member2", 2),
+                new SortedSetEntry("member3", 3),
+                new SortedSetEntry("member4", 4),
+                new SortedSetEntry("member5", 5),
+                new SortedSetEntry("member6", 6)
+            ]);
+
+            var result = db.Execute("ZPEXPIRE", "mysortedset", "500", "MEMBERS", "2", "member1", "member2");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            result = db.Execute("ZPEXPIRE", "mysortedset", "1500", "MEMBERS", "2", "member3", "member4");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+
+            var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
+
+            await Task.Delay(600);
+
+            var newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
+            ClassicAssert.AreEqual(newMemory, orginalMemory);
+
+            var collectResult = (string)db.Execute("ZCOLLECT", "mysortedset");
+            ClassicAssert.AreEqual("OK", collectResult);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
+            ClassicAssert.Less(newMemory, orginalMemory);
+            orginalMemory = newMemory;
+
+            await Task.Delay(1100);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
+            ClassicAssert.AreEqual(newMemory, orginalMemory);
+
+            collectResult = (string)db.Execute("ZCOLLECT", "*");
+            ClassicAssert.AreEqual("OK", collectResult);
+
+            newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
+            ClassicAssert.Less(newMemory, orginalMemory);
+        }
+
+        [Test]
+        public async Task CanDoSortedSetExpire()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("mysortedset", [new SortedSetEntry("member1", 1), new SortedSetEntry("member2", 2), new SortedSetEntry("member3", 3), new SortedSetEntry("member4", 4), new SortedSetEntry("member5", 5), new SortedSetEntry("member6", 6)]);
+
+            var result = db.Execute("ZEXPIRE", "mysortedset", "3", "MEMBERS", "3", "member1", "member5", "nonexistmember");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(3, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(1, (long)results[1]);
+            ClassicAssert.AreEqual(-2, (long)results[2]);
+
+            result = db.Execute("ZPEXPIRE", "mysortedset", "3000", "MEMBERS", "2", "member2", "nonexistmember");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            result = db.Execute("ZEXPIREAT", "mysortedset", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "MEMBERS", "2", "member3", "nonexistmember");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            result = db.Execute("ZPEXPIREAT", "mysortedset", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "MEMBERS", "2", "member4", "nonexistmember");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            var ttl = (RedisResult[])db.Execute("ZTTL", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], 3);
+            ClassicAssert.Greater((long)ttl[0], 1);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            ttl = (RedisResult[])db.Execute("ZPTTL", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], 3000);
+            ClassicAssert.Greater((long)ttl[0], 1000);
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            ttl = (RedisResult[])db.Execute("ZEXPIRETIME", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds());
+            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds());
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            ttl = (RedisResult[])db.Execute("ZPEXPIRETIME", "mysortedset", "MEMBERS", "2", "member1", "nonexistmember");
+            ClassicAssert.AreEqual(2, ttl.Length);
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds());
+            ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds());
+            ClassicAssert.AreEqual(-2, (long)results[1]);
+
+            results = (RedisResult[])db.Execute("ZPERSIST", "mysortedset", "MEMBERS", "3", "member5", "member6", "nonexistmember");
+            ClassicAssert.AreEqual(3, results.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);  // 1 the expiration was removed.
+            ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the member exists but has no associated expiration set.
+            ClassicAssert.AreEqual(-2, (long)results[2]);
+
+            await Task.Delay(3500);
+
+            var items = db.SortedSetRangeByRankWithScores("mysortedset");
+            ClassicAssert.AreEqual(2, items.Length);
+            ClassicAssert.AreEqual("member5", items[0].Element.ToString());
+            ClassicAssert.AreEqual(5, items[0].Score);
+            ClassicAssert.AreEqual("member6", items[1].Element.ToString());
+            ClassicAssert.AreEqual(6, items[1].Score);
+
+            result = db.Execute("ZEXPIRE", "mysortedset", "0", "MEMBERS", "1", "member5");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(2, (long)results[0]);
+
+            result = db.Execute("ZEXPIREAT", "mysortedset", DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeSeconds().ToString(), "MEMBERS", "1", "member6");
+            results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(2, (long)results[0]);
+
+            items = db.SortedSetRangeByRankWithScores("mysortedset");
+            ClassicAssert.AreEqual(0, items.Length);
+        }
+
+        [Test]
+        public async Task CanDoSortedSetExpireLTM()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServer(TestUtils.EndPoint);
+
+            string[] smallExpireKeys = ["user:user0", "user:user1"];
+            string[] largeExpireKeys = ["user:user2", "user:user3"];
+
+            foreach (var key in smallExpireKeys)
+            {
+                db.SortedSetAdd(key,
+                [
+                    new SortedSetEntry("Field1", 1),
+                    new SortedSetEntry("Field2", 2)
+                ]);
+                db.Execute("ZEXPIRE", key, "2", "MEMBERS", "1", "Field1");
+            }
+
+            foreach (var key in largeExpireKeys)
+            {
+                db.SortedSetAdd(key,
+                [
+                    new SortedSetEntry("Field1", 1),
+                    new SortedSetEntry("Field2", 2)
+                ]);
+                db.Execute("ZEXPIRE", key, "4", "MEMBERS", "1", "Field1");
+            }
+
+            // Create LTM (larger than memory) DB by inserting 100 keys
+            for (int i = 4; i < 100; i++)
+            {
+                var key = "user:user" + i;
+                db.SortedSetAdd(key,
+                [
+                    new SortedSetEntry("Field1", 1),
+                    new SortedSetEntry("Field2", 2)
+                ]);
+            }
+
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            // Ensure data has spilled to disk
+            ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
+
+            await Task.Delay(2000);
+
+            var result = db.SortedSetScore(smallExpireKeys[0], "Field1");
+            ClassicAssert.IsNull(result);
+            result = db.SortedSetScore(smallExpireKeys[1], "Field1");
+            ClassicAssert.IsNull(result);
+            result = db.SortedSetScore(largeExpireKeys[0], "Field1");
+            ClassicAssert.IsNotNull(result);
+            result = db.SortedSetScore(largeExpireKeys[1], "Field1");
+            ClassicAssert.IsNotNull(result);
+            var ttl = db.SortedSetRangeByScoreWithScores(largeExpireKeys[0], 1, 1);
+            ClassicAssert.AreEqual(ttl.Length, 1);
+            ClassicAssert.Greater(ttl[0].Score, 0);
+            ClassicAssert.LessOrEqual(ttl[0].Score, 2000);
+            ttl = db.SortedSetRangeByScoreWithScores(largeExpireKeys[1], 1, 1);
+            ClassicAssert.AreEqual(ttl.Length, 1);
+            ClassicAssert.Greater(ttl[0].Score, 0);
+            ClassicAssert.LessOrEqual(ttl[0].Score, 2000);
+
+            await Task.Delay(2000);
+
+            result = db.SortedSetScore(largeExpireKeys[0], "Field1");
+            ClassicAssert.IsNull(result);
+            result = db.SortedSetScore(largeExpireKeys[1], "Field1");
+            ClassicAssert.IsNull(result);
+
+            var data = db.SortedSetRangeByRankWithScores("user:user4");
+            ClassicAssert.AreEqual(2, data.Length);
+            ClassicAssert.AreEqual("Field1", data[0].Element.ToString());
+            ClassicAssert.AreEqual(1, data[0].Score);
+            ClassicAssert.AreEqual("Field2", data[1].Element.ToString());
+            ClassicAssert.AreEqual(2, data[1].Score);
+        }
+
+        [Test]
+        public void CanDoSortedSetExpireWithNonExistKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.Execute("ZEXPIRE", "mysortedset", "3", "MEMBERS", "1", "member1");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results.Length);
+            ClassicAssert.AreEqual(-2, (long)results[0]);
+        }
+
+        [Test]
+        [TestCase("ZEXPIRE", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("ZEXPIRE", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("ZEXPIRE", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("ZEXPIRE", "LT", Description = "Set expiry only when new TTL is less")]
+        [TestCase("ZPEXPIRE", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("ZPEXPIRE", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("ZPEXPIRE", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("ZPEXPIRE", "LT", Description = "Set expiry only when new TTL is less")]
+        [TestCase("ZEXPIREAT", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("ZEXPIREAT", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("ZEXPIREAT", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("ZEXPIREAT", "LT", Description = "Set expiry only when new TTL is less")]
+        [TestCase("ZPEXPIREAT", "NX", Description = "Set expiry only when no expiration exists")]
+        [TestCase("ZPEXPIREAT", "XX", Description = "Set expiry only when expiration exists")]
+        [TestCase("ZPEXPIREAT", "GT", Description = "Set expiry only when new TTL is greater")]
+        [TestCase("ZPEXPIREAT", "LT", Description = "Set expiry only when new TTL is less")]
+        public void CanDoSortedSetExpireWithOptions(string command, string option)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("mysortedset",
+            [
+                new SortedSetEntry("member1", 1),
+                new SortedSetEntry("member2", 2),
+                new SortedSetEntry("member3", 3),
+                new SortedSetEntry("member4", 4)
+            ]);
+
+            (var expireTimeMember1, var expireTimeMember3, var newExpireTimeMember) = command switch
+            {
+                "ZEXPIRE" => ("2", "6", "4"),
+                "ZPEXPIRE" => ("2000", "6000", "4000"),
+                "ZEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString()),
+                "ZPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString()),
+                _ => throw new ArgumentException("Invalid command")
+            };
+
+            // First set TTL for member1 only
+            db.Execute(command, "mysortedset", expireTimeMember1, "MEMBERS", "1", "member1");
+            db.Execute(command, "mysortedset", expireTimeMember3, "MEMBERS", "1", "member3");
+
+            // Try setting TTL with option
+            var result = (RedisResult[])db.Execute(command, "mysortedset", newExpireTimeMember, option, "MEMBERS", "3", "member1", "member2", "member3");
+
+            switch (option)
+            {
+                case "NX":
+                    ClassicAssert.AreEqual(0, (long)result[0]); // member1 has TTL
+                    ClassicAssert.AreEqual(1, (long)result[1]); // member2 no TTL
+                    ClassicAssert.AreEqual(0, (long)result[2]); // member3 has TTL
+                    break;
+                case "XX":
+                    ClassicAssert.AreEqual(1, (long)result[0]); // member1 has TTL
+                    ClassicAssert.AreEqual(0, (long)result[1]); // member2 no TTL
+                    ClassicAssert.AreEqual(1, (long)result[2]); // member3 has TTL
+                    break;
+                case "GT":
+                    ClassicAssert.AreEqual(1, (long)result[0]); // 4 > 2
+                    ClassicAssert.AreEqual(0, (long)result[1]); // no TTL = infinite
+                    ClassicAssert.AreEqual(0, (long)result[2]); // 4 !> 6
+                    break;
+                case "LT":
+                    ClassicAssert.AreEqual(0, (long)result[0]); // 4 !< 2
+                    ClassicAssert.AreEqual(1, (long)result[1]); // no TTL = infinite
+                    ClassicAssert.AreEqual(1, (long)result[2]); // 4 < 6
+                    break;
+            }
+        }
+
+        [Test]
+        public async Task ZDiffWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted sets
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            // Set expiration for some items in key1
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "d");
+
+            // Set expiration for matching items in key2
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            await Task.Delay(300);
+
+            // Perform ZDIFF
+            var diff = db.SortedSetCombine(SetOperation.Difference, ["key1", "key2"]);
+            ClassicAssert.AreEqual(2, diff.Length); // Only "d" and "e" should remain
+
+            // Perform ZDIFF with scores
+            var diffWithScores = db.SortedSetCombineWithScores(SetOperation.Difference, ["key1", "key2"]);
+            ClassicAssert.AreEqual(2, diffWithScores.Length);
+            ClassicAssert.AreEqual("d", diffWithScores[0].Element.ToString());
+            ClassicAssert.AreEqual(4, diffWithScores[0].Score);
+            ClassicAssert.AreEqual("e", diffWithScores[1].Element.ToString());
+            ClassicAssert.AreEqual(5, diffWithScores[1].Score);
+
+            await Task.Delay(300);
+
+            // Perform ZDIFF again after more items have expired
+            diff = db.SortedSetCombine(SetOperation.Difference, ["key1", "key2"]);
+            ClassicAssert.AreEqual(1, diff.Length); // Only "e" should remain
+
+            // Perform ZDIFF with scores again
+            diffWithScores = db.SortedSetCombineWithScores(SetOperation.Difference, ["key1", "key2"]);
+            ClassicAssert.AreEqual(1, diffWithScores.Length);
+            ClassicAssert.AreEqual("e", diffWithScores[0].Element.ToString());
+            ClassicAssert.AreEqual(5, diffWithScores[0].Score);
+        }
+
+        [Test]
+        public async Task ZDiffStoreWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted sets
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            // Set expiration for some items in key1
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "d");
+
+            // Set expiration for matching items in key2
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            await Task.Delay(300);
+
+            // Perform ZDIFFSTORE
+            var diffStoreCount = db.SortedSetCombineAndStore(SetOperation.Difference, "key3", ["key1", "key2"]);
+            ClassicAssert.AreEqual(2, diffStoreCount); // Only "d" and "e" should remain
+
+            // Verify the stored result
+            var diffStoreResult = db.SortedSetRangeByRankWithScores("key3");
+            ClassicAssert.AreEqual(2, diffStoreResult.Length);
+            ClassicAssert.AreEqual("d", diffStoreResult[0].Element.ToString());
+            ClassicAssert.AreEqual(4, diffStoreResult[0].Score);
+            ClassicAssert.AreEqual("e", diffStoreResult[1].Element.ToString());
+            ClassicAssert.AreEqual(5, diffStoreResult[1].Score);
+
+            await Task.Delay(300);
+
+            // Perform ZDIFFSTORE again after more items have expired
+            diffStoreCount = db.SortedSetCombineAndStore(SetOperation.Difference, "key3", ["key1", "key2"]);
+            ClassicAssert.AreEqual(1, diffStoreCount); // Only "e" should remain
+
+            // Verify the stored result again
+            diffStoreResult = db.SortedSetRangeByRankWithScores("key3");
+            ClassicAssert.AreEqual(1, diffStoreResult.Length);
+            ClassicAssert.AreEqual("e", diffStoreResult[0].Element.ToString());
+            ClassicAssert.AreEqual(5, diffStoreResult[0].Score);
+        }
+
+        [Test]
+        public async Task ZIncrByWithExpiringAndExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+
+            // Set expiration for some items in key1
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "a");
+
+            await Task.Delay(10);
+
+            // Try to increment the score of an expiring item
+            var newScore = db.SortedSetIncrement("key1", "a", 5);
+            ClassicAssert.AreEqual(6, newScore);
+
+            // Check the TTL of the expiring item
+            var ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
+            ClassicAssert.LessOrEqual((long)ttl, 200);
+            ClassicAssert.Greater((long)ttl, 0);
+
+            await Task.Delay(200);
+
+            // Check the item has expired
+            ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
+            ClassicAssert.AreEqual(-2, (long)ttl);
+
+            // Try to increment the score of an already expired item
+            newScore = db.SortedSetIncrement("key1", "a", 5);
+            ClassicAssert.AreEqual(5, newScore);
+
+            // Verify the item is added back with the new score
+            var score = db.SortedSetScore("key1", "a");
+            ClassicAssert.AreEqual(5, score);
+        }
+
+        [Test]
+        public async Task ZInterWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted sets
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            var inter = db.SortedSetCombine(SetOperation.Intersect, ["key1", "key2"]);
+            ClassicAssert.AreEqual(3, inter.Length);
+
+            await Task.Delay(300);
+
+            var interWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect, ["key1", "key2"]);
+            ClassicAssert.AreEqual(1, interWithScores.Length);  // Only "b" should remain
+            ClassicAssert.AreEqual("b", interWithScores[0].Element.ToString());
+            ClassicAssert.AreEqual(4, interWithScores[0].Score); // Sum of scores
+
+            await Task.Delay(300);
+
+            inter = db.SortedSetCombine(SetOperation.Intersect, ["key1", "key2"]);
+            ClassicAssert.AreEqual(0, inter.Length);
+        }
+
+        [Test]
+        public async Task ZInterCardWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            await Task.Delay(300);
+
+            var interCardCount = (long)db.Execute("ZINTERCARD", "2", "key1", "key2");
+            ClassicAssert.AreEqual(1, interCardCount); // Only "b" should remain
+
+            await Task.Delay(300);
+
+            interCardCount = (long)db.Execute("ZINTERCARD", "2", "key1", "key2");
+            ClassicAssert.AreEqual(0, interCardCount); // No items should remain
+        }
+
+        [Test]
+        public async Task ZInterStoreWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            await Task.Delay(300);
+
+            var interStoreCount = db.SortedSetCombineAndStore(SetOperation.Intersect, "key3", ["key1", "key2"]);
+            ClassicAssert.AreEqual(1, interStoreCount); // Only "b" should remain
+
+            var interStoreResult = db.SortedSetRangeByRankWithScores("key3");
+            ClassicAssert.AreEqual(1, interStoreResult.Length);
+            ClassicAssert.AreEqual("b", interStoreResult[0].Element.ToString());
+            ClassicAssert.AreEqual(4, interStoreResult[0].Score); // Sum of scores
+
+            await Task.Delay(300);
+
+            interStoreCount = db.SortedSetCombineAndStore(SetOperation.Intersect, "key3", ["key1", "key2"]);
+            ClassicAssert.AreEqual(0, interStoreCount); // No items should remain
+
+            interStoreResult = db.SortedSetRangeByRankWithScores("key3");
+            ClassicAssert.AreEqual(0, interStoreResult.Length);
+        }
+
+        [Test]
+        public async Task ZLexCountWithExpiredAndExpiringItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "3", "a", "e", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
+
+            await Task.Delay(300);
+
+            var lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+"); // SortedSetLengthByValue will check - and + to [- and [+
+            ClassicAssert.AreEqual(2, lexCount); // Only "b" and "d" should remain
+
+            var lexCountRange = db.SortedSetLengthByValue("key1", "b", "d", Exclude.Stop);
+            ClassicAssert.AreEqual(1, lexCountRange); // Only "b" should remain within the range
+
+            await Task.Delay(300);
+
+            lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+");
+            ClassicAssert.AreEqual(1, lexCount); // Only "d" should remain
+
+            lexCountRange = db.SortedSetLengthByValue("key1", "b", "d");
+            ClassicAssert.AreEqual(1, lexCountRange); // Only "d" should remain within the range
+        }
+
+        [Test]
+        public async Task ZMPopWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("key0", "x", 1);
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for the minimum and maximum items
+            db.Execute("ZPEXPIRE", "key0", "200", "MEMBERS", "1", "x");
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZMPOP with MIN option
+            var result = db.Execute("ZMPOP", 2, "key0", "key1", "MIN", "COUNT", 2);
+            ClassicAssert.IsNotNull(result);
+            var popResult = (RedisResult[])result;
+            ClassicAssert.AreEqual("key1", (string)popResult[0]);
+
+            var poppedItems = (RedisResult[])popResult[1];
+            ClassicAssert.AreEqual(2, poppedItems.Length);
+            ClassicAssert.AreEqual("b", (string)poppedItems[0][0]);
+            ClassicAssert.AreEqual("2", (string)poppedItems[0][1]);
+            ClassicAssert.AreEqual("c", (string)poppedItems[1][0]);
+            ClassicAssert.AreEqual("3", (string)poppedItems[1][1]);
+
+            // Perform ZMPOP with MAX option
+            result = db.Execute("ZMPOP", 2, "key0", "key1", "MAX", "COUNT", 2);
+            ClassicAssert.IsNotNull(result);
+            popResult = (RedisResult[])result;
+            ClassicAssert.AreEqual("key1", (string)popResult[0]);
+
+            poppedItems = (RedisResult[])popResult[1];
+            ClassicAssert.AreEqual(1, poppedItems.Length);
+            ClassicAssert.AreEqual("d", (string)poppedItems[0][0]);
+            ClassicAssert.AreEqual("4", (string)poppedItems[0][1]);
+        }
+
+        [Test]
+        public async Task ZMScoreWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for the minimum and maximum items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            var scores = db.SortedSetScores("key1", ["a", "b", "c", "d", "e"]);
+            ClassicAssert.AreEqual(5, scores.Length);
+            ClassicAssert.IsNull(scores[0]); // "a" should be expired
+            ClassicAssert.AreEqual(2, scores[1]); // "b" should remain
+            ClassicAssert.AreEqual(3, scores[2]); // "c" should remain
+            ClassicAssert.AreEqual(4, scores[3]); // "d" should remain
+            ClassicAssert.IsNull(scores[4]); // "e" should be expired
+        }
+
+        [Test]
+        public async Task ZPopMaxWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for the minimum and maximum items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "c", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZPOPMAX
+            var result = db.SortedSetPop("key1", Order.Descending);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual("d", result.Value.Element.ToString());
+            ClassicAssert.AreEqual(4, result.Value.Score);
+
+            // Perform ZPOPMAX with COUNT option
+            var results = db.SortedSetPop("key1", 2, Order.Descending);
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual("b", results[0].Element.ToString());
+            ClassicAssert.AreEqual(2, results[0].Score);
+            ClassicAssert.AreEqual("a", results[1].Element.ToString());
+            ClassicAssert.AreEqual(1, results[1].Score);
+        }
+
+        [Test]
+        public async Task ZPopMinWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for the minimum and middle items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
+
+            await Task.Delay(300);
+
+            // Perform ZPOPMIN
+            var result = db.SortedSetPop("key1", Order.Ascending);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual("b", result.Value.Element.ToString());
+            ClassicAssert.AreEqual(2, result.Value.Score);
+
+            // Perform ZPOPMIN with COUNT option
+            var results = db.SortedSetPop("key1", 2, Order.Ascending);
+            ClassicAssert.AreEqual(2, results.Length);
+            ClassicAssert.AreEqual("d", results[0].Element.ToString());
+            ClassicAssert.AreEqual(4, results[0].Score);
+            ClassicAssert.AreEqual("e", results[1].Element.ToString());
+            ClassicAssert.AreEqual(5, results[1].Score);
+        }
+
+        [Test]
+        public async Task ZRandMemberWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZRANDMEMBER
+            var randMember = db.SortedSetRandomMember("key1");
+
+            ClassicAssert.IsFalse(randMember.IsNull);
+            ClassicAssert.IsTrue(new[] { "b", "c", "d" }.Contains(randMember.ToString()));
+
+            // Perform ZRANDMEMBER with count
+            var randMembers = db.SortedSetRandomMembers("key1", 4);
+            ClassicAssert.AreEqual(3, randMembers.Length);
+            CollectionAssert.AreEquivalent(new[] { "b", "c", "d" }, randMembers.Select(member => member.ToString()).ToList());
+
+            // Perform ZRANDMEMBER with count and WITHSCORES
+            var randMembersWithScores = db.SortedSetRandomMembersWithScores("key1", 4);
+            ClassicAssert.AreEqual(3, randMembersWithScores.Length);
+            CollectionAssert.AreEquivalent(new[] { "b", "c", "d" }, randMembersWithScores.Select(member => member.Element.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRangeWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZRANGE with BYSCORE option
+            var result = (RedisValue[])db.Execute("ZRANGE", "key1", "1", "5", "BYSCORE");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGE with BYLEX option
+            result = (RedisValue[])db.Execute("ZRANGE", "key1", "[b", "[d", "BYLEX");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGE with REV option
+            result = (RedisValue[])db.Execute("ZRANGE", "key1", "5", "1", "BYSCORE", "REV");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "d", "c", "b" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGE with LIMIT option
+            result = (RedisValue[])db.Execute("ZRANGE", "key1", "1", "5", "BYSCORE", "LIMIT", "1", "2");
+            ClassicAssert.AreEqual(2, result.Length);
+            CollectionAssert.AreEqual(new[] { "c", "d" }, result.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRangeByLexWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 1);
+            db.SortedSetAdd("key1", "c", 1);
+            db.SortedSetAdd("key1", "d", 1);
+            db.SortedSetAdd("key1", "e", 1);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZRANGEBYLEX with expired items
+            var result = (RedisResult[])db.Execute("ZRANGEBYLEX", "key1", "[a", "[e");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRangeByScoreWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZRANGEBYSCORE
+            var result = (RedisValue[])db.Execute("ZRANGEBYSCORE", "key1", "1", "5");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGEBYSCORE with expired items
+            result = (RedisValue[])db.Execute("ZRANGEBYSCORE", "key1", "1", "5");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRangeStoreWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZRANGESTORE with BYSCORE option
+            db.Execute("ZRANGESTORE", "key2", "key1", "1", "5", "BYSCORE");
+            var result = db.SortedSetRangeByRank("key2");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGESTORE with BYLEX option
+            db.Execute("ZRANGESTORE", "key2", "key1", "[b", "[d", "BYLEX");
+            result = db.SortedSetRangeByRank("key2");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGESTORE with REV option
+            db.Execute("ZRANGESTORE", "key2", "key1", "5", "1", "BYSCORE", "REV");
+            result = db.SortedSetRangeByRank("key2");
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new[] { "b", "c", "d" }, result.Select(r => r.ToString()).ToList());
+
+            // Perform ZRANGESTORE with LIMIT option
+            db.Execute("ZRANGESTORE", "key2", "key1", "1", "5", "BYSCORE", "LIMIT", "1", "2");
+            result = db.SortedSetRangeByRank("key2");
+            ClassicAssert.AreEqual(2, result.Length);
+            CollectionAssert.AreEqual(new[] { "c", "d" }, result.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRankWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZRANK
+            var rank = db.SortedSetRank("key1", "a");
+            ClassicAssert.IsNull(rank); // "a" should be expired
+
+            rank = db.SortedSetRank("key1", "b");
+            ClassicAssert.AreEqual(0, rank); // "b" should be at rank 0
+        }
+
+        [Test]
+        public async Task ZRemWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREM on expired and non-expired items
+            var removedCount = db.SortedSetRemove("key1", ["a", "b", "e"]);
+            ClassicAssert.AreEqual(1, removedCount); // "a" and "e" should be expired, "b" should be removed
+
+            // Verify remaining items in the sorted set
+            var remainingItems = db.SortedSetRangeByRank("key1");
+            ClassicAssert.AreEqual(2, remainingItems.Length);
+            CollectionAssert.AreEqual(new[] { "c", "d" }, remainingItems.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRemRangeByLexWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 1);
+            db.SortedSetAdd("key1", "c", 1);
+            db.SortedSetAdd("key1", "d", 1);
+            db.SortedSetAdd("key1", "e", 1);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREMRANGEBYLEX with expired items
+            var removedCount = db.Execute("ZREMRANGEBYLEX", "key1", "[a", "[e");
+            ClassicAssert.AreEqual(3, (int)removedCount); // Only "b", "c", and "d" should be removed
+
+            // Verify remaining items in the sorted set
+            var remainingItems = db.SortedSetRangeByRank("key1");
+            ClassicAssert.AreEqual(0, remainingItems.Length); // All items should be removed
+        }
+
+        [Test]
+        public async Task ZRemRangeByRankWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREMRANGEBYRANK with expired items
+            var removedCount = db.Execute("ZREMRANGEBYRANK", "key1", 0, 1);
+            ClassicAssert.AreEqual(2, (int)removedCount); // Only "b" and "c" should be removed
+
+            // Verify remaining items in the sorted set
+            var remainingItems = db.SortedSetRangeByRank("key1");
+            ClassicAssert.AreEqual(1, remainingItems.Length);
+            CollectionAssert.AreEqual(new[] { "d" }, remainingItems.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRemRangeByScoreWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREMRANGEBYSCORE with expired items
+            var removedCount = db.Execute("ZREMRANGEBYSCORE", "key1", 1, 5);
+            ClassicAssert.AreEqual(3, (int)removedCount); // Only "b", "c", and "d" should be removed
+
+            // Verify remaining items in the sorted set
+            var remainingItems = db.SortedSetRangeByRank("key1");
+            ClassicAssert.AreEqual(0, remainingItems.Length); // All items should be removed
+        }
+
+        [Test]
+        public async Task ZRevRangeWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREVRANGE with expired items
+            var result = db.Execute("ZREVRANGE", "key1", 0, -1);
+            var items = (RedisValue[])result;
+            ClassicAssert.AreEqual(3, items.Length); // Only "b", "c", and "d" should remain
+            CollectionAssert.AreEqual(new[] { "d", "c", "b" }, items.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRevRangeByLexWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 1);
+            db.SortedSetAdd("key1", "c", 1);
+            db.SortedSetAdd("key1", "d", 1);
+            db.SortedSetAdd("key1", "e", 1);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREVRANGEBYLEX with expired items
+            var result = db.Execute("ZREVRANGEBYLEX", "key1", "[e", "[a");
+            var items = (RedisValue[])result;
+            ClassicAssert.AreEqual(3, items.Length); // Only "b", "c", and "d" should remain
+            CollectionAssert.AreEqual(new[] { "d", "c", "b" }, items.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRevRangeByScoreWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREVRANGEBYSCORE with expired items
+            var result = db.Execute("ZREVRANGEBYSCORE", "key1", 5, 1);
+            var items = (RedisValue[])result;
+            ClassicAssert.AreEqual(3, items.Length); // Only "b", "c", and "d" should remain
+            CollectionAssert.AreEqual(new[] { "d", "c", "b" }, items.Select(r => r.ToString()).ToList());
+        }
+
+        [Test]
+        public async Task ZRevRankWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+
+            await Task.Delay(300);
+
+            // Perform ZREVRANK on expired and non-expired items
+            var result = db.Execute("ZREVRANK", "key1", "a");
+            ClassicAssert.True(result.IsNull); // "a" should be expired
+
+            result = db.Execute("ZREVRANK", "key1", "b");
+            ClassicAssert.AreEqual(2, (int)result); // "b" should be at reverse rank 2
+        }
+
+        [Test]
+        public async Task ZScanWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            // Set expiration for some items
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "e");
+            db.Execute("ZPEXPIRE", "key1", "1000", "MEMBERS", "1", "c");
+
+            await Task.Delay(300);
+
+            // Perform ZSCAN
+            var result = db.Execute("ZSCAN", "key1", "0");
+            var items = (RedisResult[])result;
+            var cursor = (long)items[0];
+            var elements = (RedisValue[])items[1];
+
+            // Verify that expired items are not returned
+            ClassicAssert.AreEqual(6, elements.Length); // Only "b", "c", and "d" should remain
+            CollectionAssert.AreEqual(new[] { "b", "2", "c", "3", "d", "4" }, elements.Select(r => r.ToString()).ToList());
+            ClassicAssert.AreEqual(0, cursor); // Ensure the cursor indicates the end of the collection
+        }
+
+        [Test]
+        public async Task ZScoreWithExpiringAndExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted set
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+
+            // Set expiration for some items in key1
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "a");
+
+            await Task.Delay(10);
+
+            // Check the score of an expiring item
+            var score = db.SortedSetScore("key1", "a");
+            ClassicAssert.AreEqual(1, score);
+
+            // Check the TTL of the expiring item
+            var ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
+            ClassicAssert.LessOrEqual((long)ttl, 200);
+            ClassicAssert.Greater((long)ttl, 0);
+
+            await Task.Delay(200);
+
+            // Check the item has expired
+            ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
+            ClassicAssert.AreEqual(-2, (long)ttl);
+
+            // Check the score of an already expired item
+            score = db.SortedSetScore("key1", "a");
+            ClassicAssert.IsNull(score);
+
+            // Check the score of a non-expiring item
+            score = db.SortedSetScore("key1", "b");
+            ClassicAssert.AreEqual(2, score);
+        }
+
+        [Test]
+        public async Task ZUnionWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted sets
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
+            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            var union = db.SortedSetCombine(SetOperation.Union, [ "key1", "key2" ]);
+            ClassicAssert.AreEqual(5, union.Length);
+
+            await Task.Delay(300);
+
+            var unionWithScores = db.SortedSetCombineWithScores(SetOperation.Union, [ "key1", "key2" ]);
+            ClassicAssert.AreEqual(4, unionWithScores.Length);
+        }
+
+        [Test]
+        public async Task ZUnionStoreWithExpiredItems()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Add items to the sorted sets
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+            db.SortedSetAdd("key1", "c", 3);
+            db.SortedSetAdd("key1", "d", 4);
+            db.SortedSetAdd("key1", "e", 5);
+
+            db.SortedSetAdd("key2", "a", 1);
+            db.SortedSetAdd("key2", "b", 2);
+            db.SortedSetAdd("key2", "c", 3);
+
+            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
+            db.Execute("ZPEXPIRE", "key1", "1000", "MEMBERS", "1", "b");
+            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+
+            var unionStoreCount = db.SortedSetCombineAndStore(SetOperation.Union, "key3", ["key1", "key2"]);
+            ClassicAssert.AreEqual(5, unionStoreCount);
+            var unionStoreResult = db.SortedSetRangeByRankWithScores("key3");
+            ClassicAssert.AreEqual(5, unionStoreResult.Length);
+
+            await Task.Delay(300);
+
+            unionStoreCount = db.SortedSetCombineAndStore(SetOperation.Union, "key3", ["key1", "key2"]);
+            ClassicAssert.AreEqual(4, unionStoreCount);
+            unionStoreResult = db.SortedSetRangeByRankWithScores("key3");
+            ClassicAssert.AreEqual(4, unionStoreResult.Length);
+            CollectionAssert.AreEquivalent(new[] { "b", "c", "d", "e" }, unionStoreResult.Select(x => x.Element.ToString()));
         }
 
         #endregion

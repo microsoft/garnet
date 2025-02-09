@@ -1235,9 +1235,9 @@ namespace Garnet.server
                     }
 
                     if (pairs == default)
-                        pairs = SortedSetObject.CopyDiff(firstSortedSet.Dictionary, nextSortedSet.Dictionary);
+                        pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
                     else
-                        SortedSetObject.InPlaceDiff(pairs, nextSortedSet.Dictionary);
+                        SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
                 }
             }
 
@@ -1435,16 +1435,10 @@ namespace Garnet.server
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                if (keys.Length == 1)
-                {
-                    pairs = firstSortedSet.Dictionary;
-                    return GarnetStatus.OK;
-                }
-
                 // Initialize result with first set
                 if (weights is null)
                 {
-                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                    pairs = keys.Length == 1 ? firstSortedSet.Dictionary : new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
                 }
                 else
                 {
@@ -1453,6 +1447,11 @@ namespace Garnet.server
                     {
                         pairs[kvp.Key] = kvp.Value * weights[0];
                     }
+                }
+
+                if (keys.Length == 1)
+                {
+                    return GarnetStatus.OK;
                 }
 
                 // Intersect with remaining sets
@@ -1473,7 +1472,7 @@ namespace Garnet.server
 
                     foreach (var kvp in pairs)
                     {
-                        if (!nextSortedSet.Dictionary.TryGetValue(kvp.Key, out var score))
+                        if (!nextSortedSet.TryGetScore(kvp.Key, out var score))
                         {
                             pairs.Remove(kvp.Key);
                             continue;

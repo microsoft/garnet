@@ -157,7 +157,10 @@ namespace Garnet.server
 
                         // No need for update
                         if (score == scoreStored)
+                        {
+                            Persist(member);
                             continue;
+                        }
 
                         // Don't update existing member if NX flag is set
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
@@ -533,7 +536,9 @@ namespace Garnet.server
                         WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
-                    {  // byIndex
+                    {
+                        // byIndex
+                        var setCount = Count();
                         int minIndex = (int)minValue, maxIndex = (int)maxValue;
                         if (options.ValidLimit)
                         {
@@ -541,7 +546,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             return;
                         }
-                        else if (minValue > sortedSetDict.Count - 1)
+                        else if (minValue > setCount - 1)
                         {
                             // return empty list
                             while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
@@ -553,15 +558,15 @@ namespace Garnet.server
                             //shift from the end of the set
                             if (minIndex < 0)
                             {
-                                minIndex = sortedSetDict.Count + minIndex;
+                                minIndex = setCount + minIndex;
                             }
                             if (maxIndex < 0)
                             {
-                                maxIndex = sortedSetDict.Count + maxIndex;
+                                maxIndex = setCount + maxIndex;
                             }
-                            else if (maxIndex >= sortedSetDict.Count)
+                            else if (maxIndex >= setCount)
                             {
-                                maxIndex = sortedSetDict.Count - 1;
+                                maxIndex = setCount - 1;
                             }
 
                             // No elements to return if both indexes fall outside the range or min is higher than max

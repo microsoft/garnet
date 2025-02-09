@@ -639,7 +639,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworZHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkZCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1)

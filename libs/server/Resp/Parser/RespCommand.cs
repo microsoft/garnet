@@ -865,10 +865,6 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HTTL;
                                         }
-                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZTTL\r\n"u8))
-                                        {
-                                            return RespCommand.ZTTL;
-                                        }
                                         break;
 
                                     case 'K':
@@ -953,6 +949,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZREM\r\n"u8))
                                         {
                                             return RespCommand.ZREM;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZTTL\r\n"u8))
+                                        {
+                                            return RespCommand.ZTTL;
                                         }
                                         break;
                                 }
@@ -1047,10 +1047,6 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HPTTL;
                                         }
-                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZPTTL\r\n"u8))
-                                        {
-                                            return RespCommand.ZPTTL;
-                                        }
                                         break;
 
                                     case 'L':
@@ -1132,6 +1128,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
                                         {
                                             return RespCommand.ZMPOP;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZPTTL\r\n"u8))
+                                        {
+                                            return RespCommand.ZPTTL;
                                         }
                                         break;
                                 }
@@ -1350,10 +1350,6 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HEXPIRE;
                                         }
-                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
-                                        {
-                                            return RespCommand.ZEXPIRE;
-                                        }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.HINCRBY;
@@ -1405,6 +1401,10 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMIN\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.ZPOPMIN;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.ZEXPIRE;
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMAX\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
