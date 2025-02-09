@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -18,8 +19,9 @@ namespace Garnet.server
     public sealed class SubscribeBroker : IDisposable, ILogEntryConsumer
     {
         int sid = 0;
-        ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>> subscriptions;
-        ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>> patternSubscriptions;
+        bool initialized = false;
+        ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
+        ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> patternSubscriptions;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
@@ -80,7 +82,7 @@ namespace Garnet.server
                 if (subscriptions.TryGetValue(new ByteArrayWrapper(key), out var sessions))
                 {
                     int index = 0;
-                    while (sessions.Get(ref index, out var session))
+                    while (sessions.Iterate(ref index, out var session))
                     {
                         session.Publish(key, value);
                         numSubscribers++;
@@ -100,7 +102,7 @@ namespace Garnet.server
                         {
                             var sessions = kvp.Value;
                             int index = 0;
-                            while (sessions.Get(ref index, out var session))
+                            while (sessions.Iterate(ref index, out var session))
                             {
                                 session.PatternPublish(patternSlice, key, value);
                                 numSubscribers++;
@@ -168,9 +170,10 @@ namespace Garnet.server
         void Initialize()
         {
             done.Reset();
-            subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
-            patternSubscriptions = new ConcurrentDictionary<ByteArrayWrapper, ConcurrentList<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
+            subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
+            patternSubscriptions = new ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
             Task.Run(() => Start(cts.Token));
+            initialized = true;
         }
 
         /// <summary>
@@ -179,23 +182,18 @@ namespace Garnet.server
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int Subscribe(ArgSlice key, ServerSessionBase session)
+        public unsafe bool Subscribe(ArgSlice key, ServerSessionBase session)
         {
-            var id = Interlocked.Increment(ref sid);
-
-            if (id == 1)
-            {
+            if (!initialized && Interlocked.Increment(ref sid) == 1)
                 Initialize();
-            }
             else
-            {
-                while (patternSubscriptions == null) Thread.Yield();
-            }
+                while (!initialized) Thread.Yield();
+
             var subscriptionKey = ByteArrayWrapper.CopyFrom(key.ReadOnlySpan, false);
-            subscriptions.TryAdd(subscriptionKey, new ConcurrentList<ServerSessionBase>());
-            if (subscriptions.TryGetValue(subscriptionKey, out var sessions))
-                sessions.Add(session);
-            return id;
+            if (!subscriptions.ContainsKey(subscriptionKey))
+                subscriptions.TryAdd(subscriptionKey, new ReadOptimizedConcurrentSet<ServerSessionBase>());
+
+            return subscriptions[subscriptionKey].TryAdd(session);
         }
 
         /// <summary>
@@ -204,22 +202,18 @@ namespace Garnet.server
         /// <param name="pattern">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int PatternSubscribe(ArgSlice pattern, ServerSessionBase session)
+        public unsafe bool PatternSubscribe(ArgSlice pattern, ServerSessionBase session)
         {
-            var id = Interlocked.Increment(ref sid);
-            if (id == 1)
-            {
+            if (!initialized && Interlocked.Increment(ref sid) == 1)
                 Initialize();
-            }
             else
-            {
-                while (patternSubscriptions == null) Thread.Yield();
-            }
+                while (!initialized) Thread.Yield();
+
             var subscriptionPattern = ByteArrayWrapper.CopyFrom(pattern.ReadOnlySpan, false);
-            patternSubscriptions.TryAdd(subscriptionPattern, new ConcurrentList<ServerSessionBase>());
-            if (patternSubscriptions.TryGetValue(subscriptionPattern, out var sessions))
-                sessions.Add(session);
-            return id;
+            if (!patternSubscriptions.ContainsKey(subscriptionPattern))
+                patternSubscriptions.TryAdd(subscriptionPattern, new ReadOptimizedConcurrentSet<ServerSessionBase>());
+
+            return patternSubscriptions[subscriptionPattern].TryAdd(session);
         }
 
         /// <summary>
@@ -234,7 +228,7 @@ namespace Garnet.server
             if (subscriptions == null) return ret;
             if (subscriptions.TryGetValue(key, out var sessions))
             {
-                return sessions.RemoveAll(session);
+                return sessions.TryRemove(session);
             }
             return ret;
         }
@@ -252,7 +246,7 @@ namespace Garnet.server
             {
                 if (patternSubscriptions.TryGetValue(key, out var sessions))
                 {
-                    sessions.RemoveAll(session);
+                    sessions.TryRemove(session);
                 }
             }
         }

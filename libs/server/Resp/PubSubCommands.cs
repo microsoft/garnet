@@ -188,11 +188,11 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
 
-                numActiveChannels++;
+                if (subscribeBroker.Subscribe(key, this))
+                    numActiveChannels++;
+
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
-
-                _ = subscribeBroker.Subscribe(key, this);
             }
 
             if (disabledBroker)
@@ -230,11 +230,11 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(key.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
 
-                numActiveChannels++;
+                if (subscribeBroker.PatternSubscribe(key, this))
+                    numActiveChannels++;
+
                 while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                     SendAndReset();
-
-                _ = subscribeBroker.PatternSubscribe(key, this);
             }
 
             if (disabledBroker)
