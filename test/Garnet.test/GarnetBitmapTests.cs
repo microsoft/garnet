@@ -694,6 +694,7 @@ namespace Garnet.test
         }
 
         [Test, Order(15)]
+        [Category("BITPOS")]
         [TestCase(10)]
         [TestCase(20)]
         [TestCase(30)]
@@ -2282,6 +2283,9 @@ namespace Garnet.test
 
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
             ClassicAssert.AreEqual(0, pos);
+
+            pos = db.StringBitPosition(key, true, 7, 15, StringIndexType.Bit);
+            ClassicAssert.AreEqual(8, pos);
 
             value = [0xf8, 0x6f, 0xf0];
             db.StringSet(key, value);

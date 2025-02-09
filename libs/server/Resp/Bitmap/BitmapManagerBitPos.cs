@@ -126,7 +126,14 @@ namespace Garnet.server
 
             // Search suffix
             var _spos = BitPosIndexBitSearch(value, setVal, endOffset);
-            return _spos;
+            if (_spos != -1)
+            {
+                var retpos = (endByte * 8) + _spos;
+                if (retpos <= endOffset)
+                    return retpos;
+            }
+
+            return -1;
         }
 
         /// <summary>
