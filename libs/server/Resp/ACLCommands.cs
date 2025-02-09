@@ -204,7 +204,7 @@ namespace Garnet.server
                         }
 
                     }
-                    while(!userHandle.TrySetUser(newUser, effectiveUser));
+                    while (!userHandle.TrySetUser(newUser, effectiveUser));
                 }
                 catch (ACLException exception)
                 {
