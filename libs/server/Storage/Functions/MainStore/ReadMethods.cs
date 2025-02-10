@@ -148,14 +148,14 @@ namespace Garnet.server
             // Any value without an etag is treated the same as a value with an etag
             long etagToMatchAgainst = input.parseState.GetLong(0);
 
-            long existingEtag = readInfo.RecordInfo.ETag ? value.GetEtagInPayload() : Constants.BaseEtag;
+            long existingEtag = readInfo.RecordInfo.ETag ? value.GetEtagInPayload() : EtagConstants.BaseEtag;
 
             if (existingEtag == etagToMatchAgainst)
             {
                 // write back array of the format [etag, nil]
                 var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                 // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                var numDigitsInEtag = NumUtils.NumDigitsInLong(existingEtag);
+                var numDigitsInEtag = NumUtils.CountDigits(existingEtag);
                 WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);
                 return true;
             }

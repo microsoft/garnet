@@ -65,14 +65,16 @@ namespace CommandInfoUpdater
         /// </summary>
         /// <param name="existingCommandsInfo">Existing command names mapped to current command info</param>
         /// <param name="ignoreCommands">Commands to ignore</param>
+        /// <param name="ignoreSubCommands">Sub-commands to ignore</param>
         /// <returns>Commands to add and commands to remove mapped to a boolean determining if parent command should be added / removed</returns>
         internal static (IDictionary<SupportedCommand, bool>, IDictionary<SupportedCommand, bool>)
             GetCommandsToAddAndRemove<TData>(IReadOnlyDictionary<string, TData> existingCommandsInfo,
-                IEnumerable<string> ignoreCommands) where TData : class, IRespCommandData<TData>
+                IEnumerable<string> ignoreCommands, IDictionary<string, HashSet<string>> ignoreSubCommands) where TData : class, IRespCommandData<TData>
         {
             var commandsToAdd = new Dictionary<SupportedCommand, bool>();
             var commandsToRemove = new Dictionary<SupportedCommand, bool>();
             var commandsToIgnore = ignoreCommands != null ? new HashSet<string>(ignoreCommands) : null;
+            var subCommandsToIgnore = ignoreSubCommands ?? new Dictionary<string, HashSet<string>>();
 
             // Supported commands
             var supportedCommands = SupportedCommand.SupportedCommandsMap;
@@ -97,7 +99,13 @@ namespace CommandInfoUpdater
                 // If existing commands contain parent command and have no sub-commands, set sub-commands to add as supported command's sub-commands
                 if (existingCommandsInfo[supportedCommand.Command].SubCommands == null)
                 {
-                    subCommandsToAdd = [.. supportedCommand.SubCommands.Values];
+                    subCommandsToAdd =
+                    [
+                        .. supportedCommand.SubCommands.Where(subCommand =>
+                                !subCommandsToIgnore.ContainsKey(supportedCommand.Command) ||
+                                !subCommandsToIgnore[supportedCommand.Command].Contains(subCommand.Key))
+                            .Select(sc => sc.Value)
+                    ];
                 }
                 // Set sub-commands to add as the difference between existing sub-commands and supported command's sub-commands
                 else
@@ -105,8 +113,16 @@ namespace CommandInfoUpdater
                     var existingSubCommands = new HashSet<string>(existingCommandsInfo[supportedCommand.Command]
                         .SubCommands
                         .Select(sc => sc.Name));
-                    subCommandsToAdd = supportedCommand.SubCommands
-                        .Where(subCommand => !existingSubCommands.Contains(subCommand.Key)).Select(sc => sc.Value).ToArray();
+
+                    subCommandsToAdd =
+                    [
+                        .. supportedCommand.SubCommands
+                            .Where(subCommand =>
+                                !existingSubCommands.Contains(subCommand.Key) &&
+                                (!subCommandsToIgnore.ContainsKey(supportedCommand.Command) ||
+                                 !subCommandsToIgnore[supportedCommand.Command].Contains(subCommand.Key)))
+                            .Select(sc => sc.Value)
+                    ];
                 }
 
                 // If there are sub-commands to add, add a new supported command with the sub-commands to add

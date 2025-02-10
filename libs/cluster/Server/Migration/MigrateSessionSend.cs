@@ -19,8 +19,8 @@ namespace Garnet.cluster
         private bool WriteOrSendMainStoreKeyValuePair(ref SpanByte key, ref SpanByte value)
         {
             // Check if we need to initialize cluster migrate command arguments
-            if (_gcs.InitMigrateCommand)
-                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: true);
+            if (_gcs.NeedsInitialization)
+                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
 
             // Try write serialized key value to client buffer
             while (!_gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
@@ -30,7 +30,7 @@ namespace Garnet.cluster
                     return false;
 
                 // re-initialize cluster migrate command parameters
-                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: true);
+                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
             }
             return true;
         }
@@ -45,15 +45,15 @@ namespace Garnet.cluster
         private bool WriteOrSendObjectStoreKeyValuePair(byte[] key, byte[] value, long expiration)
         {
             // Check if we need to initialize cluster migrate command arguments
-            if (_gcs.InitMigrateCommand)
-                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: false);
+            if (_gcs.NeedsInitialization)
+                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
 
             while (!_gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
             {
                 // Flush key value pairs in the buffer
                 if (!HandleMigrateTaskResponse(task))
                     return false;
-                _gcs.SetClusterMigrate(_sourceNodeId, _replaceOption, isMainStore: false);
+                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
             }
             return true;
         }

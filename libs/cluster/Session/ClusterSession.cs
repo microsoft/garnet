@@ -27,6 +27,7 @@ namespace Garnet.cluster
         BasicGarnetApi basicGarnetApi;
         readonly INetworkSender networkSender;
         readonly ILogger logger;
+        ClusterSlotVerificationInput csvi;
 
         // Authenticator used to validate permissions for cluster commands
         readonly IGarnetAuthenticator authenticator;
@@ -74,6 +75,14 @@ namespace Garnet.cluster
             {
                 if (command.IsClusterSubCommand())
                 {
+                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out var commandInfo) && commandInfo.KeySpecifications != null)
+                    {
+                        csvi.keyNumOffset = -1;
+                        clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
+                        if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
+                            return;
+                    }
+
                     ProcessClusterCommands(command, out invalidParameters);
 
                     if (invalidParameters)
@@ -99,7 +108,7 @@ namespace Garnet.cluster
                 {
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
                         respCommandName ?? command.ToString());
-                    while (!RespWriteUtils.WriteError(errorMessage, ref this.dcurr, this.dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
                 }
             }

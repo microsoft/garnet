@@ -86,6 +86,9 @@ namespace Tsavorite.core
                         case LatchDestination.Retry:
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
+                            if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+
                             goto CreateNewRecord;
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,7 +7,9 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
 using Garnet.server;
@@ -233,6 +235,9 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("hcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand.")]
+        public int HashCollectFrequencySecs { get; set; }
 
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
@@ -307,6 +312,14 @@ namespace Garnet
         [OptionValidation]
         [Option("latency-monitor", Required = false, HelpText = "Track latency of various events.")]
         public bool? LatencyMonitor { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
+        public int SlowLogThreshold { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-max-len", Required = false, HelpText = "Maximum number of slow log entries to keep.")]
+        public int SlowLogMaxEntries { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
@@ -508,6 +521,29 @@ namespace Garnet
         [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
 
+        [OptionValidation]
+        [Option("skip-rdb-restore-checksum-validation", Default = false, Required = false, HelpText = "Skip RDB restore checksum validation")]
+        public bool? SkipRDBRestoreChecksumValidation { get; set; }
+
+        [OptionValidation]
+        [Option("lua-memory-management-mode", Required = false, HelpText = "Memory management mode for Lua scripts, must be set to Tracked or Managed to impose script limits")]
+        public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
+
+        [MemorySizeValidation(false)]
+        [ForbiddenWithOption(nameof(LuaMemoryManagementMode), nameof(LuaMemoryManagementMode.Native))]
+        [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
+        public string LuaScriptMemoryLimit { get; set; }
+
+        [FilePathValidation(false, true, false)]
+        [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
+        public string UnixSocketPath { get; set; }
+
+
+        [IntRangeValidation(0, 777, isRequired: false)]
+        [SupportedOSValidation(isRequired: false, nameof(OSPlatform.Linux), nameof(OSPlatform.OSX), nameof(OSPlatform.FreeBSD))]
+        [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
+        public int UnixSocketPermission { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -567,9 +603,30 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            var address = !string.IsNullOrEmpty(this.Address) && this.Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                ? IPAddress.Loopback.ToString()
-                : this.Address;
+            EndPoint endpoint;
+            if (!string.IsNullOrEmpty(UnixSocketPath))
+            {
+                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
+            }
+            else
+            {
+                IPAddress address;
+                if (string.IsNullOrEmpty(Address))
+                {
+                    address = IPAddress.Any;
+                }
+                else
+                {
+                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
+                        address = IPAddress.Loopback;
+                    else
+                        address = IPAddress.Parse(Address);
+                }
+                endpoint = new IPEndPoint(address, Port);
+            }
+
+            // Unix file permission octal to UnixFileMode
+            var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
 
             var revivBinRecordSizes = this.RevivBinRecordSizes?.ToArray();
             var revivBinRecordCounts = this.RevivBinRecordCounts?.ToArray();
@@ -613,10 +670,14 @@ namespace Garnet
                 CompactionForceDelete = true;
             }
 
+            if (SlowLogThreshold > 0)
+            {
+                if (SlowLogThreshold < 100)
+                    throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
+            }
             return new GarnetServerOptions(logger)
             {
-                Port = Port,
-                Address = address,
+                EndPoint = endpoint,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
@@ -660,6 +721,7 @@ namespace Garnet
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
+                HashCollectFrequencySecs = HashCollectFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
@@ -682,6 +744,8 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                SlowLogThreshold = SlowLogThreshold,
+                SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,
@@ -718,7 +782,11 @@ namespace Garnet
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
                 LoadModuleCS = LoadModuleCS,
-                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
+                SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
+                UnixSocketPath = UnixSocketPath,
+                UnixSocketPermission = unixSocketPermissions
             };
         }
 

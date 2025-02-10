@@ -5,11 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Security.Cryptography;
-using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -28,6 +26,9 @@ namespace Garnet.server
         readonly Dictionary<ScriptHashKey, LuaRunner> scriptCache = [];
         readonly byte[] hash = new byte[SHA1Len / 2];
 
+        readonly LuaMemoryManagementMode memoryManagementMode;
+        readonly int? memoryLimitBytes;
+
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
@@ -35,6 +36,10 @@ namespace Garnet.server
 
             scratchBufferNetworkSender = new ScratchBufferNetworkSender();
             processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, null, authenticator, false);
+
+            // There's some parsing involved in these, so save them off per-session
+            memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
+            memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
         }
 
         public void Dispose()
@@ -74,21 +79,31 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
-                runner.CompileForSession(session);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
 
-                // Need to make sure the key is on the heap, so move it over
-                //
-                // There's an implicit assumption that all callers are using unmanaged memory.
-                // If that becomes untrue, there's an optimization opportunity to re-use the 
-                // managed memory here.
-                var into = GC.AllocateUninitializedArray<byte>(SHA1Len, pinned: true);
-                digest.CopyTo(into);
+                // If compilation fails, an error is written out
+                if (runner.CompileForSession(session))
+                {
+                    // Need to make sure the key is on the heap, so move it over
+                    //
+                    // There's an implicit assumption that all callers are using unmanaged memory.
+                    // If that becomes untrue, there's an optimization opportunity to re-use the 
+                    // managed memory here.
+                    var into = GC.AllocateUninitializedArray<byte>(SHA1Len, pinned: true);
+                    digest.CopyTo(into);
 
-                ScriptHashKey storeKeyDigest = new(into);
-                digestOnHeap = storeKeyDigest;
+                    ScriptHashKey storeKeyDigest = new(into);
+                    digestOnHeap = storeKeyDigest;
 
-                _ = scriptCache.TryAdd(storeKeyDigest, runner);
+                    _ = scriptCache.TryAdd(storeKeyDigest, runner);
+                }
+                else
+                {
+                    runner.Dispose();
+
+                    digestOnHeap = null;
+                    return false;
+                }
             }
             catch (Exception ex)
             {

@@ -82,7 +82,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteBulkString(bulkString, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
@@ -100,7 +100,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteError(bytes, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
@@ -119,7 +119,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteNull(ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteNull(ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
@@ -137,7 +137,7 @@ namespace Garnet.server
             {
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteSimpleString(bytes, ref curr, ptr + len);
+                var success = RespWriteUtils.TryWriteSimpleString(bytes, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;

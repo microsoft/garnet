@@ -1,11 +1,13 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
@@ -83,7 +85,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -775,6 +777,79 @@ namespace Garnet.test.Resp.ACL
             {
                 var count = await client.ExecuteForStringResultAsync("CLIENT", ["SETINFO", "LIB-NAME", "foo"]);
                 ClassicAssert.IsNotEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task SSubscribeACLsAsync()
+        {
+            // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
+                "SSUBSCRIBE",
+                [DoSSubscribeAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoSSubscribeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("SSUBSCRIBE", ["channel"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task SPublishACLsAsync()
+        {
+            // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
+                "SPUBLISH",
+                [DoSPublishAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoSPublishAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("SPUBLISH", ["channel", "message"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClientUnblockACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT UNBLOCK",
+                [DoClientUnblockAsync]
+            );
+
+            static async Task DoClientUnblockAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("CLIENT", ["UNBLOCK", "123"]);
+                ClassicAssert.AreEqual(0, count);
             }
         }
 
@@ -2173,6 +2248,64 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterPublishACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER PUBLISH",
+                [DoClusterPublishAsync]
+            );
+
+            static async Task DoClusterPublishAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["PUBLISH", "channel", "message"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterSPublishACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SPUBLISH",
+                [DoClusterSPublishAsync]
+            );
+
+            static async Task DoClusterSPublishAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SPUBLISH", "channel", "message"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task CommandACLsAsync()
         {
             await CheckCommandsAsync(
@@ -2256,6 +2389,37 @@ namespace Garnet.test.Resp.ACL
             {
                 // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
                 await client.ExecuteForStringResultAsync("COMMAND", ["DOCS", "GET", "SET", "APPEND"]);
+            }
+        }
+
+        [Test]
+        public async Task CommandGetKeysACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND GETKEYS",
+                [DoCommandGetKeysAsync]
+            );
+
+            static async Task DoCommandGetKeysAsync(GarnetClient client)
+            {
+                string[] res = await client.ExecuteForStringArrayResultAsync("COMMAND", ["GETKEYS", "SET", "mykey", "value"]);
+                ClassicAssert.IsNotNull(res);
+                ClassicAssert.Contains("mykey", res);
+            }
+        }
+
+        [Test]
+        public async Task CommandGetKeysAndFlagsACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND GETKEYSANDFLAGS",
+                [DoCommandGetKeysAndFlagsAsync]
+            );
+
+            static async Task DoCommandGetKeysAndFlagsAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("COMMAND", ["GETKEYSANDFLAGS", "EVAL", "return redis.call('TIME')", "0"]);
+                ClassicAssert.AreEqual(0, res.Length);
             }
         }
 
@@ -3186,6 +3350,165 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task HExpireACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HEXPIRE",
+                [DoHExpireAsync]
+            );
+
+            static async Task DoHExpireAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HEXPIRE", ["foo", "1", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPExpireACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPEXPIRE",
+                [DoHPExpireAsync]
+            );
+
+            static async Task DoHPExpireAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPEXPIRE", ["foo", "1", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HEXPIREAT",
+                [DoHExpireAtAsync]
+            );
+
+            static async Task DoHExpireAtAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPEXPIREAT",
+                [DoHPExpireAtAsync]
+            );
+
+            static async Task DoHPExpireAtAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HEXPIRETIME",
+                [DoHExpireTimeAsync]
+            );
+
+            static async Task DoHExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HEXPIRETIME", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPEXPIRETIME",
+                [DoHPExpireTimeAsync]
+            );
+
+            static async Task DoHPExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPEXPIRETIME", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HTTLACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HTTL",
+                [DoHETTLAsync]
+            );
+
+            static async Task DoHETTLAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HTTL", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPTTLACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPTTL",
+                [DoHPETTLAsync]
+            );
+
+            static async Task DoHPETTLAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPTTL", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HPersistACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HPERSIST",
+                [DoHPersistAsync]
+            );
+
+            static async Task DoHPersistAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("HPERSIST", ["foo", "FIELDS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task HCollectACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "HCOLLECT",
+                [DoHCollectAsync]
+            );
+
+            static async Task DoHCollectAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("HCOLLECT", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
         public async Task HDelACLsAsync()
         {
             await CheckCommandsAsync(
@@ -3284,7 +3607,7 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("HINCRBYFLOAT", ["foo", "bar", "1.0"]);
                 cur += 1.0;
-                ClassicAssert.AreEqual(cur, double.Parse(val));
+                ClassicAssert.AreEqual(cur, double.Parse(val, CultureInfo.InvariantCulture));
             }
         }
 
@@ -3607,6 +3930,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task RoleACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "ROLE",
+               [DoRoleAsync]
+            );
+
+            static async Task DoRoleAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("ROLE");
+                ClassicAssert.IsNotEmpty(val);
+            }
+        }
+
+        [Test]
         public async Task KeysACLsAsync()
         {
             await CheckCommandsAsync(
@@ -3715,7 +4053,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBLMoveAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("BLMOVE", ["foo", "bar", "RIGHT", "LEFT", "1"]);
+                string val = await client.ExecuteForStringResultAsync("BLMOVE", ["foo", "bar", "RIGHT", "LEFT", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -3730,7 +4068,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBRPopLPushAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("BRPOPLPUSH", ["foo", "bar", "1"]);
+                string val = await client.ExecuteForStringResultAsync("BRPOPLPUSH", ["foo", "bar", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -3745,7 +4083,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBLMPopAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("BLMPOP", ["1", "1", "foo", "RIGHT"]);
+                string val = await client.ExecuteForStringResultAsync("BLMPOP", ["0.1", "1", "foo", "RIGHT"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -3760,7 +4098,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBLPopAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("BLPOP", ["foo", "1"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("BLPOP", ["foo", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -3775,7 +4113,52 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoBRPopAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("BRPOP", ["foo", "1"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("BRPOP", ["foo", "0.1"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BZMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BZMPOP",
+                [DoBZMPopAsync]
+            );
+
+            static async Task DoBZMPopAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("BZMPOP", ["0.1", "1", "foo", "MIN"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BZPopMaxACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BZPOPMAX",
+                [DoBZPopMaxAsync]
+            );
+
+            static async Task DoBZPopMaxAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("BZPOPMAX", ["foo", "0.1"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BZPopMinACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BZPOPMIN",
+                [DoBZPopMinAsync]
+            );
+
+            static async Task DoBZPopMinAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("BZPOPMIN", ["foo", "0.1"]);
                 ClassicAssert.IsNull(val);
             }
         }
@@ -5132,8 +5515,8 @@ namespace Garnet.test.Resp.ACL
 
             async Task DoSetIfNotExistAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
-                ClassicAssert.AreEqual(val, "OK");
+                var val = await client.ExecuteForLongResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.AreEqual(1, val);
             }
         }
 
@@ -5344,6 +5727,66 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task SlowlogGetACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG GET",
+                [DoSlowlogGetAsync]
+            );
+
+            static async Task DoSlowlogGetAsync(GarnetClient client)
+            {
+                string[] res = await client.ExecuteForStringArrayResultAsync("SLOWLOG", ["GET"]);
+                ClassicAssert.AreEqual(0, res.Length);
+            }
+        }
+
+        [Test]
+        public async Task SlowlogHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG HELP",
+                [DoSlowlogHelpAsync]
+            );
+
+            static async Task DoSlowlogHelpAsync(GarnetClient client)
+            {
+                string[] res = await client.ExecuteForStringArrayResultAsync("SLOWLOG", ["HELP"]);
+                ClassicAssert.AreEqual(12, res.Length);
+            }
+        }
+
+        [Test]
+        public async Task SlowlogLenACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG LEN",
+                [DoSlowlogLenAsync]
+            );
+
+            static async Task DoSlowlogLenAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("SLOWLOG", ["LEN"]);
+                ClassicAssert.AreEqual("0", res);
+            }
+        }
+
+        [Test]
+        public async Task SlowlogResetACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SLOWLOG RESET",
+                [DoSlowlogResetAsync]
+            );
+
+            static async Task DoSlowlogResetAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("SLOWLOG", ["RESET"]);
+                ClassicAssert.AreEqual("OK", res);
             }
         }
 
@@ -5961,6 +6404,27 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZRangeByLexACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZRANGEBYLEX",
+                [DoZRangeByLexAsync, DoZRangeByLexLimitAsync]
+            );
+
+            static async Task DoZRangeByLexAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoZRangeByLexLimitAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20", "LIMIT", "2", "3"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
         public async Task ZRangeByScoreACLsAsync()
         {
             await CheckCommandsAsync(
@@ -6394,6 +6858,56 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("TTL", ["foo"]);
                 ClassicAssert.AreEqual(-2, val);
+            }
+        }
+
+        [Test]
+        public async Task DumpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "DUMP",
+                [DoDUMPAsync]
+            );
+
+            static async Task DoDUMPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("DUMP", ["foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task RestoreACLsAsync()
+        {
+            var count = 0;
+
+            await CheckCommandsAsync(
+                "RESTORE",
+                [DoRestoreAsync]
+            );
+
+            async Task DoRestoreAsync(GarnetClient client)
+            {
+                var payload = new byte[]
+                {
+                    0x00, // value type 
+                    0x03, // length of payload
+                    0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                    0x0B, 0x00, // RDB version
+                    0xDB, 0x82, 0x3C, 0x30, 0x38, 0x78, 0x5A, 0x99 // Crc64
+                };
+
+                count++;
+
+                var val = await client.ExecuteForStringResultAsync(
+                    "$7\r\nRESTORE\r\n"u8.ToArray(),
+                    [
+                        Encoding.UTF8.GetBytes($"foo-{count}"),
+                        "0"u8.ToArray(),
+                        payload
+                    ]);
+
+                ClassicAssert.AreEqual("OK", val);
             }
         }
 
@@ -6845,6 +7359,5 @@ namespace Garnet.test.Resp.ACL
                 return false;
             }
         }
-
     }
 }

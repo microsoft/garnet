@@ -42,7 +42,7 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     if (input.header.CheckWithEtagFlag())
                     {
-                        this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                        this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
                     }
                     return true;
                 default:
@@ -64,13 +64,13 @@ namespace Garnet.server
         public bool InitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+            value.UnmarkExtraMetadata();
 
             RespCommand cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
                     HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
                     *output.SpanByte.ToPointer() = 1;
@@ -83,7 +83,6 @@ namespace Garnet.server
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
 
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
@@ -94,7 +93,6 @@ namespace Garnet.server
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
@@ -103,16 +101,16 @@ namespace Garnet.server
                     {
                         recordInfo.SetHasETag();
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                        value.SetEtagInPayload(Constants.BaseEtag + 1);
+                        value.SetEtagInPayload(EtagConstants.BaseEtag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
                         // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
-                        CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        CopyRespNumber(EtagConstants.BaseEtag + 1, ref output);
                     }
 
                     break;
                 case RespCommand.SETKEEPTTL:
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
-                    // Copy input to value, retain metadata in value
+                    // Copy input to value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
                     setValue.CopyTo(value.AsSpan(spaceForEtag));
@@ -120,10 +118,10 @@ namespace Garnet.server
                     if (spaceForEtag != 0)
                     {
                         recordInfo.SetHasETag();
-                        value.SetEtagInPayload(Constants.BaseEtag + 1);
+                        value.SetEtagInPayload(EtagConstants.BaseEtag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
                         // Copy initial etag to output
-                        CopyRespNumber(Constants.BaseEtag + 1, ref output);
+                        CopyRespNumber(EtagConstants.BaseEtag + 1, ref output);
                     }
 
                     break;
@@ -143,7 +141,6 @@ namespace Garnet.server
                     var bOffset = input.parseState.GetLong(0);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
 
                     // Always return 0 at initial updater because previous value was 0
@@ -152,7 +149,6 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITFIELD:
-                    value.UnmarkExtraMetadata();
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
@@ -172,40 +168,34 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     var appendValue = input.parseState.GetArgSliceByRef(0);
-
+                    value.ShrinkSerializedLength(appendValue.Length);
                     // Copy value to be appended to the newly allocated value buffer
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
                     CopyValueLengthToOutput(ref value, ref output, 0);
                     break;
                 case RespCommand.INCR:
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(1); // # of digits in "1"
                     CopyUpdateNumber(1, ref value, ref output);
                     break;
                 case RespCommand.INCRBY:
-                    value.UnmarkExtraMetadata();
-                    var fNeg = false;
                     var incrBy = input.arg1;
-                    var ndigits = NumUtils.NumDigitsInLong(incrBy, ref fNeg);
-                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
+                    var ndigits = NumUtils.CountDigits(incrBy, out var isNegative);
+                    value.ShrinkSerializedLength(ndigits + (isNegative ? 1 : 0));
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
                 case RespCommand.DECR:
-                    value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(2); // # of digits in "-1"
                     CopyUpdateNumber(-1, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
-                    value.UnmarkExtraMetadata();
-                    fNeg = false;
+                    isNegative = false;
                     var decrBy = -input.arg1;
-                    ndigits = NumUtils.NumDigitsInLong(decrBy, ref fNeg);
-                    value.ShrinkSerializedLength(ndigits + (fNeg ? 1 : 0));
+                    ndigits = NumUtils.CountDigits(decrBy, out isNegative);
+                    value.ShrinkSerializedLength(ndigits + (isNegative ? 1 : 0));
                     CopyUpdateNumber(decrBy, ref value, ref output);
                     break;
                 case RespCommand.INCRBYFLOAT:
-                    value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetDouble(0, out var incrByFloat))
                     {
@@ -215,7 +205,6 @@ namespace Garnet.server
                     CopyUpdateNumber(incrByFloat, ref value, ref output);
                     break;
                 default:
-                    value.UnmarkExtraMetadata();
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
@@ -284,6 +273,7 @@ namespace Garnet.server
             return false;
         }
 
+        // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE, you must make sure you must reset etagState in FunctionState
         private bool InPlaceUpdaterWorker(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             // Expired data
@@ -337,7 +327,7 @@ namespace Garnet.server
                     // retain metadata unless metadata sent
                     int metadataSize = input.arg1 != 0 ? sizeof(long) : value.MetadataSize;
 
-                    if (value.Length < inputValue.length + Constants.EtagSize + metadataSize)
+                    if (value.Length < inputValue.length + EtagConstants.EtagSize + metadataSize)
                         return false;
 
                     if (input.arg1 != 0)
@@ -350,18 +340,18 @@ namespace Garnet.server
                     // Increment the ETag
                     long newEtag = functionsState.etagState.etag + 1;
 
-                    value.ShrinkSerializedLength(metadataSize + inputValue.Length + Constants.EtagSize);
+                    value.ShrinkSerializedLength(metadataSize + inputValue.Length + EtagConstants.EtagSize);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     value.SetEtagInPayload(newEtag);
 
-                    inputValue.ReadOnlySpan.CopyTo(value.AsSpan(Constants.EtagSize));
+                    inputValue.ReadOnlySpan.CopyTo(value.AsSpan(EtagConstants.EtagSize));
 
                     // write back array of the format [etag, nil]
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
+                    var numDigitsInEtag = NumUtils.CountDigits(newEtag);
                     WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     // reset etag state after done using
                     EtagState.ResetState(ref functionsState.etagState);
@@ -381,10 +371,10 @@ namespace Garnet.server
                         if (inputHeaderHasEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
-                            this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                            this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
                         }
                         else
                         {
@@ -454,10 +444,10 @@ namespace Garnet.server
                         if (inputHeaderHasEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             // if something is going to go past this into copy we need to provide offset management for its varlen during allocation
-                            this.functionsState.etagState.etagOffsetForVarlen = Constants.EtagSize;
+                            this.functionsState.etagState.etagOffsetForVarlen = EtagConstants.EtagSize;
                         }
                         else
                         {
@@ -817,6 +807,7 @@ namespace Garnet.server
             return true;
         }
 
+        // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
@@ -899,6 +890,7 @@ namespace Garnet.server
             }
         }
 
+        // NOTE: Before doing any return from this method, please make sure you are calling reset on etagState in functionsState.
         /// <inheritdoc />
         public bool CopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -929,13 +921,13 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     shouldUpdateEtag = true;
                     // Copy input to value
-                    Span<byte> dest = newValue.AsSpan(Constants.EtagSize);
+                    Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
                     // retain metadata unless metadata sent
                     int metadataSize = input.arg1 != 0 ? sizeof(long) : oldValue.MetadataSize;
 
-                    Debug.Assert(src.Length + Constants.EtagSize + metadataSize == newValue.Length);
+                    Debug.Assert(src.Length + EtagConstants.EtagSize + metadataSize == newValue.Length);
 
                     src.CopyTo(dest);
 
@@ -953,7 +945,7 @@ namespace Garnet.server
                     // write back array of the format [etag, nil]
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.NumDigitsInLong(newEtag);
+                    var numDigitsInEtag = NumUtils.CountDigits(newEtag);
                     WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     break;
                 case RespCommand.SET:
@@ -969,7 +961,7 @@ namespace Garnet.server
                         if (inputWithEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             recordInfo.SetHasETag();
                         }
@@ -1020,7 +1012,7 @@ namespace Garnet.server
                         if (inputWithEtag)
                         {
                             // nextUpdate will add etag but currently there is no etag
-                            nextUpdateEtagOffset = Constants.EtagSize;
+                            nextUpdateEtagOffset = EtagConstants.EtagSize;
                             shouldUpdateEtag = true;
                             recordInfo.SetHasETag();
                         }

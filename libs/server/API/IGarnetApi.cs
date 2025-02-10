@@ -102,6 +102,15 @@ namespace Garnet.server
 
         #endregion
 
+        #region MSETNX
+        /// <summary>
+        /// MSETNX
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        GarnetStatus MSET_Conditional(ref RawStringInput input);
+        #endregion
+
         #region APPEND
 
         /// <summary>
@@ -995,6 +1004,34 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Sets an expiration time on a hash field.
+        /// </summary>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
+        /// <param name="expireOption">The expiration option to apply.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Persists the specified hash key, removing any expiration time set on it.
+        /// </summary>
+        /// <param name="key">The key of the hash to persist.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Deletes already expired fields from the hash.
+        /// </summary>
+        /// <param name="keys">The keys of the hash fields to check for expiration.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input);
+
         #endregion
 
         #region BitMaps Methods
@@ -1242,6 +1279,16 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns the number of elements in the sorted set at key with a score between min and max.
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="minScore">Min Score</param>
+        /// <param name="maxScore">Max score</param>
+        /// <param name="numElements">Number of elements</param>
+        /// <returns></returns>
+        GarnetStatus SortedSetCount(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements);
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
@@ -1673,6 +1720,17 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <returns></returns>
         GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
+
+        /// <summary>
+        /// Returns the time to live for a hash key.
+        /// </summary>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
+        /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 

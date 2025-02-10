@@ -182,18 +182,28 @@ namespace Tsavorite.core
                 // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
                 // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
                 // Lock to ensure no value tearing while copying to temp storage.
-                memory?.Return();
-                memory = null;
                 if (currentAddress >= headAddress || forceInMemory)
                 {
                     OperationStackContext<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> stackCtx = default;
                     try
                     {
+                        if (memory == null)
+                        {
+                            memory = hlog.bufferPool.Get(recordSize);
+                        }
+                        else
+                        {
+                            if (memory.AlignedTotalCapacity < recordSize)
+                            {
+                                memory.Return();
+                                memory = hlog.bufferPool.Get(recordSize);
+                            }
+                        }
+
                         // GetKey() should work but for safety and consistency with other allocators use physicalAddress.
                         if (currentAddress >= headAddress && store is not null)
                             store.LockForScan(ref stackCtx, ref hlog._wrapper.GetKey(physicalAddress));
 
-                        memory = hlog.bufferPool.Get(recordSize);
                         unsafe
                         {
                             Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);

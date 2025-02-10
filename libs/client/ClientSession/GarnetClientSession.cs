@@ -19,10 +19,8 @@ namespace Garnet.client
     /// Mono-threaded remote client session for Garnet (a session makes a single network connection, and 
     /// expects mono-threaded client access, i.e., no concurrent invocations of API by client)
     /// </summary>
-    public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
+    public sealed partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        readonly string address;
-        readonly int port;
         readonly int bufferSizeDigits;
         INetworkSender networkSender;
         readonly ElasticCircularBuffer<TaskType> tasksTypes = new();
@@ -47,10 +45,15 @@ namespace Garnet.client
         int disposed;
 
         // Send        
-        byte* offset, end;
+        unsafe byte* offset, end;
 
         // Num outstanding commands
         volatile int numCommands;
+
+        /// <summary>
+        /// The host endpoint
+        /// </summary>
+        public EndPoint EndPoint { get; }
 
         /// <inheritdoc />
         public bool Disposed => disposed > 0;
@@ -88,8 +91,7 @@ namespace Garnet.client
         /// <summary>
         /// Create client instance
         /// </summary>
-        /// <param name="address">IP address of server</param>
-        /// <param name="port">Port of server</param>
+        /// <param name="endpoint">Endpoint of the server</param>
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
@@ -98,8 +100,7 @@ namespace Garnet.client
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
-            string address,
-            int port,
+            EndPoint endpoint,
             NetworkBufferSettings networkBufferSettings,
             LimitedFixedBufferPool networkPool = null,
             SslClientAuthenticationOptions tlsOptions = null,
@@ -108,13 +109,12 @@ namespace Garnet.client
             int networkSendThrottleMax = 8,
             ILogger logger = null)
         {
-            this.address = address;
-            this.port = port;
+            EndPoint = endpoint;
 
             this.usingManagedNetworkPool = networkPool != null;
             this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool ?? networkBufferSettings.CreateBufferPool();
-            this.bufferSizeDigits = NumUtils.NumDigits(this.networkBufferSettings.sendBufferSize);
+            this.bufferSizeDigits = NumUtils.CountDigits(this.networkBufferSettings.sendBufferSize);
 
             this.logger = logger;
             this.sslOptions = tlsOptions;
@@ -129,9 +129,9 @@ namespace Garnet.client
         /// </summary>
         /// <param name="timeoutMs">Timeout in milliseconds (default 0 for immediate timeout)</param>
         /// <param name="token"></param>
-        public void Connect(int timeoutMs = 0, CancellationToken token = default)
+        public unsafe void Connect(int timeoutMs = 0, CancellationToken token = default)
         {
-            socket = GetSendSocket(address, port, timeoutMs);
+            socket = ConnectSendSocketAsync(timeoutMs, token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
@@ -141,7 +141,7 @@ namespace Garnet.client
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
             offset = networkSender.GetResponseObjectHead();
@@ -164,6 +164,94 @@ namespace Garnet.client
                 logger?.LogError(e, "AUTH returned error");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Connect client send socket
+        /// </summary>
+        /// <param name="millisecondsTimeout"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        private async Task<Socket> ConnectSendSocketAsync(int millisecondsTimeout = 0, CancellationToken cancellationToken = default)
+        {
+            if (EndPoint is DnsEndPoint dnsEndpoint)
+            {
+                var hostEntries = await Dns.GetHostEntryAsync(dnsEndpoint.Host, cancellationToken).ConfigureAwait(false);
+                // Try all available DNS entries if a hostName is provided
+                foreach (var addressEntry in hostEntries.AddressList)
+                {
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                        return socket;
+                }
+            }
+            else
+            {
+                var socket = new Socket(EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (EndPoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
+                    return socket;
+            }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", EndPoint);
+            throw new Exception($"Failed to connect at {EndPoint}");
+        }
+
+        /// <summary>
+        /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
+        /// </summary>
+        /// <param name="socket"></param>
+        /// <param name="endpoint"></param>
+        /// <param name="millisecondsTimeout"></param>
+        /// <param name="cancellationToken">The cancellation token</param>
+        /// <returns></returns>
+        private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, int millisecondsTimeout, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                if (millisecondsTimeout > 0)
+                {
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+                    var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
+                    {
+                        // Task completed within timeout.
+                        // Consider that the task may have faulted or been canceled.
+                        // We re-await the task so that any exceptions/cancellation is rethrown.
+                        await connectTask;
+                    }
+                    else
+                    {
+                        timeoutCts.Cancel();
+                    }
+
+                    if (!socket.Connected)
+                    {
+                        socket.Close();
+                        throw new Exception($"Failed to connect server {endpoint}.");
+                    }
+                }
+                else
+                {
+                    await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
+                socket.Dispose();
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -236,56 +324,56 @@ namespace Garnet.client
         /// <summary>
         /// ClusterAppendLog
         /// </summary>
-        public void ExecuteClusterAppendLog(string nodeId, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
+        public unsafe void ExecuteClusterAppendLog(string nodeId, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
         {
             Debug.Assert(nodeId != null);
 
             byte* curr = offset;
             int arraySize = 7;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteBulkString(appendLog, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteArrayItem(previousAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -295,7 +383,7 @@ namespace Garnet.client
             if (payloadLength > networkBufferSettings.sendBufferSize)
                 throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSettings.sendBufferSize} bytes");
 
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -334,10 +422,10 @@ namespace Garnet.client
         /// Issue command for execution
         /// </summary>
         /// <param name="command"></param>
-        private void InternalExecute(params string[] command)
+        private unsafe void InternalExecute(params string[] command)
         {
             byte* curr = offset;
-            while (!RespWriteUtils.WriteArrayLength(command.Length, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -346,7 +434,7 @@ namespace Garnet.client
 
             foreach (var cmd in command)
             {
-                while (!RespWriteUtils.WriteAsciiBulkString(cmd, ref curr, end))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(cmd, ref curr, end))
                 {
                     Flush();
                     curr = offset;
@@ -358,7 +446,7 @@ namespace Garnet.client
             return;
         }
 
-        private int ProcessReplies(byte* recvBufferPtr, int bytesRead)
+        private unsafe int ProcessReplies(byte* recvBufferPtr, int bytesRead)
         {
             // Debug.WriteLine("RECV: [" + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "") + "]");
 
@@ -375,28 +463,28 @@ namespace Garnet.client
                 switch (*ptr)
                 {
                     case (byte)'+':
-                        if (!RespReadResponseUtils.ReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
                     case (byte)':':
-                        if (!RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'-':
                         error = true;
-                        if (!RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'$':
-                        if (!RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'*':
                         isArray = true;
-                        if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
@@ -426,7 +514,7 @@ namespace Garnet.client
         /// <summary>
         /// Flush current buffer of outgoing messages. Does not wait for responses.
         /// </summary>
-        private void Flush()
+        private unsafe void Flush()
         {
             if (offset > networkSender.GetResponseObjectHead())
             {
@@ -446,35 +534,6 @@ namespace Garnet.client
                 offset = networkSender.GetResponseObjectHead();
                 end = networkSender.GetResponseObjectTail();
             }
-        }
-
-        private static Socket GetSendSocket(string address, int port, int millisecondsTimeout)
-        {
-            var ip = IPAddress.Parse(address);
-            var endPoint = new IPEndPoint(ip, port);
-            var socket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
-            {
-                NoDelay = true
-            };
-
-            if (millisecondsTimeout > 0)
-            {
-                IAsyncResult result = socket.BeginConnect(endPoint, null, null);
-                result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
-                if (socket.Connected)
-                    socket.EndConnect(result);
-                else
-                {
-                    socket.Close();
-                    throw new Exception("Failed to connect server.");
-                }
-            }
-            else
-            {
-                socket.Connect(endPoint);
-            }
-
-            return socket;
         }
 
         /// <inheritdoc />
@@ -497,7 +556,7 @@ namespace Garnet.client
         }
 
         /// <inheritdoc />
-        public int TryConsumeMessages(byte* reqBuffer, int bytesRead)
+        public unsafe int TryConsumeMessages(byte* reqBuffer, int bytesRead)
             => ProcessReplies(reqBuffer, bytesRead);
     }
 }
