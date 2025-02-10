@@ -542,47 +542,49 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string key = "SimpleBitPosTests";
+            var key = "SimpleBitPosTests";
 
             byte[] buf;
-            int maxBitmapLen = 1 << 10;
-            int iter = 256;
+            var maxBitmapLen = 1 << 10;
+            var iter = 256;
             long maxOffset = 0;
-            for (int i = 0; i < iter; i++)
+            for (var i = 0; i < iter; i++)
             {
                 long offset = r.Next(1, maxBitmapLen);
-                db.StringSetBit(key, offset, true);
+                _ = db.StringSetBit(key, offset, true);
+                buf = db.StringGet(key);
 
-                long offsetPos = db.StringBitPosition(key, true);
-                ClassicAssert.AreEqual(offset, offsetPos);
+                var offsetPos = db.StringBitPosition(key, true);
+                ClassicAssert.AreEqual(offset, offsetPos, $"iter:{i}");
 
                 buf = db.StringGet(key);
-                long expectedPos = Bitpos(buf, set: true);
-                ClassicAssert.AreEqual(expectedPos, offsetPos);
+                var expectedPos = Bitpos(buf, set: true);
+                ClassicAssert.AreEqual(expectedPos, offsetPos, $"iter:{i}");
 
-                db.StringSetBit(key, offset, false);
+                _ = db.StringSetBit(key, offset, false);
                 maxOffset = Math.Max(maxOffset, offset);
             }
 
-            for (int i = 0; i < maxOffset; i++)
-                db.StringSetBit(key, i, true);
+            for (var i = 0; i < maxOffset; i++)
+                _ = db.StringSetBit(key, i, true);
 
-            long count = db.StringBitCount(key);
+            var count = db.StringBitCount(key);
             ClassicAssert.AreEqual(count, maxOffset);
 
-            for (int i = 0; i < iter; i++)
+            for (var i = 0; i < iter; i++)
             {
                 long offset = r.Next(1, (int)maxOffset);
-                db.StringSetBit(key, offset, false);
-
-                long offsetPos = db.StringBitPosition(key, false);
-                ClassicAssert.AreEqual(offset, offsetPos);
+                _ = db.StringSetBit(key, offset, false);
 
                 buf = db.StringGet(key);
-                long expectedPos = Bitpos(buf, set: false);
-                ClassicAssert.AreEqual(expectedPos, offsetPos);
+                var offsetPos = db.StringBitPosition(key, false);
+                ClassicAssert.AreEqual(offset, offsetPos, $"iter:{i}");
 
-                db.StringSetBit(key, offset, true);
+                buf = db.StringGet(key);
+                var expectedPos = Bitpos(buf, set: false);
+                ClassicAssert.AreEqual(expectedPos, offsetPos, $"iter:{i}");
+
+                _ = db.StringSetBit(key, offset, true);
             }
         }
 
@@ -2267,24 +2269,27 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string key = "mykey";
-            byte[] value = [0x0, 0xff, 0xf0];
+            var key = "mykey";
+            byte[] value = [0x00, 0xff, 0xf0];
             db.StringSet(key, value);
 
-            long pos = db.StringBitPosition(key, true, 0);
+            var pos = db.StringBitPosition(key, true, 0);
             ClassicAssert.AreEqual(8, pos);
 
             pos = db.StringBitPosition(key, true, 2, -1, StringIndexType.Byte);
             ClassicAssert.AreEqual(16, pos);
 
             pos = db.StringBitPosition(key, true, 0, 0, StringIndexType.Byte);
-            ClassicAssert.AreEqual(0, pos);
+            ClassicAssert.AreEqual(-1, pos);
 
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
             ClassicAssert.AreEqual(0, pos);
 
+            pos = db.StringBitPosition(key, true, 5, 17, StringIndexType.Bit);
+            ClassicAssert.AreEqual(8, pos);
+
             value = [0xf8, 0x6f, 0xf0];
-            db.StringSet(key, value);
+            _ = db.StringSet(key, value);
             pos = db.StringBitPosition(key, true, 5, 17, StringIndexType.Bit);
             ClassicAssert.AreEqual(9, pos);
 
@@ -2295,7 +2300,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, pos);
 
             key = "mykey2";
-            db.StringSetBit(key, 63, false);
+            _ = db.StringSetBit(key, 63, false);
             pos = db.StringBitPosition(key, false, 1);
             ClassicAssert.AreEqual(8, pos);
 
