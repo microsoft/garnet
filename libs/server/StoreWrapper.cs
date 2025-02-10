@@ -1309,7 +1309,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (lockAcquired) 
+                if (lockAcquired)
                     ResumeCheckpoints();
             }
         }
