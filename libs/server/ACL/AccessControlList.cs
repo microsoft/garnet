@@ -19,7 +19,7 @@ namespace Garnet.server.ACL
         const string DefaultUserName = "default";
 
         /// <summary>
-        /// Dictionary containing all users defined in the ACL
+        /// Dictionary containing all <see cref="UserHandle"/>s defined in the ACL.
         /// </summary>
         ConcurrentDictionary<string, UserHandle> _userHandles = new();
 

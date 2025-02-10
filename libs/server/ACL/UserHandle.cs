@@ -11,7 +11,7 @@ namespace Garnet.server.ACL
     public class UserHandle
     {
         /// <summary>
-        /// The <see cref="User"/> referred to by the <see cref="Handle"/>.
+        /// The <see cref="User"/> referred to by the <see cref="UserHandle"/>.
         /// </summary>
         public User user;
 
