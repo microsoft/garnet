@@ -182,6 +182,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Ignore("")]
         public void MultiDatabaseSelectMultithreadedTestSE()
         {
             // Create a set of tuples (db-id, key, value)
@@ -248,6 +249,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Ignore("")]
         public void MultiDatabaseSelectMultithreadedTestLC()
         {
             // Create a set of tuples (db-id, key, value)

@@ -73,7 +73,7 @@ namespace Garnet.server
         /// <summary>
         /// Subscribe broker
         /// </summary>
-        public readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        public readonly SubscribeBroker subscribeBroker;
 
         /// <summary>
         /// Get server
@@ -185,7 +185,7 @@ namespace Garnet.server
             DatabaseCreatorDelegate createsDatabaseDelegate,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            SubscribeBroker subscribeBroker,
             bool createDefaultDatabase = true,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
