@@ -209,7 +209,7 @@ namespace Tsavorite.core
                 // If we already have a readcache source, there will not be another inserted, so we can just invalidate the source directly.
                 srcLogRecord.InfoRef.SetInvalidAtomic();
             }
-            else
+            else if (stackCtx.recSrc.HasMainLogSrc)
             {
                 // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
                 // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.

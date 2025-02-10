@@ -53,8 +53,9 @@ namespace Tsavorite.core
         // RecordSize and Value size are constant; only the key size is variable.
         private static int FixedValueSize => ObjectIdMap.ObjectIdSize;
 
-        /// <summary>Minimum size of a record: header, key (length and 4 bytes), and Value Id. Does not include optional fields such as ETag, Expiration, or FillerLen.</summary>
-        private static int MinRecordSize => RecordInfo.GetLength() + (sizeof(int) * 2) + ObjectIdMap.ObjectIdSize;
+        /// <summary>Estimated average size of a record: header, key (length and 16 bytes), and Value Id. Does not include optional fields such as ETag, Expiration, or FillerLen.</summary>
+        private static int AverageRecordSize => RecordInfo.GetLength() + sizeof(int) + 16 + ObjectIdMap.ObjectIdSize;
+        readonly int initialObjectIdCount;
 
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
@@ -63,7 +64,6 @@ namespace Tsavorite.core
         {
             IsObjectAllocator = true;
 
-            // TODO: Verify LogSettings.MaxInlineKeySizeBits and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
 
@@ -73,12 +73,11 @@ namespace Tsavorite.core
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
 
-            // TODO: Make ObjectIdMap use a freelist similar to OversizePages, and perhaps start smaller and make it resizable like OversizePages
-            var maxRecordCount = PageSize / MinRecordSize;
+            initialObjectIdCount = PageSize / AverageRecordSize;
 
             values = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ++ii)
-                values[ii] = new(overflowAllocatorFixedPageSize, maxRecordCount);
+                values[ii] = new(overflowAllocatorFixedPageSize, initialObjectIdCount);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -103,15 +102,13 @@ namespace Tsavorite.core
             {
                 pagePointers[index] = item.pointer;
                 values[index] = item.value;
+                // TODO resize the values[index] arrays smaller if they are above a certain point
                 return;
             }
 
+            // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new()
-            {
-                overflowAllocator = new(overflowAllocatorFixedPageSize),
-                objectIdMap = new (PageSize / MinRecordSize)
-            };
+            values[index] = new(overflowAllocatorFixedPageSize, initialObjectIdCount);
         }
 
         void ReturnPage(int index)
@@ -274,12 +271,10 @@ namespace Tsavorite.core
 
             if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
             {
-                ref var heapObj = ref logRecord.ObjectRef;
+                var heapObj = logRecord.ValueObject;
                 if (heapObj is not null)
-                {
                     storeFunctions.DisposeValueObject(heapObj, disposeReason);
-                    heapObj = default;
-                }
+                logRecord.objectIdMap.Free(logRecord.ValueObjectId);
             }
         }
 

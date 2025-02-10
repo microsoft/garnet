@@ -116,7 +116,7 @@ namespace Tsavorite.core
 
         /// <summary>The size to IO from disk when reading a record. Keys and Values are SpanByte on disk and we reuse the max inline key size
         /// for both key and value for this estimate. They are prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
-        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kMaxInlineKeySizeBits) * 2, sectorSize);
+        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kDefaultMaxInlineKeySizeBits) * 2, sectorSize);
 
         internal static SpanByte GetContextRecordKey(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).Key;
 

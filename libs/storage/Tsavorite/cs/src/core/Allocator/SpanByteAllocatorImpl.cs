@@ -31,7 +31,6 @@ namespace Tsavorite.core
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            // TODO: Verify LogSettings.MaxInlineKeySizeBits, .MaxInlineValueSizeBits, and .OverflowPageSizeBits are in range. Do we need config for OversizeLimit?
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
             overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
@@ -60,10 +59,7 @@ namespace Tsavorite.core
             Initialize();
         }
 
-        /// <summary>
-        /// Allocate memory page, pinned in memory, and in sector aligned form, if possible
-        /// </summary>
-        /// <param name="index"></param>
+        /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>
         internal void AllocatePage(int index)
         {
             IncrementAllocatedPageCount();
@@ -71,10 +67,12 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
-                // unused: _ = item.value;
+                values[index] = item.value;
+                // TODO resize the values[index] arrays smaller if they are above a certain point
                 return;
             }
 
+            // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
             values[index] = new(overflowAllocatorFixedPageSize);
         }
@@ -87,7 +85,7 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
-                    value = default
+                    value = values[index]
                 });
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);

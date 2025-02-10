@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace Tsavorite.core
 {
@@ -23,13 +22,13 @@ namespace Tsavorite.core
 
             private const int InvalidSlot = -1;
 
-            /// <summary>The head of the "linked list" of free oversize slots.</summary>
-            private int freeList;
+            /// <summary>The list of free oversize slots.</summary>
+            private SimpleConcurrentStack<int> freeList;
 
             public OversizePages()
             {
                 PageVector = new();
-                freeList = InvalidSlot;
+                freeList = new();
             }
 
             /// <summary>Include blockHeader in the allocation size.</summary>
@@ -42,8 +41,7 @@ namespace Tsavorite.core
                 size = PromoteSize(size);
 
                 BlockHeader* blockPtr;
-                int pageSlot;
-                if (PopFreeSlot(size, out pageSlot))
+                if (freeList.TryPop(out var pageSlot))
                     blockPtr = PageVector.AllocatePage(pageSlot, size);
                 else
                 {
@@ -58,44 +56,14 @@ namespace Tsavorite.core
                 return BlockHeader.Initialize((BlockHeader*)blockPtr, size, pageSlot, zeroInit);
             }
 
-            private bool PopFreeSlot(int size, out int slot)
-            {
-                while(true)
-                {
-                    // Pop if there is anything there.
-                    slot = freeList;
-                    if (slot == InvalidSlot)
-                        return false;
-
-                    int next = (int)(long)PageVector.Pages[slot];
-
-                    // Pages[slot] may have been reallocated by the time we try this CompareExchange, but in that case the freeList
-                    // head will have changed and thus the CompareExchange will fail, so while 'next' may contain garbage (i.e. overwritten
-                    // by the caller after receiving the allocation), we will not actually do the exchange or 'dereference' 'next'.
-                    if (Interlocked.CompareExchange(ref freeList, next, slot) == slot)
-                        return true;
-                }
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PushFreeSlot(int slot)
-            {
-                int head;
-                do
-                {
-                    // This threads the free slot indexes through their freed slots in the page vector. This eliminates the need to grow the 
-                    // page vector if there are a lot of frees, such as for revivification, failed CAS, and so on.
-                    head = freeList;
-                    PageVector.Pages[slot] = (byte*)(long)head;
-                } while (Interlocked.CompareExchange(ref freeList, slot, head) != head);
-            }
-
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Free(BlockHeader* blockPtr)
             {
+                // This leaves the allocation in the allocated page array, but pushes it onto the freelist first, so we will null out that slot
+                // in Clear(). To null it in the allocated page array would require taking another latch to ensure stability of the page array.
                 var slot = blockPtr->Slot;
+                freeList.TryPush(slot);
                 PageVector.FreePage(blockPtr);
-                PushFreeSlot(slot);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -103,7 +71,7 @@ namespace Tsavorite.core
             {
                 var blockSize = PromoteSize(newUserSize);
 
-                // For Oversize, this is a reallocation of the single-item page. It thows OOM if unsuccessful.
+                // For Oversize, this is a reallocation of the single-item page. It throws OOM if unsuccessful.
                 var slot = blockPtr->Slot;
                 var newBlockPtr = PageVector.Realloc(blockPtr, blockSize);
                 newBlockPtr->AllocatedSize = blockSize;
@@ -116,18 +84,9 @@ namespace Tsavorite.core
             internal void Clear()
             {
                 // The PageVector has no concept of the FreeList, so we must set "free" slots to null before claring the PageVector.
-                if (PageVector.Pages is not null)
-                { 
-                    var slot = freeList;
-                    while (slot != InvalidSlot)
-                    {
-                        var next = (int)(long)PageVector.Pages[slot];
-                        PageVector.Pages[slot] = null;
-                        slot = next;
-                    }
-                }
-                freeList = default;
-
+                while (freeList.TryPop(out var slot))
+                    PageVector.Pages[slot] = null;
+                freeList = new();
                 PageVector.Clear();
             }
         }

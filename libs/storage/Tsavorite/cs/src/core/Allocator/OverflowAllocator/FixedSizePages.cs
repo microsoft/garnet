@@ -30,7 +30,7 @@ namespace Tsavorite.core
             /// <summary>Size of the smallest free-list bin</summary>
             internal const int MinBlockSize = 1 << MinPowerOf2;
 
-            private const int MinPowerOf2 = 6;
+            private const int MinPowerOf2 = LogSettings.kLowestMaxInlineSizeBits;
 
             /// <summary>The size of a page allocation; it is a power of 2, as in <see cref="LogSettings.OverflowFixedPageSizeBits"/></summary>
             internal int PageSize;
@@ -71,7 +71,7 @@ namespace Tsavorite.core
                 while (true)
                 { 
                     // See if it fits on the current last page. This also applies to the "no pages allocated" case, because we initialize tailPageOffset.Offset to out-of-range
-                    while (localPageOffset.Offset + blockSize < PageSize)
+                    while (localPageOffset.Offset + blockSize < PageSize && localPageOffset.Offset != NativePageVector.OffsetAsLatch)
                     {
                         // Fast path; simple offset pointer advance. If it fails, someone else advanced the pointer, so retry.
                         if (Interlocked.CompareExchange(ref PageVector.TailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + blockSize, localPageOffset.PageAndOffset)
@@ -88,8 +88,7 @@ namespace Tsavorite.core
                     // If we are here, we advanced the pointer past end of page without returning an allocation. We need to allocate a new page. We ignore the return pointer
                     // here, because we obtain the return pointer in the pointer-advance on the next iteration of this loop.
                     // TODO: possibly handle the page-end fragment by "allocating" it to ourselves here and storing it the next-lowest freelist bin
-                    if (!PageVector.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _))
-                        continue;
+                    _ = PageVector.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _);
                 }
             }
 

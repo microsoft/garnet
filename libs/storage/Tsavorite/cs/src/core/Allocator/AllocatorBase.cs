@@ -571,6 +571,13 @@ namespace Tsavorite.core
                     throw new TsavoriteException($"{(rcs.SecondChanceFraction)} must be >= 0.0 and <= 1.0");
             }
 
+            if (settings.MaxInlineKeySizeBits < LogSettings.kLowestMaxInlineSizeBits || settings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
+                throw new TsavoriteException($"{nameof(settings.MaxInlineKeySizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
+            if (settings.MaxInlineValueSizeBits < LogSettings.kLowestMaxInlineSizeBits || settings.PageSizeBits > LogSettings.kMaxStringSizeBits - 1)
+                throw new TsavoriteException($"{nameof(settings.MaxInlineValueSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxStringSizeBits - 1}");
+            if (settings.OverflowFixedPageSizeBits < LogSettings.kMinPageSizeBits || settings.PageSizeBits > LogSettings.kMaxPageSizeBits)
+                throw new TsavoriteException($"{nameof(settings.OverflowFixedPageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
+
             this.logger = logger;
             if (settings.LogDevice == null)
                 throw new TsavoriteException("LogSettings.LogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");

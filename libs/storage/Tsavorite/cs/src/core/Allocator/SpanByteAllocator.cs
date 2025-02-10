@@ -139,7 +139,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetInitialRecordIOSize() => RecordInfo.GetLength()
-            + (1 << LogSettings.kMaxInlineKeySizeBits) * 2  // double to include value as well
+            + (1 << LogSettings.kDefaultMaxInlineKeySizeBits) * 2  // double to include value as well
             + sizeof(long) * 2;                             // ETag and Expiration
 
         /// <inheritdoc/>

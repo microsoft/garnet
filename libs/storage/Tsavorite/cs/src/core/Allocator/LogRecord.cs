@@ -87,10 +87,10 @@ namespace Tsavorite.core
         internal readonly long physicalAddress;
 
         /// <summary>The overflow allocator for Keys and, if SpanByteAllocator, Values.</summary>
-        readonly OverflowAllocator overflowAllocator;
+        internal readonly OverflowAllocator overflowAllocator;
 
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
-        readonly ObjectIdMap<TValue> objectIdMap;
+        internal readonly ObjectIdMap<TValue> objectIdMap;
 
         /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
