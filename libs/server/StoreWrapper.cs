@@ -175,6 +175,9 @@ namespace Garnet.server
         // Stream provider for serializing DB IDs file
         readonly IStreamProvider databaseIdsStreamProvider;
 
+        // True if StoreWrapper instance is disposed
+        bool disposed = false;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -1176,6 +1179,9 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            if (disposed) return;
+            disposed = true;
+
             // Wait for checkpoints to complete and disable checkpointing
             checkpointTaskLock.WriteLock();
 
@@ -1217,8 +1223,14 @@ namespace Garnet.server
         public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
         {
             // Take lock to ensure no other task will be taking a checkpoint
-            while (!TryPauseCheckpoints())
+            var lockAcquired = TryPauseCheckpoints();
+            while (!lockAcquired && !disposed)
+            {
                 await Task.Yield();
+                lockAcquired = TryPauseCheckpoints();
+            }
+
+            if (disposed) return;
 
             // If an external task has taken a checkpoint beyond the provided entryTime return
             if (databases.Map[dbId].LastSaveTime > entryTime)
@@ -1268,16 +1280,22 @@ namespace Garnet.server
         /// <param name="dbId">ID of database to checkpoint (default: DB 0)</param>
         /// <param name="lockAcquired">True if lock previously acquired</param>
         /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
         /// <returns>Task</returns>
-        private async Task CheckpointTask(StoreType storeType, int dbId = 0, bool lockAcquired = false, ILogger logger = null)
+        private async Task CheckpointTask(StoreType storeType, int dbId = 0, bool lockAcquired = false, ILogger logger = null, CancellationToken token = default)
         {
             try
             {
                 if (!lockAcquired)
                 {
                     // Take lock to ensure no other task will be taking a checkpoint
-                    while (!TryPauseCheckpoints())
+                    while (!lockAcquired && !token.IsCancellationRequested)
+                    {
                         await Task.Yield();
+                        lockAcquired = TryPauseCheckpoints();
+                    }
+
+                    if (token.IsCancellationRequested) return;
                 }
 
                 await CheckpointDatabaseTask(dbId, storeType, logger);
@@ -1291,7 +1309,8 @@ namespace Garnet.server
             }
             finally
             {
-                ResumeCheckpoints();
+                if (lockAcquired) 
+                    ResumeCheckpoints();
             }
         }
 
