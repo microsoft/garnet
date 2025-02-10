@@ -576,7 +576,7 @@ namespace Garnet.server
                     await Task.Delay(1000, token);
                     if (token.IsCancellationRequested) break;
 
-                    var aofSizeAtLimit = -1l;
+                    var aofSizeAtLimit = -1L;
                     var activeDbIdsSize = activeDbIdsLength;
 
                     if (!allowMultiDb || activeDbIdsSize == 1)
