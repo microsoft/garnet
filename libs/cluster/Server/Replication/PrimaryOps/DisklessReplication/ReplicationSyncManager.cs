@@ -269,6 +269,11 @@ namespace Garnet.cluster
                     await WaitForFlush();
                     #endregion
                 }
+                else
+                {
+                    // TODO: disk-based replication
+                    throw new NotImplementedException();
+                }
             }
 
             // Stream Diskless
@@ -290,7 +295,10 @@ namespace Garnet.cluster
                         AsTask().WaitAsync(clusterTimeout, cts.Token);
                 }
 
-                ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
+                // Aggressively truncate AOF when MainMemoryReplication flag is set.
+                // Otherwise, we rely on background disk-based checkpoints to truncate the AOF
+                if (!ClusterProvider.serverOptions.MainMemoryReplication)
+                    _ = ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
             }
         }
     }
