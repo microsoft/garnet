@@ -182,7 +182,6 @@ namespace Garnet.test
         }
 
         [Test]
-        [Ignore("")]
         public void MultiDatabaseSelectMultithreadedTestSE()
         {
             // Create a set of tuples (db-id, key, value)
@@ -198,19 +197,14 @@ namespace Garnet.test
             }
 
             // In parallel, add each (key, value) pair to a database of id db-id
-            var kvCollection = new BlockingCollection<(int, string, string)>();
-            foreach (var t in tuples)
-                kvCollection.Add(t);
-            kvCollection.CompleteAdding();
-
-            var tasks = new Task[dbCount * keyCount];
+            var tasks = new Task[tuples.Length];
             for (var i = 0; i < tasks.Length; i++)
             {
+                var tup = tuples[i];
                 tasks[i] = Task.Run(() =>
                 {
-                    var tup = kvCollection.Take();
                     var db = dbConnections[tup.Item1];
-                    return db.StringSet(tup.Item2, tup.Item3);
+                    return db.StringSet(tup.Item3, tup.Item4);
                 });
             }
 
@@ -222,36 +216,30 @@ namespace Garnet.test
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
             // In parallel, retrieve the actual value for each db-id and key
-            kvCollection = new BlockingCollection<(int, string, string)>();
-            foreach (var t in tuples)
-                kvCollection.Add(t);
-            kvCollection.CompleteAdding();
-
             for (var i = 0; i < tasks.Length; i++)
             {
+                var tup = tuples[i];
                 tasks[i] = Task.Run(() =>
                 {
-                    var tup = kvCollection.Take();
                     var db = dbConnections[tup.Item1];
-                    var actualValue = db.StringGet(tup.Item2);
-                    return (tup.Item1, tup.Item2, actualValue.ToString());
+                    var actualValue = db.StringGet(tup.Item3);
+                    return actualValue.ToString() == tup.Item4;
                 });
             }
 
             // Wait for all tasks to finish
             completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(completed);
-            ClassicAssert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
 
             // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
-            var results = tasks.Select(t => ((Task<(int, string, string)>)t).Result);
-            Assert.That(results, Is.EquivalentTo(tuples));
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
         }
 
         [Test]
-        [Ignore("")]
         public void MultiDatabaseSelectMultithreadedTestLC()
         {
+            var cts = new CancellationTokenSource();
+
             // Create a set of tuples (db-id, key, value)
             var dbCount = 16;
             var keyCount = 16;
@@ -265,19 +253,16 @@ namespace Garnet.test
             }
 
             // In parallel, add each (key, value) pair to a database of id db-id
-            var kvCollection = new BlockingCollection<(int, string, string)>();
-            foreach (var t in tuples)
-                kvCollection.Add(t);
-            kvCollection.CompleteAdding();
-
             var tasks = new Task[dbCount * keyCount];
             for (var i = 0; i < tasks.Length; i++)
             {
+                var tup = tuples[i];
                 tasks[i] = Task.Run(() =>
                 {
-                    var tup = kvCollection.Take();
                     var expectedResponse = "+OK\r\n+OK\r\n";
-                    var lcRequest = lcRequests.Take();
+                    var lcRequest = lcRequests.Take(cts.Token);
+                    if (cts.Token.IsCancellationRequested) return false;
+
                     string response;
                     try
                     {
@@ -295,24 +280,21 @@ namespace Garnet.test
             // Wait for all tasks to finish
             var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(completed);
-            ClassicAssert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
+            cts.Cancel();
+            cts = new CancellationTokenSource();
 
             // Check that all tasks successfully entered the data to the respective database
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
             // In parallel, retrieve the actual value for each db-id and key
-            kvCollection = new BlockingCollection<(int, string, string)>();
-            foreach (var t in tuples)
-                kvCollection.Add(t);
-            kvCollection.CompleteAdding();
 
             for (var i = 0; i < tasks.Length; i++)
             {
+                var tup = tuples[i];
                 tasks[i] = Task.Run(() =>
                 {
-                    var tup = kvCollection.Take();
                     var expectedResponse = $"+OK\r\n${tup.Item3.Length}\r\n{tup.Item3}\r\n";
-                    var lcRequest = lcRequests.Take();
+                    var lcRequest = lcRequests.Take(cts.Token);
                     string response;
                     try
                     {
@@ -330,10 +312,10 @@ namespace Garnet.test
             // Wait for all tasks to finish
             completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(completed);
-            ClassicAssert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
+            cts.Cancel();
 
             // Check that all the tasks retrieved the correct value successfully
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.Result));
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
             while (lcRequests.TryTake(out var client))
                 client.Dispose();
@@ -537,15 +519,15 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private List<(int, string, string)> GenerateDataset(int dbCount, int keyCount)
+        private (int, int, string, string)[] GenerateDataset(int dbCount, int keyCount)
         {
-            var data = new List<(int, string, string)>();
+            var data = new (int, int, string, string)[dbCount * keyCount];
 
             for (var dbId = 0; dbId < dbCount; dbId++)
             {
                 for (var keyId = 0; keyId < keyCount; keyId++)
                 {
-                    data.Add((dbId, $"key{keyId}", $"db{dbId}:val{keyId}"));
+                    data[(keyCount * dbId) + keyId] = (dbId, keyId, $"key{keyId}", $"db{dbId}:val{keyId}");
                 }
             }
 
