@@ -44,7 +44,14 @@ namespace Tsavorite.core
         /// Pointer to the beginning of payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public byte* ToPointer() => Serialized ? (byte*)Unsafe.AsPointer(ref payload) : (byte*)payload;
+        public byte* ToPointer()
+        {
+            Debug.Assert((length == 0 && payload == 0) || !Serialized, "Unexpected Serialized == true in ToPointer()");
+            return (byte*)payload;
+        }
+
+        [Conditional("DEBUG")]
+        readonly void AssertNonSerialized(string methodName) => Debug.Assert((length == 0 && payload == 0) || !Serialized, $"Unexpected Serialized == true in {methodName}");
 
         /// <summary>
         /// Length of payload
@@ -86,7 +93,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get
             {
-                Debug.Assert((length == 0 && payload == 0) || !Serialized, "Unexpected Serialized == true in Invalid.get");
+                AssertNonSerialized("Invalid.get");
                 return ((length & UnserializedBitMask) != 0) && payload == IntPtr.Zero;
             }
 
@@ -94,7 +101,7 @@ namespace Tsavorite.core
             set
             {
                 Debug.Assert(value, "Cannot restore an Invalid SpanByte to Valid; must reassign the SpanByte as a full value");
-                Debug.Assert((length == 0 && payload == 0) || !Serialized, "Unexpected Serialized == true in Invalid.set");
+                AssertNonSerialized("Invalid.set");
 
                 // Set the actual length to 0; a zero length will cause callers' length checks to go
                 // through the ConvertToHeap path automatically. Keep the UnserializedBitMask.
@@ -109,10 +116,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Span<byte> AsSpan()
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in AsSpan()");
-            return Serialized
-                        ? new Span<byte>((byte*)Unsafe.AsPointer(ref payload), Length)
-                        : new Span<byte>((byte*)payload, Length);
+            AssertNonSerialized("AsSpan()");
+            return new Span<byte>((byte*)payload, Length);
         }
 
         /// <summary>
@@ -121,10 +126,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReadOnlySpan<byte> AsReadOnlySpan()
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in AsReadOnlySpan");
-            return Serialized
-                        ? new ReadOnlySpan<byte>((byte*)Unsafe.AsPointer(ref payload), Length)
-                        : new ReadOnlySpan<byte>((byte*)payload, Length);
+            AssertNonSerialized("AsReadOnlySpan");
+            return new ReadOnlySpan<byte>((byte*)payload, Length);
         }
 
         /// <summary>
@@ -182,7 +185,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in CopyTo(SBAM)");
+            AssertNonSerialized("CopyTo(SBAM)");
             if (dst.IsSpanByte)
             {
                 if (dst.Length >= Length)
@@ -200,44 +203,38 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copy serialized version to specified memory location
+        /// Copy to specified memory location
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(Span<byte> buffer)
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in CopyTo(Span<byte>)");
+            AssertNonSerialized("CopyTo(Span<byte>)");
             fixed (byte* ptr = buffer)
                 CopyTo(ptr);
         }
 
         /// <summary>
-        /// Copy serialized version to specified memory location
+        /// Copy serialized version to specified memory location. TODO: Needs a length arg for verification
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(byte* destination)
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in CopyTo(byte*)");
-            if (Serialized)
-            {
-                *(int*)destination = length;
-                Buffer.MemoryCopy(Unsafe.AsPointer(ref payload), destination + sizeof(int), Length, Length);
-            }
-            else
-            {
-                *(int*)destination = length & ~UnserializedBitMask;
-                Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
-            }
+            AssertNonSerialized("CopyTo(byte*)");
+            *(int*)destination = Length;
+            Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
         }
 
         /// <inheritdoc/>
         public override string ToString()
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in ToString()");
+            AssertNonSerialized("ToString()");
             if (Invalid)
                 return "Invalid";
             var bytes = AsSpan();
             var len = Math.Min(Length, bytes.Length);
             StringBuilder sb = new($"len: {Length}, isSer {Serialized}, ");
+            if (Length == 0)
+                return sb.Append("<empty>").ToString();
             for (var ii = 0; ii < len; ++ii)
                 _ = sb.Append(bytes[ii].ToString("x2"));
             if (bytes.Length > len)
@@ -248,11 +245,10 @@ namespace Tsavorite.core
         /// <summary>Return an abbreviated string representation of this <see cref="SpanByte"/></summary>
         public string ToShortString(int maxLen)
         {
-            Debug.Assert(!Serialized, "Unexpected Serialized == true in ToShortString()");
-            var valueString = Length > maxLen
-                        ? FromPinnedSpan(AsReadOnlySpan().Slice(0, maxLen)).ToString() + "..."
-                        : ToString();
-            return $"len: {Length}, isSer {Serialized}, {valueString}";
+            AssertNonSerialized("ToShortString()");
+            return Length > maxLen
+                    ? $"len: {Length}, isSer {Serialized}, {FromPinnedSpan(AsReadOnlySpan().Slice(0, maxLen)).ToString()}..."
+                    : ToString();
         }
     }
 }

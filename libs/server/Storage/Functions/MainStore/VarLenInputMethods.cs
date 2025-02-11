@@ -250,7 +250,16 @@ namespace Garnet.server
 
                     case RespCommand.GETEX:
                         fieldInfo.ValueSize += srcLogRecord.ValueSpan.Length;
-                        fieldInfo.HasExpiration = input.arg1 > 0;
+
+                        // If both EX and PERSIST were specified, EX wins
+                        if (input.arg1 > 0)
+                            fieldInfo.HasExpiration = true;
+                        else if (input.parseState.Count > 0)
+                        {
+                            if (input.parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
+                                fieldInfo.HasExpiration = false;
+                        }
+
                         return fieldInfo;
 
                     case RespCommand.APPEND:

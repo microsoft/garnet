@@ -494,6 +494,7 @@ namespace Garnet.server
                 case RespCommand.GETEX:
                     CopyRespTo(logRecord.ValueSpan, ref output);
 
+                    // If both EX and PERSIST were specified, EX wins
                     if (input.arg1 > 0)
                     {
                         var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
@@ -501,15 +502,12 @@ namespace Garnet.server
 
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output))
-                            break;
+                            return false;
                     }
-
-                    if (input.parseState.Count > 0)
+                    else if (!sizeInfo.FieldInfo.HasExpiration)
                     {
-                        var persist = input.parseState.GetArgSliceByRef(0).ReadOnlySpan
-                            .EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST);
-                        if (persist)
-                            _ = logRecord.RemoveExpiration();
+                        // GetRMWModifiedFieldLength saw PERSIST
+                        _ = logRecord.RemoveExpiration();
                     }
                     break;
 
