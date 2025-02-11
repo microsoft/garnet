@@ -76,7 +76,7 @@ jobs:
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts (https://microsoft.github.io/garnet/charts/)
       - name: Store benchmark result for charts
-        uses: benchmark-action/github-action-benchmark@e3c661617bc6aa55f26ae4457c737a55545a86a4   #v1 for security reasons have pinned tag (commit SHA) for 3rd party 
+        uses: benchmark-action/github-action-benchmark@v1 # for security reasons have pinned tag (commit SHA) for 3rd party - however, not able to find specific commit SHA that works
         with:
           name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
