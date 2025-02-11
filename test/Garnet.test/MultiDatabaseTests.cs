@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -184,6 +185,7 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSelectMultithreadedTestSE()
         {
+            Debug.WriteLine("MultiDatabaseSelectMultithreadedTestSE");
             // Create a set of tuples (db-id, key, value)
             var dbCount = 16;
             var keyCount = 16;
@@ -211,7 +213,7 @@ namespace Garnet.test
             // Wait for all tasks to finish
             var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(completed);
-
+            Debug.WriteLine("Inserted items");
             // Check that all tasks successfully entered the data to the respective database
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
@@ -230,6 +232,7 @@ namespace Garnet.test
             // Wait for all tasks to finish
             completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(completed);
+            Debug.WriteLine("Retrieved items");
 
             // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
@@ -238,6 +241,7 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSelectMultithreadedTestLC()
         {
+            Debug.WriteLine("MultiDatabaseSelectMultithreadedTestLC");
             var cts = new CancellationTokenSource();
 
             // Create a set of tuples (db-id, key, value)
@@ -279,6 +283,7 @@ namespace Garnet.test
 
             // Wait for all tasks to finish
             var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
+            Debug.WriteLine("Inserted items");
             ClassicAssert.IsTrue(completed);
             cts.Cancel();
             cts = new CancellationTokenSource();
@@ -312,6 +317,7 @@ namespace Garnet.test
             // Wait for all tasks to finish
             completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(completed);
+            Debug.WriteLine("Retrieved items");
             cts.Cancel();
 
             // Check that all the tasks retrieved the correct value successfully
