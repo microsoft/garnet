@@ -9,26 +9,13 @@ namespace Garnet
     /// <summary>
     /// Legal values for redis.conf enable-debug-command and enable-protected-configs keys.
     /// </summary>
+    [TypeConverter(typeof(RedisConnectionProtectionOptionConverter))]
     public enum RedisConnectionProtectionOption
     {
         No = 0, // Block
-        Local = 1, // AllowForLocalConnections
-        Yes = 2, // AllowForAll
-        All = 2 // Garnet Extension.
-    }
-
-    public static class RedisConnectionProtectionOptionExtensions
-    {
-        public static ConnectionProtectionOption ToGarnetOption(this RedisConnectionProtectionOption opt)
-        {
-            return opt switch
-            {
-                RedisConnectionProtectionOption.Yes or RedisConnectionProtectionOption.All =>
-                    ConnectionProtectionOption.AllowForAll,
-                RedisConnectionProtectionOption.Local => ConnectionProtectionOption.AllowForLocalConnections,
-                _ => ConnectionProtectionOption.Block
-            };
-        }
+        Local = 1, // Local
+        Yes = 2, // All
+        All = 2 // All
     }
 
     /// <summary>

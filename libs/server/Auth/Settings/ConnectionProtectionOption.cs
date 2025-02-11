@@ -10,7 +10,7 @@ namespace Garnet.server.Auth.Settings
     public enum ConnectionProtectionOption
     {
         Block = 0,
-        AllowForLocalConnections = 1,
-        AllowForAll = 2
+        Local = 1,
+        All = 2
     }
 }

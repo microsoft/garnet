@@ -666,7 +666,7 @@ namespace Garnet.server
             if (
                     (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Block)
                  || (
-                        (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.AllowForLocalConnections)
+                        (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Local)
                       && !networkSender.IsLocalConnection()
                     )
                )
