@@ -310,7 +310,7 @@ namespace Garnet.test
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            
+
             // In parallel, retrieve the actual value for each db-id and key
             for (var i = 0; i < tasks.Length; i++)
             {
