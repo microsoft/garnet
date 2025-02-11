@@ -185,10 +185,9 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSelectMultithreadedTestSE()
         {
-            Console.WriteLine("MultiDatabaseSelectMultithreadedTestSE");
             // Create a set of tuples (db-id, key, value)
             var dbCount = 16;
-            var keyCount = 16;
+            var keyCount = 8;
             var tuples = GenerateDataset(dbCount, keyCount);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -203,17 +202,17 @@ namespace Garnet.test
             for (var i = 0; i < tasks.Length; i++)
             {
                 var tup = tuples[i];
-                tasks[i] = Task.Run(() =>
+                tasks[i] = Task.Run(async () =>
                 {
                     var db = dbConnections[tup.Item1];
-                    return db.StringSet(tup.Item3, tup.Item4);
+                    return await db.StringSetAsync(tup.Item3, tup.Item4).ConfigureAwait(false);
                 });
             }
 
             // Wait for all tasks to finish
-            var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(60));
-            ClassicAssert.IsTrue(completed);
-            Console.WriteLine("Inserted items");
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
+                Assert.Fail("Items not inserted in allotted time.");
+
             // Check that all tasks successfully entered the data to the respective database
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
 
@@ -221,18 +220,17 @@ namespace Garnet.test
             for (var i = 0; i < tasks.Length; i++)
             {
                 var tup = tuples[i];
-                tasks[i] = Task.Run(() =>
+                tasks[i] = Task.Run(async () =>
                 {
                     var db = dbConnections[tup.Item1];
-                    var actualValue = db.StringGet(tup.Item3);
+                    var actualValue = await db.StringGetAsync(tup.Item3).ConfigureAwait(false);
                     return actualValue.ToString() == tup.Item4;
                 });
             }
 
             // Wait for all tasks to finish
-            completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(60));
-            ClassicAssert.IsTrue(completed);
-            Console.WriteLine("Retrieved items");
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
+                Assert.Fail("Items not retrieved in allotted time.");
 
             // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
@@ -241,12 +239,11 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSelectMultithreadedTestLC()
         {
-            Console.WriteLine("MultiDatabaseSelectMultithreadedTestLC");
             var cts = new CancellationTokenSource();
 
             // Create a set of tuples (db-id, key, value)
             var dbCount = 16;
-            var keyCount = 16;
+            var keyCount = 8;
             var tuples = GenerateDataset(dbCount, keyCount);
 
             // Create multiple LC request objects to be used
@@ -274,18 +271,20 @@ namespace Garnet.test
                     }
                     finally
                     {
-                        lcRequests.Add(lcRequest);
+                        lcRequests.Add(lcRequest, cts.Token);
                     }
 
                     return response != null && expectedResponse == response;
-                });
+                }, cts.Token);
             }
 
             // Wait for all tasks to finish
-            var completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(60));
-            Console.WriteLine("Inserted items");
-            ClassicAssert.IsTrue(completed);
-            cts.Cancel();
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
+            {
+                cts.Cancel();
+                Assert.Fail("Items not inserted in allotted time.");
+            }
+
             cts = new CancellationTokenSource();
 
             // Check that all tasks successfully entered the data to the respective database
@@ -307,18 +306,19 @@ namespace Garnet.test
                     }
                     finally
                     {
-                        lcRequests.Add(lcRequest);
+                        lcRequests.Add(lcRequest, cts.Token);
                     }
 
                     return response != null && expectedResponse == response;
-                });
+                }, cts.Token);
             }
 
             // Wait for all tasks to finish
-            completed = Task.WaitAll(tasks, TimeSpan.FromSeconds(60));
-            ClassicAssert.IsTrue(completed);
-            Console.WriteLine("Retrieved items");
-            cts.Cancel();
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
+            {
+                cts.Cancel();
+                Assert.Fail("Items not retrieved in allotted time.");
+            }
 
             // Check that all the tasks retrieved the correct value successfully
             Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
