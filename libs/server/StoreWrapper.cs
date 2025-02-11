@@ -1180,7 +1180,6 @@ namespace Garnet.server
         public void Dispose()
         {
             if (disposed) return;
-            disposed = true;
 
             // Wait for checkpoints to complete and disable checkpointing
             checkpointTaskLock.WriteLock();
@@ -1199,6 +1198,8 @@ namespace Garnet.server
 
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
+
+            disposed = true;
         }
 
         /// <summary>
@@ -1230,12 +1231,11 @@ namespace Garnet.server
                 lockAcquired = TryPauseCheckpoints();
             }
 
-            if (disposed) return;
-
             // If an external task has taken a checkpoint beyond the provided entryTime return
-            if (databases.Map[dbId].LastSaveTime > entryTime)
+            if (disposed || databases.Map[dbId].LastSaveTime > entryTime)
             {
-                ResumeCheckpoints();
+                if (lockAcquired)
+                    ResumeCheckpoints();
                 return;
             }
 
