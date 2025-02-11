@@ -183,60 +183,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void MultiDatabaseSelectMultithreadedTestSE()
-        {
-            // Create a set of tuples (db-id, key, value)
-            var dbCount = 16;
-            var keyCount = 8;
-            var tuples = GenerateDataset(dbCount, keyCount);
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var dbConnections = new IDatabase[dbCount];
-            for (var i = 0; i < dbCount; i++)
-            {
-                dbConnections[i] = redis.GetDatabase(i);
-            }
-
-            // In parallel, add each (key, value) pair to a database of id db-id
-            var tasks = new Task[tuples.Length];
-            for (var i = 0; i < tasks.Length; i++)
-            {
-                var tup = tuples[i];
-                tasks[i] = Task.Run(async () =>
-                {
-                    var db = dbConnections[tup.Item1];
-                    return await db.StringSetAsync(tup.Item3, tup.Item4).ConfigureAwait(false);
-                });
-            }
-
-            // Wait for all tasks to finish
-            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
-                Assert.Fail("Items not inserted in allotted time.");
-
-            // Check that all tasks successfully entered the data to the respective database
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
-
-            // In parallel, retrieve the actual value for each db-id and key
-            for (var i = 0; i < tasks.Length; i++)
-            {
-                var tup = tuples[i];
-                tasks[i] = Task.Run(async () =>
-                {
-                    var db = dbConnections[tup.Item1];
-                    var actualValue = await db.StringGetAsync(tup.Item3).ConfigureAwait(false);
-                    return actualValue.ToString() == tup.Item4;
-                });
-            }
-
-            // Wait for all tasks to finish
-            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60)))
-                Assert.Fail("Items not retrieved in allotted time.");
-
-            // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
-        }
-
-        [Test]
         public void MultiDatabaseSelectMultithreadedTestLC()
         {
             var cts = new CancellationTokenSource();
@@ -325,6 +271,64 @@ namespace Garnet.test
 
             while (lcRequests.TryTake(out var client))
                 client.Dispose();
+        }
+
+        [Test]
+        public void MultiDatabaseSelectMultithreadedTestSE()
+        {
+            // Create a set of tuples (db-id, key, value)
+            var dbCount = 16;
+            var keyCount = 8;
+            var tuples = GenerateDataset(dbCount, keyCount);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbConnections = new IDatabase[dbCount];
+            for (var i = 0; i < dbCount; i++)
+            {
+                dbConnections[i] = redis.GetDatabase(i);
+            }
+
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+            // In parallel, add each (key, value) pair to a database of id db-id
+            var tasks = new Task[tuples.Length];
+            for (var i = 0; i < tasks.Length; i++)
+            {
+                var tup = tuples[i];
+                tasks[i] = Task.Run(async () =>
+                {
+                    var db = dbConnections[tup.Item1];
+                    return await db.StringSetAsync(tup.Item3, tup.Item4).ConfigureAwait(false);
+                }, cts.Token);
+            }
+
+            // Wait for all tasks to finish
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60), cts.Token))
+                Assert.Fail("Items not inserted in allotted time.");
+
+            // Check that all tasks successfully entered the data to the respective database
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
+
+            cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            
+            // In parallel, retrieve the actual value for each db-id and key
+            for (var i = 0; i < tasks.Length; i++)
+            {
+                var tup = tuples[i];
+                tasks[i] = Task.Run(async () =>
+                {
+                    var db = dbConnections[tup.Item1];
+                    var actualValue = await db.StringGetAsync(tup.Item3).ConfigureAwait(false);
+                    return actualValue.ToString() == tup.Item4;
+                }, cts.Token);
+            }
+
+            // Wait for all tasks to finish
+            if (!Task.WhenAll(tasks).Wait(TimeSpan.FromSeconds(60), cts.Token))
+                Assert.Fail("Items not retrieved in allotted time.");
+
+            // Check that (db-id, key, actual-value) tuples match original (db-id, key, value) tuples
+            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
         }
 
         [Test]
