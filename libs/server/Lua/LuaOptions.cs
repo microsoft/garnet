@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -15,6 +17,7 @@ namespace Garnet.server
 
         public LuaMemoryManagementMode MemoryManagementMode = LuaMemoryManagementMode.Native;
         public string MemoryLimit = "";
+        public TimeSpan Timeout = System.Threading.Timeout.InfiniteTimeSpan;
 
         /// <summary>
         /// Construct options with default options.
@@ -27,10 +30,11 @@ namespace Garnet.server
         /// <summary>
         /// Construct options with specific settings.
         /// </summary>
-        public LuaOptions(LuaMemoryManagementMode memoryMode, string memoryLimit, ILogger logger = null) : this(logger)
+        public LuaOptions(LuaMemoryManagementMode memoryMode, string memoryLimit, TimeSpan timeout, ILogger logger = null) : this(logger)
         {
             MemoryManagementMode = memoryMode;
             MemoryLimit = memoryLimit;
+            Timeout = timeout;
         }
 
         /// <summary>

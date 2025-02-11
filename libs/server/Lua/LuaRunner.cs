@@ -7,7 +7,9 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
+using Garnet.server.Lua;
 using KeraLua;
 using Microsoft.Extensions.Logging;
 
@@ -244,6 +246,9 @@ end
         // This cannot be readonly, as it is a mutable struct
         LuaStateWrapper state;
 
+        // Timeout details
+        bool timeoutRequested;
+
         // We need to temporarily store these for P/Invoke reasons
         // You shouldn't be touching them outside of the Compile and Run methods
 
@@ -260,7 +265,15 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public unsafe LuaRunner(
+            LuaMemoryManagementMode memMode,
+            int? memLimitBytes,
+            ReadOnlyMemory<byte> source,
+            bool txnMode = false,
+            RespServerSession respServerSession = null,
+            ScratchBufferNetworkSender scratchBufferNetworkSender = null,
+            ILogger logger = null
+        )
         {
             this.source = source;
             this.txnMode = txnMode;
@@ -628,6 +641,7 @@ end
                     // Span is (implicitly) pinned since it's actually on the Lua stack
                     var key = ArgSlice.FromPinnedSpan(keySpan);
                     var status = api.GET(key, out var value);
+
                     if (status == GarnetStatus.OK)
                     {
                         state.PushBuffer(value.ReadOnlySpan);
@@ -684,10 +698,13 @@ end
                 var response = scratchBufferNetworkSender.GetResponse();
                 var result = ProcessResponse(response.ptr, response.length);
                 scratchBufferNetworkSender.Reset();
+
                 return result;
             }
             catch (Exception e)
             {
+                // We cannot let exceptions propogate back to Lua, that is not something .NET promises will work
+
                 logger?.LogError(e, "During Lua script execution");
 
                 return state.RaiseError(e.Message);
@@ -849,6 +866,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
+                ResetTimeout();
 
                 try
                 {
@@ -970,6 +988,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
+                ResetTimeout();
 
                 try
                 {
@@ -1121,6 +1140,32 @@ end
                     respServerSession.storageSession.objectStoreLockableContext.EndLockable();
             }
         }
+
+        /// <summary>
+        /// Clear timeout state before running.
+        /// </summary>
+        private unsafe void ResetTimeout()
+        {
+            timeoutRequested = false;
+            _ = state.TrySetHook(null, 0, 0);
+        }
+
+        /// <summary>
+        /// Request that the current execution of this <see cref="LuaRunner"/> timeout.
+        /// </summary>
+        internal unsafe void RequestTimeout()
+        {
+            timeoutRequested = true;
+            _ = state.TrySetHook(&LuaRunnerTrampolines.ForceTimeout, LuaHookMask.Count, 1);
+        }
+
+        /// <summary>
+        /// Raises a Lua error reporting that the script has timed out.
+        /// 
+        /// If you call this outside of PCALL context, the process will crash.
+        /// </summary>
+        internal void UnsafeForceTimeout()
+        => state.RaiseError("ERR Lua script exceeded configured timeout");
 
         /// <summary>
         /// Remove extra keys and args from KEYS and ARGV globals.
@@ -1635,5 +1680,12 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoTransaction(nint luaState)
         => callbackContext.GarnetCall(luaState);
+
+        /// <summary>
+        /// Entry point for checking timeouts, called periodically from Lua.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static void ForceTimeout(nint luaState, nint debugState)
+        => callbackContext?.UnsafeForceTimeout();
     }
 }
