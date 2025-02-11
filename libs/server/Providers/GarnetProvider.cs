@@ -15,7 +15,7 @@ namespace Garnet.server
     /// Session provider for Garnet, based on
     /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator, SpanByteServerSerializer>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator>
     {
         readonly StoreWrapper storeWrapper;
 
@@ -32,10 +32,8 @@ namespace Garnet.server
         /// <param name="storeWrapper"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
-        public GarnetProvider(StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, IKeySerializer> broker = null,
-            MaxSizeSettings maxSizeSettings = default)
-            : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
+        public GarnetProvider(StoreWrapper storeWrapper, SubscribeBroker<SpanByte, IKeySerializer> broker = null, MaxSizeSettings maxSizeSettings = default)
+            : base(storeWrapper.store, broker, false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
         }
