@@ -169,7 +169,7 @@ namespace Garnet.client
                 return false;
             }
 
-            if (length <= 0)
+            if (length < 0)
             {
                 // NULL value ('*-1\r\n')
                 return true;
