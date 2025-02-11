@@ -26,7 +26,7 @@ namespace Tsavorite.core
 
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetSerializedLength(long physicalAddress) => *(int*)(physicalAddress + RecordInfo.GetLength());
+        public static long GetSerializedLength(long physicalAddress) => *(long*)(physicalAddress + RecordInfo.GetLength());
     }
 
     /// <summary>The record on the disk: header, optional fields, key, value</summary>
@@ -114,9 +114,16 @@ namespace Tsavorite.core
         private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize;
         private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
 
-        /// <summary>The size to IO from disk when reading a record. Keys and Values are SpanByte on disk and we reuse the max inline key size
-        /// for both key and value for this estimate. They are prefaced by the full record length and optionals (ETag, Expiration) which we include in the estimate.</summary>
-        public static int GetIOSize(int sectorSize) => RoundUp(RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + sizeof(long) * 2 + sizeof(int) * 2 + (1 << LogSettings.kDefaultMaxInlineKeySizeBits) * 2, sectorSize);
+        /// <summary>The initial size to IO from disk when reading a record. If we don't get the full record, at least we'll get the SerializedRecordLength
+        /// and can read the full record using that.</summary>
+        public static int GetEstimatedIOSize(int sectorSize, bool isObjectAllocator) => 
+            RoundUp(RecordInfo.GetLength()
+                + DiskLogRecord.SerializedRecordLengthSize                          // Total record length on disk; used in IO
+                + LogRecord.ETagSize + LogRecord.ExpirationSize                     // Optionals, included in the estimate
+                + sizeof(int) + (1 << LogSettings.kDefaultMaxInlineKeySizeBits)     // Key; length prefix is an int
+                + sizeof(long) + (1 << LogSettings.kDefaultMaxInlineKeySizeBits)    // Value; length prefix is a long as it may be an object
+                + (isObjectAllocator ? sectorSize : 0)                              // Additional read for object value; TODO adjust this for balance between wasted initial IO and reduction in secondary IO
+            , sectorSize);
 
         internal static SpanByte GetContextRecordKey(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).Key;
 

@@ -159,7 +159,7 @@ namespace Tsavorite.core
         {
             completionEvent.Prepare(_wrapper.GetKeyContainer(key), logicalAddress);
 
-            AsyncGetFromDisk(logicalAddress, DiskLogRecord<TValue>.GetIOSize(sectorSize), completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, DiskLogRecord<TValue>.GetEstimatedIOSize(sectorSize, IsObjectAllocator), completionEvent.request);
             completionEvent.Wait();
 
             stop = false;

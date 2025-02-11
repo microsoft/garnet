@@ -218,32 +218,7 @@ namespace Tsavorite.core
             if (inlineRecordSize > int.MaxValue)
                 throw new TsavoriteException("Total size out of range");
 
-            bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
-            var ptr = recordBuffer.GetValidPointer();
-
-            *(RecordInfo*)ptr = logRecord.Info;
-            ptr += RecordInfo.GetLength();
-
-            *(long*)ptr = (long)inlineRecordSize;
-            ptr += DiskLogRecord.SerializedRecordLengthSize;
-
-            if (logRecord.Info.HasETag)
-            {
-                *(long*)ptr = logRecord.ETag;
-                ptr += LogRecord.ETagSize;
-            }
-
-            if (logRecord.Info.HasExpiration)
-            {
-                *(long*)ptr = logRecord.Expiration;
-                ptr += LogRecord.ExpirationSize;
-            }
-
-            var key = logRecord.Key;
-            *(int*)ptr = key.Length;
-            ptr += SpanField.FieldLengthPrefixSize;
-            key.CopyTo(new Span<byte>(ptr, key.Length));
-            ptr += key.Length;
+            var ptr = SerializeCommonRecordFieldsToBuffer(logRecord, ref recordBuffer, inlineRecordSize);
 
             // Empty value; we'll return the deserialized value object. See note above regarding allocated space for this in the DiskLogRecord.
             *(int*)ptr = 0;

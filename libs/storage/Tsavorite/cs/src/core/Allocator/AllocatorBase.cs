@@ -202,6 +202,38 @@ namespace Tsavorite.core
         /// <summary>Initialize fully derived allocator</summary>
         public abstract void Initialize();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private protected unsafe byte* SerializeCommonRecordFieldsToBuffer(LogRecord<TValue> logRecord, ref SectorAlignedMemory recordBuffer, int inlineRecordSize)
+        {
+            bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
+            var ptr = recordBuffer.GetValidPointer();
+
+            *(RecordInfo*)ptr = logRecord.Info;
+            ptr += RecordInfo.GetLength();
+
+            *(long*)ptr = (long)inlineRecordSize;
+            ptr += DiskLogRecord.SerializedRecordLengthSize;
+
+            if (logRecord.Info.HasETag)
+            {
+                *(long*)ptr = logRecord.ETag;
+                ptr += LogRecord.ETagSize;
+            }
+
+            if (logRecord.Info.HasExpiration)
+            {
+                *(long*)ptr = logRecord.Expiration;
+                ptr += LogRecord.ExpirationSize;
+            }
+
+            var key = logRecord.Key;
+            *(int*)ptr = key.Length;
+            ptr += SpanField.FieldLengthPrefixSize;
+            key.CopyTo(new Span<byte>(ptr, key.Length));
+            ptr += key.Length;
+            return ptr;
+        }
+
         /// <summary>Write async to device</summary>
         /// <typeparam name="TContext"></typeparam>
         /// <param name="startPage"></param>

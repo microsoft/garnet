@@ -1077,7 +1077,7 @@ namespace Tsavorite.core
                     pointer += RecordInfo.GetLength();
                 else
                 {
-                    int size = DiskLogRecord.GetSerializedLength(recordStart);
+                    long size = DiskLogRecord.GetSerializedLength(recordStart);
                     Debug.Assert(size <= hlogBase.GetPageSize());
                     pointer += size;
                 }
