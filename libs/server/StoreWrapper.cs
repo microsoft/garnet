@@ -1180,6 +1180,7 @@ namespace Garnet.server
         public void Dispose()
         {
             if (disposed) return;
+            disposed = true;
 
             // Wait for checkpoints to complete and disable checkpointing
             checkpointTaskLock.WriteLock();
@@ -1198,8 +1199,6 @@ namespace Garnet.server
 
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
-
-            disposed = true;
         }
 
         /// <summary>
