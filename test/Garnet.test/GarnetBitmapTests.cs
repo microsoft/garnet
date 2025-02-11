@@ -2285,7 +2285,7 @@ namespace Garnet.test
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
             ClassicAssert.AreEqual(0, pos);
 
-            pos = db.StringBitPosition(key, true, 5, 17, StringIndexType.Bit);
+            pos = db.StringBitPosition(key, true, 7, 15, StringIndexType.Bit);
             ClassicAssert.AreEqual(8, pos);
 
             value = [0xf8, 0x6f, 0xf0];
@@ -2306,6 +2306,43 @@ namespace Garnet.test
 
             pos = db.StringBitPosition(key, false, 0);
             ClassicAssert.AreEqual(0, pos);
+
+            value = [0xff, 0x7f, 0xf0];
+            _ = db.StringSet(key, value);
+            pos = db.StringBitPosition(key, false, 7, 15, StringIndexType.Bit);
+            ClassicAssert.AreEqual(8, pos);
+        }
+
+        [Test, Order(34)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitOffsetTests([Values] bool searchFor)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            byte[] value = searchFor ?
+                [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] :
+                [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+            _ = db.StringSet(key, value);
+
+            var bitLength = value.Length * 8;
+            var expectedPosOffset = 5;
+
+            for (var i = 0; i < 10; i++)
+            {
+                // Set or clear bit
+                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: searchFor);
+
+                // Find pos of bit set/clear
+                var pos = db.StringBitPosition(key, bit: searchFor, 0, 19, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPosOffset, pos);
+
+                // Toggle bit back to initial value
+                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: !searchFor);
+
+                expectedPosOffset++;
+            }
         }
 
         [Test, Order(35)]
