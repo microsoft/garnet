@@ -355,7 +355,7 @@ namespace Garnet
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
 
-        [Option("client-id", Required = false, HelpText = "The client id to use when establishing connection to Azure Blobs Storage.")]
+        [Option("azure-storage-client-id", Required = false, HelpText = "The client id to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageClientId { get; set; }
 
         [Option("storage-account-uri", Required = false, HelpText = "The storage account uri to use when establishing connection to Azure Blobs Storage.")]
@@ -573,7 +573,6 @@ namespace Garnet
             {
                 if (string.IsNullOrEmpty(AzureStorageConnectionString)){
                     azureStorageUri= new Uri(AzureStorageAccountUri);
-                    logger?.LogInformation("Azure Storage URI: {azureStorageUri}", azureStorageUri);
                 }
             }
             Func<INamedDeviceFactory> azureFactoryCreator = string.IsNullOrEmpty(AzureStorageConnectionString)
