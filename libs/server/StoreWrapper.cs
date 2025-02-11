@@ -591,7 +591,7 @@ namespace Garnet.server
                         if (aofSizeAtLimit != -1)
                         {
                             logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                            await CheckpointTask(StoreType.All, logger: logger);
+                            await CheckpointTask(StoreType.All, logger: logger, token: token);
                         }
 
                         return;
@@ -1259,7 +1259,7 @@ namespace Garnet.server
             if (!allowMultiDb || activeDbIdsSize == 1 || dbId != -1)
             {
                 if (dbId == -1) dbId = 0;
-                var checkpointTask = Task.Run(async () => await CheckpointTask(storeType, dbId, logger: logger), token);
+                var checkpointTask = Task.Run(async () => await CheckpointTask(storeType, dbId, logger: logger, token: token), token);
                 if (background)
                     return true;
 
@@ -1286,17 +1286,14 @@ namespace Garnet.server
         {
             try
             {
-                if (!lockAcquired)
+                // Take lock to ensure no other task will be taking a checkpoint
+                while (!lockAcquired && !token.IsCancellationRequested && !disposed)
                 {
-                    // Take lock to ensure no other task will be taking a checkpoint
-                    while (!lockAcquired && !token.IsCancellationRequested)
-                    {
-                        await Task.Yield();
-                        lockAcquired = TryPauseCheckpoints();
-                    }
-
-                    if (token.IsCancellationRequested) return;
+                    await Task.Yield();
+                    lockAcquired = TryPauseCheckpoints();
                 }
+
+                if (token.IsCancellationRequested || disposed) return;
 
                 await CheckpointDatabaseTask(dbId, storeType, logger);
 
