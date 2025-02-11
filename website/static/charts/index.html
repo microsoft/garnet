@@ -13,9 +13,9 @@
 
 <body>
     <header class="d-flex flex-wrap justify-content-between py-3 mb-4 px-3 border-bottom">
-        <a href="/" class="d-flex align-items-center mb-md-0 me-md-auto link-body-emphasis text-decoration-none">
+        <a href="https://microsoft.github.io/garnet" class="d-flex align-items-center mb-md-0 me-md-auto link-body-emphasis text-decoration-none" target="_blank">
             <img src="https://microsoft.github.io/garnet/img/garnet-logo-diamond.png" class="me-2"
-                style="width: 40px; height: 40px;" alt="Garnet Logo">
+                 style="width: 40px; height: 40px;" alt="Garnet Logo">
             <span class="fs-4">Garnet Benchmarks</span>
         </a>
 
@@ -29,17 +29,33 @@
             </a>
         </div>
     </header>
-
     <main class="container px-4" style="max-width: 960px;">
         <!-- Selectors -->
-        <div class="vstack gap-2 mb-4">
-            <select class="form-select" title="Select Benchmark set" id="benchmark-set-selector">
-                <option selected>Featured Benchmarks</option>
-            </select>
-            <select class="form-select" title="Select Benchmark" id="benchmark-selector">
-                <option selected>Select Benchmark</option>
-            </select>
-        </div>
+        <form class="row g-2 mb-4">
+            <div class="col-sm-8">
+                <select class="form-select" title="Select Benchmark set" id="benchmark-set-selector">
+                    <option value="featured" selected>Featured Benchmarks</option>
+                </select>
+            </div>
+            <div class="col-sm-2">
+                <select class="form-select" title="Select Benchmark Type" id="benchmark-type-selector">
+                    <option value="type" selected>Type</option>
+                </select>
+            </div>
+
+            <div class="col-sm-2">
+                <select class="form-select" title="Select Benchmark OS" id="benchmark-os-selector">
+                    <option value="ALL" selected>OS</option>
+                    <option value="UBUNTU">Ubuntu</option>
+                    <option value="WINDOWS">Windows</option>
+                </select>
+            </div>
+            <div class="col-sm-12">
+                <select class="form-select" title="Select Benchmark" id="benchmark-selector">
+                    <option value="select-benchmark" selected>Select Benchmark</option>
+                </select>
+            </div>
+        </form>
 
         <!-- Benchmarks -->
         <div id="benchmarks-container"></div>
@@ -47,12 +63,12 @@
     </main>
 
     <footer class="footer d-flex p-3 flex-wrap justify-content-between align-items-center border-top fixed-bottom"
-    style="background-color: var(--bs-body-bg);">
+        style="background-color: var(--bs-body-bg);">
         <div>
             <small class="text-body-secondary">Last update:</small>
             <span class="badge text-bg-secondary" id="last-update"></span>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="scroll-to-top-button"
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-circle d-none" id="scroll-to-top-button"
             title="Scroll to top" onclick="scrollToTop()">
             <i class="bi bi-arrow-up"></i>
         </button>
@@ -114,7 +130,7 @@
                 _: '#333333'
             };
 
-            const FEATURED_BENCHMARKS = [
+            const FEATURED_BENCHMARKS = Object.freeze([
                 'Operations.BasicOperations.InlinePing(Params: None)',
                 'Operations.RawStringOperations.Set(Params: None)',
                 'Operations.RawStringOperations.GetFound(Params: None)',
@@ -130,15 +146,23 @@
                 'Operations.ObjectOperations.ZAddRem(Params: None)',
                 'Operations.ObjectOperations.LPushPop(Params: None)',
                 'Lua.LuaScripts.Script3(Params: Managed,None)',
-            ].map(str => str.toLowerCase());;
+            ]).map(str => str.toLowerCase());;
 
             const VIEW_TYPE = Object.freeze({
                 FEATURED: "FEATURED",
                 SELECTED: "SELECTED"
             });
 
+            const OS_TYPE = Object.freeze({
+                ALL: "ALL",
+                UBUNTU: "UBUNTU",
+                WINDOWS: "WINDOWS"
+            });
+
             var CURRENT_VIEW_TYPE = VIEW_TYPE.FEATURED;
-            var SELECTED_BENCHMARK = undefined;
+            var SELECTED_BENCHMARK_TYPE = undefined;
+            var SELECTED_OS = OS_TYPE.ALL;
+            var SELECTED_BENCHMARK_SET = undefined;
 
             function init() {
                 function collectBenchesPerTestCase(entries) {
@@ -317,15 +341,24 @@
 
                 switch (CURRENT_VIEW_TYPE) {
                     case VIEW_TYPE.FEATURED: {
+                        var didRender = false;
+
                         const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
                         for (const featuredDataSetName of featuredDataSets.keys()) {
                             const dataSet = dataSets.find(ds => ds.name === featuredDataSetName);
-                            renderBenchSet(dataSet.name, dataSet.dataSet, chartsContainer);
+                            if (shouldShowBenchmarkSet(dataSet.name)) {
+                                didRender = true;
+                                renderBenchSet(dataSet.name, dataSet.dataSet, chartsContainer);
+                            }
+                        }
+                        if (!didRender) {
+                            const chartsContainer = document.getElementById('benchmarks-container');
+                            chartsContainer.innerHTML = '<div class="px-4 py-5 my-5 text-center"> <p class="mb-4">No benchmarks match your selected filters. Try adjusting your filter settings.</p> </div>';
                         }
                     } break;
                     case VIEW_TYPE.SELECTED: {
                         for (const { name, dataSet } of dataSets) {
-                            if (name === SELECTED_BENCHMARK) {
+                            if (name === SELECTED_BENCHMARK_SET) {
                                 renderBenchSet(name, dataSet, chartsContainer);
                             }
                         }
@@ -356,13 +389,15 @@
 
             function populateBenchmarkSetSelector(dataSets) {
                 const selector = document.getElementById('benchmark-set-selector');
-                selector.innerHTML = '<option selected>Featured Benchmarks</option>';
+                selector.innerHTML = '<option value="featured" selected>Featured Benchmarks</option>';
 
                 dataSets.forEach(({ name }) => {
-                    const option = document.createElement('option');
-                    option.value = name;
-                    option.textContent = name;
-                    selector.appendChild(option);
+                    if (shouldShowBenchmarkSet(name)) {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        selector.appendChild(option);
+                    }
                 });
             }
 
@@ -371,10 +406,14 @@
                 selector.innerHTML = '<option selected>Select Benchmark</option>';
 
                 switch (CURRENT_VIEW_TYPE) {
-                    case VIEW_TYPE.FEATURED:
+                    case VIEW_TYPE.FEATURED: {
                         const featuredDataSets = featuredDatasets(dataSets, FEATURED_BENCHMARKS);
 
                         for (const [name, benches] of featuredDataSets.entries()) {
+                            if (!shouldShowBenchmarkSet(name)) {
+                                continue;
+                            }
+
                             const optgroup = document.createElement('optgroup');
                             optgroup.label = name;
                             selector.appendChild(optgroup);
@@ -386,9 +425,9 @@
                                 optgroup.appendChild(option);
                             }
                         }
-                        break;
-                    case VIEW_TYPE.SELECTED:
-                        const selectedDataSet = dataSets.find(ds => ds.name === SELECTED_BENCHMARK);
+                    } break;
+                    case VIEW_TYPE.SELECTED: {
+                        const selectedDataSet = dataSets.find(ds => ds.name === SELECTED_BENCHMARK_SET);
                         if (selectedDataSet) {
                             for (const benchName of selectedDataSet.dataSet.keys()) {
                                 const option = document.createElement('option');
@@ -397,23 +436,69 @@
                                 selector.appendChild(option);
                             }
                         }
+                    } break;
+                }
+            }
+
+            function populateBenchmarkTypeSelector(benchmarkTypes) {
+                const selector = document.getElementById('benchmark-type-selector');
+                selector.innerHTML = '<option value="type" selected>Type</option>';
+
+                benchmarkTypes.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    selector.appendChild(option);
+                });
+            }
+
+            function shouldShowBenchmarkSet(name) {
+                var osMatch = true;
+                switch (SELECTED_OS) {
+                    case OS_TYPE.ALL:
+                        osMatch = true;
+                        break;
+                    case OS_TYPE.UBUNTU:
+                        osMatch = name.toLowerCase().includes('ubuntu');
+                        break;
+                    case OS_TYPE.WINDOWS:
+                        osMatch = name.toLowerCase().includes('windows');
                         break;
                 }
+
+                const typeMatch = SELECTED_BENCHMARK_TYPE ? name.toLowerCase().startsWith(SELECTED_BENCHMARK_TYPE.toLowerCase()) : true;
+
+                return osMatch && typeMatch;
+            }
+
+            function resetBenchmarks() {
+                CURRENT_VIEW_TYPE = VIEW_TYPE.FEATURED;
+                SELECTED_BENCHMARK_SET = undefined;
+
+                populateBenchmarkSetSelector(dataSets);
+                populateBenchmarkSelector(dataSets);
+                renderAllCharts(dataSets);
             }
 
             const dataSets = init();
 
             populateBenchmarkSetSelector(dataSets);
             populateBenchmarkSelector(dataSets);
-            renderAllCharts(dataSets, SELECTED_BENCHMARK);
+
+            // Get unique benchmark types
+            const benchmarkTypes = dataSets.map(ds => ds.name.split('.')[0])
+                .filter((value, index, self) => self.indexOf(value) === index);
+            populateBenchmarkTypeSelector(benchmarkTypes);
+
+            renderAllCharts(dataSets, SELECTED_BENCHMARK_SET);
 
             document.getElementById('benchmark-set-selector').addEventListener('change', function () {
-                if (this.value === 'Featured Benchmarks') {
+                if (this.value === 'featured') {
                     CURRENT_VIEW_TYPE = VIEW_TYPE.FEATURED;
-                    SELECTED_BENCHMARK = undefined;
+                    SELECTED_BENCHMARK_SET = undefined;
                 } else {
                     CURRENT_VIEW_TYPE = VIEW_TYPE.SELECTED;
-                    SELECTED_BENCHMARK = this.value;
+                    SELECTED_BENCHMARK_SET = this.value;
                 }
 
                 renderAllCharts(dataSets);
@@ -421,13 +506,24 @@
             });
 
             document.getElementById('benchmark-selector').addEventListener('change', function () {
-                const selectedChart = this.value;
-                if (selectedChart && selectedChart !== 'Select Benchmark') {
-                    const targetElement = document.querySelector(`[data-graph-name="${selectedChart}"]`);
-                    if (targetElement) {
-                        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
+                if (this.value === 'select-benchmark') {
+                    return;
                 }
+
+                const targetElement = document.querySelector(`[data-graph-name="${this.value}"]`);
+                if (targetElement) {
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+
+            document.getElementById('benchmark-type-selector').addEventListener('change', function () {
+                SELECTED_BENCHMARK_TYPE = this.value === 'type' ? undefined : this.value;
+                resetBenchmarks()
+            });
+
+            document.getElementById('benchmark-os-selector').addEventListener('change', function () {
+                SELECTED_OS = this.value;
+                resetBenchmarks()
             });
         })();
     </script>
