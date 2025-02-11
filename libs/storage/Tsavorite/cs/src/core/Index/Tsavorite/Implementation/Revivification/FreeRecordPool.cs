@@ -79,7 +79,6 @@ namespace Tsavorite.core
                 return false;
             }
 
-            // TODO: If we have existing oversize allocations in the FreeRecord, we don't currently have a scheme to index record size by the additional size that provides.
             var thisSize = oversize ? GetRecordSize(store, oldRecord.Address) : oldRecord.Size;
             if (thisSize < recordSize)
                 return false;

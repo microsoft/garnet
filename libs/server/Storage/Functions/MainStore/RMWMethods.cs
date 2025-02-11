@@ -164,7 +164,6 @@ namespace Garnet.server
 
                     // Copy value to be appended to the newly allocated value buffer
                     value = logRecord.ValueSpan;
-                    Debug.Assert(value.Length <= 128, "TODO whhhhat");
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
                     if (!CopyValueLengthToOutput(value, ref output))

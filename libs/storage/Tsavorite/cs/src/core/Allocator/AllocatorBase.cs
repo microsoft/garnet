@@ -442,9 +442,6 @@ namespace Tsavorite.core
 
         public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
-        // GetKey is used in TracebackForKeyMatch. TODO remove in favor of the direct LogRecord call
-        public static SpanByte GetKey(long physicalAddress) => LogRecord<TValue>.GetKey(physicalAddress);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize, OverflowAllocator overflowAllocator)
         {
@@ -1854,9 +1851,9 @@ namespace Tsavorite.core
                 var record = ctx.record.GetValidPointer();
                 var diskLogRecord = new DiskLogRecord<TValue>((long)record);
                 if ((int)diskLogRecord.SerializedRecordLength > int.MaxValue)
-                    throw new TsavoriteException("Records exceeding 2GB are not yet supported");      // TODO: Convert to support 'long' lengths
+                    throw new TsavoriteException("Records exceeding 2GB are not yet supported");        // TODO: Convert to support 'long' lengths
                 int requiredBytes = (int)diskLogRecord.SerializedRecordLength;
-                if (ctx.record.available_bytes >= requiredBytes)
+                if (ctx.record.available_bytes >= requiredBytes)                                        // TODO: Could check for whether we have a full Key and if so a match here; if so, we can determine whether we need to get Value vs. skip to next .PreviousAddress
                 {
                     Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
                     _wrapper.DeserializeValueObject(ref diskLogRecord, ref ctx);

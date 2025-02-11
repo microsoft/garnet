@@ -83,32 +83,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetAverageRecordSize() => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetFixedRecordSize() => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(SpanByte key, ref AofValue value)
-            => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetValueLength(AofValue value) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<AofValue> ctx)
-            => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void AllocatePage(int pageIndex) => _this.AllocatePage(pageIndex);
 
         /// <inheritdoc/>

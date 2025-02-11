@@ -428,12 +428,11 @@ namespace Tsavorite.core
         /// <param name="logicalAddress">Logical address of record, if found</param>
         /// <param name="fromAddress">Look until this address; if less than HeadAddress, then HeadAddress is used</param>
         /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(SpanByte key, out long logicalAddress, long fromAddress = -1)
+        internal Status ContainsKeyInMemory(SpanByte key, out long logicalAddress, long fromAddress = -1)   // TODO: remove when we remove tempkv/tempdb in iterators
         {
             UnsafeResumeThread();
             try
             {
-                // TODO make this a LogRecord?
                 return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                         key, sessionFunctions, out logicalAddress, fromAddress);
             }

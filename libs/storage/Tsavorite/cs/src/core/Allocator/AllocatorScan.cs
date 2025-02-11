@@ -185,7 +185,7 @@ namespace Tsavorite.core
         /// <returns>True if Scan completed and pushed <paramref name="count"/> records; false if Scan ended early due to finding less than <paramref name="count"/> records
         /// or one of the TScanIterator reader functions returning false</returns>
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
-        /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and do GetRequiredRecordSize/RetrievedFullRecord as in
+        /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and use DiskLogRecord.GetSerializedRecordLength as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
         internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<TValue>;

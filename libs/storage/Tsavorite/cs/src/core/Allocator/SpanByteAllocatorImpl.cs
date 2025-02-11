@@ -186,14 +186,6 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
-        public (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value)
-        {
-            // TODO: Adjust for key overflowing and thus taking only 12 bytes inline
-            int keySize = key.TotalSize;
-            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + value.TotalSize;
-            return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
-        }
-
         /// <inheritdoc/>
         internal override void SerializeRecordToIteratorBuffer(ref LogRecord<SpanByte> logRecord, ref SectorAlignedMemory recordBuffer, out SpanByte valueObject)
         {

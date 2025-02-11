@@ -421,7 +421,7 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
-                    // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails. TODO: overflow key/value in reviv
+                    // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails.
                     if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
                         stackCtx.ClearNewRecord();
                     else
@@ -445,7 +445,7 @@ namespace Tsavorite.core
                         if (status == OperationStatus.CANCELED)
                             return status;
 
-                        // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails. TODO key/value overflow in reviv
+                        // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
                         if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             stackCtx.ClearNewRecord();
                         else

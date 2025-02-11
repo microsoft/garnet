@@ -229,7 +229,7 @@ namespace Tsavorite.core
                     _ = tempbContext.Delete(key);
             }
             else
-                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValue());
+                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValue());    // TODO needs ETag and Expiration
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
