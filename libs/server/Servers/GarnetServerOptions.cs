@@ -142,6 +142,11 @@ namespace Garnet.server
         public int HashCollectFrequencySecs = 0;
 
         /// <summary>
+        /// Hash collection frequency in seconds. 0 = disabled. Sorted Set collect is used to delete expired members from Sorted Set without waiting for a write operation.
+        /// </summary>
+        public int SortedSetCollectFrequencySecs = 0;
+
+        /// <summary>
         /// Hybrid log compaction type.
         ///  None - no compaction.
         ///  Shift - shift begin address without compaction (data loss).

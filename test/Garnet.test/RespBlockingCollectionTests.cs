@@ -414,6 +414,24 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("MIN", Description = "Pop minimum score with expired items")]
+        [TestCase("MAX", Description = "Pop maximum score with expired items")]
+        public async Task BasicBzmpopWithExpireItemsTest(string mode)
+        {
+            var key = "mykey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
+            await Task.Delay(300);
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"BZMPOP 1 1 {key} {mode}");
+            var expectedResponse = "$-1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
         [TestCase(1, "key1", "value1", 1.5, Description = "First key has minimum value")]
         [TestCase(2, "key2", "value2", 2.5, Description = "Second key has minimum value")]
         public void BzmpopMultipleKeysTest(int valueKeyIndex, string expectedKey, string expectedValue, double expectedScore)
@@ -478,6 +496,24 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
             var response = lightClientRequest.SendCommand($"{command} {key} 1");
             var expectedResponse = $"*3\r\n${key.Length}\r\n{key}\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", Description = "Pop minimum score with expired items")]
+        [TestCase("BZPOPMAX", Description = "Pop maximum score with expired items")]
+        public async Task BasicBzpopMinMaxWithExpireItemsTest(string command)
+        {
+            var key = "zsettestkey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
+            await Task.Delay(300);
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"{command} {key} 1");
+            var expectedResponse = "$-1\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }

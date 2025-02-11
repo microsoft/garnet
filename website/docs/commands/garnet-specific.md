@@ -61,6 +61,25 @@ Error reply: ERR HCOLLECT scan already in progress
 
 ---
 
+### ZCOLLECT
+
+#### Syntax
+
+```bash
+    ZCOLLECT key [key ...]
+```
+
+Manualy trigger cleanup of expired member from memory for a given Hash set key.
+
+Use `*` as the key to collect it from all sorted set keys.
+
+#### Resp Reply
+
+Simple reply: OK response
+Error reply: ERR ZCOLLECT scan already in progress
+
+---
+
 ### COSCAN
 
 #### Syntax

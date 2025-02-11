@@ -169,6 +169,22 @@ namespace Garnet.server
         public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
             => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
 
+        /// <inheritdoc />
+        public GarnetStatus SortedSetExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetPersist(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input)
+            => storageSession.SortedSetCollect(keys, ref input, ref objectContext);
+
         #endregion
 
         #region Geospatial commands
