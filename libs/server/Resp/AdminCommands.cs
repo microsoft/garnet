@@ -788,7 +788,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LASTSAVE));
             }
 
             storeWrapper.TryGetDatabase(activeDbId, out var db);
