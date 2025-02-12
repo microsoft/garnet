@@ -1691,6 +1691,7 @@ namespace Garnet.server
             var localEndpoint = targetSession.networkSender.LocalEndpointName;
             var clientName = targetSession.clientName;
             var user = targetSession._user;
+            var db = targetSession.activeDbId;
             var resp = targetSession.respProtocolVersion;
             var nodeId = targetSession?.clusterSession?.RemoteNodeId;
 
@@ -1734,6 +1735,7 @@ namespace Garnet.server
                 }
             }
 
+            into.Append($" db={db}");
             into.Append($" resp={resp}");
             into.Append($" lib-name={targetSession.clientLibName}");
             into.Append($" lib-ver={targetSession.clientLibVersion}");
