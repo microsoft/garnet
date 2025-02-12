@@ -231,10 +231,18 @@ namespace Garnet.server
                 return true;
             }
 
-            if (index < storeWrapper.databaseNum)
+            if (index < storeWrapper.serverOptions.MaxDatabases)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                if (index == this.activeDbId || this.TrySwitchActiveDatabaseSession(index))
+                {
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             else
             {
@@ -250,6 +258,7 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
+
             return true;
         }
 

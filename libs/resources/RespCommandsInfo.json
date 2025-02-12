@@ -3727,7 +3727,7 @@
   {
     "Command": "SAVE",
     "Name": "SAVE",
-    "Arity": 1,
+    "Arity": -1,
     "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript",
     "AclCategories": "Admin, Dangerous, Slow"
   },

@@ -162,7 +162,7 @@ namespace Garnet.server
 
         void CommitAof()
         {
-            storeWrapper.appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            storeWrapper.CommitAOFAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         private bool NetworkMonitor()
@@ -809,14 +809,44 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// SAVE [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkSAVE()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
+            var dbId = -1;
+            if (parseState.Count == 1)
+            {
+                if (!parseState.TryGetInt(0, out dbId))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                {
+                    // Cluster mode does not allow DBID
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
@@ -830,28 +860,72 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// LASTSAVE
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkLASTSAVE()
         {
             if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LASTSAVE));
             }
 
-            var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
+            storeWrapper.TryGetDatabase(activeDbId, out var db);
+
+            var seconds = db.LastSaveTime.ToUnixTimeSeconds();
             while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
                 SendAndReset();
 
             return true;
         }
 
+        /// <summary>
+        /// BGSAVE [SCHEDULE] [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkBGSAVE()
         {
-            if (parseState.Count > 1)
+            if (parseState.Count > 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);
+            var dbId = -1;
+            var tokenIdx = 0;
+            if (parseState.Count > 0)
+            {
+                if (parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan
+                    .EqualsUpperCaseSpanIgnoringCase(CmdStrings.SCHEDULE))
+                    tokenIdx++;
+
+                if (parseState.Count - tokenIdx > 0)
+                {
+                    if (!parseState.TryGetInt(tokenIdx, out dbId))
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                    {
+                        // Cluster mode does not allow DBID
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+                }
+            }
+
+            var success = storeWrapper.TakeCheckpoint(true, dbId: dbId, logger: logger);
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))

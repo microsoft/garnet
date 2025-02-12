@@ -263,7 +263,7 @@ namespace Garnet.cluster
             if (!serverOptions.EnableCluster)
             {
                 return (replicationManager.ReplicationOffset, default);
-            };
+            }
 
             return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
         }

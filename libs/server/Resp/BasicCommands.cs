@@ -12,6 +12,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Server session for RESP protocol - basic commands are in this file
     /// </summary>
@@ -1651,19 +1656,26 @@ namespace Garnet.server
             }
 
             if (async)
-                Task.Run(() => ExecuteFlushDb(unsafeTruncateLog)).ConfigureAwait(false);
+                Task.Run(() => ExecuteFlushDb(cmd, unsafeTruncateLog)).ConfigureAwait(false);
             else
-                ExecuteFlushDb(unsafeTruncateLog);
+                ExecuteFlushDb(cmd, unsafeTruncateLog);
 
             logger?.LogInformation($"Running {nameof(cmd)} {{async}} {{mode}}", async ? "async" : "sync", unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
         }
 
-        void ExecuteFlushDb(bool unsafeTruncateLog)
+        void ExecuteFlushDb(RespCommand cmd, bool unsafeTruncateLog)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            switch (cmd)
+            {
+                case RespCommand.FLUSHDB:
+                    storeWrapper.FlushDatabase(unsafeTruncateLog, activeDbId);
+                    break;
+                case RespCommand.FLUSHALL:
+                    storeWrapper.FlushAllDatabases(unsafeTruncateLog);
+                    break;
+            }
         }
 
         /// <summary>
@@ -1679,6 +1691,7 @@ namespace Garnet.server
             var localEndpoint = targetSession.networkSender.LocalEndpointName;
             var clientName = targetSession.clientName;
             var user = targetSession._user;
+            var db = targetSession.activeDbId;
             var resp = targetSession.respProtocolVersion;
             var nodeId = targetSession?.clusterSession?.RemoteNodeId;
 
@@ -1722,6 +1735,7 @@ namespace Garnet.server
                 }
             }
 
+            into.Append($" db={db}");
             into.Append($" resp={resp}");
             into.Append($" lib-name={targetSession.clientLibName}");
             into.Append($" lib-ver={targetSession.clientLibVersion}");
