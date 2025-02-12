@@ -41,7 +41,7 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@8e1d5461f02b7886d3c1a774bfbd873650445aa2 # was v5 but now v6 with this commit for security reasons have pinned tag (commit SHA) for 3rd party        
+        uses: docker/metadata-action@8e1d5461f02b7886d3c1a774bfbd873650445aa2 # was v5 but now v6 with this commit for security reasons have pinned tag (commit SHA) for 3rd party
         with:
           images: ${{ matrix.image }}
           tags: |
