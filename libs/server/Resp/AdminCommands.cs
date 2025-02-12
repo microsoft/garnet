@@ -9,6 +9,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
+using Garnet.server.Auth.Settings;
 using Garnet.server.Custom;
 
 namespace Garnet.server
@@ -65,6 +66,7 @@ namespace Garnet.server
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
                 RespCommand.ACL_USERS => NetworkAclUsers(),
                 RespCommand.ACL_SAVE => NetworkAclSave(),
+                RespCommand.DEBUG => NetworkDebug(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
@@ -648,6 +650,84 @@ namespace Garnet.server
             }
 
             clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
+            return true;
+        }
+
+        private bool NetworkDebug()
+        {
+            if (parseState.Count == 0)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            if (
+                    (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.No)
+                 || (
+                        (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Local)
+                      && !networkSender.IsLocalConnection()
+                    )
+               )
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            var command = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PANIC))
+                // Throwing an exception is intentional and desirable for this command.
+                throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ERROR))
+            {
+                if (parseState.Count != 2)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
+                }
+
+                while (!RespWriteUtils.TryWriteError(parseState.GetString(1), ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
+            {
+                var help = new List<string>()
+                {
+                    "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                    "PANIC",
+                    "\tCrash the server simulating a panic.",
+                    "ERROR <string>",
+                    "\tReturn a Redis protocol error with <string> as message. Useful for clients",
+                    "\tunit tests to simulate Redis errors.",
+                    "HELP",
+                    "\tPrints this help"
+                };
+
+                while (!RespWriteUtils.TryWriteArrayLength(help.Count, ref dcurr, dend))
+                    SendAndReset();
+
+                foreach (var line in help)
+                {
+                    while (!RespWriteUtils.TryWriteSimpleString(line, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                return true;
+            }
+
+            var error = string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG));
+            while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 
