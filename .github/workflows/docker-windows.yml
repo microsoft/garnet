@@ -23,7 +23,7 @@ jobs:
       
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@8e1d5461f02b7886d3c1a774bfbd873650445aa2 # was v5 but now v6 with this commit for security reasons have pinned tag (commit SHA) for 3rd party
         with:
           images: ghcr.io/${{ github.repository }}-nanoserver-ltsc2022
           tags: |
@@ -39,7 +39,7 @@ jobs:
       
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@327cd5a69de6c009b9ce71bce8395f28e651bf99  # was v3 but now v6 with this commit for security reasons have pinned tag (commit SHA) for 3rd party
         with:
             registry: ghcr.io
             username: ${{ github.actor }}
