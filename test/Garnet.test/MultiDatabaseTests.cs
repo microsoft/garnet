@@ -193,34 +193,31 @@ namespace Garnet.test
             var tuples = GenerateDataset(dbCount, keyCount);
 
             // Create multiple LC request objects to be used
-            var lcRequests = new BlockingCollection<LightClientRequest>();
-            for (var i = 0; i < 16; i++)
-            {
-                lcRequests.Add(TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes));
-            }
+            var lcRequests = new LightClientRequest[16];
+            for (var i = 0; i < lcRequests.Length; i++)
+                lcRequests[i] = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             // In parallel, add each (key, value) pair to a database of id db-id
-            var tasks = new Task[dbCount * keyCount];
+            var tasks = new Task[lcRequests.Length];
+            var results = new bool[tuples.Length];
+            var tupIdx = -1;
             for (var i = 0; i < tasks.Length; i++)
             {
-                var tup = tuples[i];
+                var lcRequest = lcRequests[i];
                 tasks[i] = Task.Run(() =>
                 {
-                    var expectedResponse = "+OK\r\n+OK\r\n";
-                    var lcRequest = lcRequests.Take(cts.Token);
-                    if (cts.Token.IsCancellationRequested) return false;
-
-                    string response;
-                    try
+                    while (true)
                     {
-                        response = lcRequest.Execute($"SELECT {tup.Item1}", $"SET {tup.Item2} {tup.Item3}", expectedResponse.Length);
-                    }
-                    finally
-                    {
-                        lcRequests.Add(lcRequest, cts.Token);
-                    }
+                        var currTupIdx = Interlocked.Increment(ref tupIdx);
+                        if (currTupIdx >= tuples.Length) break;
 
-                    return response != null && expectedResponse == response;
+                        var tup = tuples[currTupIdx];
+
+                        var expectedResponse = "+OK\r\n+OK\r\n";
+                        var response = lcRequest.Execute($"SELECT {tup.Item1}", $"SET {tup.Item2} {tup.Item3}", expectedResponse.Length);
+
+                        results[currTupIdx] = response != null && expectedResponse == response;
+                    }
                 }, cts.Token);
             }
 
@@ -231,31 +228,32 @@ namespace Garnet.test
                 Assert.Fail("Items not inserted in allotted time.");
             }
 
+            // Check that all tasks successfully entered the data to the respective database
+            Assert.That(results, Is.All.True);
+
             cts = new CancellationTokenSource();
 
-            // Check that all tasks successfully entered the data to the respective database
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
-
             // In parallel, retrieve the actual value for each db-id and key
-
             for (var i = 0; i < tasks.Length; i++)
             {
-                var tup = tuples[i];
+                var lcRequest = lcRequests[i];
                 tasks[i] = Task.Run(() =>
                 {
-                    var expectedResponse = $"+OK\r\n${tup.Item3.Length}\r\n{tup.Item3}\r\n";
-                    var lcRequest = lcRequests.Take(cts.Token);
-                    string response;
-                    try
+                    while (true)
                     {
-                        response = lcRequest.Execute($"SELECT {tup.Item1}", $"GET {tup.Item2}", expectedResponse.Length);
-                    }
-                    finally
-                    {
-                        lcRequests.Add(lcRequest, cts.Token);
+                        var currTupIdx = Interlocked.Increment(ref tupIdx);
+                        if (currTupIdx >= tuples.Length) break;
+
+                        var tup = tuples[currTupIdx];
+
+                        var expectedResponse = $"+OK\r\n${tup.Item3.Length}\r\n{tup.Item3}\r\n";
+                        var response = lcRequest.Execute($"SELECT {tup.Item1}", $"GET {tup.Item2}",
+                            expectedResponse.Length);
+
+                        results[currTupIdx] = response != null && expectedResponse == response;
                     }
 
-                    return response != null && expectedResponse == response;
+                    lcRequest.Dispose();
                 }, cts.Token);
             }
 
@@ -267,10 +265,7 @@ namespace Garnet.test
             }
 
             // Check that all the tasks retrieved the correct value successfully
-            Assert.That(tasks, Has.All.Matches<Task<bool>>(t => t.IsCompletedSuccessfully && t.Result));
-
-            while (lcRequests.TryTake(out var client))
-                client.Dispose();
+            Assert.That(results, Is.All.True);
         }
 
         [Test]
