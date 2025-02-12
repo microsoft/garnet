@@ -216,8 +216,7 @@ namespace Garnet.test
             if (TestUtils.IsRunningAzureTests)
             {
                 // Delete blob if exists
-                var deviceFactory = new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, default);
-                deviceFactory.Initialize(AzureTestDirectory);
+                var deviceFactory = TestUtils.AzureStorageNamedDeviceFactoryCreator.Create(AzureTestDirectory);
                 deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out var exitGracefully);
@@ -241,7 +240,6 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(options.MemorySize == "128m");
 
                 // Delete blob
-                deviceFactory.Initialize(AzureTestDirectory);
                 deviceFactory.Delete(new FileDescriptor { directoryName = "" });
             }
         }

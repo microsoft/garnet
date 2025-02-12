@@ -82,7 +82,7 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             manager = new DeviceLogCommitCheckpointManager(
-                new LocalStorageNamedDeviceFactory(deleteOnClose: deleteOnClose),
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: deleteOnClose),
                 new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), false);
             this.deleteOnClose = deleteOnClose;
         }
