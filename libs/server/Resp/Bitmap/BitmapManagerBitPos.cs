@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers.Binary;
 using System.Runtime.Intrinsics.X86;
 
 namespace Garnet.server
@@ -53,46 +54,6 @@ namespace Garnet.server
         /// <param name="endBitOffset"></param>
         /// <param name="searchFor"></param>
         /// <returns></returns>
-        private static long BitPosBitSearch2(byte* input, long inputLen, long startBitOffset, long endBitOffset, byte searchFor)
-        {
-            // Initialize variables
-            var currentBitOffset = startBitOffset;
-            var searchBit = searchFor == 1;
-            var mask = searchBit ? 0x00 : 0xff;
-
-            // Iterate through the byte array
-            while (currentBitOffset <= endBitOffset)
-            {
-                // Calculate byte and bit positions
-                var byteIndex = currentBitOffset / 8;
-                var bitIndex = (int)(currentBitOffset & 7);
-
-                var payload = input[byteIndex] & (1 << 8 - (int)bitIndex) - 1;
-                if (mask != payload)
-                {
-                    // Create a payload with the current byte shifted to the most significant byte position
-                    payload = payload << 56;
-
-                    // Trim leading bits
-                    payload <<= bitIndex;
-
-                    // Transform to count leading zeros
-                    payload = searchBit ? payload : ~payload;
-
-                    // Check if the payload matches the mask
-                    // Calculate the position of the first matching bit
-                    var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
-                    return currentBitOffset + lzcnt;
-                }
-
-                // Move to the next byte
-                currentBitOffset += 8 - bitIndex;
-            }
-
-            // Return -1 if no matching bit is found
-            return -1;
-        }
-
         private static long BitPosBitSearch(byte* input, long inputLen, long startBitOffset, long endBitOffset, byte searchFor)
         {
             var searchBit = searchFor == 1;
@@ -125,8 +86,6 @@ namespace Garnet.server
             return -1;
         }
 
-
-
         /// <summary>
         /// Search for position of bit set in byte array using byte offset for start and end range
         /// </summary>
@@ -140,22 +99,57 @@ namespace Garnet.server
         {
             // Initialize variables
             var searchBit = searchFor == 1;
-            var mask = searchBit ? 0x0 : 0xff;
+            var invalidMask8 = searchBit ? 0x00 : 0xff;
+            var invalidMask32 = searchBit ? 0 : -1;
+            var invalidMask64 = searchBit ? 0L : -1L;
+            var currentStartOffset = startOffset;
 
-            // Iterate through the byte array
-            for (var i = startOffset; i <= endOffset; i++)
+            while (currentStartOffset <= endOffset)
             {
-                if (mask != input[i])
+                var remainder = endOffset - currentStartOffset + 1;
+                if (remainder >= 8)
                 {
-                    // Create a payload with the current byte shifted to the most significant byte position
-                    var payload = (long)input[i] << 56;
+                    var payload = *(long*)(input + currentStartOffset);
+                    payload = BinaryPrimitives.ReverseEndianness(payload);
 
-                    // Transform to count leading zeros
-                    payload = searchBit ? payload : ~payload;
+                    // Process only if payload is valid (i.e. not all bits are set or clear based on searchFor parameter)
+                    if (payload != invalidMask64)
+                    {
+                        // Transform to count leading zeros
+                        payload = searchBit ? payload : ~payload;
+                        var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
+                        return (currentStartOffset << 3) + lzcnt;
+                    }
+                    currentStartOffset += 8;
+                }
+                else if (remainder >= 4)
+                {
+                    var payload = *(int*)(input + currentStartOffset);
+                    payload = BinaryPrimitives.ReverseEndianness(payload);
 
-                    // Calculate the position of the first matching bit
-                    var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
-                    return (i * 8) + lzcnt;
+                    // Process only if payload is valid (i.e. not all bits are set or clear based on searchFor parameter)
+                    if (payload != invalidMask32)
+                    {
+                        // Transform to count leading zeros
+                        payload = searchBit ? payload : ~payload;
+                        var lzcnt = (long)Lzcnt.LeadingZeroCount((uint)payload);
+                        return (currentStartOffset << 3) + lzcnt;
+                    }
+                    currentStartOffset += 4;
+                }
+                else
+                {
+                    // Process only if payload is valid (i.e. not all bits are set or clear based on searchFor parameter)
+                    if (input[currentStartOffset] != invalidMask8)
+                    {
+                        // Create a payload with the current byte shifted to the most significant byte position
+                        var payload = (long)input[currentStartOffset] << 56;
+                        // Transform to count leading zeros
+                        payload = searchBit ? payload : ~payload;
+                        var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
+                        return (currentStartOffset << 3) + lzcnt;
+                    }
+                    currentStartOffset++;
                 }
             }
 
