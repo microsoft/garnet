@@ -69,13 +69,13 @@ jobs:
             registry: ghcr.io
             username: ${{ github.actor }}
             password: ${{ secrets.GITHUB_TOKEN }}
-#      -
-#        name: Build and push
-#        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v5 for security reasons have pinned tag (commit SHA) for 3rd party
-#        with:
-#          file: ${{ matrix.dockerfile }}
-#          provenance: false
-#          platforms: linux/amd64,linux/arm64
-#          push: ${{ github.event_name != 'pull_request' }}
-#          tags: ${{ steps.meta.outputs.tags }}
-#          labels: ${{ steps.meta.outputs.labels }}
+      -
+        name: Build and push
+        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v5 for security reasons have pinned tag (commit SHA) for 3rd party
+        with:
+          file: ${{ matrix.dockerfile }}
+          provenance: false
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
