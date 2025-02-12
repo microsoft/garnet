@@ -57,7 +57,7 @@ namespace Garnet.server
         private static long BitPosBitSearch(byte* input, long inputLen, long startBitOffset, long endBitOffset, byte searchFor)
         {
             var searchBit = searchFor == 1;
-            var invalidPayload = (byte)(searchBit ? 0x0 : 0xff);
+            var invalidPayload = (byte)(searchBit ? 0x00 : 0xff);
             var currentBitOffset = (int)startBitOffset;
             while (currentBitOffset <= endBitOffset)
             {
@@ -70,8 +70,11 @@ namespace Garnet.server
                 var mask = (0xff >> leftBitOffset) ^ (0xff >> rightBitOffset);
                 var payload = (long)(input[byteIndex] & mask);
 
+                // Invalid only if equals the masked payload
+                var invalidMask = invalidPayload & mask;
+
                 // If transformed payload is invalid skip to next byte
-                if (payload != invalidPayload)
+                if (payload != invalidMask)
                 {
                     payload <<= (56 + leftBitOffset);
                     payload = searchBit ? payload : ~payload;
