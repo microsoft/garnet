@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -42,6 +41,19 @@ namespace Garnet.server.ACL
             IsEnabled = false;
             IsPasswordless = false;
             _enabledCommands = CommandPermissionSet.None;
+        }
+
+        /// <summary>
+        /// Copy constructor for a <see cref="User"/>.
+        /// </summary>
+        /// <param name="user">The <see cref="User"/> the new <see cref="User"/> is constructed from.</param>
+        public User(User user)
+        {
+            Name = user.Name;
+            IsEnabled = user.IsEnabled;
+            IsPasswordless = user.IsPasswordless;
+            _enabledCommands = user._enabledCommands.Copy();
+            _passwordHashes = new HashSet<ACLPassword>(user._passwordHashes);
         }
 
         /// <summary>
@@ -415,7 +427,6 @@ namespace Garnet.server.ACL
             {
                 stringBuilder.Append($" {permsStr}");
             }
-
 
             return stringBuilder.ToString();
         }

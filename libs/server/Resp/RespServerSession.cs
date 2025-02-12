@@ -100,7 +100,7 @@ namespace Garnet.server
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
-        User _user = null;
+        UserHandle _userHandle = null;
 
         readonly ILogger logger = null;
 
@@ -227,14 +227,14 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, logger);
 
             // Associate new session with default user and automatically authenticate, if possible
-            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
+            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().GetUser().Name));
 
             txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
-            clusterSession?.SetUser(this._user);
-            sessionScriptCache?.SetUser(this._user);
+            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            clusterSession?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetUserHandle(this._userHandle);
 
             parseState.Initialize();
             readHead = 0;
@@ -251,10 +251,10 @@ namespace Garnet.server
             }
         }
 
-        internal void SetUser(User user)
+        internal void SetUserHandle(UserHandle userHandle)
         {
-            this._user = user;
-            clusterSession?.SetUser(user);
+            this._userHandle = userHandle;
+            clusterSession?.SetUserHandle(userHandle);
         }
 
         public override void Dispose()
@@ -300,16 +300,16 @@ namespace Garnet.server
                 // NOTE: Currently only GarnetACLAuthenticator supports multiple users
                 if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
                 {
-                    this._user = aclAuthenticator.GetUser();
+                    this._userHandle = aclAuthenticator.GetUserHandle();
                 }
                 else
                 {
-                    this._user = this.storeWrapper.accessControlList.GetDefaultUser();
+                    this._userHandle = this.storeWrapper.accessControlList.GetDefaultUserHandle();
                 }
 
                 // Propagate authentication to cluster session
-                clusterSession?.SetUser(this._user);
-                sessionScriptCache?.SetUser(this._user);
+                clusterSession?.SetUserHandle(this._userHandle);
+                sessionScriptCache?.SetUserHandle(this._userHandle);
             }
 
             return _authenticator.CanAuthenticate ? success : false;

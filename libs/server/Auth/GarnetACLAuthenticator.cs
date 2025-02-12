@@ -23,7 +23,7 @@ namespace Garnet.server.Auth
         /// <summary>
         /// If authenticated, contains a reference to the authenticated user. Otherwise null.
         /// </summary>
-        protected User _user = null;
+        protected UserHandle _userHandle = null;
 
         /// <summary>
         /// Initializes a new ACLAuthenticator instance.
@@ -44,7 +44,7 @@ namespace Garnet.server.Auth
         /// <summary>
         /// Check if the user is authorized to execute commands.
         /// </summary>
-        public virtual bool IsAuthenticated => _user != null;
+        public virtual bool IsAuthenticated => _userHandle != null;
 
         /// <summary>
         /// ACL authenticator is can use ACL.
@@ -64,12 +64,12 @@ namespace Garnet.server.Auth
             {
                 // Check if user exists and set default user if username is unspecified
                 string uname = Encoding.ASCII.GetString(username);
-                User user = string.IsNullOrEmpty(uname) ? _acl.GetDefaultUser() : _acl.GetUser(uname);
-                if (user == null)
+                UserHandle userHandle = string.IsNullOrEmpty(uname) ? _acl.GetDefaultUserHandle() : _acl.GetUserHandle(uname);
+                if (userHandle == null)
                 {
                     return false;
                 }
-                successful = AuthenticateInternal(user, username, password);
+                successful = AuthenticateInternal(userHandle, username, password);
             }
             catch (Exception ex)
             {
@@ -80,15 +80,15 @@ namespace Garnet.server.Auth
             return successful;
         }
 
-        protected abstract bool AuthenticateInternal(User user, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password);
+        protected abstract bool AuthenticateInternal(UserHandle userHandle, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password);
 
         /// <summary>
-        /// Returns the currently authorized user.
+        /// Returns the <see cref="UserHandle"/> of the currently authorized user.
         /// </summary>
-        /// <returns>Authorized user or null if not authorized</returns>
-        public User GetUser()
+        /// <returns>Authorized user's <see cref="UserHandle"/> or null if not authorized</returns>
+        public UserHandle GetUserHandle()
         {
-            return _user;
+            return _userHandle;
         }
 
         /// <summary>
