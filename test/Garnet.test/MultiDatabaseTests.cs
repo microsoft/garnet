@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -104,6 +101,64 @@ namespace Garnet.test
 
             var db12val = db12.ListLeftPop(key1);
             ClassicAssert.AreEqual("db12:val2", db12val.ToString());
+        }
+
+        [Test]
+        public void MultiDatabaseFlushDatabasesTestSE()
+        {
+            var db1Key1 = "db1:key1";
+            var db1Key2 = "db1:key2";
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key2";
+            var db12Key1 = "db12:key1";
+            var db12Key2 = "db12:key2";
+            var db1data = new RedisValue[] { "db1:a", "db1:b", "db1:c", "db1:d" };
+            var db2data = new RedisValue[] { "db2:a", "db2:b", "db2:c", "db2:d" };
+            var db12data = new RedisValue[] { "db12:a", "db12:b", "db12:c", "db12:d" };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            
+            var db1 = redis.GetDatabase(0);
+            var result = db1.StringSet(db1Key1, "db1:val1");
+            ClassicAssert.IsTrue(result);
+
+            var count = db1.ListLeftPush(db1Key2, db1data);
+            ClassicAssert.AreEqual(db1data.Length, count);
+
+            var db2 = redis.GetDatabase(1);
+            result = db2.StringSet(db2Key1, "db2:val1");
+            ClassicAssert.IsTrue(result);
+
+            count = db2.ListLeftPush(db2Key2, db2data);
+            ClassicAssert.AreEqual(db2data.Length, count);
+
+            var db12 = redis.GetDatabase(11);
+            result = db12.StringSet(db12Key1, "db12:val1");
+            ClassicAssert.IsTrue(result);
+
+            count = db12.ListLeftPush(db12Key2, db12data);
+            ClassicAssert.AreEqual(db12data.Length, count);
+
+            var opResult = db1.Execute("FLUSHDB");
+            ClassicAssert.AreEqual("OK", opResult.ToString());
+
+            ClassicAssert.IsFalse(db1.KeyExists(db1Key1));
+            ClassicAssert.IsFalse(db1.KeyExists(db1Key2));
+
+            ClassicAssert.IsTrue(db2.KeyExists(db2Key1));
+            ClassicAssert.IsTrue(db2.KeyExists(db2Key2));
+
+            ClassicAssert.IsTrue(db12.KeyExists(db12Key1));
+            ClassicAssert.IsTrue(db12.KeyExists(db12Key2));
+
+            opResult = db1.Execute("FLUSHALL");
+            ClassicAssert.AreEqual("OK", opResult.ToString());
+
+            ClassicAssert.IsFalse(db2.KeyExists(db2Key1));
+            ClassicAssert.IsFalse(db2.KeyExists(db2Key2));
+
+            ClassicAssert.IsFalse(db12.KeyExists(db12Key1));
+            ClassicAssert.IsFalse(db12.KeyExists(db12Key2));
         }
 
         [Test]

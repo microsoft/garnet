@@ -1548,6 +1548,35 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Flush database with specified ID
+        /// </summary>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
+        /// <param name="dbId">Database ID</param>
+        public void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
+        {
+            var dbFound = TryGetDatabase(dbId, out var db);
+            Debug.Assert(dbFound);
+
+            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+        }
+
+        /// <summary>
+        /// Flush all active databases 
+        /// </summary>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
+        public void FlushAllDatabases(bool unsafeTruncateLog)
+        {
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+            for (var i = 0; i < activeDbIdsSize; i++)
+            {
+                var dbId = activeDbIdsSnapshot[i];
+                this.FlushDatabase(unsafeTruncateLog, dbId);
+            }
+        }
+
+        /// <summary>
         /// Copy active databases from specified StoreWrapper instance
         /// </summary>
         /// <param name="src">Source StoreWrapper</param>

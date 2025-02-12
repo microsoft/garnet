@@ -1656,21 +1656,26 @@ namespace Garnet.server
             }
 
             if (async)
-                Task.Run(() => ExecuteFlushDb(unsafeTruncateLog)).ConfigureAwait(false);
+                Task.Run(() => ExecuteFlushDb(cmd, unsafeTruncateLog)).ConfigureAwait(false);
             else
-                ExecuteFlushDb(unsafeTruncateLog);
+                ExecuteFlushDb(cmd, unsafeTruncateLog);
 
             logger?.LogInformation($"Running {nameof(cmd)} {{async}} {{mode}}", async ? "async" : "sync", unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
         }
 
-        void ExecuteFlushDb(bool unsafeTruncateLog)
+        void ExecuteFlushDb(RespCommand cmd, bool unsafeTruncateLog)
         {
-            var dbFound = storeWrapper.TryGetDatabase(activeDbId, out var db);
-            Debug.Assert(dbFound);
-            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            switch (cmd)
+            {
+                case RespCommand.FLUSHDB:
+                    storeWrapper.FlushDatabase(unsafeTruncateLog, activeDbId);
+                    break;
+                case RespCommand.FLUSHALL:
+                    storeWrapper.FlushAllDatabases(unsafeTruncateLog);
+                    break;
+            }
         }
 
         /// <summary>
