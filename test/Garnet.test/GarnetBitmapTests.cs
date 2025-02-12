@@ -501,8 +501,8 @@ namespace Garnet.test
         private static unsafe long Bitpos(byte[] bitmap, int startOffset = 0, int endOffset = -1, bool set = true)
         {
             long pos = 0;
-            int start = startOffset < 0 ? (startOffset % bitmap.Length) + bitmap.Length : startOffset;
-            int end = endOffset < 0 ? (endOffset % bitmap.Length) + bitmap.Length : endOffset;
+            var start = startOffset < 0 ? (startOffset % bitmap.Length) + bitmap.Length : startOffset;
+            var end = endOffset < 0 ? (endOffset % bitmap.Length) + bitmap.Length : endOffset;
 
             if (start >= bitmap.Length) // If startOffset greater that valLen alway bitcount zero
                 return -1;
@@ -510,24 +510,27 @@ namespace Garnet.test
             if (start > end) // If start offset beyond endOffset return 0
                 return -1;
 
-            byte mask = (byte)(!set ? 0xFF : 0x00);
+            var mask = (byte)(!set ? 0xFF : 0x00);
+            var setbit = set ? 1 : 0;
             fixed (byte* b = bitmap)
             {
-                byte* curr = b + start;
-                byte* vend = b + end + 1;
+                var curr = b + start;
+                var vend = b + end + 1;
                 while (curr < vend)
                 {
                     if (*curr != mask) break;
                     curr++;
                 }
+
+                if (curr > vend) return -1;
+
                 pos = (curr - b) << 3;
 
-                byte byteVal = *curr;
-                byte bitv = (byte)(!set ? 0x0 : 0x1);
-                int bit = 7;
-                while (((byteVal >> bit) & 0x1) != bitv && bit > 0)
+                var value = *curr;
+                for (var i = 7; i >= 0; i--)
                 {
-                    bit--;
+                    if (((value & (1 << i)) >> i) == setbit)
+                        return pos;
                     pos++;
                 }
             }
@@ -595,43 +598,43 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string key = "BitmapBitPosNegativeOffsets";
+            var key = "BitmapBitPosNegativeOffsets";
 
-            int maxBitmapLen = 1 << 12;
-            int maxByteLen = maxBitmapLen >> 3;
-            int iter = 1 << 5;
-            byte[] buf = new byte[maxByteLen];
+            var maxBitmapLen = 1 << 12;
+            var maxByteLen = maxBitmapLen >> 3;
+            var iter = 1 << 5;
+            var buf = new byte[maxByteLen];
             long expectedPos;
             long pos;
 
-            for (int j = 0; j < iter; j++)
+            for (var j = 0; j < iter; j++)
             {
                 r.NextBytes(buf);
-                db.StringSet(key, buf);
+                _ = db.StringSet(key, buf);
 
-                int startOffset = r.Next(0, maxByteLen);
-                int endOffset = r.Next(startOffset, maxByteLen);
+                var startOffset = r.Next(0, maxByteLen);
+                var endOffset = r.Next(startOffset, maxByteLen);
 
-                bool set = r.Next(0, 1) == 0 ? false : true;
+                var set = r.Next(0, 1) == 0 ? false : true;
                 expectedPos = Bitpos(buf, startOffset, endOffset, set);
                 pos = db.StringBitPosition(key, set, startOffset, endOffset);
 
-                ClassicAssert.AreEqual(expectedPos, pos, $"{set} {startOffset} {endOffset}");
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startOffset} {endOffset}");
             }
 
-            //check negative offsets in range
-            for (int j = 0; j < iter; j++)
+            // check negative offsets in range
+            for (var j = 0; j < iter; j++)
             {
                 r.NextBytes(buf);
-                db.StringSet(key, buf);
+                _ = db.StringSet(key, buf);
 
-                int startOffset = j == 0 ? -10 : r.Next(-maxByteLen, 0);
-                int endOffset = j == 0 ? -1 : r.Next(startOffset, 0);
+                var startOffset = j == 0 ? -10 : r.Next(-maxByteLen, 0);
+                var endOffset = j == 0 ? -1 : r.Next(startOffset, 0);
 
-                bool set = r.Next(0, 1) == 0 ? false : true;
-                pos = Bitpos(buf, startOffset, endOffset, set);
-                expectedPos = db.StringBitPosition(key, set, startOffset, endOffset);
-                ClassicAssert.AreEqual(pos, expectedPos);
+                var set = r.Next(0, 1) != 0;
+                expectedPos = Bitpos(buf, startOffset, endOffset, set);
+                pos = db.StringBitPosition(key, set, startOffset, endOffset);
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startOffset} {endOffset}");
             }
         }
 
@@ -639,7 +642,7 @@ namespace Garnet.test
         [Category("BITPOS")]
         public void BitmapBitPosTest_LTM()
         {
-            int bitmapBytes = 512;
+            var bitmapBytes = 512;
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
@@ -649,26 +652,26 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            int keyCount = 64;
-            byte[] bitmap = new byte[bitmapBytes];
+            var keyCount = 64;
+            var bitmap = new byte[bitmapBytes];
             List<long> bitmapList = [];
 
-            for (int i = 0; i < keyCount; i++)
+            for (var i = 0; i < keyCount; i++)
             {
-                string sKey = i.ToString();
+                var sKey = i.ToString();
                 r.NextBytes(bitmap);
 
                 bitmapList.Add(Bitpos(bitmap, set: true));
-                db.StringSet(sKey, bitmap);
+                _ = db.StringSet(sKey, bitmap);
             }
 
-            int iter = 128;
-            for (int i = 0; i < iter; i++)
+            var iter = 128;
+            for (var i = 0; i < iter; i++)
             {
-                int key = r.Next(0, keyCount);
-                string sKey = key.ToString();
-                long pos = db.StringBitPosition(sKey, true);
-                long expectedPos = bitmapList[key];
+                var key = r.Next(0, keyCount);
+                var sKey = key.ToString();
+                var pos = db.StringBitPosition(sKey, true);
+                var expectedPos = bitmapList[key];
                 ClassicAssert.AreEqual(expectedPos, pos);
             }
         }
@@ -706,15 +709,15 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var db = redis.GetDatabase(0);
 
-            string key = "mykey";
-            int maxBitmapLen = 1 << 12;
-            byte[] buf = new byte[maxBitmapLen >> 3];
+            var key = "mykey";
+            var maxBitmapLen = 1 << 12;
+            var buf = new byte[maxBitmapLen >> 3];
             r.NextBytes(buf);
             db.StringSet(key, buf);
 
-            long expectedPos = Bitpos(buf);
+            var expectedPos = Bitpos(buf);
             long pos = 0;
-            byte[] response = lightClientRequest.SendCommandChunks("BITPOS mykey 1", bytesPerSend);
+            var response = lightClientRequest.SendCommandChunks("BITPOS mykey 1", bytesPerSend);
             pos = ResponseToLong(response, 1);
             ClassicAssert.AreEqual(expectedPos, pos);
         }
