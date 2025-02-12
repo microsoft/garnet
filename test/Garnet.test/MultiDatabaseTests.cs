@@ -117,7 +117,7 @@ namespace Garnet.test
             var db12data = new RedisValue[] { "db12:a", "db12:b", "db12:c", "db12:d" };
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            
+
             var db1 = redis.GetDatabase(0);
             var result = db1.StringSet(db1Key1, "db1:val1");
             ClassicAssert.IsTrue(result);
