@@ -1079,6 +1079,13 @@
     ]
   },
   {
+    "Command": "DEBUG",
+    "Name": "DEBUG",
+    "Arity": -2,
+    "Flags": "Admin, Noscript, Loading, Stale",
+    "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
     "Command": "DECR",
     "Name": "DECR",
     "Arity": 2,
