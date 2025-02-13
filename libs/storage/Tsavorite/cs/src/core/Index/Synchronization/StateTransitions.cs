@@ -172,7 +172,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
         {
-            return $"[{Phase},{Version}]";
+            return $"state={Phase},version={Version}";
         }
 
         /// <summary>
