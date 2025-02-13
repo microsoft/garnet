@@ -61,7 +61,10 @@ namespace Garnet.cluster
         public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion, bool isMainStore)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
+                logger?.LogError("{method} cancellationRequested", nameof(OnStart));
                 return false;
+            }
 
             for (var i = 0; i < numSessions; i++)
             {
@@ -91,7 +94,10 @@ namespace Garnet.cluster
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
+                {
+                    logger?.LogError("{method} cancellationRequested", nameof(OnStart));
                     return false;
+                }
 
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
@@ -132,7 +138,10 @@ namespace Garnet.cluster
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
+                {
+                    logger?.LogError("{method} cancellationRequested", nameof(OnStart));
                     return false;
+                }
 
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
