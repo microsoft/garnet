@@ -620,6 +620,11 @@ namespace Garnet.test
                 pos = db.StringBitPosition(key, set, startOffset, endOffset);
 
                 ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startOffset} {endOffset}");
+
+                var startBitOffset = startOffset << 3;
+                var endBitOffset = endOffset << 3;
+                pos = db.StringBitPosition(key, set, startBitOffset, endBitOffset, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startBitOffset} {endBitOffset} bit");
             }
 
             // check negative offsets in range
@@ -635,6 +640,11 @@ namespace Garnet.test
                 expectedPos = Bitpos(buf, startOffset, endOffset, set);
                 pos = db.StringBitPosition(key, set, startOffset, endOffset);
                 ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startOffset} {endOffset}");
+
+                var startBitOffset = startOffset << 3;
+                var endBitOffset = endOffset << 3;
+                pos = db.StringBitPosition(key, set, startBitOffset, endBitOffset, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startBitOffset} {endBitOffset} bit");
             }
         }
 

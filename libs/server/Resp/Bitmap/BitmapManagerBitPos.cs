@@ -40,6 +40,17 @@ namespace Garnet.server
                 startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, inputLen * 8) : startOffset;
                 endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, inputLen * 8) : endOffset;
 
+                var startByteIndex = startOffset >> 3;
+                var endByteIndex = endOffset >> 3;
+
+                if (startByteIndex >= inputLen) // If startOffset greater that valLen always bitpos -1
+                    return -1;
+
+                if (startByteIndex > endByteIndex) // If start offset beyond endOffset return 0
+                    return -1;
+
+                endOffset = endByteIndex >= inputLen ? inputLen << 3 : endOffset;
+
                 // BIT search
                 return BitPosBitSearch(input, inputLen, startOffset, endOffset, searchFor);
             }
@@ -64,7 +75,7 @@ namespace Garnet.server
                 var byteIndex = currentBitOffset >> 3;
                 var leftBitOffset = currentBitOffset & 7;
                 var boundary = 8 - leftBitOffset;
-                var rightBitOffset = currentBitOffset + boundary < endBitOffset ? currentBitOffset + boundary : (int)(endBitOffset & 7) + 1;
+                var rightBitOffset = currentBitOffset + boundary <= endBitOffset ? leftBitOffset + boundary : (int)(endBitOffset & 7) + 1;
 
                 // Trim byte to start and end bit index
                 var mask = (0xff >> leftBitOffset) ^ (0xff >> rightBitOffset);
