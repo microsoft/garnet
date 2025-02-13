@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Buffers.Binary;
-using System.Runtime.Intrinsics.X86;
+using System.Numerics;
 
 namespace Garnet.server
 {
@@ -90,7 +90,7 @@ namespace Garnet.server
                     payload <<= (56 + leftBitOffset);
                     payload = searchBit ? payload : ~payload;
 
-                    var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
+                    var lzcnt = (long)BitOperations.LeadingZeroCount((ulong)payload);
                     return currentBitOffset + lzcnt;
                 }
 
@@ -131,7 +131,7 @@ namespace Garnet.server
                     {
                         // Transform to count leading zeros
                         payload = searchBit ? payload : ~payload;
-                        var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
+                        var lzcnt = (long)BitOperations.LeadingZeroCount((ulong)payload);
                         return (currentStartOffset << 3) + lzcnt;
                     }
                     currentStartOffset += 8;
@@ -146,7 +146,7 @@ namespace Garnet.server
                     {
                         // Transform to count leading zeros
                         payload = searchBit ? payload : ~payload;
-                        var lzcnt = (long)Lzcnt.LeadingZeroCount((uint)payload);
+                        var lzcnt = (long)BitOperations.LeadingZeroCount((uint)payload);
                         return (currentStartOffset << 3) + lzcnt;
                     }
                     currentStartOffset += 4;
@@ -160,7 +160,7 @@ namespace Garnet.server
                         var payload = (long)input[currentStartOffset] << 56;
                         // Transform to count leading zeros
                         payload = searchBit ? payload : ~payload;
-                        var lzcnt = (long)Lzcnt.X64.LeadingZeroCount((ulong)payload);
+                        var lzcnt = (long)BitOperations.LeadingZeroCount((ulong)payload);
                         return (currentStartOffset << 3) + lzcnt;
                     }
                     currentStartOffset++;
