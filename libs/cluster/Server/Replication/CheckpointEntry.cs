@@ -118,6 +118,7 @@ namespace Garnet.cluster
 
         public static CheckpointEntry FromByteArray(byte[] serialized)
         {
+            if (serialized.Length == 0) return null;
             var ms = new MemoryStream(serialized);
             var reader = new BinaryReader(ms);
             var cEntry = new CheckpointEntry

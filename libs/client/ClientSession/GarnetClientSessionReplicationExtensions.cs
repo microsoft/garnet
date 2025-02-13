@@ -19,6 +19,8 @@ namespace Garnet.client
         static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
         static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
+        static ReadOnlySpan<byte> sync => "SYNC"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -351,6 +353,119 @@ namespace Garnet.client
             Flush();
             Interlocked.Increment(ref numCommands);
             return tcs.Task;
+        }
+
+        /// <summary>
+        /// Initiate attach from replica
+        /// </summary>
+        /// <param name="syncMetadata"></param>
+        /// <returns></returns>
+        public Task<string> ExecuteAttachSync(byte[] syncMetadata)
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            byte* curr = offset;
+            int arraySize = 3;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //2
+            while (!RespWriteUtils.TryWriteBulkString(attach_sync, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //3
+            while (!RespWriteUtils.TryWriteBulkString(syncMetadata, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Set CLUSTER SYNC header info
+        /// </summary>
+        /// <param name="sourceNodeId"></param>
+        /// <param name="isMainStore"></param>
+        public void SetClusterSyncHeader(string sourceNodeId, bool isMainStore)
+        {
+            currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(currTcsIterationTask);
+            curr = offset;
+            this.isMainStore = isMainStore;
+            this.ist = IncrementalSendType.SYNC;
+            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
+
+            var arraySize = 5;
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 2
+            while (!RespWriteUtils.TryWriteBulkString(sync, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 3
+            while (!RespWriteUtils.TryWriteAsciiBulkString(sourceNodeId, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 4
+            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 5
+            // Reserve space for the bulk string header + final newline
+            while (ExtraSpace + 2 > (int)(end - curr))
+            {
+                Flush();
+                curr = offset;
+            }
+            head = curr;
+            curr += ExtraSpace;
         }
     }
 }
