@@ -227,6 +227,9 @@ namespace Garnet.test.cluster
             // Attach first replica
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
 
+            // Wait for replica to catch up
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaOneIndex, logger: context.logger);
+
             // Validate first replica data
             Validate(primaryIndex, replicaOneIndex, disableObjects);
 
@@ -244,6 +247,9 @@ namespace Garnet.test.cluster
 
             // Populate primary with more data
             PopulatePrimary(primaryIndex, disableObjects, performRMW);
+
+            // Wait for replica to catch up
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaTwoIndex, logger: context.logger);
 
             // Validate second replica data
             Validate(primaryIndex, replicaTwoIndex, disableObjects);
