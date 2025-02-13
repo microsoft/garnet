@@ -498,6 +498,10 @@ namespace Garnet
         [Option("object-scan-count-limit", Required = false, HelpText = "Limit of items to return in one iteration of *SCAN command")]
         public int ObjectScanCountLimit { get; set; }
 
+        [OptionValidation]
+        [Option("enable-debug-command", Required = false, HelpText = "Enable DEBUG command for 'no', 'local' or 'all' connections")]
+        public ConnectionProtectionOption EnableDebugCommand { get; set; }
+
         [DirectoryPathsValidation(true, false)]
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
@@ -610,10 +614,18 @@ namespace Garnet
             }
             else
             {
-                var address = string.IsNullOrEmpty(Address) || Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                    ? IPAddress.Loopback
-                    : IPAddress.Parse(Address);
-
+                IPAddress address;
+                if (string.IsNullOrEmpty(Address))
+                {
+                    address = IPAddress.Any;
+                }
+                else
+                {
+                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
+                        address = IPAddress.Loopback;
+                    else
+                        address = IPAddress.Parse(Address);
+                }
                 endpoint = new IPEndPoint(address, Port);
             }
 
@@ -769,6 +781,7 @@ namespace Garnet
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
+                EnableDebugCommand = EnableDebugCommand,
                 ExtensionBinPaths = ExtensionBinPaths?.ToArray(),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,

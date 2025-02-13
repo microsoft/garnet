@@ -2613,6 +2613,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task DebugACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "DEBUG",
+                [DoDebugAsync]
+            );
+
+            async Task DoDebugAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("DEBUG", ["HELP"]);
+                ClassicAssert.NotNull(res.ToString());
+            }
+        }
+
+        [Test]
         public async Task EvalACLsAsync()
         {
             await CheckCommandsAsync(
@@ -6400,6 +6415,27 @@ namespace Garnet.test.Resp.ACL
             {
                 var val = await client.ExecuteForLongResultAsync("ZRANGESTORE", ["dkey", "key", "0", "-1"]);
                 ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task ZRangeByLexACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZRANGEBYLEX",
+                [DoZRangeByLexAsync, DoZRangeByLexLimitAsync]
+            );
+
+            static async Task DoZRangeByLexAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoZRangeByLexLimitAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20", "LIMIT", "2", "3"]);
+                ClassicAssert.AreEqual(0, val.Length);
             }
         }
 
