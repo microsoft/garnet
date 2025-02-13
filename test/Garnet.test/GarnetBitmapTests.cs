@@ -2450,5 +2450,41 @@ namespace Garnet.test
             pos = db.StringBitPosition(key, bit: true, start: 7, end: 14, StringIndexType.Bit);
             ClassicAssert.AreEqual(14, pos);
         }
+
+        [Test, Order(39)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitSearchSingleBitRangeTests()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            var valueLen = 1 << 12;
+            var value = new byte[valueLen];
+            for (var i = 0; i < valueLen; i++)
+                value[i] = 0xAA;
+
+            _ = db.StringSet(key, value);
+
+            var iter = 1 << 12;
+            var valueLenBits = valueLen << 3;
+            for (var i = 0; i < iter; i++)
+            {
+                var offset = r.NextInt64(0, valueLenBits);
+                BitSearch(offset, searchFor: true);
+                BitSearch(offset, searchFor: false);
+            }
+
+            void BitSearch(long offset, bool searchFor)
+            {
+                var pos = db.StringBitPosition(key, bit: searchFor, start: offset, end: offset, StringIndexType.Bit);
+                var equalsSearchFor = (offset & 0x1) == (searchFor ? 0 : 1);
+
+                if (equalsSearchFor)
+                    ClassicAssert.AreEqual(offset, pos);
+                else
+                    ClassicAssert.AreEqual(-1, pos);
+            }
+        }
     }
 }
