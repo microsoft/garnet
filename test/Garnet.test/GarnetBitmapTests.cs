@@ -2316,38 +2316,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(8, pos);
         }
 
-        [Test, Order(34)]
-        [Category("BITPOS")]
-        public void BitmapBitPosBitOffsetTests([Values] bool searchFor)
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var key = "mykey";
-            byte[] value = searchFor ?
-                [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] :
-                [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-            _ = db.StringSet(key, value);
-
-            var bitLength = value.Length * 8;
-            var expectedPosOffset = 5;
-
-            for (var i = 0; i < 10; i++)
-            {
-                // Set or clear bit
-                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: searchFor);
-
-                // Find pos of bit set/clear
-                var pos = db.StringBitPosition(key, bit: searchFor, 0, 19, StringIndexType.Bit);
-                ClassicAssert.AreEqual(expectedPosOffset, pos);
-
-                // Toggle bit back to initial value
-                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: !searchFor);
-
-                expectedPosOffset++;
-            }
-        }
-
         [Test, Order(35)]
         [Category("BITOP")]
         public void BitmapOperationNonExistentSourceKeys()
@@ -2401,6 +2369,76 @@ namespace Garnet.test
             {
                 ClassicAssert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
             }
+        }
+
+        [Test, Order(38)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitOffsetTests([Values] bool searchFor)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            byte[] value = searchFor ?
+                [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] :
+                [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+            _ = db.StringSet(key, value);
+
+            var bitLength = value.Length * 8;
+            var expectedPosOffset = 5;
+
+            for (var i = 0; i < 10; i++)
+            {
+                // Set or clear bit
+                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: searchFor);
+
+                // Find pos of bit set/clear
+                var pos = db.StringBitPosition(key, bit: searchFor, 0, 19, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPosOffset, pos);
+
+                // Toggle bit back to initial value
+                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: !searchFor);
+
+                expectedPosOffset++;
+            }
+        }
+
+        [Test, Order(38)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitInvalidMaskTests()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            // 0x3e = 00111110
+            byte[] value = [0x3e];
+            _ = db.StringSet(key, value);
+
+            // 0x3e = 00111110
+            var pos = db.StringBitPosition(key, bit: false, start: 0, end: 5, StringIndexType.Bit);
+            ClassicAssert.AreEqual(0, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 1, end: 5, StringIndexType.Bit);
+            ClassicAssert.AreEqual(1, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 2, end: 5, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 2, end: 6, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 2, end: 7, StringIndexType.Bit);
+            ClassicAssert.AreEqual(7, pos);
+
+            // 0x7e02 = 0111111000000010
+            value = [0x7e, 0x02];
+            _ = db.StringSet(key, value);
+            pos = db.StringBitPosition(key, bit: true, start: 7, end: 13, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = db.StringBitPosition(key, bit: true, start: 7, end: 14, StringIndexType.Bit);
+            ClassicAssert.AreEqual(14, pos);
         }
     }
 }
