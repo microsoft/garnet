@@ -5419,7 +5419,7 @@
             "Name": "NUMPARAMS",
             "DisplayText": "numParams",
             "Type": "Integer",
-            "Summary": "Numer of parameters of the command to register"
+            "Summary": "Number of parameters of the command to register"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
