@@ -428,9 +428,9 @@ namespace Garnet.server
             }
         }
 
-        async Task HashCollectTask(int hashCollectFrequencySecs, CancellationToken token = default)
+        async Task ObjectCollectTask(int objectCollectFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(hashCollectFrequencySecs > 0);
+            Debug.Assert(objectCollectFrequencySecs > 0);
             try
             {
                 var scratchBufferManager = new ScratchBufferManager();
@@ -438,7 +438,7 @@ namespace Garnet.server
 
                 if (objectStore is null)
                 {
-                    logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                    logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
                     return;
                 }
 
@@ -447,8 +447,9 @@ namespace Garnet.server
                     if (token.IsCancellationRequested) return;
 
                     ExecuteHashCollect(scratchBufferManager, storageSession);
+                    ExecuteSortedSetCollect(scratchBufferManager, storageSession);
 
-                    await Task.Delay(TimeSpan.FromSeconds(hashCollectFrequencySecs), token);
+                    await Task.Delay(TimeSpan.FromSeconds(objectCollectFrequencySecs), token);
                 }
             }
             catch (TaskCanceledException) when (token.IsCancellationRequested)
@@ -457,7 +458,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Hash collect task won't be resumed.");
+                logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Object collect task won't be resumed.");
             }
 
             static void ExecuteHashCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
@@ -468,39 +469,6 @@ namespace Garnet.server
                 ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
                 storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
                 scratchBufferManager.Reset();
-            }
-        }
-
-        async Task SortedSetCollectTask(int sortedSetCollectFrequencySecs, CancellationToken token = default)
-        {
-            Debug.Assert(sortedSetCollectFrequencySecs > 0);
-            try
-            {
-                var scratchBufferManager = new ScratchBufferManager();
-                using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
-
-                if (objectStore is null)
-                {
-                    logger?.LogWarning("SortedSetCollectFrequencySecs option is configured but Object store is disabled. Stopping the background sortedSet collect task.");
-                    return;
-                }
-
-                while (true)
-                {
-                    if (token.IsCancellationRequested) return;
-
-                    ExecuteSortedSetCollect(scratchBufferManager, storageSession);
-
-                    await Task.Delay(TimeSpan.FromSeconds(sortedSetCollectFrequencySecs), token);
-                }
-            }
-            catch (TaskCanceledException) when (token.IsCancellationRequested)
-            {
-                // Suppress the exception if the task was cancelled because of store wrapper disposal
-            }
-            catch (Exception ex)
-            {
-                logger?.LogCritical(ex, "Unknown exception received for background sortedSet collect task. SortedSet collect task won't be resumed.");
             }
 
             static void ExecuteSortedSetCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
@@ -668,14 +636,9 @@ namespace Garnet.server
                 Task.Run(async () => await CompactionTask(serverOptions.CompactionFrequencySecs, ctsCommit.Token));
             }
 
-            if (serverOptions.HashCollectFrequencySecs > 0)
+            if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
             {
-                Task.Run(async () => await HashCollectTask(serverOptions.HashCollectFrequencySecs, ctsCommit.Token));
-            }
-
-            if (serverOptions.SortedSetCollectFrequencySecs > 0)
-            {
-                Task.Run(async () => await SortedSetCollectTask(serverOptions.SortedSetCollectFrequencySecs, ctsCommit.Token));
+                Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
