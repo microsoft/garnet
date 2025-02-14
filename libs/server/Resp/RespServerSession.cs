@@ -227,7 +227,7 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, logger);
 
             // Associate new session with default user and automatically authenticate, if possible
-            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().GetUser().Name));
+            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
             txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;

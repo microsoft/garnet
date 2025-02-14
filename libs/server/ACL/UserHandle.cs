@@ -25,7 +25,10 @@ namespace Garnet.server.ACL
         /// Returns the current version of the <see cref="User"/> with the latest modifications.
         /// </summary>
         /// <returns>Returns the current version of the <see cref="User"/> with the latest modifications.</returns>
-        public User GetUser() => this.user;
+        public User User
+        {
+            get => this.user;
+        }
 
         /// <summary>
         /// Attempts to set the <see cref="User"/> for a handle.

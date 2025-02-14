@@ -71,7 +71,7 @@ namespace Garnet.server
 
                 foreach (var userHandle in userHandles)
                 {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.GetUser().DescribeUser(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -194,7 +194,7 @@ namespace Garnet.server
                     do
                     {
                         // Modifications to user permissions must be performed against the effective user.
-                        effectiveUser = userHandle.GetUser();
+                        effectiveUser = userHandle.User;
                         newUser = new User(effectiveUser);
 
                         // Remaining parameters are ACL operations
@@ -294,9 +294,9 @@ namespace Garnet.server
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 // Return the name of the currently authenticated user.
-                Debug.Assert(aclAuthenticator.GetUserHandle()?.GetUser() != null);
+                Debug.Assert(aclAuthenticator.GetUserHandle()?.User != null);
 
-                while (!RespWriteUtils.TryWriteSimpleString(aclAuthenticator.GetUserHandle().GetUser().Name, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString(aclAuthenticator.GetUserHandle().User.Name, ref dcurr, dend))
                     SendAndReset();
             }
 

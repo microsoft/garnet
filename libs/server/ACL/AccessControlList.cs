@@ -79,7 +79,7 @@ namespace Garnet.server.ACL
         /// <exception cref="ACLUserAlreadyExistsException">Thrown if a user with the given username already exists.</exception>
         public void AddUserHandle(UserHandle userHandle)
         {
-            var username = userHandle?.GetUser().Name;
+            var username = userHandle?.User.Name;
 
             // If a user with the given name already exists in the ACL, the new user cannot be added
             if (!_userHandles.TryAdd(username, userHandle))
@@ -239,7 +239,7 @@ namespace Garnet.server.ACL
 
                     // Write lines into buffer
                     foreach (var userHandle in _userHandles)
-                        streamWriter.WriteLine(userHandle.Value.GetUser().DescribeUser());
+                        streamWriter.WriteLine(userHandle.Value.User.DescribeUser());
 
                     // Flush data buffer
                     streamWriter.Flush();

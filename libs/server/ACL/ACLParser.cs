@@ -91,7 +91,7 @@ namespace Garnet.server.ACL
             User user;
             if (acl != null)
             {
-                user = acl.GetUserHandle(username)?.GetUser();
+                user = acl.GetUserHandle(username)?.User;
 
                 if (user == null)
                 {

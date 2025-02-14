@@ -31,7 +31,7 @@ namespace Garnet.server.Auth
         /// <returns>true if authentication was successful</returns>
         protected override bool AuthenticateInternal(UserHandle userHandle, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password)
         {
-            if (userHandle.GetUser().IsEnabled && password.Length > 0 && _garnetAuthenticator.Authenticate(password, username))
+            if (userHandle.User.IsEnabled && password.Length > 0 && _garnetAuthenticator.Authenticate(password, username))
             {
                 _userHandle = userHandle;
                 return true;

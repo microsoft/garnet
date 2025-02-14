@@ -31,7 +31,7 @@ namespace Garnet.server.Auth
             ACLPassword passwordHash = ACLPassword.ACLPasswordFromString(Encoding.ASCII.GetString(password));
 
             // Authentication and authorization checks must be performed against the effective user.
-            var user = userHandle.GetUser();
+            var user = userHandle.User;
             if (user.IsEnabled && user.ValidatePassword(passwordHash))
             {
                 _userHandle = userHandle;
