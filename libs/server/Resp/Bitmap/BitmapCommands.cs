@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -404,7 +402,7 @@ namespace Garnet.server
 
                 // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
                 // Process encoding argument
-                if (!ValidateEncoding(parseState, currTokenIdx++, out var encodingSlice))
+                if (!parseState.TryGetEncodingSlice(currTokenIdx++, out var encodingSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
@@ -413,7 +411,7 @@ namespace Garnet.server
                 }
 
                 // Process offset argument
-                if (!ValidateOffset(parseState, currTokenIdx++, out var offsetSlice))
+                if (!parseState.TryGetOFfsetSlice(currTokenIdx++, out var offsetSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
@@ -496,7 +494,7 @@ namespace Garnet.server
                 // GET Subcommand takes 2 args, encoding and offset
 
                 // Process encoding argument
-                if (!ValidateEncoding(parseState, currTokenIdx++, out var encodingSlice))
+                if (!parseState.TryGetEncodingSlice(currTokenIdx++, out var encodingSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
@@ -505,7 +503,7 @@ namespace Garnet.server
                 }
 
                 // Process offset argument
-                if (!ValidateOffset(parseState, currTokenIdx++, out var offsetSlice))
+                if (!parseState.TryGetOFfsetSlice(currTokenIdx++, out var offsetSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
@@ -569,52 +567,6 @@ namespace Garnet.server
             }
 
             return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool ValidateEncoding(SessionParseState parseState,
-                                             int currTokenIdx,
-                                             out ArgSlice encodingSlice)
-        {
-            if (currTokenIdx >= parseState.Count)
-            {
-                encodingSlice = default;
-                return false;
-            }
-
-            encodingSlice = parseState.GetArgSliceByRef(currTokenIdx);
-
-            var encodingArg = encodingSlice.ToString();
-
-            return
-                encodingArg.Length >= 2 &&
-                (encodingArg[0] == 'i' || encodingArg[0] == 'u') &&
-                int.TryParse(encodingArg.AsSpan(1), out var bitCount) &&
-                (bitCount < 64 ||
-                    (bitCount == 64 && encodingArg[0] == 'i')
-                )
-            ;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool ValidateOffset(SessionParseState parseState, int currTokenIdx, out ArgSlice offsetSlice)
-        {
-            if (currTokenIdx >= parseState.Count)
-            {
-                offsetSlice = default;
-                return false;
-            }
-
-            offsetSlice = parseState.GetArgSliceByRef(currTokenIdx);
-
-            if (offsetSlice.Length == 0)
-                return false;
-
-            var offsetArg = offsetSlice.ToString();
-
-            return offsetArg[0] == '#'
-                ? long.TryParse(offsetArg.AsSpan(1), out _)
-                : long.TryParse(offsetArg, out _);
         }
     }
 }
