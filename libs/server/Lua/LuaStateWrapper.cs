@@ -512,21 +512,13 @@ namespace Garnet.server
         // Rarely used
 
         /// <summary>
-        /// This should be used to set all debug hooks for Lua when we know no other thread will be executing.
-        /// </summary>
-        internal unsafe void SetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
-        {
-            NativeMethods.SetHook(state, hook, mask, count);
-        }
-
-        /// <summary>
         /// This should be used to set all debug hooks for Lua when multiple threads are involved.
         /// 
         /// This can fail if there's a thread race to close the state.
         /// 
         /// This is the ONLY thread-safe method on <see cref="LuaStateWrapper"/>.
         /// </summary>
-        internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        internal readonly unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         {
             lock (hookLock)
             {
@@ -673,7 +665,7 @@ namespace Garnet.server
         /// 
         /// If allocation cannot be performed, null is returned.
         /// </summary>
-        /// <param name="udPtr">Pointer to user data provided during <see cref="Lua.SetAllocFunction"/></param>
+        /// <param name="udPtr">Pointer to user data provided during allocation function registration</param>
         /// <param name="ptr">Either null (if new alloc) or pointer to existing allocation being resized or freed.</param>
         /// <param name="osize">If <paramref name="ptr"/> is not null, the <paramref name="nsize"/> value passed when allocation was obtained or resized.</param>
         /// <param name="nsize">The desired size of the allocation, in bytes.</param>

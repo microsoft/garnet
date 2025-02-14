@@ -373,7 +373,7 @@ namespace Garnet.server
         /// 
         /// 0 indicates empty.
         /// 
-        /// Differs from <see cref="Lua.GetTop"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static int GetTop(lua_State luaState)
         => lua_gettop(luaState);
@@ -381,7 +381,7 @@ namespace Garnet.server
         /// <summary>
         /// Gets the type of the value at the stack index.
         /// 
-        /// Differs from <see cref="Lua.Type(int)"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static LuaType Type(lua_State luaState, int index)
         => lua_type(luaState, index);
@@ -389,7 +389,7 @@ namespace Garnet.server
         /// <summary>
         /// Pushes a nil value onto the stack.
         /// 
-        /// Differs from <see cref="Lua.PushNil"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static void PushNil(lua_State luaState)
         => lua_pushnil(luaState);
@@ -397,7 +397,7 @@ namespace Garnet.server
         /// <summary>
         /// Pushes a double onto the stack.
         /// 
-        /// Differs from <see cref="Lua.PushInteger"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static void PushInteger(lua_State luaState, long num)
         => lua_pushinteger(luaState, num);
@@ -405,7 +405,7 @@ namespace Garnet.server
         /// <summary>
         /// Pushes a boolean onto the stack.
         /// 
-        /// Differs from <see cref="Lua.PushBoolean(bool)"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static void PushBoolean(lua_State luaState, bool b)
         => lua_pushboolean(luaState, b ? 1 : 0);
@@ -413,7 +413,7 @@ namespace Garnet.server
         /// <summary>
         /// Read a boolean off the stack
         /// 
-        /// Differs from <see cref="Lua.ToBoolean(int)"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static bool ToBoolean(lua_State luaState, int index)
         => lua_toboolean(luaState, index) != 0;
@@ -421,7 +421,7 @@ namespace Garnet.server
         /// <summary>
         /// Read a long off the stack
         /// 
-        /// Differs from <see cref="Lua.ToInteger(int)"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static long ToInteger(lua_State luaState, int index)
         => lua_tointegerx(luaState, index, 0);
@@ -429,7 +429,7 @@ namespace Garnet.server
         /// <summary>
         /// Remove some number of items from the stack.
         /// 
-        /// Differs form <see cref="Lua.Pop(int)"/> by suppressing GC transition.
+        /// Suppresses GC transition.
         /// </summary>
         internal static void Pop(lua_State luaState, int num)
         => lua_settop(luaState, -num - 1);
@@ -437,7 +437,7 @@ namespace Garnet.server
         /// <summary>
         /// Update the panic function.
         /// 
-        /// Differs from <see cref="Lua.AtPanic(LuaFunction)"/> by taking a function pointer
+        /// Suppresses GC transition.
         /// and suppressing GC transition.
         /// </summary>
         internal static unsafe nint AtPanic(lua_State luaState, delegate* unmanaged[Cdecl]<nint, int> panicFunc)
@@ -452,7 +452,7 @@ namespace Garnet.server
         /// <summary>
         /// Create a new Lua state.
         /// 
-        /// Differs from <see cref="Lua.Lua(LuaAlloc, charptr_t)"/> by taking a function pointer.
+        /// Suppresses GC transition.
         /// </summary>
         internal static unsafe nint NewState(delegate* unmanaged[Cdecl]<nint, nint, nuint, nuint, nint> allocFunc, nint ud)
         => lua_newstate((nint)allocFunc, ud);
@@ -503,7 +503,9 @@ namespace Garnet.server
         /// Perform a call with the given number of arguments, expecting the given number of returns.
         /// </summary>
         internal static void Call(lua_State luaState, int nargs, int nrets)
-        => lua_callk(luaState, nargs, nrets, 0, 0);
+        {
+            _ = lua_callk(luaState, nargs, nrets, 0, 0);
+        }
 
         /// <summary>
         /// Equivalent of t[i] = v, where t is the table at the given index and v is the value on the top of the stack.
@@ -605,6 +607,6 @@ namespace Garnet.server
         /// Set a debugging hook.
         /// </summary>        
         internal static unsafe void SetHook(lua_State luaState, delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
-        => lua_sethook(luaState, (nint)hook, (int)mask, (int)count);
+        => lua_sethook(luaState, (nint)hook, (int)mask, count);
     }
 }
