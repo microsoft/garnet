@@ -55,7 +55,7 @@ namespace Garnet.server
                 new("monitor_task", storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? "enabled" : "disabled"),
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
-                new("run_id", storeWrapper.run_id),
+                new("run_id", storeWrapper.runId),
                 new("redis_version", storeWrapper.redisProtocolVersion),
                 new("redis_mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
             ];
@@ -273,7 +273,7 @@ namespace Garnet.server
                     new("FlushedUntilAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.FlushedUntilAddress.ToString()),
                     new("BeginAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.BeginAddress.ToString()),
                     new("TailAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.TailAddress.ToString()),
-                    new("SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.SafeAofAddress.ToString())
+                    new("SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString())
                 ];
         }
 

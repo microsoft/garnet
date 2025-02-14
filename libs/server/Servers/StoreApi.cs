@@ -26,32 +26,35 @@ namespace Garnet.server
         /// Commit AOF
         /// </summary>
         /// <param name="spinWait"></param>
-        public void CommitAOF(bool spinWait = false) => storeWrapper.appendOnlyFile?.Commit(spinWait);
+        public void CommitAOF(bool spinWait = false) => storeWrapper.CommitAOF(spinWait);
 
         /// <summary>
         /// Wait for commit
         /// </summary>
-        public ValueTask WaitForCommitAsync(CancellationToken token = default) => storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.WaitForCommitAsync(token: token) : ValueTask.CompletedTask;
+        public ValueTask WaitForCommitAsync(CancellationToken token = default) => storeWrapper.WaitForCommitAsync(token: token);
 
         /// <summary>
         /// Wait for commit
         /// </summary>
-        public void WaitForCommit() => storeWrapper.appendOnlyFile?.WaitForCommit();
+        public void WaitForCommit() => storeWrapper.WaitForCommit();
 
         /// <summary>
         /// Commit AOF
         /// </summary>
-        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.CommitAsync(null, token) : ValueTask.CompletedTask;
+        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.CommitAOFAsync(token: token);
 
         /// <summary>
         /// Flush DB (delete all keys)
         /// Optionally truncate log on disk. This is a destructive operation. Instead take a checkpoint if you are using checkpointing, as
         /// that will safely truncate the log on disk after the checkpoint.
         /// </summary>
-        public void FlushDB(bool unsafeTruncateLog = false)
+        public void FlushDB(int dbId = 0, bool unsafeTruncateLog = false)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            if (!dbFound) return;
+
+            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
     }
 }

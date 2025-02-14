@@ -147,6 +147,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
 
         /// <summary>
         /// Response strings
@@ -214,6 +215,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DB_INDEX_OUT_OF_RANGE => "ERR DB index is out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_TRANSACTION_PROCEDURE => "ERR Could not get transaction procedure"u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS => "ERR wrong number of arguments for command"u8;
