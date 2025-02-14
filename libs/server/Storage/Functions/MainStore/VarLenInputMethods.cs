@@ -76,6 +76,7 @@ namespace Garnet.server
                     var bOffset = input.parseState.GetLong(0);
                     return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
+                case RespCommand.BITFIELD_RO:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
                 case RespCommand.PFADD:
@@ -178,6 +179,7 @@ namespace Garnet.server
                         var bOffset = input.parseState.GetLong(0);
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
+                    case RespCommand.BITFIELD_RO:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
                         return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
                     case RespCommand.PFADD:

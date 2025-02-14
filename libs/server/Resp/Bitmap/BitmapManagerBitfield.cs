@@ -471,5 +471,25 @@ namespace Garnet.server
                     throw new GarnetException("BITFIELD secondary op not supported");
             }
         }
+
+        /// <summary>
+        /// Execute readonly bitfield operation described at input on bitmap stored within value.
+        /// </summary>
+        /// <param name="args"></param>
+        /// <param name="value"></param>
+        /// <param name="valLen"></param>
+        /// <returns></returns>
+        public static long BitFieldExecute_RO(BitFieldCmdArgs args, byte* value, int valLen)
+        {
+            var bitCount = (byte)(args.typeInfo & 0x7F);
+
+            switch (args.secondaryCommand)
+            {
+                case RespCommand.GET:
+                    return GetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo);
+                default:
+                    throw new GarnetException("BITFIELD secondary op not supported");
+            }
+        }
     }
 }
