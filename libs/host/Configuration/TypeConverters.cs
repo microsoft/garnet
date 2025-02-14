@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.Globalization;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet
@@ -179,6 +180,71 @@ namespace Garnet
             if (destinationType == typeof(string))
             {
                 return rtacValue.ToString().ToLowerInvariant();
+            }
+
+            throw new NotSupportedException();
+        }
+    }
+
+    /// <summary>
+    /// Custom converter that converts between a RedisConnectionProtectionOption and a ConnectionProtectionOption or string
+    /// </summary>
+    internal class RedisConnectionProtectionOptionConverter : TypeConverter
+    {
+        public override bool CanConvertFrom(ITypeDescriptorContext context, Type sourceType)
+        {
+            return sourceType == typeof(string) || sourceType == typeof(ConnectionProtectionOption);
+        }
+
+        public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType)
+        {
+            return destinationType == typeof(string) || destinationType == typeof(ConnectionProtectionOption);
+        }
+
+        public override object ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, object value)
+        {
+            if (value is ConnectionProtectionOption cpt)
+            {
+                switch (cpt)
+                {
+                    case ConnectionProtectionOption.No:
+                        return RedisConnectionProtectionOption.No;
+                    case ConnectionProtectionOption.Local:
+                        return RedisConnectionProtectionOption.Local;
+                    case ConnectionProtectionOption.Yes:
+                        return RedisConnectionProtectionOption.All;
+                }
+            }
+            else if (value is string strVal)
+            {
+                return Enum.Parse<RedisConnectionProtectionOption>(strVal, true);
+            }
+
+            throw new NotSupportedException();
+        }
+
+        public override object ConvertTo(ITypeDescriptorContext context, CultureInfo culture, object value, Type destinationType)
+        {
+            if (value is not RedisConnectionProtectionOption rbValue) return null;
+
+            if (destinationType == typeof(ConnectionProtectionOption))
+            {
+                switch (value)
+                {
+                    case RedisConnectionProtectionOption.All:
+                        return ConnectionProtectionOption.Yes;
+                    case RedisConnectionProtectionOption.Local:
+                        return ConnectionProtectionOption.Local;
+                    case RedisConnectionProtectionOption.No:
+                        return ConnectionProtectionOption.No;
+                    default:
+                        throw new NotImplementedException();
+                }
+            }
+
+            if (destinationType == typeof(string))
+            {
+                return rbValue.ToString().ToLowerInvariant();
             }
 
             throw new NotSupportedException();
