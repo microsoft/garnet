@@ -458,7 +458,7 @@ namespace Garnet.server
                 }
             }
 
-            return StringFieldAction(ref storageApi, ref sbKey,
+            return StringFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD,
                                      secondaryCommandArgs, isOverflowTypeSet, overflowTypeSlice);
         }
 
@@ -516,11 +516,12 @@ namespace Garnet.server
                 secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
             }
 
-            return StringFieldAction(ref storageApi, ref sbKey, secondaryCommandArgs);
+            return StringFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD_RO, secondaryCommandArgs);
         }
 
         private bool StringFieldAction<TGarnetApi>(ref TGarnetApi storageApi,
                                                    ref SpanByte sbKey,
+                                                   RespCommand cmd,
                                                    SecondaryCommandList secondaryCommandArgs,
                                                    bool isOverflowTypeSet = false,
                                                    ArgSlice overflowTypeSlice = default)
@@ -529,7 +530,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
                 SendAndReset();
 
-            var input = new RawStringInput(RespCommand.BITFIELD);
+            var input = new RawStringInput(cmd);
 
             for (var i = 0; i < secondaryCommandArgs.Count; i++)
             {
