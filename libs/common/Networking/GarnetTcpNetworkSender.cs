@@ -93,6 +93,22 @@ namespace Garnet.common
         public override string LocalEndpointName => localEndpoint;
 
         /// <inheritdoc />
+        public override bool IsLocalConnection()
+        {
+            if (socket.RemoteEndPoint is IPEndPoint ip)
+            {
+                return IPAddress.IsLoopback(ip.Address);
+            }
+
+            if (socket.RemoteEndPoint is UnixDomainSocketEndPoint)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <inheritdoc />
         public override void Enter()
         {
             var lockTaken = false;
