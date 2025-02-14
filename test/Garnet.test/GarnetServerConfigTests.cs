@@ -11,9 +11,9 @@ using System.Text.Json.Serialization;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
@@ -166,6 +166,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("127.0.0.1", options.Address);
+            ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
             ClassicAssert.AreEqual(6379, options.Port);
             ClassicAssert.AreEqual("20gb", options.MemorySize);
             ClassicAssert.AreEqual("./garnet-log", options.FileLogger);

@@ -301,6 +301,8 @@ namespace Garnet.server
         CONFIG_REWRITE,
         CONFIG_SET,
 
+        DEBUG,
+
         LATENCY,
         LATENCY_HELP,
         LATENCY_HISTOGRAM,
@@ -2412,6 +2414,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.HCOLLECT))
             {
                 return RespCommand.HCOLLECT;
+            }
+            else if (command.SequenceEqual(CmdStrings.DEBUG))
+            {
+                return RespCommand.DEBUG;
             }
             else
             {

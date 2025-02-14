@@ -15,9 +15,9 @@ namespace Garnet.server
         /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
         public static ReadOnlySpan<byte> SUBSCRIBE => "SUBSCRIBE"u8;
-        public static ReadOnlySpan<byte> subscribe => "subcribe"u8;
+        public static ReadOnlySpan<byte> subscribe => "subscribe"u8;
         public static ReadOnlySpan<byte> SSUBSCRIBE => "SSUBSCRIBE"u8;
-        public static ReadOnlySpan<byte> ssubscribe => "ssubcribe"u8;
+        public static ReadOnlySpan<byte> ssubscribe => "ssubscribe"u8;
         public static ReadOnlySpan<byte> RUNTXP => "RUNTXP"u8;
         public static ReadOnlySpan<byte> GET => "GET"u8;
         public static ReadOnlySpan<byte> get => "get"u8;
@@ -37,6 +37,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SETNAME => "SETNAME"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
         public static ReadOnlySpan<byte> info => "info"u8;
+        public static ReadOnlySpan<byte> DEBUG => "DEBUG"u8;
+        public static ReadOnlySpan<byte> PANIC => "PANIC"u8;
         public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
         public static ReadOnlySpan<byte> docs => "docs"u8;
         public static ReadOnlySpan<byte> GETKEYS => "GETKEYS"u8;
@@ -211,7 +213,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_FLOAT => "ERR hash value is not a float."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE => "ERR value is out of range, must be positive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UKNOWN_SUBCOMMAND => "ERR Unknown subcommand. Try LATENCY HELP."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_DB_INDEX_OUT_OF_RANGE => "ERR DB index is out of range."u8;
@@ -252,6 +253,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
+            @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
 
         /// <summary>
         /// Response string templates

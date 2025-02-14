@@ -390,6 +390,12 @@ namespace Garnet.server
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
 
+                if (ex.Panic)
+                {
+                    // Does not return, finally block below will NOT be ran.
+                    Environment.Exit(-1);
+                }
+
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
             }

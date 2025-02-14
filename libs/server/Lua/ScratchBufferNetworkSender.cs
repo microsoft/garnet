@@ -44,6 +44,12 @@ namespace Garnet.server
 
         public string LocalEndpointName => "";
 
+        /// <inheritdoc />
+        public bool IsLocalConnection()
+        {
+            return true;
+        }
+
         /// <summary>
         /// Cleanup this DummyNetworkSender instance
         /// </summary>
