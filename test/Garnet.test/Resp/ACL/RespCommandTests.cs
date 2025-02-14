@@ -2613,6 +2613,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task DebugACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "DEBUG",
+                [DoDebugAsync]
+            );
+
+            async Task DoDebugAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("DEBUG", ["HELP"]);
+                ClassicAssert.NotNull(res.ToString());
+            }
+        }
+
+        [Test]
         public async Task EvalACLsAsync()
         {
             await CheckCommandsAsync(

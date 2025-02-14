@@ -398,6 +398,11 @@ namespace Garnet.server
         public int AdjustedObjectStoreIndexMaxCacheLines;
 
         /// <summary>
+        /// Enables the DEBUG command
+        /// </summary>
+        public ConnectionProtectionOption EnableDebugCommand;
+
+        /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
         /// </summary>
         public string[] ExtensionBinPaths;
