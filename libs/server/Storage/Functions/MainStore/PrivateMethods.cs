@@ -756,11 +756,11 @@ namespace Garnet.server
             // Get secondary command. Legal commands: GET, SET & INCRBY.
             var cmd = RespCommand.NONE;
             var sbCmd = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-            if (sbCmd.EqualsUpperCaseSpanIgnoringCase("GET"u8))
+            if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 cmd = RespCommand.GET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("SET"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SET))
                 cmd = RespCommand.SET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INCRBY))
                 cmd = RespCommand.INCRBY;
 
             var encodingArg = input.parseState.GetString(currTokenIdx++);
