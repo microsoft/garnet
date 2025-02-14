@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -216,8 +215,8 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
-            // If more than one database allowed, multi-db mode is turned on
-            this.allowMultiDb = this.serverOptions.MaxDatabases > 1;
+            // If cluster mode is off and more than one database allowed multi-db mode is turned on
+            this.allowMultiDb = !this.serverOptions.EnableCluster && this.serverOptions.MaxDatabases > 1;
 
             // Create default databases map of size 1
             databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
@@ -1024,18 +1023,22 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Asynchronously wait for AOF commits on all active databases
+        /// Asynchronously wait for AOF commits on all active databases,
+        /// unless specific database ID specified (by default: -1 = all)
         /// </summary>
+        /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>ValueTask</returns>
-        internal async ValueTask CommitAOFAsync(CancellationToken token = default)
+        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
         {
             if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
 
             var activeDbIdsSize = this.activeDbIdsLength;
-            if (!allowMultiDb || activeDbIdsSize == 1)
+            if (!allowMultiDb || activeDbIdsSize == 1 || dbId != -1)
             {
-                await appendOnlyFile.CommitAsync(token: token);
+                var dbFound = TryGetDatabase(dbId, out var db);
+                Debug.Assert(dbFound);
+                await db.AppendOnlyFile.CommitAsync(token: token);
                 return;
             }
 
@@ -1045,7 +1048,7 @@ namespace Garnet.server
             var tasks = new Task[activeDbIdsSize];
             for (var i = 0; i < activeDbIdsSize; i++)
             {
-                var dbId = activeDbIdsSnapshot[i];
+                dbId = activeDbIdsSnapshot[i];
                 var db = databasesMapSnapshot[dbId];
                 tasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask();
             }

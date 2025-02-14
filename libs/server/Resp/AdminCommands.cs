@@ -158,9 +158,9 @@ namespace Garnet.server
             }
         }
 
-        void CommitAof()
+        void CommitAof(int dbId = -1)
         {
-            storeWrapper.CommitAOFAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            storeWrapper.CommitAOFAsync(dbId).ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         private bool NetworkMonitor()
@@ -571,12 +571,41 @@ namespace Garnet.server
 
         private bool NetworkCOMMITAOF()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF));
             }
 
-            CommitAof();
+            // By default - commit AOF for all active databases, unless database ID specified
+            var dbId = -1;
+
+            // Check if ID specified
+            if (parseState.Count == 1)
+            {
+                if (!parseState.TryGetInt(0, out dbId))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                {
+                    // Cluster mode does not allow DBID
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            CommitAof(dbId);
             while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                 SendAndReset();
 
@@ -740,7 +769,10 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
+            // By default - save all active databases, unless database ID specified
             var dbId = -1;
+
+            // Check if ID specified
             if (parseState.Count == 1)
             {
                 if (!parseState.TryGetInt(0, out dbId))
@@ -748,7 +780,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
-                }
+                } 
 
                 if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
                 {
@@ -781,17 +813,46 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// LASTSAVE
+        /// LASTSAVE [DBID]
         /// </summary>
         /// <returns></returns>
         private bool NetworkLASTSAVE()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.LASTSAVE));
             }
 
-            storeWrapper.TryGetDatabase(activeDbId, out var db);
+            // By default - get the last saved timestamp for current active database, unless database ID specified
+            var dbId = activeDbId;
+
+            // Check if ID specified
+            if (parseState.Count == 1)
+            {
+                if (!parseState.TryGetInt(0, out dbId))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                {
+                    // Cluster mode does not allow DBID
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            storeWrapper.TryGetDatabase(dbId, out var db);
 
             var seconds = db.LastSaveTime.ToUnixTimeSeconds();
             while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
@@ -811,7 +872,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
+            // By default - save all active databases, unless database ID specified
             var dbId = -1;
+
             var tokenIdx = 0;
             if (parseState.Count > 0)
             {
@@ -819,6 +882,7 @@ namespace Garnet.server
                     .EqualsUpperCaseSpanIgnoringCase(CmdStrings.SCHEDULE))
                     tokenIdx++;
 
+                // Check if ID specified
                 if (parseState.Count - tokenIdx > 0)
                 {
                     if (!parseState.TryGetInt(tokenIdx, out dbId))

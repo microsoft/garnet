@@ -1,5 +1,30 @@
 [
   {
+    "Command": "BGSAVE",
+    "Name": "BGSAVE",
+    "Summary": "Asynchronously saves the database(s) to disk.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SCHEDULE",
+        "DisplayText": "schedule",
+        "Type": "PureToken",
+        "Token": "SCHEDULE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT_KILL",
     "Name": "CLIENT|KILL",
     "Summary": "Terminates open connections.",
@@ -140,7 +165,17 @@
     "Command": "COMMITAOF",
     "Name": "COMMITAOF",
     "Group": "Server",
-    "Summary": "Commit to append-only file."
+    "Summary": "Commit to append-only file.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
   },
   {
     "Command": "COSCAN",
@@ -510,6 +545,23 @@
         "DisplayText": "key",
         "Type": "Key",
         "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "LASTSAVE",
+    "Name": "LASTSAVE",
+    "Summary": "Returns the Unix timestamp of the last successful save to disk.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
       }
     ]
   },

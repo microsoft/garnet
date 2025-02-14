@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// Commit AOF
         /// </summary>
-        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.CommitAOFAsync(token);
+        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.CommitAOFAsync(token: token);
 
         /// <summary>
         /// Flush DB (delete all keys)

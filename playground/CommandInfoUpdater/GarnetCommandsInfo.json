@@ -616,6 +616,16 @@
     ]
   },
   {
+    "Command": "LASTSAVE",
+    "Name": "LASTSAVE",
+    "Arity": -1,
+    "Flags": "Fast, Loading, Stale",
+    "AclCategories": "Admin, Dangerous, Fast",
+    "Tips": [
+      "nondeterministic_output"
+    ]
+  },
+  {
     "Command": "PURGEBP",
     "Name": "PURGEBP",
     "IsInternal": false,
