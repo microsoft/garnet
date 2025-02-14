@@ -21,6 +21,12 @@ namespace Embedded.server
 
         public override string RemoteEndpointName => throw new NotImplementedException();
         public override string LocalEndpointName => throw new NotImplementedException();
+
+        public override bool IsLocalConnection()
+        {
+            return false;
+        }
+
         public override void Dispose()
         {
             DisposeImpl();

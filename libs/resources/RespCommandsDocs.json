@@ -1778,6 +1778,13 @@
     "Complexity": "O(1)"
   },
   {
+    "Command": "DEBUG",
+    "Name": "DEBUG",
+    "Summary": "Depends on subcommand.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
     "Command": "DECR",
     "Name": "DECR",
     "Summary": "Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
@@ -5412,7 +5419,7 @@
             "Name": "NUMPARAMS",
             "DisplayText": "numParams",
             "Type": "Integer",
-            "Summary": "Numer of parameters of the command to register"
+            "Summary": "Number of parameters of the command to register"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
