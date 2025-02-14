@@ -495,7 +495,7 @@ namespace Garnet.server
             }
 
             // Reverse
-            if (!(sortedSetOrderOperation == SortedSetOrderOperation.ByRank && reverse))
+            if (reverse && sortedSetOrderOperation != SortedSetOrderOperation.ByRank)
             {
                 arguments.Add(scratchBufferManager.CreateArgSlice("REV"u8));
             }
