@@ -481,13 +481,8 @@ namespace Garnet.server
                     break;
                 case SortedSetOrderOperation.ByRank:
                     if (reverse)
-                    {
                         rangeOpts = SortedSetRangeOpts.Reverse;
-                    }
-                    else
-                    {
-                        operation = default;
-                    }
+                    operation = default;
                     break;
             }
 
