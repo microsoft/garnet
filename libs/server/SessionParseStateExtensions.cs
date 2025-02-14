@@ -140,6 +140,57 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Parse bit field ENCODING slice from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="encodingSlice">Parsed slice</param>
+        /// <returns></returns>
+        internal static unsafe bool TryGetEncodingSlice(this SessionParseState parseState, int idx, out ArgSlice encodingSlice)
+        {
+            if (idx >= parseState.Count)
+            {
+                encodingSlice = default;
+                return false;
+            }
+
+            encodingSlice = parseState.GetArgSliceByRef(idx);
+
+            return
+                encodingSlice.Length >= 2 &&
+                int.TryParse(encodingSlice.ReadOnlySpan[1..], out var bitCount) &&
+                (
+                    (*encodingSlice.ptr == 'i' && bitCount <= 64) ||
+                    (*encodingSlice.ptr == 'u' && bitCount < 64)
+                );
+        }
+
+        /// <summary>
+        /// Parse bit field OFFSET slice from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="offsetSlice">Parsed slice</param>
+        /// <returns></returns>
+        internal static unsafe bool TryGetOFfsetSlice(this SessionParseState parseState, int idx, out ArgSlice offsetSlice)
+        {
+            if (idx >= parseState.Count)
+            {
+                offsetSlice = default;
+                return false;
+            }
+
+            offsetSlice = parseState.GetArgSliceByRef(idx);
+
+            if (offsetSlice.Length == 0)
+                return false;
+
+            return (*offsetSlice.ptr == '#')
+                ? long.TryParse(offsetSlice.ReadOnlySpan[1..], out _)
+                : long.TryParse(offsetSlice.ReadOnlySpan, out _);
+        }
+
+        /// <summary>
         /// Parse manager type from parse state at specified index
         /// </summary>
         /// <param name="parseState">The parse state</param>
