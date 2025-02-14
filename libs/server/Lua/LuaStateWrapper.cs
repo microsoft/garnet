@@ -23,7 +23,7 @@ namespace Garnet.server
     {
         private const int LUA_MINSTACK = 20;
 
-        private readonly object hookLock;
+        private SingleWriterMultiReaderLock hookLock;
 
         private GCHandle customAllocatorHandle;
 
@@ -80,17 +80,23 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
-            // Make sure we only close once
-            var toClose = Interlocked.Exchange(ref state, 0);
-
-            if (toClose != 0)
+            // Synchronize with respect to hook'ing
+            hookLock.WriteLock();
+            try
             {
-                // Synchronize with respect to hook'ing
-                lock (hookLock)
+                // make sure we only close once
+                if (state != 0)
                 {
-                    NativeMethods.Close(toClose);
+
+                    NativeMethods.Close(state);
+                    state = 0;
                 }
             }
+            finally
+            {
+                hookLock.WriteUnlock();
+            }
+
 
             if (customAllocatorHandle.IsAllocated)
             {
@@ -518,9 +524,10 @@ namespace Garnet.server
         /// 
         /// This is the ONLY thread-safe method on <see cref="LuaStateWrapper"/>.
         /// </summary>
-        internal readonly unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         {
-            lock (hookLock)
+            hookLock.ReadLock();
+            try
             {
                 if (state == 0)
                 {
@@ -528,6 +535,10 @@ namespace Garnet.server
                 }
 
                 NativeMethods.SetHook(state, hook, mask, count);
+            }
+            finally
+            {
+                hookLock.ReadUnlock();
             }
 
             return true;
