@@ -13,18 +13,18 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
-    struct HashModuloKeyStructComparer : IKeyComparer<KeyStruct>
+    struct HashModuloKeyStructComparer : IKeyComparer
     {
         readonly HashModulo modRange;
 
         internal HashModuloKeyStructComparer(HashModulo mod) => modRange = mod;
 
-        public readonly bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1;
+        public readonly bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<KeyStruct>().kfield1 == k2.AsRef<KeyStruct>().kfield1;
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(ref KeyStruct k)
+        public readonly long GetHashCode64(SpanByte k)
         {
-            var value = Utility.GetHashCode(k.kfield1);
+            var value = Utility.GetHashCode(k.AsRef<KeyStruct>().kfield1);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
         }
     }
@@ -32,20 +32,20 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<SpanByte, HashModuloKeyStructComparer, SpanByteRecordDisposer>>;
+    using StructStoreFunctions = StoreFunctions<SpanByte, HashModuloKeyStructComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
-    public class BlittableLogCompactionTests
+    public class SpanByteLogCompactionTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<SpanByte, StructStoreFunctions, StructAllocator> store;
         private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "BlittableLogCompactionTests.log"), deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SpanByteLogCompactionTests.log"), deleteOnClose: true);
 
             var hashMod = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -63,7 +63,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 9
-            }, StoreFunctions<KeyStruct, ValueStruct>.Create(new HashModuloKeyStructComparer(hashMod))
+            }, StoreFunctions<SpanByte>.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -78,7 +78,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
-        static void VerifyRead(ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
+        static void VerifyRead(ClientSession<SpanByte, InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
         {
             InputStruct input = default;
             int numPending = 0;
@@ -91,14 +91,14 @@ namespace Tsavorite.test
                 {
                     for (; outputs.Next(); --numPending)
                     {
-                        if (isDeleted((int)outputs.Current.Key.kfield1))
+                        if (isDeleted((int)outputs.Current.Key.AsRef<KeyStruct>().kfield1))
                         {
                             ClassicAssert.IsFalse(outputs.Current.Status.Found);
                             continue;
                         }
                         ClassicAssert.IsTrue(outputs.Current.Status.Found);
-                        ClassicAssert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
-                        ClassicAssert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+                        ClassicAssert.AreEqual(outputs.Current.Key.AsRef<KeyStruct>().kfield1, outputs.Current.Output.value.vfield1);
+                        ClassicAssert.AreEqual(outputs.Current.Key.AsRef<KeyStruct>().kfield2, outputs.Current.Output.value.vfield2);
                     }
                 }
                 ClassicAssert.AreEqual(numPending, 0);
@@ -110,7 +110,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = bContext.Read(ref key1, ref input, ref output, isDeleted(i) ? 1 : 0);
+                var status = bContext.Read(SpanByteFrom(ref key1), ref input, ref output, isDeleted(i) ? 1 : 0);
                 if (!status.IsPending)
                 {
                     if (isDeleted(i))
@@ -135,7 +135,7 @@ namespace Tsavorite.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionTest1([Values] CompactionType compactionType)
+        public void SpanByteLogCompactionTest1([Values] CompactionType compactionType)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
@@ -149,9 +149,10 @@ namespace Tsavorite.test
                 if (i == totalRecords - 1000)
                     compactUntil = store.Log.TailAddress;
 
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, 0);
+                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                _ = bContext.Upsert(key, value, 0);
             }
 
             store.Log.FlushAndEvict(wait: true);
@@ -161,13 +162,13 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
-            BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => false);
+            VerifyRead(session, totalRecords, key => false);
         }
 
         [Test]
         [Category("TsavoriteKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest2([Values] CompactionType compactionType, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public void SpanByteLogCompactionTest2([Values] CompactionType compactionType, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
@@ -181,9 +182,10 @@ namespace Tsavorite.test
                 if (i == totalRecords - 1000)
                     compactUntil = store.Log.TailAddress;
 
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, 0);
+                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                _ = bContext.Upsert(key, value, 0);
             }
 
             store.Log.FlushAndEvict(true);
@@ -199,9 +201,10 @@ namespace Tsavorite.test
             // test that the address is < minAddress, so no IO is needed.
             for (int i = 0; i < totalRecords / 2; i++)
             {
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, 0);
+                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                _ = bContext.Upsert(key, value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -209,13 +212,13 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
-            BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => false);
+            VerifyRead(session, totalRecords, key => false);
         }
 
         [Test]
         [Category("TsavoriteKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionTest3([Values] CompactionType compactionType)
+        public void SpanByteLogCompactionTest3([Values] CompactionType compactionType)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
@@ -229,15 +232,16 @@ namespace Tsavorite.test
                 if (i == totalRecords / 2)
                     compactUntil = store.Log.TailAddress;
 
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, 0);
+                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                _ = bContext.Upsert(key, value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
-                    key1 = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
-                    _ = bContext.Delete(ref key1, 0);
+                    keyStruct = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
+                    _ = bContext.Delete(key, 0);
                 }
             }
 
@@ -247,7 +251,7 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present except those we deleted
-            BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => (key < totalRecords / 4) && (key % 2 == 0));
+            VerifyRead(session, totalRecords, key => (key < totalRecords / 4) && (key % 2 == 0));
         }
 
         [Test]
@@ -255,7 +259,7 @@ namespace Tsavorite.test
         [Category("Compaction")]
         [Category("Smoke")]
 
-        public void BlittableLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType)
+        public void SpanByteLogCompactionCustomFunctionsTest1([Values] CompactionType compactionType)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
@@ -271,9 +275,10 @@ namespace Tsavorite.test
                 if (i == totalRecords / 2)
                     compactUntil = store.Log.TailAddress;
 
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, 0);
+                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                _ = bContext.Upsert(key, value, 0);
             }
 
             var tail = store.Log.TailAddress;
@@ -287,12 +292,13 @@ namespace Tsavorite.test
             for (var i = 0; i < totalRecords; i++)
             {
                 OutputStruct output = default;
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
+                var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
-                var status = bContext.Read(ref key1, ref input, ref output, ctx);
+                var status = bContext.Read(key, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
                     ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
@@ -302,8 +308,8 @@ namespace Tsavorite.test
                 if (ctx == 0)
                 {
                     ClassicAssert.IsTrue(status.Found);
-                    ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
-                    ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                    ClassicAssert.AreEqual(valueStruct.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(valueStruct.vfield2, output.value.vfield2);
                 }
                 else
                 {
@@ -315,7 +321,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Compaction")]
-        public void BlittableLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values] bool flushAndEvict)
+        public void SpanByteLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values] bool flushAndEvict)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
@@ -323,20 +329,22 @@ namespace Tsavorite.test
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
 
-            var key = new KeyStruct { kfield1 = 100, kfield2 = 101 };
-            var value = new ValueStruct { vfield1 = 10, vfield2 = 20 };
+            var keyStruct = new KeyStruct { kfield1 = 100, kfield2 = 101 };
+            var valueStruct = new ValueStruct { vfield1 = 10, vfield2 = 20 };
+            SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+
             var input = default(InputStruct);
             var output = default(OutputStruct);
 
-            _ = bContext.Upsert(ref key, ref value, 0);
-            var status = bContext.Read(ref key, ref input, ref output, 0);
+            _ = bContext.Upsert(key, value, 0);
+            var status = bContext.Read(key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
             store.Log.Flush(true);
 
-            value = new ValueStruct { vfield1 = 11, vfield2 = 21 };
-            _ = bContext.Upsert(ref key, ref value, 0);
-            status = bContext.Read(ref key, ref input, ref output, 0);
+            valueStruct = new ValueStruct { vfield1 = 11, vfield2 = 21 };
+            _ = bContext.Upsert(key, value, 0);
+            status = bContext.Read(key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
             if (flushAndEvict)
@@ -347,7 +355,7 @@ namespace Tsavorite.test
             var compactUntil = session.Compact(store.Log.TailAddress, compactionType);
             store.Log.Truncate();
 
-            status = bContext.Read(ref key, ref input, ref output, 0);
+            status = bContext.Read(key, ref input, ref output, 0);
             if (status.IsPending)
             {
                 ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
@@ -355,13 +363,13 @@ namespace Tsavorite.test
             }
 
             ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
-            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(valueStruct.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(valueStruct.vfield2, output.value.vfield2);
         }
 
-        private struct EvenCompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>
+        private struct EvenCompactionFunctions : ICompactionFunctions<SpanByte>
         {
-            public readonly bool IsDeleted(ref KeyStruct key, ref ValueStruct value) => value.vfield1 % 2 != 0;
+            public readonly bool IsDeleted(SpanByte key, SpanByte value) => value.AsRef<ValueStruct>().vfield1 % 2 != 0;
         }
     }
 }

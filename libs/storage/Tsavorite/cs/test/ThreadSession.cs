@@ -9,38 +9,35 @@ namespace Tsavorite.test.statemachine
 {
     internal static class Extension
     {
-        public static ThreadSession<K, V, I, O, C, F, SF, A> CreateThreadSession<K, V, I, O, C, F, SF, A>(this TsavoriteKV<K, V, SF, A> store, F f)
-            where K : new()
+        public static ThreadSession<V, I, O, C, F, SF, A> CreateThreadSession<V, I, O, C, F, SF, A>(this TsavoriteKV<V, SF, A> store, F f)
             where V : new()
-            where F : ISessionFunctions<K, V, I, O, C>
-            where SF : IStoreFunctions<K, V>
-            where A : IAllocator<K, V, SF>
+            where F : ISessionFunctions<V, I, O, C>
+            where SF : IStoreFunctions<V>
+            where A : IAllocator<V, SF>
             => new(store, f);
 
-        public static LUCThreadSession<K, V, I, O, C, F, SF, A> CreateLUCThreadSession<K, V, I, O, C, F, SF, A>(this TsavoriteKV<K, V, SF, A> store, F f)
-            where K : new()
+        public static LUCThreadSession<V, I, O, C, F, SF, A> CreateLUCThreadSession<V, I, O, C, F, SF, A>(this TsavoriteKV<V, SF, A> store, F f)
             where V : new()
-            where F : ISessionFunctions<K, V, I, O, C>
-            where SF : IStoreFunctions<K, V>
-            where A : IAllocator<K, V, SF>
+            where F : ISessionFunctions<V, I, O, C>
+            where SF : IStoreFunctions<V>
+            where A : IAllocator<V, SF>
             => new(store, f);
     }
 
-    internal class ThreadSession<K, V, I, O, C, F, SF, A>
-        where K : new()
+    internal class ThreadSession<V, I, O, C, F, SF, A>
         where V : new()
-        where F : ISessionFunctions<K, V, I, O, C>
-        where SF : IStoreFunctions<K, V>
-        where A : IAllocator<K, V, SF>
+        where F : ISessionFunctions<V, I, O, C>
+        where SF : IStoreFunctions<V>
+        where A : IAllocator<V, SF>
     {
-        readonly TsavoriteKV<K, V, SF, A> store;
-        ClientSession<K, V, I, O, C, F, SF, A> s2;
-        UnsafeContext<K, V, I, O, C, F, SF, A> uc2;
+        readonly TsavoriteKV<V, SF, A> store;
+        ClientSession<V, I, O, C, F, SF, A> s2;
+        UnsafeContext<V, I, O, C, F, SF, A> uc2;
         readonly F f;
         readonly AutoResetEvent ev = new(false);
         readonly AsyncQueue<string> q = new();
 
-        public ThreadSession(TsavoriteKV<K, V, SF, A> store, F f)
+        public ThreadSession(TsavoriteKV<V, SF, A> store, F f)
         {
             this.store = store;
             this.f = f;
@@ -59,8 +56,7 @@ namespace Tsavorite.test.statemachine
             _ = ev.WaitOne();
         }
 
-        public void Dispose()
-        {
+        public void Dispose()        {
             OtherSession("dispose");
         }
 
@@ -100,22 +96,21 @@ namespace Tsavorite.test.statemachine
         }
     }
 
-    internal class LUCThreadSession<K, V, I, O, C, F, SF, A>
-        where K : new()
+    internal class LUCThreadSession<V, I, O, C, F, SF, A>
         where V : new()
-        where F : ISessionFunctions<K, V, I, O, C>
-        where SF : IStoreFunctions<K, V>
-        where A : IAllocator<K, V, SF>
+        where F : ISessionFunctions<V, I, O, C>
+        where SF : IStoreFunctions<V>
+        where A : IAllocator<V, SF>
     {
-        readonly TsavoriteKV<K, V, SF, A> store;
-        ClientSession<K, V, I, O, C, F, SF, A> session;
-        LockableUnsafeContext<K, V, I, O, C, F, SF, A> luc;
+        readonly TsavoriteKV<V, SF, A> store;
+        ClientSession<V, I, O, C, F, SF, A> session;
+        TransactionalUnsafeContext<V, I, O, C, F, SF, A> luc;
         readonly F f;
         readonly AutoResetEvent ev = new(false);
         readonly AsyncQueue<string> q = new();
         public bool isProtected = false;
 
-        public LUCThreadSession(TsavoriteKV<K, V, SF, A> store, F f)
+        public LUCThreadSession(TsavoriteKV<V, SF, A> store, F f)
         {
             this.store = store;
             this.f = f;
@@ -168,7 +163,7 @@ namespace Tsavorite.test.statemachine
                         _ = ev.Set();
                         return;
                     case "getLUC":
-                        luc = session.LockableUnsafeContext;
+                        luc = session.TransactionalUnsafeContext;
                         if (session.IsInPreparePhase())
                         {
                             isProtected = false;
@@ -176,13 +171,13 @@ namespace Tsavorite.test.statemachine
                         else
                         {
                             luc.BeginUnsafe();
-                            luc.BeginLockable();
+                            luc.BeginTransaction();
                             isProtected = true;
                         }
                         _ = ev.Set();
                         break;
                     case "DisposeLUC":
-                        luc.EndLockable();
+                        luc.EndTransaction();
                         luc.EndUnsafe();
                         isProtected = false;
                         _ = ev.Set();

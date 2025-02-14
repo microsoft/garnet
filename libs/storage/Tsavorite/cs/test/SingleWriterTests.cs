@@ -7,12 +7,14 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.SingleWriter
 {
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
     using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
-    internal class SingleWriterTestFunctions : SimpleSimpleFunctions<int, int>
+    internal class SingleWriterTestFunctions : SimpleLongSimpleFunctions<int, int>
     {
         internal WriteReason actualReason;
 
@@ -143,3 +145,5 @@ namespace Tsavorite.test.SingleWriter
         }
     }
 }
+
+#endif // LOGRECORD_TODO

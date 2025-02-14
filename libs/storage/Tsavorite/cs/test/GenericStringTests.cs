@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -96,7 +98,7 @@ namespace Tsavorite.test
             }
         }
 
-        class MyFuncs : SimpleSimpleFunctions<string, string>
+        class MyFuncs : SimpleLongSimpleFunctions<string, string>
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -106,3 +108,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

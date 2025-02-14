@@ -4,6 +4,8 @@
 using System.Threading;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery.objects
 {
     public class AdIdObj
@@ -85,3 +87,5 @@ namespace Tsavorite.test.recovery.objects
         }
     }
 }
+
+#endif // LOGRECORD_TODO

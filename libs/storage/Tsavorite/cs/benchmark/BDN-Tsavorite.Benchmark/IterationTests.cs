@@ -13,7 +13,7 @@ using Tsavorite.core;
 namespace BenchmarkDotNetTests
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
     public class IterationTests
@@ -23,7 +23,7 @@ namespace BenchmarkDotNetTests
         [Params(true, false)]
         public bool FlushAndEvict;
 
-        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;
         string logDirectory;
 
@@ -37,7 +37,7 @@ namespace BenchmarkDotNetTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = logDevice
-            }, StoreFunctions<SpanByte, SpanByte>.Create()
+            }, StoreFunctions<SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -102,7 +102,7 @@ namespace BenchmarkDotNetTests
             internal int count;
         }
 
-        internal struct ScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
+        internal struct ScanFunctions : IScanIteratorFunctions<SpanByte>
         {
             private readonly ScanCounter counter;
 
@@ -114,7 +114,8 @@ namespace BenchmarkDotNetTests
             public bool OnStart(long beginAddress, long endAddress) => true;
 
             /// <inheritdoc/>
-            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord<SpanByte>
             {
                 ++counter.count;
                 cursorRecordResult = CursorRecordResult.Accept;
@@ -122,8 +123,9 @@ namespace BenchmarkDotNetTests
             }
 
             /// <inheritdoc/>
-            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+            public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord<SpanByte>
+                => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc/>
             public void OnStop(bool completed, long numberOfRecords) { }

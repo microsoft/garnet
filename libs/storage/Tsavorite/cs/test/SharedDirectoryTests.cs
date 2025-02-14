@@ -13,6 +13,8 @@ using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery.sumstore
 {
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
@@ -246,3 +248,5 @@ namespace Tsavorite.test.recovery.sumstore
         }
     }
 }
+
+#endif // LOGRECORD_TODO

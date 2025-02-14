@@ -4,7 +4,6 @@
 #pragma warning disable 1591
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -114,19 +113,6 @@ namespace Tsavorite.core
     /// <typeparam name="TContext"></typeparam>
     public class SimpleSessionFunctions<TValue, TContext> : SessionFunctionsBase<TValue, TValue, TValue, TContext>
     {
-        /// <inheritdoc/>
-        public virtual bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref SpanByte input, ref SpanByte output, ref ReadInfo readInfo)
-        {
-            Debug.Assert(!logRecord.IsObjectRecord, "IHeapObject form of ConcurrentReader should not be called for SpanByte LogRecord");
-            return logRecord.ValueSpan.TryCopyTo(output);
-        }
-        /// <inheritdoc/>
-        public virtual bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref IHeapObject input, ref TValue output, ref ReadInfo readInfo)
-        {
-            Debug.Assert(logRecord.IsObjectRecord, "SpanByte form of ConcurrentReader should not be called for Object LogRecord");
-            output = logRecord.ValueObject;
-            return true;
-        }
         /// <inheritdoc/>
         public override bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref TValue input, ref TValue output, ref ReadInfo readInfo)
         {

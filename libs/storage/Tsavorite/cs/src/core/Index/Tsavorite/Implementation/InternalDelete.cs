@@ -302,8 +302,9 @@ namespace Tsavorite.core
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
                 sessionFunctions.PostSingleDeleter(ref newLogRecord, ref deleteInfo);
 
-                // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
-                srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
+                // Success should always Seal the old record. This may be readcache or readonly, which is OK.
+                if (stackCtx.recSrc.HasMainLogSrc)
+                    srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;

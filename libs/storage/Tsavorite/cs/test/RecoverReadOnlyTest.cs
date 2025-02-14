@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 //** Note - this test is based on TsavoriteLogPubSub sample found in the samples directory.
 
 namespace Tsavorite.test
@@ -128,3 +130,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

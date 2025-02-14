@@ -4,6 +4,8 @@
 using System.Threading;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery.sumstore
 {
     public struct AdId
@@ -79,3 +81,5 @@ namespace Tsavorite.test.recovery.sumstore
         }
     }
 }
+
+#endif // LOGRECORD_TODO

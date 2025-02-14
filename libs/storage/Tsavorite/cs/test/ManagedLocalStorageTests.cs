@@ -12,9 +12,9 @@ namespace Tsavorite.test
     [TestFixture]
     internal class ManageLocalStorageTests
     {
-        private TsavoriteLog log;
+        private TsavoriteAof aof;
         private IDevice device;
-        private TsavoriteLog logFullParams;
+        private TsavoriteAof aofFullParams;
         private IDevice deviceFullParams;
         static readonly byte[] entry = new byte[100];
 
@@ -27,21 +27,21 @@ namespace Tsavorite.test
 
             // Create devices \ log for test
             device = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log"), deleteOnClose: true);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
             deviceFullParams = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStoreFullParams.log"), deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1L << 30);
-            logFullParams = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
+            aofFullParams = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
         }
 
         [TearDown]
         public void TearDown()
         {
-            log?.Dispose();
-            log = null;
+            aof?.Dispose();
+            aof = null;
             device?.Dispose();
             device = null;
-            logFullParams?.Dispose();
-            logFullParams = null;
+            aofFullParams?.Dispose();
+            aofFullParams = null;
             deviceFullParams?.Dispose();
             deviceFullParams = null;
 
@@ -73,7 +73,7 @@ namespace Tsavorite.test
                 {
                     while (!disposeCommitThread)
                     {
-                        log.Commit(true);
+                        aof.Commit(true);
                     }
                 });
 
@@ -93,7 +93,7 @@ namespace Tsavorite.test
                         entry[0] = (byte)i;
 
                         // Default is add bytes so no need to do anything with it
-                        log.Enqueue(entry);
+                        aof.Enqueue(entry);
                     }
                 });
             }
@@ -109,7 +109,7 @@ namespace Tsavorite.test
             }
 
             // Final commit to the log
-            log.Commit(true);
+            aof.Commit(true);
 
             int currentEntry = 0;
 
@@ -120,7 +120,7 @@ namespace Tsavorite.test
                     new Thread(() =>
                     {
                         // Read the log - Look for the flag so know each entry is unique
-                        using (var iter = log.Scan(0, long.MaxValue))
+                        using (var iter = aof.Scan(0, long.MaxValue))
                         {
                             while (iter.GetNext(out byte[] result, out _, out _))
                             {
@@ -153,11 +153,11 @@ namespace Tsavorite.test
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
-                logFullParams.Enqueue(entry);
+                aofFullParams.Enqueue(entry);
             }
 
             // Commit to the log
-            logFullParams.Commit(true);
+            aofFullParams.Commit(true);
 
             // Verify  
             ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
@@ -165,7 +165,7 @@ namespace Tsavorite.test
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;
-            using var iter = logFullParams.Scan(0, 100_000_000);
+            using var iter = aofFullParams.Scan(0, 100_000_000);
             while (iter.GetNext(out byte[] result, out _, out _))
             {
                 ClassicAssert.AreEqual(currentEntry, result[currentEntry]);

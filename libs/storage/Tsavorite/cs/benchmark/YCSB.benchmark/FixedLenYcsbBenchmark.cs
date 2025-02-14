@@ -12,10 +12,22 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using StructStoreFunctions = StoreFunctions<Key, Value, Key.Comparer, DefaultRecordDisposer<Key, Value>>;
+    using StructStoreFunctions = StoreFunctions<SpanByte, FixedLengthKey.Comparer, SpanByteRecordDisposer>;
 
     internal class Tsavorite_YcsbBenchmark
     {
+        RevivificationSettings FixedLengthBins = new()
+        {
+            FreeRecordBins =
+            [
+                new RevivificationBin()
+                {
+                    RecordSize = RecordInfo.GetLength() + 2 * (sizeof(int) + sizeof(long)), // We have "fixed length" for these integer bins
+                    BestFitScanLimit = RevivificationBin.UseFirstFit
+                }
+            ]
+        };
+
         // Ensure sizes are aligned to chunk sizes
         static long InitCount;
         static long TxnCount;
@@ -27,17 +39,17 @@ namespace Tsavorite.benchmark
         readonly SessionFunctions functions;
         readonly Input[] input_;
 
-        readonly Key[] init_keys_;
-        readonly Key[] txn_keys_;
+        readonly FixedLengthKey[] init_keys_;
+        readonly FixedLengthKey[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<Key, Value, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>> store;
+        readonly TsavoriteKV<SpanByte, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal Tsavorite_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
+        internal Tsavorite_YcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -64,7 +76,7 @@ namespace Tsavorite.benchmark
             {
                 RevivificationLevel.None => default,
                 RevivificationLevel.Chain => new RevivificationSettings(),
-                RevivificationLevel.Full => RevivificationSettings.DefaultFixedLength.Clone(),
+                RevivificationLevel.Full => FixedLengthBins,
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 
@@ -99,7 +111,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions<Key, Value>.Create(new Key.Comparer())
+                , StoreFunctions<SpanByte>.Create(new FixedLengthKey.Comparer(), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -125,7 +137,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Value value = default;
+            FixedLengthKey keyStruct = default;
+            FixedLengthValue valueStruct = default;
+            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
             Input input = default;
             Output output = default;
 
@@ -157,26 +171,27 @@ namespace Tsavorite.benchmark
                             _ = uContext.CompletePending(false);
                         }
 
+                        keyStruct = txn_keys_[idx];         // Copy locally for SpanByte backing
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            _ = uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                            _ = uContext.Read(key, ref input, ref output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            _ = uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                            _ = uContext.Upsert(key, value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            _ = uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                            _ = uContext.RMW(key, ref input_[idx & 0x7], Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        _ = uContext.Delete(ref txn_keys_[idx], Empty.Default);
+                        _ = uContext.Delete(key, Empty.Default);
                         ++deletes_done;
                     }
                 }
@@ -209,7 +224,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Value value = default;
+            FixedLengthKey keyStruct = default;
+            FixedLengthValue valueStruct = default;
+            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
             Input input = default;
             Output output = default;
 
@@ -235,26 +252,27 @@ namespace Tsavorite.benchmark
                     if (idx % 512 == 0)
                         _ = bContext.CompletePending(false);
 
+                    keyStruct = txn_keys_[idx];         // Copy locally for SpanByte backing
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        _ = bContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                        _ = bContext.Read(key, ref input, ref output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        _ = bContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                        _ = bContext.Upsert(key, value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        _ = bContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                        _ = bContext.RMW(key, ref input_[idx & 0x7], Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    _ = bContext.Delete(ref txn_keys_[idx], Empty.Default);
+                    _ = bContext.Delete(key, Empty.Default);
                     ++deletes_done;
                 }
             }
@@ -393,7 +411,9 @@ namespace Tsavorite.benchmark
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
-            Value value = default;
+            FixedLengthKey keyStruct = default;
+            FixedLengthValue valueStruct = default;
+            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
 
             try
             {
@@ -410,7 +430,8 @@ namespace Tsavorite.benchmark
                                 _ = uContext.CompletePending(false);
                         }
 
-                        _ = uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                        keyStruct = txn_keys_[idx];         // Copy locally for SpanByte backing
+                        _ = uContext.Upsert(key, value, Empty.Default);
                     }
                 }
                 _ = uContext.CompletePending(true);
@@ -436,7 +457,9 @@ namespace Tsavorite.benchmark
             using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var bContext = session.BasicContext;
 
-            Value value = default;
+            FixedLengthKey keyStruct = default;
+            FixedLengthValue valueStruct = default;
+            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -451,7 +474,8 @@ namespace Tsavorite.benchmark
                             _ = bContext.CompletePending(false);
                     }
 
-                    _ = bContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                    keyStruct = txn_keys_[idx];         // Copy locally for SpanByte backing
+                    _ = bContext.Upsert(key, value, Empty.Default);
                 }
             }
 
@@ -460,18 +484,18 @@ namespace Tsavorite.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(TestLoader testLoader, out Key[] i_keys, out Key[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out FixedLengthKey[] i_keys, out FixedLengthKey[] t_keys)
         {
             InitCount = YcsbConstants.kChunkSize * (testLoader.InitCount / YcsbConstants.kChunkSize);
             TxnCount = YcsbConstants.kChunkSize * (testLoader.TxnCount / YcsbConstants.kChunkSize);
 
-            i_keys = new Key[InitCount];
-            t_keys = new Key[TxnCount];
+            i_keys = new FixedLengthKey[InitCount];
+            t_keys = new FixedLengthKey[TxnCount];
         }
 
-        internal class KeySetter : IKeySetter<Key>
+        internal class KeySetter : IKeySetter<FixedLengthKey>
         {
-            public void Set(Key[] vector, long idx, long value) => vector[idx].value = value;
+            public void Set(FixedLengthKey[] vector, long idx, long value) => vector[idx].value = value;
         }
 
         #endregion

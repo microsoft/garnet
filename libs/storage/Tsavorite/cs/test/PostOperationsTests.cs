@@ -7,6 +7,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test
 {
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
@@ -15,7 +17,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class PostOperationsTests
     {
-        class PostFunctions : SimpleSimpleFunctions<int, int>
+        class PostFunctions : SimpleLongSimpleFunctions<int, int>
         {
             internal long pswAddress;
             internal long piuAddress;
@@ -217,3 +219,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

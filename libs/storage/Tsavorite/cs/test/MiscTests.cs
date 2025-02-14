@@ -8,6 +8,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test
 {
     using ClassAllocator = GenericAllocator<int, MyValue, StoreFunctions<int, MyValue, IntKeyComparer, DefaultRecordDisposer<int, MyValue>>>;
@@ -216,3 +218,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

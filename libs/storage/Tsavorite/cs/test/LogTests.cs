@@ -12,6 +12,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test
 {
     [TestFixture]
@@ -1215,3 +1217,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

@@ -15,7 +15,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class EnqueueTests
     {
-        private TsavoriteLog log;
+        private TsavoriteAof aof;
         private IDevice device;
         static byte[] entry;
 
@@ -27,7 +27,7 @@ namespace Tsavorite.test
             IEntry
         }
 
-        private class ByteArrayEnqueueEntry : ILogEnqueueEntry
+        private class ByteArrayEnqueueEntry : IAofEnqueueEntry
         {
             public int SerializedLength => entry.Length;
 
@@ -57,8 +57,8 @@ namespace Tsavorite.test
         [TearDown]
         public void TearDown()
         {
-            log?.Dispose();
-            log = null;
+            aof?.Dispose();
+            aof = null;
             device?.Dispose();
             device = null;
 
@@ -78,7 +78,7 @@ namespace Tsavorite.test
 
             string filename = Path.Join(TestUtils.MethodTestDir, "Enqueue" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir }); // Needs to match what is set in TestUtils.CreateTestDevice 
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir }); // Needs to match what is set in TestUtils.CreateTestDevice 
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
@@ -111,18 +111,18 @@ namespace Tsavorite.test
                 {
                     case EnqueueIteratorType.Byte:
                         // Default is add bytes so no need to do anything with it
-                        log.Enqueue(entry);
+                        aof.Enqueue(entry);
                         break;
                     case EnqueueIteratorType.SpanByte:
                         // Could slice the span but for basic test just pass span of full entry - easier verification
                         Span<byte> spanEntry = entry;
-                        log.Enqueue(spanEntry);
+                        aof.Enqueue(spanEntry);
                         break;
                     case EnqueueIteratorType.SpanBatch:
-                        log.Enqueue(spanBatch);
+                        aof.Enqueue(spanBatch);
                         break;
                     case EnqueueIteratorType.IEntry:
-                        log.Enqueue(ientry);
+                        aof.Enqueue(ientry);
                         break;
                     default:
                         Assert.Fail("Unknown EnqueueIteratorType");
@@ -131,11 +131,11 @@ namespace Tsavorite.test
             }
 
             // Commit to the log
-            log.Commit(true);
+            aof.Commit(true);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = aof.Scan(0, 100_000_000))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -172,7 +172,7 @@ namespace Tsavorite.test
 
             string filename = Path.Join(TestUtils.MethodTestDir, "EnqueueAsyncBasic" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
             if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
@@ -186,17 +186,17 @@ namespace Tsavorite.test
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
 
-            await log.EnqueueAsync(input1, cancellationToken);
-            await log.EnqueueAsync(input2);
-            await log.EnqueueAsync(input3);
-            await log.EnqueueAsync(readOnlyMemoryEntry);
-            await log.EnqueueAsync(ientry);
-            await log.EnqueueAsync(spanBatch);
-            await log.CommitAsync();
+            await aof.EnqueueAsync(input1, cancellationToken);
+            await aof.EnqueueAsync(input2);
+            await aof.EnqueueAsync(input3);
+            await aof.EnqueueAsync(readOnlyMemoryEntry);
+            await aof.EnqueueAsync(ientry);
+            await aof.EnqueueAsync(spanBatch);
+            await aof.CommitAsync();
 
             // Read the log to make sure all entries are put in
             int currentEntry = 1;
-            using (var iter = log.Scan(0, long.MaxValue))
+            using (var iter = aof.Scan(0, long.MaxValue))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

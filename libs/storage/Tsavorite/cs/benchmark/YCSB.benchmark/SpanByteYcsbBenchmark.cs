@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
@@ -12,7 +13,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     internal class SpanByteYcsbBenchmark
     {
@@ -31,7 +32,7 @@ namespace Tsavorite.benchmark
         readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        readonly TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -108,7 +109,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , StoreFunctions<SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -170,27 +171,32 @@ namespace Tsavorite.benchmark
                             uContext.CompletePending(false);
                         }
 
-                        int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
-                        if (r < readPercent)
+                        unsafe
                         {
-                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
-                            ++reads_done;
-                            continue;
+                            var keyNum = txn_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
+                            var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                            int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
+                            if (r < readPercent)
+                            {
+                                uContext.Read(key, ref _input, ref _output, Empty.Default);
+                                ++reads_done;
+                                continue;
+                            }
+                            if (r < upsertPercent)
+                            {
+                                uContext.Upsert(key, _value, Empty.Default);
+                                ++writes_done;
+                                continue;
+                            }
+                            if (r < rmwPercent)
+                            {
+                                uContext.RMW(key, ref _input, Empty.Default);
+                                ++writes_done;
+                                continue;
+                            }
+                            uContext.Delete(key, Empty.Default);
+                            ++deletes_done;
                         }
-                        if (r < upsertPercent)
-                        {
-                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
-                            ++writes_done;
-                            continue;
-                        }
-                        if (r < rmwPercent)
-                        {
-                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
-                            ++writes_done;
-                            continue;
-                        }
-                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
-                        ++deletes_done;
                     }
                 }
 
@@ -256,27 +262,32 @@ namespace Tsavorite.benchmark
                         bContext.CompletePending(false);
                     }
 
-                    int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
-                    if (r < readPercent)
+                    unsafe
                     {
-                        bContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
-                        ++reads_done;
-                        continue;
+                        var keyNum = txn_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
+                        var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                        int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
+                        if (r < readPercent)
+                        {
+                            bContext.Read(key, ref _input, ref _output, Empty.Default);
+                            ++reads_done;
+                            continue;
+                        }
+                        if (r < upsertPercent)
+                        {
+                            bContext.Upsert(key, _value, Empty.Default);
+                            ++writes_done;
+                            continue;
+                        }
+                        if (r < rmwPercent)
+                        {
+                            bContext.RMW(key, ref _input, Empty.Default);
+                            ++writes_done;
+                            continue;
+                        }
+                        bContext.Delete(key, Empty.Default);
+                        ++deletes_done;
                     }
-                    if (r < upsertPercent)
-                    {
-                        bContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
-                        ++writes_done;
-                        continue;
-                    }
-                    if (r < rmwPercent)
-                    {
-                        bContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
-                        ++writes_done;
-                        continue;
-                    }
-                    bContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
-                    ++deletes_done;
                 }
             }
 
@@ -417,7 +428,7 @@ namespace Tsavorite.benchmark
             uContext.BeginUnsafe();
 
             Span<byte> value = stackalloc byte[kValueSize];
-            ref SpanByte _value = ref SpanByte.Reinterpret(value);
+            var _value = SpanByte.FromPinnedSpan(value);
 
             try
             {
@@ -437,7 +448,12 @@ namespace Tsavorite.benchmark
                             }
                         }
 
-                        uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
+                        unsafe
+                        {
+                            var keyNum = init_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
+                            var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                            uContext.Upsert(key, _value, Empty.Default);
+                        }
                     }
                 }
                 uContext.CompletePending(true);
@@ -463,7 +479,7 @@ namespace Tsavorite.benchmark
             var bContext = session.BasicContext;
 
             Span<byte> value = stackalloc byte[kValueSize];
-            ref SpanByte _value = ref SpanByte.Reinterpret(value);
+            var _value = SpanByte.FromPinnedSpan(value);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -481,7 +497,12 @@ namespace Tsavorite.benchmark
                         }
                     }
 
-                    bContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
+                    unsafe
+                    {
+                        var keyNum = init_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
+                        var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                        bContext.Upsert(key, _value, Empty.Default);
+                    }
                 }
             }
 

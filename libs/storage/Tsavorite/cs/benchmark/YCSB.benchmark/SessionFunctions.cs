@@ -1,93 +1,121 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    public struct SessionFunctions : ISessionFunctions<Key, Value, Input, Output, Empty>
+    public struct SessionFunctions : ISessionFunctions<SpanByte, Input, Output, Empty>
     {
-        public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public void RMWCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 
-        public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public void ReadCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
         }
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo)
+        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
-            dst.value = value;
+            output.value = srcLogRecord.ValueSpan.AsRef<FixedLengthValue>();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
         {
-            dst.value = value;
+            output.value = logRecord.ValueSpan.AsRef<FixedLengthValue>();
             return true;
         }
 
-        public bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) { value = default; return true; }
+        public bool SingleDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo) => true;
 
-        public bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+        public bool ConcurrentDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo) => true;
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public bool SingleWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref Input input, SpanByte srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
-            dst = src;
+            logRecord.ValueSpan.AsRef<FixedLengthValue>() = srcValue.AsRef<FixedLengthValue>();
             return true;
         }
 
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            => true; // not used
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref Input input, SpanByte srcValue, ref Output output, ref UpsertInfo upsertInfo)
         {
-            dst = src;
+            logRecord.ValueSpan.AsRef<FixedLengthValue>() = srcValue.AsRef<FixedLengthValue>();
             return true;
         }
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
         {
-            value.value = input.value;
+            logRecord.ValueSpan.AsRef<FixedLengthValue>().value = input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfoo)
         {
-            value.value += input.value;
+            logRecord.ValueSpan.AsRef<FixedLengthValue>().value = input.value;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
-            newValue.value = input.value + oldValue.value;
+            dstLogRecord.ValueSpan.AsRef<FixedLengthValue>().value = input.value;
             return true;
         }
 
-        public bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) => true;
+        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            => true;
 
-        public bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref RMWInfo rmwInfo) => true;
+        public bool NeedInitialUpdate(SpanByte key, ref Input input, ref Output output, ref RMWInfo rmwInfo) => true;
 
-        public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
+        public void PostInitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo) { }
 
-        public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
+        public bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            => true;
 
-        public int GetRMWModifiedValueLength(ref Value value, ref Input input) => 0;
-        public int GetRMWInitialValueLength(ref Input input) => 0;
-        public int GetUpsertValueLength(ref Value value, ref Input input) => Value.Size;
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref Input input)
+            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+             => GetFieldInfo();
 
-        public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
+        /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
+        public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref Input input) => GetFieldInfo();
 
-        public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
+        public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref Input input) => GetFieldInfo();
+
+        unsafe RecordFieldInfo GetFieldInfo() => new () { KeySize = sizeof(FixedLengthKey) + sizeof(int), ValueSize = sizeof(FixedLengthValue) + sizeof(int) };
+
+        public void PostSingleDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo) { }
+
+        public void PostSingleWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref Input input, SpanByte srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         public void ConvertOutputToHeap(ref Input input, ref Output output) { }
+    }
+
+    static class StaticUtilities
+    {
+        public static unsafe ref T AsRef<T>(this SpanByte spanByte) where T : unmanaged
+        {
+            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            return ref *(T*)spanByte.ToPointer();
+        }
     }
 }

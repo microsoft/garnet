@@ -13,7 +13,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class LogReadAsyncTests
     {
-        private TsavoriteLog log;
+        private TsavoriteAof aof;
         private IDevice device;
 
         public enum ParameterDefaultsIteratorType
@@ -34,8 +34,8 @@ namespace Tsavorite.test
         [TearDown]
         public void TearDown()
         {
-            log?.Dispose();
-            log = null;
+            aof?.Dispose();
+            aof = null;
             device?.Dispose();
             device = null;
 
@@ -53,7 +53,7 @@ namespace Tsavorite.test
             int entryFlag = 9999;
             string filename = Path.Join(TestUtils.MethodTestDir, $"LogReadAsync{deviceType}.log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
             byte[] entry = new byte[entryLength];
 
@@ -74,11 +74,11 @@ namespace Tsavorite.test
                 if ((i > 0) && (i < entryLength))
                     entry[i - 1] = (byte)(i - 1);
 
-                log.Enqueue(entry);
+                aof.Enqueue(entry);
             }
 
             // Commit to the log
-            log.Commit(true);
+            aof.Commit(true);
 
 
             // Read one entry based on different parameters for AsyncReadOnly and verify 
@@ -86,7 +86,7 @@ namespace Tsavorite.test
             {
                 case ParameterDefaultsIteratorType.DefaultParams:
                     // Read one entry and verify
-                    var record = log.ReadAsync(log.BeginAddress);
+                    var record = aof.ReadAsync(aof.BeginAddress);
                     var foundFlagged = record.Result.Item1[0];   // 15
                     var foundEntry = record.Result.Item1[1];  // 1
                     var foundTotal = record.Result.Item2;
@@ -98,7 +98,7 @@ namespace Tsavorite.test
                     break;
                 case ParameterDefaultsIteratorType.LengthParam:
                     // Read one entry and verify
-                    record = log.ReadAsync(log.BeginAddress, 208);
+                    record = aof.ReadAsync(aof.BeginAddress, 208);
                     foundFlagged = record.Result.Item1[0];   // 15
                     foundEntry = record.Result.Item1[1];  // 1
                     foundTotal = record.Result.Item2;
@@ -112,7 +112,7 @@ namespace Tsavorite.test
                     var cts = new CancellationToken();
 
                     // Read one entry and verify
-                    record = log.ReadAsync(log.BeginAddress, 104, cts);
+                    record = aof.ReadAsync(aof.BeginAddress, 104, cts);
                     foundFlagged = record.Result.Item1[0];   // 15
                     foundEntry = record.Result.Item1[1];  // 1
                     foundTotal = record.Result.Item2;
@@ -122,7 +122,7 @@ namespace Tsavorite.test
                     ClassicAssert.AreEqual(entryLength, foundTotal, $"Fail reading Total");
 
                     // Read one entry as IMemoryOwner and verify
-                    var recordMemoryOwner = log.ReadAsync(log.BeginAddress, MemoryPool<byte>.Shared, 104, cts);
+                    var recordMemoryOwner = aof.ReadAsync(aof.BeginAddress, MemoryPool<byte>.Shared, 104, cts);
                     var foundFlaggedMem = recordMemoryOwner.Result.Item1.Memory.Span[0];   // 15
                     var foundEntryMem = recordMemoryOwner.Result.Item1.Memory.Span[1];  // 1
                     var foundTotalMem = recordMemoryOwner.Result.Item2;

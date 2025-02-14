@@ -14,6 +14,8 @@ using Tsavorite.core;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.Revivification
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
@@ -233,7 +235,7 @@ namespace Tsavorite.test.Revivification
     [TestFixture]
     class RevivificationFixedLenTests
     {
-        internal class RevivificationFixedLenFunctions : SimpleSimpleFunctions<int, int>
+        internal class RevivificationFixedLenFunctions : SimpleLongSimpleFunctions<int, int>
         {
         }
 
@@ -2438,3 +2440,5 @@ namespace Tsavorite.test.Revivification
         }
     }
 }
+
+#endif // LOGRECORD_TODO

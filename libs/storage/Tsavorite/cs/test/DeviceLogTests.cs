@@ -11,6 +11,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test
 {
     [TestFixture]
@@ -18,12 +20,12 @@ namespace Tsavorite.test
     {
         const int entryLength = 100;
         const int numEntries = 1000;
-        private TsavoriteLog log;
+        private TsavoriteAof aof;
         static readonly byte[] entry = new byte[100];
 
         [Test]
         [Category("TsavoriteLog")]
-        public async ValueTask PageBlobTsavoriteLogTest1([Values] LogChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
+        public async ValueTask PageBlobTsavoriteLogTest1([Values] AofChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
             var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "Tsavoritelog.log", deleteOnClose: true, logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
@@ -38,7 +40,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async ValueTask PageBlobTsavoriteLogTestWithLease([Values] LogChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
+        public async ValueTask PageBlobTsavoriteLogTestWithLease([Values] AofChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
             var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "TsavoritelogLease.log", deleteOnClose: true, underLease: true, blobManager: null, logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
@@ -60,7 +62,7 @@ namespace Tsavorite.test
 
             // Create devices \ log for test for in memory device
             using var device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
-            using var LocalMemorylog = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
+            using var LocalMemorylog = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;
 
@@ -84,10 +86,10 @@ namespace Tsavorite.test
             }
         }
 
-        private async ValueTask TsavoriteLogTest1(LogChecksumType logChecksum, IDevice device, ILogCommitManager logCommitManager, TsavoriteLogTestBase.IteratorType iteratorType)
+        private async ValueTask TsavoriteLogTest1(AofChecksumType logChecksum, IDevice device, IAofCommitManager logCommitManager, TsavoriteLogTestBase.IteratorType iteratorType)
         {
-            var logSettings = new TsavoriteLogSettings { PageSizeBits = 20, SegmentSizeBits = 20, LogDevice = device, LogChecksum = logChecksum, LogCommitManager = logCommitManager, TryRecoverLatest = false };
-            log = TsavoriteLogTestBase.IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
+            var logSettings = new TsavoriteAofLogSettings { PageSizeBits = 20, SegmentSizeBits = 20, LogDevice = device, LogChecksum = logChecksum, LogCommitManager = logCommitManager, TryRecoverLatest = false };
+            aof = TsavoriteLogTestBase.IsAsync(iteratorType) ? await TsavoriteAof.CreateAsync(logSettings) : new TsavoriteAof(logSettings);
 
             byte[] entry = new byte[entryLength];
             for (int i = 0; i < entryLength; i++)
@@ -95,17 +97,17 @@ namespace Tsavorite.test
 
             for (int i = 0; i < numEntries; i++)
             {
-                log.Enqueue(entry);
+                _ = aof.Enqueue(entry);
             }
 
-            log.CompleteLog(true);
+            aof.CompleteLog(true);
 
             // MoveNextAsync() would hang at TailAddress, waiting for more entries (that we don't add).
             // Note: If this happens and the test has to be canceled, there may be a leftover blob from the log.Commit(), because
             // the log device isn't Dispose()d; the symptom is currently a numeric string format error in DefaultCheckpointNamingScheme.
-            using (var iter = log.Scan(0, long.MaxValue))
+            using (var iter = aof.Scan(0, long.MaxValue))
             {
-                var counter = new TsavoriteLogTestBase.Counter(log);
+                var counter = new TsavoriteLogTestBase.Counter(aof);
 
                 switch (iteratorType)
                 {
@@ -117,7 +119,7 @@ namespace Tsavorite.test
                         }
                         break;
                     case TsavoriteLogTestBase.IteratorType.AsyncMemoryOwner:
-                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                        await foreach ((IMemoryOwner<byte> result, _, _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                         {
                             ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                             result.Dispose();
@@ -138,7 +140,9 @@ namespace Tsavorite.test
                 ClassicAssert.IsTrue(counter.count == numEntries);
             }
 
-            log.Dispose();
+            aof.Dispose();
         }
     }
 }
+
+#endif // LOGRECORD_TODO

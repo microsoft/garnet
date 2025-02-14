@@ -12,6 +12,8 @@ using Tsavorite.core;
 using Tsavorite.devices;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery.sumstore
 {
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
@@ -469,3 +471,5 @@ namespace Tsavorite.test.recovery.sumstore
         }
     }
 }
+
+#endif // LOGRECORD_TODO

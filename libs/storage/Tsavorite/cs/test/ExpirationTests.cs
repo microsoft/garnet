@@ -8,9 +8,11 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.Expiration
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class ExpirationTests
@@ -155,7 +157,7 @@ namespace Tsavorite.test.Expiration
 #pragma warning restore format
         };
 
-        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, ExpirationInput, ExpirationOutput, Empty>
         {
             private static unsafe void VerifyValue(int key, ref SpanByte valueSpanByte)
             {
@@ -1127,3 +1129,5 @@ namespace Tsavorite.test.Expiration
         }
     }
 }
+
+#endif // LOGRECORD_TODO

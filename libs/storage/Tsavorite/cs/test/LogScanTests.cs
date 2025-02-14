@@ -13,9 +13,9 @@ namespace Tsavorite.test
     [TestFixture]
     internal class LogScanTests
     {
-        private TsavoriteLog log;
+        private TsavoriteAof aof;
         private IDevice device;
-        private TsavoriteLog logUncommitted;
+        private TsavoriteAof aofUncommitted;
         private IDevice deviceUnCommitted;
 
         static byte[] entry;
@@ -35,20 +35,20 @@ namespace Tsavorite.test
         [TearDown]
         public void TearDown()
         {
-            log?.Dispose();
-            log = null;
+            aof?.Dispose();
+            aof = null;
             device?.Dispose();
             device = null;
             deviceUnCommitted?.Dispose();
             deviceUnCommitted = null;
-            logUncommitted?.Dispose();
-            logUncommitted = null;
+            aofUncommitted?.Dispose();
+            aofUncommitted = null;
 
             // Clean up log files
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        public void PopulateLog(TsavoriteLog log)
+        public void PopulateLog(TsavoriteAof aof)
         {
             //****** Populate log for Basic data for tests 
             // Set Default entry data
@@ -67,14 +67,14 @@ namespace Tsavorite.test
                     entry[i - 1] = (byte)(i - 1);
 
                 // Add to TsavoriteLog
-                log.Enqueue(entry);
+                aof.Enqueue(entry);
             }
 
             // Commit to the log
-            log.Commit(true);
+            aof.Commit(true);
         }
 
-        public void PopulateUncommittedLog(TsavoriteLog logUncommitted)
+        public void PopulateUncommittedLog(TsavoriteAof aofUncommitted)
         {
             //****** Populate uncommitted log / device for ScanUncommittedTest
             // Set Default entry data
@@ -93,11 +93,11 @@ namespace Tsavorite.test
                     entry[j - 1] = (byte)(j - 1);
 
                 // Add to TsavoriteLog
-                logUncommitted.Enqueue(entry);
+                aofUncommitted.Enqueue(entry);
             }
 
             // Wait for safe tail to catch up
-            while (logUncommitted.SafeTailAddress < logUncommitted.TailAddress)
+            while (aofUncommitted.SafeTailAddress < aofUncommitted.TailAddress)
                 Thread.Yield();
 
         }
@@ -110,15 +110,15 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Basic default scan from start to end 
             // Indirectly used in other tests, but good to have the basic test here for completeness
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = aof.Scan(0, 100_000_000))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -143,14 +143,14 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Basic default scan from start to end 
             // Indirectly used in other tests, but good to have the basic test here for completeness
 
             // Read the log - Look for the flag so know each entry is unique
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = aof.Scan(0, 100_000_000))
             {
                 var next = iter.GetNext(out byte[] result, out _, out _);
                 ClassicAssert.IsTrue(next);
@@ -159,13 +159,13 @@ namespace Tsavorite.test
                 ClassicAssert.AreEqual((byte)entryFlag, result[0]);
 
                 // truncate log to tail
-                log.TruncateUntil(log.TailAddress);
-                log.Commit(true);
-                ClassicAssert.AreEqual(log.TailAddress, log.BeginAddress);
+                aof.TruncateUntil(aof.TailAddress);
+                aof.Commit(true);
+                ClassicAssert.AreEqual(aof.TailAddress, aof.BeginAddress);
 
                 // Wait for allocator to realize the new BeginAddress
                 // Needed as this is done post-commit
-                while (log.AllocatorBeginAddress < log.TailAddress)
+                while (aof.AllocatorBeginAddress < aof.TailAddress)
                     Thread.Yield();
 
                 // Iterator will skip ahead to tail
@@ -186,7 +186,7 @@ namespace Tsavorite.test
         }
 
 
-        internal class TestConsumer : ILogEntryConsumer
+        internal class TestConsumer : IAofEntryConsumer
         {
             internal int currentEntry = 0;
 
@@ -208,15 +208,15 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Basic default scan from start to end 
             // Indirectly used in other tests, but good to have the basic test here for completeness
 
             // Read the log - Look for the flag so know each entry is unique
             var consumer = new TestConsumer();
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = aof.Scan(0, 100_000_000))
             {
                 while (iter.TryConsumeNext(consumer)) { }
             }
@@ -234,12 +234,12 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanNoDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
+            using (var iter = aof.Scan(0, 100_000_000, recover: true, scanBufferingMode: DiskScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -266,12 +266,12 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanByName" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, recover: true))
+            using (var iter = aof.Scan(0, 100_000_000, recover: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -298,12 +298,12 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanWithoutRecover" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Read the log 
             int currentEntry = 9;   // since starting at specified address of 1000, need to set current entry as 9 so verification starts at proper spot
-            using (var iter = log.Scan(1000, 100_000_000, recover: false))
+            using (var iter = aof.Scan(1000, 100_000_000, recover: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -330,12 +330,12 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDoublePage" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanBufferingMode: ScanBufferingMode.DoublePageBuffering))
+            using (var iter = aof.Scan(0, 100_000_000, scanBufferingMode: DiskScanBufferingMode.DoublePageBuffering))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -360,12 +360,12 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScanSinglePage" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
-            PopulateLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(aof);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            using (var iter = aof.Scan(0, 100_000_000, scanBufferingMode: DiskScanBufferingMode.SinglePageBuffering))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -390,13 +390,13 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScan" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, SafeTailRefreshFrequencyMs = 0 });
-            PopulateUncommittedLog(log);
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, SafeTailRefreshFrequencyMs = 0 });
+            PopulateUncommittedLog(aof);
 
             // Setting scanUnCommitted to true is actual test here.
             // Read the log - Look for the flag so know each entry is unique and still reads uncommitted
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanUncommitted: true))
+            using (var iter = aof.Scan(0, 100_000_000, scanUncommitted: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

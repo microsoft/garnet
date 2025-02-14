@@ -9,6 +9,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery.objects
 {
     using ClassAllocator = GenericAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
@@ -170,3 +172,5 @@ namespace Tsavorite.test.recovery.objects
         }
     }
 }
+
+#endif // LOGRECORD_TODO

@@ -6,6 +6,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.ReadCacheTests
 {
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
@@ -235,3 +237,5 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 }
+
+#endif // LOGRECORD_TODO

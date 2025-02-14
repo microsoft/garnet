@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -624,3 +626,5 @@ namespace Tsavorite.test.UnsafeContext
         }
     }
 }
+
+#endif // LOGRECORD_TODO

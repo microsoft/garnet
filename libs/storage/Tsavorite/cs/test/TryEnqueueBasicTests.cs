@@ -15,7 +15,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class TryEnqueueTests
     {
-        private TsavoriteLog log;
+        private TsavoriteAof aof;
         private IDevice device;
         static readonly byte[] entry = new byte[100];
 
@@ -44,8 +44,8 @@ namespace Tsavorite.test
         [TearDown]
         public void TearDown()
         {
-            log?.Dispose();
-            log = null;
+            aof?.Dispose();
+            aof = null;
             device?.Dispose();
             device = null;
 
@@ -66,7 +66,7 @@ namespace Tsavorite.test
             // Create devices \ log for test
             string filename = Path.Join(TestUtils.MethodTestDir, "TryEnqueue" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
             if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
@@ -107,15 +107,15 @@ namespace Tsavorite.test
                 {
                     case TryEnqueueIteratorType.Byte:
                         // Default is add bytes so no need to do anything with it
-                        appendResult = log.TryEnqueue(entry, out logicalAddress);
+                        appendResult = aof.TryEnqueue(entry, out logicalAddress);
                         break;
                     case TryEnqueueIteratorType.SpanByte:
                         // Could slice the span but for basic test just pass span of full entry - easier verification
                         Span<byte> spanEntry = entry;
-                        appendResult = log.TryEnqueue(spanEntry, out logicalAddress);
+                        appendResult = aof.TryEnqueue(spanEntry, out logicalAddress);
                         break;
                     case TryEnqueueIteratorType.SpanBatch:
-                        appendResult = log.TryEnqueue(spanBatch, out logicalAddress);
+                        appendResult = aof.TryEnqueue(spanBatch, out logicalAddress);
                         break;
                     default:
                         Assert.Fail("Unknown TryEnqueueIteratorType");
@@ -127,19 +127,19 @@ namespace Tsavorite.test
 
                 // logical address has new entry every x bytes which is one entry less than the TailAddress
                 if (iteratorType == TryEnqueueIteratorType.SpanBatch)
-                    ExpectedOutAddress = log.TailAddress - 5200;
+                    ExpectedOutAddress = aof.TailAddress - 5200;
                 else
-                    ExpectedOutAddress = log.TailAddress - 104;
+                    ExpectedOutAddress = aof.TailAddress - 104;
 
                 ClassicAssert.AreEqual(ExpectedOutAddress, logicalAddress);
             }
 
             // Commit to the log
-            log.Commit(true);
+            aof.Commit(true);
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = aof.Scan(0, 100_000_000))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

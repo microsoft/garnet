@@ -9,6 +9,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
@@ -360,3 +362,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

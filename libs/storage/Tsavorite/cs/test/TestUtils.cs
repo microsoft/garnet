@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -21,7 +22,7 @@ namespace Tsavorite.test
         internal const string StressTestCategory = "Stress";
         internal const string TsavoriteKVTestCategory = "TsavoriteKV";
         internal const string ReadTestCategory = "Read";
-        internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
+        internal const string TransactionalUnsafeContextTestCategory = "TransactionalUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
         internal const string LockTableTestCategory = "LockTable";
@@ -229,10 +230,10 @@ namespace Tsavorite.test
 
         public enum WaitMode { Wait, NoWait }
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(completedOutputs.Next());
             var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
@@ -259,61 +260,111 @@ namespace Tsavorite.test
             }
         }
 
-        internal static unsafe bool FindHashBucketEntryForKey<TKey, TValue, TStoreFunctions, TAllocator>(this TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, out HashBucketEntry entry)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal static unsafe bool FindHashBucketEntryForKey<TValue, TStoreFunctions, TAllocator>(this TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, SpanByte key, out HashBucketEntry entry)
+            where TStoreFunctions : IStoreFunctions<TValue>
+            where TAllocator : IAllocator<TValue, TStoreFunctions>
         {
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key));
             var success = store.FindTag(ref hei);
             entry = hei.entry;
             return success;
         }
+
+        internal static unsafe SpanByte SpanByteFrom<T>(ref T localVar) where T : unmanaged
+            => new (Unsafe.SizeOf<T>(), (IntPtr)Unsafe.AsPointer(ref localVar));
     }
 
-    internal class LongComparerModulo : IKeyComparer<long>
+    /// <summary>Deterministic equality comparer for ints</summary>
+    public sealed class IntKeyComparer : IKeyComparer
     {
-        readonly long mod;
+        /// <summary>
+        /// The default instance.
+        /// </summary>
+        /// <remarks>Used to avoid allocating new comparers.</remarks>
+        public static readonly IntKeyComparer Instance = new();
 
-        internal LongComparerModulo(long mod) => this.mod = mod;
+        /// <inheritdoc />
+        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<int>() == k2.AsRef<int>();
 
-        public bool Equals(ref long k1, ref long k2) => k1 == k2;
-
-        public long GetHashCode64(ref long k) => mod == 0 ? k : k % mod;
+        /// <inheritdoc />
+        public long GetHashCode64(SpanByte k) => Utility.GetHashCode(k.AsRef<int>());
     }
 
-    internal struct SpanByteComparerModulo : IKeyComparer<SpanByte>
+    /// <summary>Deterministic equality comparer for longs</summary>
+    public sealed class LongKeyComparer : IKeyComparer
+    {
+        /// <summary>
+        /// The default instance.
+        /// </summary>
+        /// <remarks>Used to avoid allocating new comparers.</remarks>
+        public static readonly LongKeyComparer Instance = new();
+
+        /// <inheritdoc />
+        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<long>() == k2.AsRef<long>();
+
+        /// <inheritdoc />
+        public long GetHashCode64(SpanByte k) => Utility.GetHashCode(k.AsRef<long>());
+    }
+
+    /// <summary>Deterministic equality comparer for longs with hash modulo</summary>
+    internal class LongKeyComparerModulo : IKeyComparer
+    {
+        internal long mod;
+
+        internal LongKeyComparerModulo(long mod) => this.mod = mod;
+
+        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<long>() == k2.AsRef<long>();
+
+        public long GetHashCode64(SpanByte k) => mod == 0 ? k.AsRef<long>() : k.AsRef<long>() % mod;
+    }
+
+    /// <summary>Deterministic equality comparer for SpanBytes with hash modulo</summary>
+    internal struct SpanByteKeyComparerModulo : IKeyComparer
     {
         readonly HashModulo modRange;
 
-        internal SpanByteComparerModulo(HashModulo mod) => modRange = mod;
+        internal SpanByteKeyComparerModulo(HashModulo mod) => modRange = mod;
 
-        public readonly bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
+        public readonly bool Equals(SpanByte k1, SpanByte k2) => SpanByteComparer.StaticEquals(k1, k2);
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(ref SpanByte k)
+        public readonly long GetHashCode64(SpanByte k)
         {
-            var value = SpanByteComparer.StaticGetHashCode64(ref k);
+            var value = SpanByteComparer.StaticGetHashCode64(k);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
         }
     }
 
     static class StaticTestUtils
     {
-        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
-                this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
-            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
+            where Functions : ISessionFunctions<TValue, TInput, TOutput, TContext>
+            where TStoreFunctions : IStoreFunctions<TValue>
+            where TAllocator : IAllocator<TValue, TStoreFunctions>
             => sessionContext.GetSinglePendingResult(out _);
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
-                this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
-            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
+            where Functions : ISessionFunctions<TValue, TInput, TOutput, TContext>
+            where TStoreFunctions : IStoreFunctions<TValue>
+            where TAllocator : IAllocator<TValue, TStoreFunctions>
         {
-            sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            _ = sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             return TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
+        }
+
+        public static unsafe ref T AsRef<T>(this SpanByte spanByte) where T : unmanaged
+        {
+            ClassicAssert.IsTrue(spanByte.Length == sizeof(T));
+            return ref *(T*)spanByte.ToPointer();
+        }
+
+        internal static unsafe SpanByte Set<T>(this SpanByte spanByte, T value) where T : unmanaged
+        {
+            ClassicAssert.IsTrue(spanByte.Length == sizeof(T));
+            spanByte.AsRef<T>() = value;
+            return spanByte;
         }
     }
 }

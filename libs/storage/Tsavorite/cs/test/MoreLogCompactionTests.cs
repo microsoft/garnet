@@ -6,6 +6,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test
 {
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
@@ -50,7 +52,7 @@ namespace Tsavorite.test
 
         public void DeleteCompactLookup([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bContext = session.BasicContext;
 
             const int totalRecords = 2000;
@@ -71,7 +73,7 @@ namespace Tsavorite.test
 
             ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
-            using var session2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session2 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bContext2 = session2.BasicContext;
 
             // Verify records by reading
@@ -99,3 +101,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

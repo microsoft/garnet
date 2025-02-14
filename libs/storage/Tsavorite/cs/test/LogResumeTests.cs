@@ -22,7 +22,7 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TsavoriteAof.log"), deleteOnClose: true);
         }
 
         [TearDown]
@@ -35,7 +35,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task TsavoriteLogResumePersistedReaderViaCookie([Values] LogChecksumType logChecksum)
+        public async Task TsavoriteLogResumePersistedReaderViaCookie([Values] AofChecksumType logChecksum)
         {
             CancellationToken cancellationToken = default;
 
@@ -43,7 +43,7 @@ namespace Tsavorite.test
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 await l.EnqueueAsync(input1, cancellationToken);
                 await l.EnqueueAsync(input2);
@@ -57,7 +57,7 @@ namespace Tsavorite.test
                 await l.CommitAsync(cookie: BitConverter.GetBytes(recoveryAddress));
             }
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 var recoveredAddress = BitConverter.ToInt64(l.RecoveredCookie);
                 using var recoveredIterator = l.Scan(recoveredAddress, long.MaxValue);
@@ -68,7 +68,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task TsavoriteLogResumeViaCompleteUntilRecordAtSpec([Values] LogChecksumType logChecksum)
+        public async Task TsavoriteLogResumeViaCompleteUntilRecordAtSpec([Values] AofChecksumType logChecksum)
         {
             CancellationToken cancellationToken = default;
 
@@ -76,7 +76,7 @@ namespace Tsavorite.test
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 await l.EnqueueAsync(input1, cancellationToken);
                 await l.EnqueueAsync(input2);
@@ -89,7 +89,7 @@ namespace Tsavorite.test
                 await l.CommitAsync(cookie: BitConverter.GetBytes(nextAddress));
             }
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 var recoveredAddress = BitConverter.ToInt64(l.RecoveredCookie);
                 using var recoveredIterator = l.Scan(recoveredAddress, long.MaxValue);
@@ -100,7 +100,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task TsavoriteLogResumePersistedReader2([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
+        public async Task TsavoriteLogResumePersistedReader2([Values] AofChecksumType logChecksum, [Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
@@ -108,7 +108,7 @@ namespace Tsavorite.test
 
             using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
             {
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     await l.EnqueueAsync(input1);
                     await l.CommitAsync();
@@ -123,7 +123,7 @@ namespace Tsavorite.test
                     await l.CommitAsync(cookie: BitConverter.GetBytes(recoveryAddress));
                 }
 
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     var recoveredAddress = BitConverter.ToInt64(l.RecoveredCookie);
                     using var recoveredIterator = l.Scan(recoveredAddress, long.MaxValue);
@@ -139,7 +139,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteLog")]
-        public async Task TsavoriteLogResumePersistedReader3([Values] LogChecksumType logChecksum, [Values] bool removeOutdated)
+        public async Task TsavoriteLogResumePersistedReader3([Values] AofChecksumType logChecksum, [Values] bool removeOutdated)
         {
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
@@ -147,7 +147,7 @@ namespace Tsavorite.test
 
             using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
             {
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     await l.EnqueueAsync(input1);
                     await l.CommitAsync();
@@ -168,7 +168,7 @@ namespace Tsavorite.test
                     }
                 }
 
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     var recoveredAddress = BitConverter.ToInt64(l.RecoveredCookie);
                     using var recoveredIterator = l.Scan(recoveredAddress, l.TailAddress);

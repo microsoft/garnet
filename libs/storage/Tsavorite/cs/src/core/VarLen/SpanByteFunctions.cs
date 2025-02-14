@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Buffers;
-using System.IO;
 
 namespace Tsavorite.core
 {
@@ -35,6 +35,16 @@ namespace Tsavorite.core
             logRecord.ValueSpan.CopyTo(ref output, memoryPool);
             return true;
         }
+
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByte input)
+            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = input.TotalSize };
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref SpanByte input)
+            => new() { KeySize = key.TotalSize, ValueSize = input.TotalSize };
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref SpanByte input)
+            => new() { KeySize = key.TotalSize, ValueSize = value.TotalSize };
 
         /// <inheritdoc />
         public override void ConvertOutputToHeap(ref SpanByte input, ref SpanByteAndMemory output)

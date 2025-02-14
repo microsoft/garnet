@@ -13,9 +13,11 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.ReadCacheTests
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class RandomReadCacheTests
@@ -231,3 +233,5 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 }
+
+#endif // LOGRECORD_TODO

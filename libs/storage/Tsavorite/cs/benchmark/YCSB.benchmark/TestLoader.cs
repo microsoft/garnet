@@ -22,8 +22,8 @@ namespace Tsavorite.benchmark
     {
         internal readonly Options Options;
         internal readonly string Distribution;
-        internal Key[] init_keys = default;
-        internal Key[] txn_keys = default;
+        internal FixedLengthKey[] init_keys = default;
+        internal FixedLengthKey[] txn_keys = default;
         internal KeySpanByte[] init_span_keys = default;
         internal KeySpanByte[] txn_span_keys = default;
 
@@ -340,9 +340,9 @@ namespace Tsavorite.benchmark
 
         internal string BackupPath => $"{DataPath}/{Distribution}_{(Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
-        internal bool MaybeRecoverStore<K, V, SF, A>(TsavoriteKV<K, V, SF, A> store)
-            where SF : IStoreFunctions<K, V>
-            where A : IAllocator<K, V, SF>
+        internal bool MaybeRecoverStore<V, SF, A>(TsavoriteKV<V, SF, A> store)
+            where SF : IStoreFunctions<V>
+            where A : IAllocator<V, SF>
         {
             // Recover database for fast benchmark repeat runs.
             if (RecoverMode)
@@ -371,9 +371,9 @@ namespace Tsavorite.benchmark
             return false;
         }
 
-        internal void MaybeCheckpointStore<K, V, SF, A>(TsavoriteKV<K, V, SF, A> store)
-            where SF : IStoreFunctions<K, V>
-            where A : IAllocator<K, V, SF>
+        internal void MaybeCheckpointStore<V, SF, A>(TsavoriteKV<V, SF, A> store)
+            where SF : IStoreFunctions<V>
+            where A : IAllocator<V, SF>
         {
             // Checkpoint database for fast benchmark repeat runs.
             if (RecoverMode)

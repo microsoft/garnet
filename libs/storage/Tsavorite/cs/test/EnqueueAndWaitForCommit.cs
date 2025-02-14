@@ -15,7 +15,7 @@ namespace Tsavorite.test
         const int entryLength = 500;
         const int numEntries = 100;
 
-        public TsavoriteLog log;
+        public TsavoriteAof aof;
         public IDevice device;
         static byte[] entry;
         static ReadOnlySpanBatch spanBatch;
@@ -46,14 +46,14 @@ namespace Tsavorite.test
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "EnqueueAndWaitForCommit.log"), deleteOnClose: true);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device });
+            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device });
         }
 
         [TearDown]
         public void TearDown()
         {
-            log?.Dispose();
-            log = null;
+            aof?.Dispose();
+            aof = null;
             device?.Dispose();
             device = null;
 
@@ -72,17 +72,17 @@ namespace Tsavorite.test
             }
 
             // Add to TsavoriteLog on a separate thread, which will wait for the commit from this thread
-            var currentTask = Task.Run(() => LogWriter(log, entry, iteratorType));
+            var currentTask = Task.Run(() => LogWriter(aof, entry, iteratorType));
 
             // Delay so LogWriter's call to EnqueueAndWaitForCommit gets into its spinwait for the Commit.
             await Task.Delay(100);
 
             // Commit to the log and wait for task to finish
-            log.Commit(true);
+            aof.Commit(true);
             await currentTask;
 
             // Read the log - Look for the flag so know each entry is unique
-            using var iter = log.Scan(0, 1000);
+            using var iter = aof.Scan(0, 1000);
             int currentEntry = 0;
             while (iter.GetNext(out byte[] result, out _, out _))
             {
@@ -94,16 +94,16 @@ namespace Tsavorite.test
             ClassicAssert.AreNotEqual(0, currentEntry, "Failure -- data loop after log.Scan never entered so wasn't verified.");
         }
 
-        public static void LogWriter(TsavoriteLog log, byte[] entry, EnqueueIteratorType iteratorType)
+        public static void LogWriter(TsavoriteAof aof, byte[] entry, EnqueueIteratorType iteratorType)
         {
             try
             {
                 long returnLogicalAddress = iteratorType switch
                 {
-                    EnqueueIteratorType.Byte => log.EnqueueAndWaitForCommit(entry),
+                    EnqueueIteratorType.Byte => aof.EnqueueAndWaitForCommit(entry),
                     EnqueueIteratorType.SpanByte => // Could slice the span but for basic test just pass span of full entry - easier verification
-                                                    log.EnqueueAndWaitForCommit((Span<byte>)entry),
-                    EnqueueIteratorType.SpanBatch => log.EnqueueAndWaitForCommit(spanBatch),
+                                                    aof.EnqueueAndWaitForCommit((Span<byte>)entry),
+                    EnqueueIteratorType.SpanBatch => aof.EnqueueAndWaitForCommit(spanBatch),
                     _ => throw new ApplicationException("Test failure: Unknown EnqueueIteratorType")
                 };
 

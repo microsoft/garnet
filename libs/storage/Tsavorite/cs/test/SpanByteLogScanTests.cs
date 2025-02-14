@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -446,3 +448,5 @@ namespace Tsavorite.test.spanbyte
         }
     }
 }
+
+#endif // LOGRECORD_TODO

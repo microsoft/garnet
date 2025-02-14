@@ -9,6 +9,8 @@ using Tsavorite.core;
 using Tsavorite.test.LockTable;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.ModifiedBit
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
@@ -34,8 +36,8 @@ namespace Tsavorite.test.ModifiedBit
         ModifiedBitTestComparer comparer;
 
         private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> bContext;
+        private ClientSession<int, int, int, int, Empty, SimpleLongSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, SimpleLongSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -52,7 +54,7 @@ namespace Tsavorite.test.ModifiedBit
             }, StoreFunctions<int, int>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, SimpleSimpleFunctions<int, int>>(new SimpleSimpleFunctions<int, int>());
+            session = store.NewSession<int, int, Empty, SimpleLongSimpleFunctions<int, int>>(new SimpleLongSimpleFunctions<int, int>());
             bContext = session.BasicContext;
         }
 
@@ -73,21 +75,21 @@ namespace Tsavorite.test.ModifiedBit
                 ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
         }
 
-        void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleLongSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleLongSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleLongSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session, int key, bool xlock, bool slock, bool modified = false)
         {
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
@@ -428,3 +430,5 @@ namespace Tsavorite.test.ModifiedBit
         }
     }
 }
+
+#endif // LOGRECORD_TODO

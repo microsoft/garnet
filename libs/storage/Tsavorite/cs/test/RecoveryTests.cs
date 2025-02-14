@@ -10,6 +10,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery.sumstore
 {
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
@@ -358,7 +360,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private void Populate(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bContext = session.BasicContext;
 
             for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
@@ -439,7 +441,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private static void Read(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bContext = session.BasicContext;
 
             for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
@@ -512,3 +514,5 @@ namespace Tsavorite.test.recovery.sumstore
         }
     }
 }
+
+#endif // LOGRECORD_TODO

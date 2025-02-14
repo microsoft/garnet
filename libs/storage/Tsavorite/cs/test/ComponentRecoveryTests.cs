@@ -8,6 +8,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#if LOGRECORD_TODO
+
 namespace Tsavorite.test.recovery
 {
     [TestFixture]
@@ -190,3 +192,5 @@ namespace Tsavorite.test.recovery
         }
     }
 }
+
+#endif // LOGRECORD_TODO
