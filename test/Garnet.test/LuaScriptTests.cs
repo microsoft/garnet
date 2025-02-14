@@ -1055,7 +1055,7 @@ return retArray";
         }
 
         [Test]
-        public void IntentialTimeout()
+        public void IntentionalTimeout()
         {
             const string TimeoutScript = @"
 local count = 0
