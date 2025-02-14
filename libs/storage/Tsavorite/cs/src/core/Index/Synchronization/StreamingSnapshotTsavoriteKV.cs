@@ -81,6 +81,10 @@ namespace Tsavorite.core
             }
             finally
             {
+                // We started this task before entering PREP_STREAMING_SNAPSHOT_CHECKPOINT, so we
+                // need to wait until the state machine is in PREP_STREAMING_SNAPSHOT_CHECKPOINT
+                while (systemState.Phase != Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT)
+                    Thread.Yield();
                 GlobalStateMachineStep(systemState);
             }
         }
@@ -145,6 +149,11 @@ namespace Tsavorite.core
             {
                 // Release the semaphore to allow the checkpoint waiting task to proceed
                 _hybridLogCheckpoint.flushedSemaphore.Release();
+
+                // We started this task before entering WAIT_FLUSH, so we
+                // need to wait until the state machine is in WAIT_FLUSH
+                while (systemState.Phase != Phase.WAIT_FLUSH)
+                    Thread.Yield();
                 GlobalStateMachineStep(systemState);
             }
         }
