@@ -2536,7 +2536,7 @@
   {
     "Command": "LASTSAVE",
     "Name": "LASTSAVE",
-    "Arity": 1,
+    "Arity": -1,
     "Flags": "Fast, Loading, Stale",
     "AclCategories": "Admin, Dangerous, Fast",
     "Tips": [
