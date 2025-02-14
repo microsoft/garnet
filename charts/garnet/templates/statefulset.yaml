@@ -41,7 +41,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["./GarnetServer"]
+          command: ["/app/GarnetServer"]
           {{- if or .Values.containers.args .Values.config.garnetConf .Values.config.existingSecret }}
           args:
           {{- range .Values.containers.args }}
