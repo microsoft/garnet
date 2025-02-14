@@ -207,11 +207,21 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
+                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs,
+                                                value.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                                value.Length - functionsState.etagState.etagSkippedStart);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                    return;
+
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    var retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO,
+                                                value.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                                value.Length - functionsState.etagState.etagSkippedStart);
+                    CopyRespNumber(retValue_RO, ref dst);
                     return;
 
                 case RespCommand.PFCOUNT:
