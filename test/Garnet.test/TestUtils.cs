@@ -404,15 +404,16 @@ namespace Garnet.test
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
+            bool enableDisklessSync = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            GarnetServer[] nodes = new GarnetServer[endpoints.Count];
-            for (int i = 0; i < nodes.Length; i++)
+            var nodes = new GarnetServer[endpoints.Count];
+            for (var i = 0; i < nodes.Length; i++)
             {
-                IPEndPoint endpoint = (IPEndPoint)endpoints[i];
+                var endpoint = (IPEndPoint)endpoints[i];
 
                 var opts = GetGarnetServerOptions(
                     checkpointDir,
@@ -448,6 +449,7 @@ namespace Garnet.test
                     metricsSamplingFrequency: metricsSamplingFrequency,
                     enableLua: enableLua,
                     asyncReplay: asyncReplay,
+                    enableDisklessSync: enableDisklessSync,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit);
 
@@ -455,7 +457,7 @@ namespace Garnet.test
 
                 if (opts.EndPoint is IPEndPoint ipEndpoint)
                 {
-                    int iter = 0;
+                    var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
                     {
                         ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
@@ -502,6 +504,7 @@ namespace Garnet.test
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
+            bool enableDisklessSync = false,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
@@ -610,7 +613,9 @@ namespace Garnet.test
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan) : null,
-                UnixSocketPath = unixSocketPath
+                UnixSocketPath = unixSocketPath,
+                ReplicaDisklessSync = enableDisklessSync,
+                ReplicaDisklessSyncDelay = 1
             };
 
             if (lowMemory)
