@@ -355,13 +355,13 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ShouldNotThrowExceptionForEmptyArrayResponse()
+        public async Task ShouldNotThrowExceptionForEmptyArrayResponseAsync()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
             using var db = TestUtils.GetGarnetClient();
-            db.Connect();
+            await db.ConnectAsync();
 
             ClassicAssert.DoesNotThrowAsync(async () =>
             {
