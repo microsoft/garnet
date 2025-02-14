@@ -709,7 +709,7 @@ namespace Garnet.test
             // Test custom commands of object 2
             db.Execute("JSON.SET", "k1", "$", "{\"f1\": {\"a\":1}, \"f2\":{\"a\":2}}");
             var result = db.Execute("JSON.GET", "k1");
-            ClassicAssert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
+            ClassicAssert.AreEqual("{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}", result.ToString());
         }
 
         [Test]
