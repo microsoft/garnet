@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -163,14 +164,15 @@ namespace Garnet.server
         Task[] aofTasks;
         readonly object activeDbIdsLock = new();
 
-        // File name of serialized binary file containing all DB IDs
-        const string DatabaseIdsFileName = "dbIds.dat";
-
         // Path of serialization for the DB IDs file used when committing / recovering to / from AOF
-        readonly string aofDatabaseIdsPath;
+        readonly string aofParentDir;
+
+        readonly string aofDirBaseName;
 
         // Path of serialization for the DB IDs file used when committing / recovering to / from a checkpoint
-        readonly string checkpointDatabaseIdsPath;
+        readonly string checkpointParentDir;
+
+        readonly string checkpointDirBaseName;
 
         // Stream provider for serializing DB IDs file
         readonly IStreamProvider databaseIdsStreamProvider;
@@ -223,9 +225,18 @@ namespace Garnet.server
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
             {
-                var db = createDatabasesDelegate(0, out var storeCheckpointDir, out var aofPath);
-                checkpointDatabaseIdsPath = storeCheckpointDir == null ? null : Path.Combine(storeCheckpointDir, DatabaseIdsFileName);
-                aofDatabaseIdsPath = aofPath == null ? null : Path.Combine(aofPath, DatabaseIdsFileName);
+                var db = createDatabasesDelegate(0, out var storeCheckpointDir, out var aofDir);
+
+                var checkpointDirInfo = new DirectoryInfo(storeCheckpointDir);
+                this.checkpointDirBaseName = checkpointDirInfo.Name;
+                this.checkpointParentDir = checkpointDirInfo.Parent!.FullName;
+
+                if (aofDir != null)
+                {
+                    var aofDirInfo = new DirectoryInfo(aofDir);
+                    this.aofDirBaseName = aofDirInfo.Name;
+                    this.aofParentDir = aofDirInfo.Parent!.FullName;
+                }
 
                 // Set new database in map
                 if (!this.TryAddDatabase(0, ref db))
@@ -400,25 +411,17 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (allowMultiDb && checkpointDatabaseIdsPath != null)
-                        RecoverDatabases(checkpointDatabaseIdsPath);
-
-                    var databasesMapSnapshot = databases.Map;
-
-                    var activeDbIdsSize = activeDbIdsLength;
-                    var activeDbIdsSnapshot = activeDbIds;
-
-                    for (var i = 0; i < activeDbIdsSize; i++)
+                    if (!allowMultiDb)
                     {
-                        var dbId = activeDbIdsSnapshot[i];
-                        var db = databasesMapSnapshot[dbId];
-                        storeVersion = db.MainStore.Recover();
-                        if (db.ObjectStore != null) objectStoreVersion = db.ObjectStore.Recover();
+                        RecoverDatabaseCheckpoint(0);
+                    }
+                    else
+                    {
+                        if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out var dbIdsToRecover))
+                            return;
 
-                        var lastSave = DateTimeOffset.UtcNow;
-                        db.LastSaveTime = lastSave;
-                        if (dbId == 0 && (storeVersion > 0 || objectStoreVersion > 0))
-                            lastSaveTime = lastSave;
+                        foreach (var dbId in dbIdsToRecover)
+                            RecoverDatabaseCheckpoint(dbId);
                     }
                 }
             }
@@ -435,30 +438,56 @@ namespace Garnet.server
             }
         }
 
+        private void RecoverDatabaseCheckpoint(int dbId)
+        {
+            long storeVersion = -1, objectStoreVersion = -1;
+
+            var success = TryGetOrAddDatabase(dbId, out var db);
+            Debug.Assert(success);
+
+            storeVersion = db.MainStore.Recover();
+            if (db.ObjectStore != null) objectStoreVersion = db.ObjectStore.Recover();
+
+            if (storeVersion > 0 || objectStoreVersion > 0)
+            {
+                var lastSave = DateTimeOffset.UtcNow;
+                db.LastSaveTime = lastSave;
+                if (dbId == 0)
+                    lastSaveTime = lastSave;
+
+                var databasesMapSnapshot = databases.Map;
+                databasesMapSnapshot[dbId] = db;
+            }
+        }
+
         /// <summary>
         /// Recover AOF
         /// </summary>
         public void RecoverAOF()
         {
-            if (allowMultiDb && aofDatabaseIdsPath != null)
-                RecoverDatabases(aofDatabaseIdsPath);
-
-            var databasesMapSnapshot = databases.Map;
-
-            var activeDbIdsSize = activeDbIdsLength;
-            var activeDbIdsSnapshot = activeDbIds;
-
-            for (var i = 0; i < activeDbIdsSize; i++)
+            if (!allowMultiDb)
             {
-                var dbId = activeDbIdsSnapshot[i];
-                var db = databasesMapSnapshot[dbId];
-                Debug.Assert(!db.IsDefault());
-
-                if (db.AppendOnlyFile == null) continue;
-
-                db.AppendOnlyFile.Recover();
-                logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
+                RecoverDatabaseAOF(0);
             }
+            else if (aofParentDir != null)
+            {
+                if (!TryGetSavedDatabaseIds(aofParentDir, aofDirBaseName, out var dbIdsToRecover))
+                    return;
+
+                foreach (var dbId in dbIdsToRecover)
+                    RecoverDatabaseAOF(dbId);
+            }
+        }
+
+        private void RecoverDatabaseAOF(int dbId)
+        {
+            var success = TryGetOrAddDatabase(dbId, out var db);
+            Debug.Assert(success);
+
+            if (db.AppendOnlyFile == null) return;
+
+            db.AppendOnlyFile.Recover();
+            logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
         }
 
         /// <summary>
@@ -691,16 +720,10 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
             }
 
-            var completion = Task.WhenAll(tasks).ContinueWith(_ =>
-            {
-                if (aofDatabaseIdsPath != null)
-                    WriteDatabaseIdsSnapshot(aofDatabaseIdsPath);
-            }, token);
-
             if (!spinWait)
                 return;
 
-            completion.Wait(token);
+            Task.WhenAll(tasks).Wait(token);
         }
 
         async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
@@ -1295,9 +1318,6 @@ namespace Garnet.server
                 if (token.IsCancellationRequested || disposed) return;
 
                 await CheckpointDatabaseTask(dbId, storeType, logger);
-
-                if (checkpointDatabaseIdsPath != null)
-                    WriteDatabaseIdsSnapshot(checkpointDatabaseIdsPath);
             }
             catch (Exception ex)
             {
@@ -1351,9 +1371,6 @@ namespace Garnet.server
 
                 for (var i = 0; i < currIdx; i++)
                     tasks[i].Wait(token);
-
-                if (checkpointDatabaseIdsPath != null)
-                    WriteDatabaseIdsSnapshot(checkpointDatabaseIdsPath);
             }
             catch (Exception ex)
             {
@@ -1409,6 +1426,7 @@ namespace Garnet.server
             if (dbId == 0)
                 lastSaveTime = lastSave;
             db.LastSaveTime = lastSave;
+            databasesMapSnapshot[dbId] = db;
         }
 
         private async Task InitiateCheckpoint(int dbId, GarnetDatabase db, bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
@@ -1614,48 +1632,41 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Serializes an array of active DB IDs to file (excluding DB 0)
+        /// Retrieves saved database IDs from parent checkpoint / AOF path
+        /// e.g. if path contains directories: baseName, baseName_1, baseName_2, baseName_10
+        /// DB IDs 0,1,2,10 will be returned
         /// </summary>
-        /// <param name="path">Path of serialized file</param>
-        private void WriteDatabaseIdsSnapshot(string path)
+        /// <param name="path">Parent path</param>
+        /// <param name="baseName">Base name of directories containing database-specific checkpoints / AOFs</param>
+        /// <param name="dbIds">DB IDs extracted from parent path</param>
+        /// <returns>True if successful</returns>
+        private bool TryGetSavedDatabaseIds(string path, string baseName, out int[] dbIds)
         {
-            var activeDbIdsSize = activeDbIdsLength;
-            var activeDbIdsSnapshot = activeDbIds;
+            dbIds = default;
+            if (!Directory.Exists(path)) return false;
 
-            var dbIdsWithLength = new int[activeDbIdsSize];
-            dbIdsWithLength[0] = activeDbIdsSize - 1;
-            Array.Copy(activeDbIdsSnapshot, 1, dbIdsWithLength, 1, activeDbIdsSize - 1);
-
-            var dbIdData = new byte[sizeof(int) * dbIdsWithLength.Length];
-
-            Buffer.BlockCopy(dbIdsWithLength, 0, dbIdData, 0, dbIdData.Length);
-            databaseIdsStreamProvider.Write(path, dbIdData);
-        }
-
-        /// <summary>
-        /// Recover databases from serialized DB IDs file
-        /// </summary>
-        /// <param name="path">Path of serialized file</param>
-        private void RecoverDatabases(string path)
-        {
-            using var stream = databaseIdsStreamProvider.Read(path);
-            using var streamReader = new BinaryReader(stream);
-
-            if (streamReader.BaseStream.Length > 0)
+            try
             {
-                // Read length
-                var idsCount = streamReader.ReadInt32();
-
-                // Read DB IDs
-                var dbIds = new int[idsCount];
-                var dbIdData = streamReader.ReadBytes((int)streamReader.BaseStream.Length);
-                Buffer.BlockCopy(dbIdData, 0, dbIds, 0, dbIdData.Length);
-
-                // Add databases
-                foreach (var dbId in dbIds)
+                var dirs = Directory.GetDirectories(path, $"{baseName}*", SearchOption.TopDirectoryOnly);
+                dbIds = new int[dirs.Length];
+                for (var i = 0; i < dirs.Length; i++)
                 {
-                    this.TryGetOrAddDatabase(dbId, out _);
+                    var dirName = new DirectoryInfo(dirs[i]).Name;
+                    var sepIdx = dirName.IndexOf('_');
+                    var dbId = 0;
+                    
+                    if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out dbId))
+                        continue;
+                    
+                    dbIds[i] = dbId;
                 }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Encountered an error while trying to parse save databases IDs.");
+                return false;
             }
         }
 

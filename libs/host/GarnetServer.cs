@@ -317,9 +317,9 @@ namespace Garnet
             kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
             var checkpointFactory = opts.DeviceFactoryCreator();
-            mainStoreCheckpointDir = Path.Combine(checkpointDir, "Store");
-            var baseName = Path.Combine(mainStoreCheckpointDir, $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            var baseName = Path.Combine(checkpointDir, "Store", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
+            mainStoreCheckpointDir = baseName;
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: true, logger) :

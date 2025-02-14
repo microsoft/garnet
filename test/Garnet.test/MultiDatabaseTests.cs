@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -528,68 +529,6 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseAofRecoverObjectTest()
         {
-            var db1Key1 = "db1:key1";
-            var db1Key2 = "db1:key2";
-            var db2Key1 = "db2:key1";
-            var db2Key2 = "db2:key2";
-            var db1val = new RedisValue("db1:a");
-            var db2val = new RedisValue("db2:a");
-            var db1data = new SortedSetEntry[] { new("db1:a", 1), new("db1:b", 2), new("db1:c", 3) };
-            var db2data = new SortedSetEntry[] { new("db2:a", -1), new("db2:b", -2), new("db2:c", -3) };
-
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
-            {
-                var db1 = redis.GetDatabase(0);
-                var added = db1.SortedSetAdd(db1Key1, db1data);
-                ClassicAssert.AreEqual(3, added);
-
-                var set = db1.StringSet(db1Key2, db1val);
-                ClassicAssert.IsTrue(set);
-
-                var db2 = redis.GetDatabase(1);
-                added = db2.SortedSetAdd(db2Key1, db2data);
-                ClassicAssert.AreEqual(3, added);
-
-                set = db1.StringSet(db2Key2, db2val);
-                ClassicAssert.IsTrue(set);
-
-                // Issue DB SAVE for db2
-                var res = db1.Execute("SAVE", "1");
-                ClassicAssert.AreEqual("OK", res.ToString());
-                var lastSaveStr = db2.Execute("LASTSAVE").ToString();
-                var parsed = long.TryParse(lastSaveStr, out var lastSave);
-                ClassicAssert.IsTrue(parsed);
-                ClassicAssert.AreEqual(0, lastSave);
-
-                lastSaveStr = db1.Execute("LASTSAVE").ToString();
-                parsed = long.TryParse(lastSaveStr, out lastSave);
-                ClassicAssert.IsTrue(parsed);
-                ClassicAssert.AreEqual(0, lastSave);
-            }
-
-            server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
-            server.Start();
-
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
-            {
-                var db1 = redis.GetDatabase(0);
-
-                var score = db1.SortedSetScore(db1Key1, "db1:a");
-                ClassicAssert.IsTrue(score.HasValue);
-                ClassicAssert.AreEqual(1, score.Value);
-
-                var db2 = redis.GetDatabase(1);
-
-                score = db2.SortedSetScore(db2Key1, "db2:a");
-                ClassicAssert.IsTrue(score.HasValue);
-                ClassicAssert.AreEqual(-1, score.Value);
-            }
-        }
-
-        [Test]
-        public void MultiDatabaseSaveDatabaseTest()
-        {
             var db1Key = "db1:key1";
             var db2Key = "db2:key1";
             var db1data = new SortedSetEntry[] { new("db1:a", 1), new("db1:b", 2), new("db1:c", 3) };
@@ -632,6 +571,72 @@ namespace Garnet.test
                 score = db2.SortedSetScore(db2Key, "db2:a");
                 ClassicAssert.IsTrue(score.HasValue);
                 ClassicAssert.AreEqual(-1, score.Value);
+            }
+        }
+
+        [Test]
+        public void MultiDatabaseSaveByIdTest()
+        {
+            var db1Key1 = "db1:key1";
+            var db1Key2 = "db1:key2";
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key2";
+            var db1val = new RedisValue("db1:a");
+            var db2val = new RedisValue("db2:a");
+            var db1data = new SortedSetEntry[] { new("db1:a", 1), new("db1:b", 2), new("db1:c", 3) };
+            var db2data = new SortedSetEntry[] { new("db2:a", -1), new("db2:b", -2), new("db2:c", -3) };
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+                var added = db1.SortedSetAdd(db1Key1, db1data);
+                ClassicAssert.AreEqual(3, added);
+
+                var set = db1.StringSet(db1Key2, db1val);
+                ClassicAssert.IsTrue(set);
+
+                var db2 = redis.GetDatabase(1);
+                added = db2.SortedSetAdd(db2Key1, db2data);
+                ClassicAssert.AreEqual(3, added);
+
+                set = db2.StringSet(db2Key2, db2val);
+                ClassicAssert.IsTrue(set);
+
+                // Issue DB SAVE for db2
+                var res = db1.Execute("SAVE", "1");
+                ClassicAssert.AreEqual("OK", res.ToString());
+                var expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var lastSaveStr = db2.Execute("LASTSAVE").ToString();
+                var parsed = long.TryParse(lastSaveStr, out var lastSave);
+                ClassicAssert.IsTrue(parsed);
+                ClassicAssert.AreEqual(expectedLastSave, lastSave);
+
+                lastSaveStr = db1.Execute("LASTSAVE").ToString();
+                parsed = long.TryParse(lastSaveStr, out lastSave);
+                ClassicAssert.IsTrue(parsed);
+                ClassicAssert.AreEqual(0, lastSave);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+
+                ClassicAssert.IsFalse(db1.KeyExists(db1Key1));
+                ClassicAssert.IsFalse(db1.KeyExists(db1Key2));
+
+                var db2 = redis.GetDatabase(1);
+
+                var score = db2.SortedSetScore(db2Key1, "db2:a");
+                ClassicAssert.IsTrue(score.HasValue);
+                ClassicAssert.AreEqual(-1, score.Value);
+
+                var value = db2.StringGet(db2Key2);
+                ClassicAssert.IsTrue(value.HasValue);
+                ClassicAssert.AreEqual(db2val, value.ToString());
             }
         }
 
