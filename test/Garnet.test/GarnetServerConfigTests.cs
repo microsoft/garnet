@@ -411,48 +411,31 @@ namespace Garnet.test
                     var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
-                    ClassicAssert.IsNull(options.LuaScriptTimeout);
+                    ClassicAssert.AreEqual(0, options.LuaScriptTimeoutMs);
                 }
 
                 // Positive accepted
                 {
-                    var args = new[] { "--lua", "--lua-script-timeout", "00:00:00.1" };
+                    var args = new[] { "--lua", "--lua-script-timeout", "10" };
                     var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
-                    ClassicAssert.AreEqual("00:00:00.1", options.LuaScriptTimeout);
+                    ClassicAssert.AreEqual(10, options.LuaScriptTimeoutMs);
                 }
 
-                // Zero rejected
+                // > 0 and < 10 rejected
+                for (var ms = 1; ms < 10; ms++)
                 {
-                    var args = new[] { "--lua", "--lua-script-timeout", "00:00:00" };
+                    var args = new[] { "--lua", "--lua-script-timeout", ms.ToString() };
                     var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Negative rejected
                 {
-                    var args = new[] { "--lua", "--lua-script-timeout", "-00:00:00.1" };
+                    var args = new[] { "--lua", "--lua-script-timeout", "-10" };
                     var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsFalse(parseSuccessful);
-                }
-
-                // Non-"c" rejected
-                {
-                    var currentThread = Thread.CurrentThread;
-                    var oldCulture = currentThread.CurrentCulture;
-                    try
-                    {
-                        currentThread.CurrentCulture = new CultureInfo("fr-FR");
-
-                        var args = new[] { "--lua", "--lua-script-timeout", new TimeSpan(0, 0, 0, 0, 1).ToString("G") };
-                        var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
-                        ClassicAssert.IsFalse(parseSuccessful);
-                    }
-                    finally
-                    {
-                        currentThread.CurrentCulture = oldCulture;
-                    }
                 }
             }
 
@@ -464,48 +447,31 @@ namespace Garnet.test
                     var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
-                    ClassicAssert.IsNull(options.LuaScriptTimeout);
+                    ClassicAssert.AreEqual(0, options.LuaScriptTimeoutMs);
                 }
 
                 // Positive accepted
                 {
-                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeout"": ""00:00:00.1"" }";
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeoutMs"": 10 }";
                     var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
-                    ClassicAssert.AreEqual("00:00:00.1", options.LuaScriptTimeout);
+                    ClassicAssert.AreEqual(10, options.LuaScriptTimeoutMs);
                 }
 
-                // Zero rejected
+                // > 0 and < 10 rejected
+                for (var ms = 1; ms < 10; ms++)
                 {
-                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeout"": ""00:00:00"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var json = $@"{{ ""EnableLua"": true, ""LuaScriptTimeoutMs"": {ms} }}";
+                    var parseSuccessful = TryParseGarnetConfOptions(json, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Negative rejected
                 {
-                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeout"": ""-00:00:00.1"" }";
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeoutMs"": -10 }";
                     var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsFalse(parseSuccessful);
-                }
-
-                // Non-"c" rejected
-                {
-                    var currentThread = Thread.CurrentThread;
-                    var oldCulture = currentThread.CurrentCulture;
-                    try
-                    {
-                        currentThread.CurrentCulture = new CultureInfo("fr-FR");
-
-                        var json = @$"{{ ""EnableLua"": true, ""LuaScriptTimeout"": ""{new TimeSpan(0, 0, 0, 0, 1):G}"" }}";
-                        var parseSuccessful = TryParseGarnetConfOptions(json, out var options, out var invalidOptions, out var exitGracefully);
-                        ClassicAssert.IsFalse(parseSuccessful);
-                    }
-                    finally
-                    {
-                        currentThread.CurrentCulture = oldCulture;
-                    }
                 }
             }
         }

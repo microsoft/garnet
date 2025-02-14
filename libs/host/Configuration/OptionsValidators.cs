@@ -78,10 +78,18 @@ namespace Garnet
             validationResult = null;
             convertedValue = default;
 
-            if (!IsRequired && (value == GetDefault(value) || (value is string strVal && string.IsNullOrEmpty(strVal))))
+            if (!IsRequired)
             {
-                validationResult = ValidationResult.Success;
-                return true;
+                var isDefaultValue =
+                    (value == null && !typeof(T).IsValueType) ||
+                    (value?.Equals(GetDefault(typeof(T))) ?? false) ||
+                    (value is string strVal && string.IsNullOrEmpty(strVal));
+
+                if (isDefaultValue)
+                {
+                    validationResult = ValidationResult.Success;
+                    return true;
+                }
             }
 
             if (value is not T tValue)
@@ -608,68 +616,6 @@ namespace Garnet
                         return new ValidationResult($"{validationContext.DisplayName} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
                     }
                 }
-            }
-
-            return ValidationResult.Success;
-        }
-    }
-
-    /// <summary>
-    /// Validates TimeSpan options which are typed as strings in the options object.
-    /// 
-    /// This is a little awkward because attributes can't taken TimeSpan objects.
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Property)]
-    internal sealed class TimeSpanValidation : ValidationAttribute
-    {
-        private readonly bool allowZero;
-        private readonly bool allowPositive;
-        private readonly bool allowNegative;
-
-        internal TimeSpanValidation(bool allowZero = true, bool allowPositive = true, bool allowNegative = true)
-        {
-            this.allowNegative = allowNegative;
-            this.allowPositive = allowPositive;
-            this.allowZero = allowZero;
-
-        }
-
-        /// <inheritdoc/>
-        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
-        {
-            if (value is string valueStr)
-            {
-                if (string.IsNullOrEmpty(valueStr))
-                {
-                    return ValidationResult.Success;
-                }
-
-                if (!TimeSpan.TryParseExact(valueStr, "c", null, out var parsed))
-                {
-                    return new ValidationResult($"{validationContext.DisplayName} value of \"{valueStr}\" could not be parsed as a TimeSpan");
-                }
-
-                if (!allowZero && parsed == TimeSpan.Zero)
-                {
-                    return new ValidationResult($"{validationContext.DisplayName} cannot be 0");
-                }
-
-                if (!allowPositive && parsed > TimeSpan.Zero)
-                {
-                    return new ValidationResult($"{validationContext.DisplayName} cannot be positive");
-                }
-
-                if (!allowNegative && parsed < TimeSpan.Zero)
-                {
-                    return new ValidationResult($"{validationContext.DisplayName} cannot be negative");
-                }
-
-                return ValidationResult.Success;
-            }
-
-            if (value is not null)
-            {
-                return new ValidationResult($"{validationContext.DisplayName} set with non-string value \"{value}\"");
             }
 
             return ValidationResult.Success;

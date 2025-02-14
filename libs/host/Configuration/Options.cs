@@ -539,9 +539,9 @@ namespace Garnet
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 
-        [TimeSpanValidation(allowZero: false, allowNegative: false)]
-        [Option("lua-script-timeout", Default = null, Required = false, HelpText = "Timeout for a Lua instance while running a script, specified as a TimeSpan ('c' format, ie. d.hh:mm:ss.ffff)")]
-        public string LuaScriptTimeout { get; set; }
+        [IntRangeValidation(10, int.MaxValue, isRequired: false)]
+        [Option("lua-script-timeout", Default = null, Required = false, HelpText = "Timeout for a Lua instance while running a script, specified in positive milliseconds (0 = disabled)")]
+        public int LuaScriptTimeoutMs { get; set; }
 
         [FilePathValidation(false, true, false)]
         [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
@@ -794,7 +794,7 @@ namespace Garnet
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
-                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, string.IsNullOrEmpty(LuaScriptTimeout) ? Timeout.InfiniteTimeSpan : TimeSpan.ParseExact(LuaScriptTimeout, "c", null), logger) : null,
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), logger) : null,
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions
             };
