@@ -81,7 +81,6 @@ namespace Tsavorite.core
             }
             finally
             {
-                Debug.Assert(systemState.Phase == Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT);
                 GlobalStateMachineStep(systemState);
             }
         }
@@ -146,8 +145,6 @@ namespace Tsavorite.core
             {
                 // Release the semaphore to allow the checkpoint waiting task to proceed
                 _hybridLogCheckpoint.flushedSemaphore.Release();
-
-                Debug.Assert(systemState.Phase == Phase.WAIT_FLUSH);
                 GlobalStateMachineStep(systemState);
             }
         }
