@@ -23,12 +23,12 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 #endregion
 
-using GarnetJSON.JSONPath;
-using NUnit.Framework;
-using NUnit.Framework.Legacy;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using GarnetJSON.JSONPath;
+using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.JSONPath
 {

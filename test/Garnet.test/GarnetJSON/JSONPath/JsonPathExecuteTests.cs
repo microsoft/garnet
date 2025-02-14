@@ -692,22 +692,22 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual(8, t[1].GetValue<int>());
             ClassicAssert.AreEqual(9, t[2].GetValue<int>());
 
-            t = a.SelectNodes("[-1:-2:-1]").ToList();
+            t = [.. a.SelectNodes("[-1:-2:-1]")];
             ClassicAssert.AreEqual(1, t.Count);
             ClassicAssert.AreEqual(9, t[0].GetValue<int>());
 
-            t = a.SelectNodes("[-2:-1]").ToList();
+            t = [.. a.SelectNodes("[-2:-1]")];
             ClassicAssert.AreEqual(1, t.Count);
             ClassicAssert.AreEqual(8, t[0].GetValue<int>());
 
-            t = a.SelectNodes("[1:1]").ToList();
+            t = [.. a.SelectNodes("[1:1]")];
             ClassicAssert.AreEqual(0, t.Count);
 
-            t = a.SelectNodes("[1:2]").ToList();
+            t = [.. a.SelectNodes("[1:2]")];
             ClassicAssert.AreEqual(1, t.Count);
             ClassicAssert.AreEqual(2, t[0].GetValue<int>());
 
-            t = a.SelectNodes("[::-1]").ToList();
+            t = [.. a.SelectNodes("[::-1]")];
             ClassicAssert.AreEqual(9, t.Count);
             ClassicAssert.AreEqual(9, t[0].GetValue<int>());
             ClassicAssert.AreEqual(8, t[1].GetValue<int>());
@@ -719,7 +719,7 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual(2, t[7].GetValue<int>());
             ClassicAssert.AreEqual(1, t[8].GetValue<int>());
 
-            t = a.SelectNodes("[::-2]").ToList();
+            t = [.. a.SelectNodes("[::-2]")];
             ClassicAssert.AreEqual(5, t.Count);
             ClassicAssert.AreEqual(9, t[0].GetValue<int>());
             ClassicAssert.AreEqual(7, t[1].GetValue<int>());
@@ -778,7 +778,7 @@ namespace Garnet.test.JSONPath
             ]";
             var a = JsonNode.Parse(json);
 
-            IList<JsonNode> t = a.SelectNodes("$..*").ToList();
+            IList<JsonNode> t = [.. a.SelectNodes("$..*")];
             ClassicAssert.IsNotNull(t);
             ClassicAssert.AreEqual(5, t.Count);
             JsonAssert.AreEqual(a, t[0]);
@@ -796,7 +796,7 @@ namespace Garnet.test.JSONPath
             ]";
             var a = JsonNode.Parse(json);
 
-            IList<JsonNode> t = a.SelectNodes("$..Name").ToList();
+            IList<JsonNode> t = [.. a.SelectNodes("$..Name")];
             ClassicAssert.IsNotNull(t);
             ClassicAssert.AreEqual(4, t.Count);
             ClassicAssert.AreEqual(1, t[0].GetValue<int>());
@@ -815,7 +815,7 @@ namespace Garnet.test.JSONPath
             ]";
             var a = JsonNode.Parse(json);
 
-            IList<JsonNode> t = a.SelectNodes("$..*").ToList();
+            IList<JsonNode> t = [.. a.SelectNodes("$..*")];
             ClassicAssert.IsNotNull(t);
             ClassicAssert.AreEqual(9, t.Count);
 
@@ -1100,19 +1100,19 @@ namespace Garnet.test.JSONPath
             var t = o.SelectNodes("$.prop[?(@.childProp =='ff2dc672-6e15-4aa2-afb0-18f4f69596ad')]").ToList();
             ClassicAssert.AreEqual(2, t.Count);
 
-            t = o.SelectNodes("$.prop[?(@.childProp =='http://localhost')]").ToList();
+            t = [.. o.SelectNodes("$.prop[?(@.childProp =='http://localhost')]")];
             ClassicAssert.AreEqual(2, t.Count);
 
-            t = o.SelectNodes("$.prop[?(@.childProp =='2000-12-05T05:07:59Z')]").ToList();
+            t = [.. o.SelectNodes("$.prop[?(@.childProp =='2000-12-05T05:07:59Z')]")];
             ClassicAssert.AreEqual(2, t.Count);
 
-            t = o.SelectNodes("$.prop[?(@.childProp =='2000-12-05T05:07:59-10:00')]").ToList();
+            t = [.. o.SelectNodes("$.prop[?(@.childProp =='2000-12-05T05:07:59-10:00')]")];
             ClassicAssert.AreEqual(2, t.Count);
 
-            t = o.SelectNodes("$.prop[?(@.childProp =='SGVsbG8gd29ybGQ=')]").ToList();
+            t = [.. o.SelectNodes("$.prop[?(@.childProp =='SGVsbG8gd29ybGQ=')]")];
             ClassicAssert.AreEqual(2, t.Count);
 
-            t = o.SelectNodes("$.prop[?(@.childProp =='365.23:59:59')]").ToList();
+            t = [.. o.SelectNodes("$.prop[?(@.childProp =='365.23:59:59')]")];
             ClassicAssert.AreEqual(2, t.Count);
         }
 
@@ -1169,16 +1169,16 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual("Elbow Grease", productName);
 
             o.TrySelectNode("Stores", out var storesNode);
-            IList<string> storeNames = ((JsonArray)storesNode).Select(s => s.GetValue<string>()).ToList();
+            IList<string> storeNames = [.. ((JsonArray)storesNode).Select(s => s.GetValue<string>())];
             // Lambton Quay
             // Willis Street
 
             var manufacturers = (JsonArray)o["Manufacturers"];
-            IList<string> firstProductNames = manufacturers.Select(m =>
+            IList<string> firstProductNames = [.. manufacturers.Select(m =>
             {
                 m.AsObject().TrySelectNode("Products[1].Name", out var node);
                 return node?.GetValue<string>();
-            }).ToList();
+            })];
             // null
             // Headlight Fluid
 
@@ -1229,19 +1229,19 @@ namespace Garnet.test.JSONPath
 
             var a = JsonNode.Parse(json);
 
-            List<JsonNode> result = a.SelectNodes("$.[?(@.value!=1)]").ToList();
+            List<JsonNode> result = [.. a.SelectNodes("$.[?(@.value!=1)]")];
             ClassicAssert.AreEqual(4, result.Count);
 
-            result = a.SelectNodes("$.[?(@.value!='2000-12-05T05:07:59-10:00')]").ToList();
+            result = [.. a.SelectNodes("$.[?(@.value!='2000-12-05T05:07:59-10:00')]")];
             ClassicAssert.AreEqual(4, result.Count);
 
-            result = a.SelectNodes("$.[?(@.value!=null)]").ToList();
+            result = [.. a.SelectNodes("$.[?(@.value!=null)]")];
             ClassicAssert.AreEqual(4, result.Count);
 
-            result = a.SelectNodes("$.[?(@.value!=123)]").ToList();
+            result = [.. a.SelectNodes("$.[?(@.value!=123)]")];
             ClassicAssert.AreEqual(3, result.Count);
 
-            result = a.SelectNodes("$.[?(@.value)]").ToList();
+            result = [.. a.SelectNodes("$.[?(@.value)]")];
             ClassicAssert.AreEqual(4, result.Count);
         }
 
@@ -1290,10 +1290,10 @@ namespace Garnet.test.JSONPath
 
             var a = JsonNode.Parse(json);
 
-            List<JsonNode> result = a.SelectNodes("$.[?($.[0].store.bicycle.price < 20)]").ToList();
+            List<JsonNode> result = [.. a.SelectNodes("$.[?($.[0].store.bicycle.price < 20)]")];
             ClassicAssert.AreEqual(1, result.Count);
 
-            result = a.SelectNodes("$.[?($.[0].store.bicycle.price < 10)]").ToList();
+            result = [.. a.SelectNodes("$.[?($.[0].store.bicycle.price < 10)]")];
             ClassicAssert.AreEqual(0, result.Count);
         }
 
@@ -1342,10 +1342,10 @@ namespace Garnet.test.JSONPath
 
             var a = JsonNode.Parse(json);
 
-            List<JsonNode> result = a.SelectNodes("$..book[?(@.price <= $['expensive'])]").ToList();
+            List<JsonNode> result = [.. a.SelectNodes("$..book[?(@.price <= $['expensive'])]")];
             ClassicAssert.AreEqual(2, result.Count);
 
-            result = a.SelectNodes("$.store..[?(@.price > $.expensive)]").ToList();
+            result = [.. a.SelectNodes("$.store..[?(@.price > $.expensive)]")];
             ClassicAssert.AreEqual(3, result.Count);
         }
 
@@ -1364,7 +1364,7 @@ namespace Garnet.test.JSONPath
 
             var rootObject = JsonNode.Parse(json);
 
-            List<JsonNode> result = rootObject.SelectNodes("$.dateObjectsArray[?(@.date == $.referenceDate)]").ToList();
+            List<JsonNode> result = [.. rootObject.SelectNodes("$.dateObjectsArray[?(@.date == $.referenceDate)]")];
             ClassicAssert.AreEqual(2, result.Count);
         }
 
@@ -1386,13 +1386,13 @@ namespace Garnet.test.JSONPath
             var o = JsonNode.Parse(json);
 
             // just to verify expected behavior hasn't changed
-            IEnumerable<string> sanity1 = o.SelectNodes("Values[?(@.Coercible == '1')].Name").Select(x => x.GetValue<string>()).ToList();
-            IEnumerable<string> sanity2 = o.SelectNodes("Values[?(@.Coercible != '1')].Name").Select(x => x.GetValue<string>()).ToList();
+            IEnumerable<string> sanity1 = [.. o.SelectNodes("Values[?(@.Coercible == '1')].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> sanity2 = [.. o.SelectNodes("Values[?(@.Coercible != '1')].Name").Select(x => x.GetValue<string>())];
             // new behavior
-            IEnumerable<string> mustBeNumber1 = o.SelectNodes("Values[?(@.Coercible === 1)].Name").Select(x => x.GetValue<string>()).ToList();
-            IEnumerable<string> mustBeString1 = o.SelectNodes("Values[?(@.Coercible !== 1)].Name").Select(x => x.GetValue<string>()).ToList();
-            IEnumerable<string> mustBeString2 = o.SelectNodes("Values[?(@.Coercible === '1')].Name").Select(x => x.GetValue<string>()).ToList();
-            IEnumerable<string> mustBeNumber2 = o.SelectNodes("Values[?(@.Coercible !== '1')].Name").Select(x => x.GetValue<string>()).ToList();
+            IEnumerable<string> mustBeNumber1 = [.. o.SelectNodes("Values[?(@.Coercible === 1)].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeString1 = [.. o.SelectNodes("Values[?(@.Coercible !== 1)].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeString2 = [.. o.SelectNodes("Values[?(@.Coercible === '1')].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeNumber2 = [.. o.SelectNodes("Values[?(@.Coercible !== '1')].Name").Select(x => x.GetValue<string>())];
 
             // FAILS-- JsonPath returns { "String" }
             //CollectionAssert.AreEquivalent(new[] { "Number", "String" }, sanity1);

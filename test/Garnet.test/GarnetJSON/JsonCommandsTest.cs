@@ -329,7 +329,7 @@ namespace Garnet.test
 
             db.Execute("JSON.SET", "complex", "$", complexJson);
             db.Execute("JSON.SET", "complex", path, newValue);
-            
+
             // Verify that the update worked by getting all price fields
             var result = db.Execute("JSON.GET", "complex", "$..price");
             var resultStr = result.ToString();

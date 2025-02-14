@@ -1,7 +1,7 @@
-﻿using BenchmarkDotNet.Attributes;
+﻿using System.Text.Json.Nodes;
+using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using GarnetJSON.JSONPath;
-using System.Text.Json.Nodes;
 
 namespace BDN.benchmark.Json;
 
