@@ -4341,11 +4341,11 @@
     "Command": "SPUBLISH",
     "Name": "SPUBLISH",
     "Arity": 3,
-    "Flags": "Fast, Loading, PubSub, Stale",
+    "Flags": "Loading, NoScript, PubSub, Stale",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, PubSub",
+    "AclCategories": "PubSub, Read, Slow",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -4358,7 +4358,7 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Flags": "NotKey"
+        "Flags": "RO"
       }
     ]
   },
@@ -4451,7 +4451,7 @@
     "FirstKey": 1,
     "LastKey": -1,
     "Step": 1,
-    "AclCategories": "PubSub, Slow",
+    "AclCategories": "PubSub, Read, Slow",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -4464,7 +4464,7 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Flags": "NotKey"
+        "Flags": "RO"
       }
     ]
   },
