@@ -160,6 +160,16 @@ Return the number of keys in the currently-selected database.
 Integer reply: the number of keys in the currently-selected database.
 
 ---
+### DEBUG
+#### Syntax
+
+```bash
+DEBUG [subcommand [...]]
+```
+
+The DEBUG command is an internal command. It is meant to be used for developing and testing the server and its clients. See DEBUG HELP for subcommand list. It's disabled by default unless EnableDebugCommand option is set or --enable-debug-command command line option is used.
+
+---
 ### FLUSHALL
 #### Syntax
 
@@ -229,6 +239,43 @@ Reset latency data of one or more ```<event>``` (default: reset all data for all
 #### Resp Reply
 
 Simple string reply: OK.
+
+---
+### SLOWLOG GET
+#### Syntax
+
+```bash
+SLOWLOG GET [count]
+```
+
+Returns entries in the slow log. The default is to return the latest 10 entries. Use a negative count to return all entries.
+
+---
+### SLOWLOG LEN
+#### Syntax
+```bash
+SLOWLOG LEN
+```
+
+Returns the length of the slow queries log.
+
+---
+### SLOWLOG RESET
+#### Syntax
+```bash
+SLOWLOG RESET
+```
+
+Reset the slow log (discard all existing entries).
+
+---
+### SLOWLOG HELP
+#### Syntax
+```bash
+SLOWLOG HELP
+```
+
+Returns a list of supported SLOWLOG sub-commands.
 
 ---
 ### MEMORY USAGE

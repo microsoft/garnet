@@ -241,8 +241,8 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var (host, port) = current.GetEndpointFromNodeId(nodeId);
-            while (!RespWriteUtils.TryWriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
+            var endpoint = current.GetEndpointFromNodeId(nodeId);
+            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -475,7 +475,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            clusterProvider.storeWrapper.subscribeBroker.Publish(ref parseState, true);
+            clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
             return true;
         }
     }

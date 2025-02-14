@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -150,8 +151,7 @@ namespace Garnet.cluster
             try
             {
                 gcs = new(
-                    address,
-                    port,
+                    new IPEndPoint(IPAddress.Parse(address), port),
                     clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
                     clusterProvider.replicationManager.GetNetworkPool,
                     tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,

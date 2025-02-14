@@ -277,7 +277,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | CONFIG REWRITE | ➖ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |
 |  | [DBSIZE](server.md#dbsize) | ➕ |  |
-|  | DEBUG | ➖ | Internal command |
+|  | [DEBUG](server.md#debug) | ➕ | Internal command |
 |  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
@@ -314,10 +314,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
 |  | SUNSUBSCRIBE | ➖ |  |
-| <span id="sorted-set">**SLOWLOG**</span> | GET | ➖ |  |
-|  | HELP | ➖ |  |
-|  | LEN | ➖ |  |
-|  | RESET | ➖ |  |
+| <span id="sorted-set">**SLOWLOG**</span> | GET | ➕ |  |
+|  | HELP | ➕ |  |
+|  | LEN | ➕ |  |
+|  | RESET | ➕ |  |
 | <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](data-structures.md#bzmpop) | ➕ |  |
 |  | [BZPOPMAX](data-structures.md#bzpopmax) | ➕ |  |
 |  | [BZPOPMIN](data-structures.md#bzpopmin) | ➕ |  |
@@ -397,7 +397,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNX](raw-string.md#setnx) | ➕ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | [SUBSTR](raw-string.md#substr) | ➖ | (Deprecated) |
+|  | [SUBSTR](raw-string.md#substr) | ➕ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |

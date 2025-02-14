@@ -494,7 +494,10 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             const int length = 15000;
-            KeyValuePair<RedisKey, RedisValue>[] input = new KeyValuePair<RedisKey, RedisValue>[length];
+            var input = new KeyValuePair<RedisKey, RedisValue>[length];
+            var inputNX = new KeyValuePair<RedisKey, RedisValue>[length];
+            var inputXX = new KeyValuePair<RedisKey, RedisValue>[length];
+
             for (int i = 0; i < length; i++)
                 input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
 
@@ -512,7 +515,8 @@ namespace Garnet.test
             result = db.StringSet(input);
             ClassicAssert.IsTrue(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var keys = input.Select(e => e.Key).ToArray();
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
@@ -520,32 +524,79 @@ namespace Garnet.test
 
             // MSET NX - existing values
             for (int i = 0; i < length; i++)
-                input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
+                inputXX[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
 
-            result = db.StringSet(input, When.NotExists);
+            result = db.StringSet(inputXX, When.NotExists);
             ClassicAssert.IsFalse(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
+            // Should not change existing keys
             for (int i = 0; i < length; i++)
                 ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
 
             // MSET NX - non-existing and existing values
             for (int i = 0; i < length; i++)
-                input[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
+                inputNX[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
 
-            result = db.StringSet(input, When.NotExists);
-            ClassicAssert.IsTrue(result);
+            result = db.StringSet(inputNX, When.NotExists);
+            ClassicAssert.IsFalse(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
             {
-                ClassicAssert.AreEqual(i % 2 == 0 ? new RedisValue((int.Parse(input[i].Value) - length).ToString()) :
-                        input[i].Value, value[i]);
+                ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
             }
+
+            // Should not create new keys if any existing keys were also specified
+            var nxKeys = inputNX.Select(x => x.Key).Where(x => !keys.Contains(x)).Take(10).ToArray();
+            value = db.StringGet(nxKeys);
+            for (int i = 0; i < value.Length; i++)
+            {
+                ClassicAssert.IsEmpty(value[i].ToString());
+            }
+        }
+
+        [Test]
+        public void MultiSetNX()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Set keys
+            var response = lightClientRequest.SendCommand("MSETNX key1 5 key2 6");
+            var expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key1 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Verify values
+            response = lightClientRequest.SendCommand("GET key1");
+            expectedResponse = "$1\r\n5\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("GET key2");
+            expectedResponse = "$1\r\n6\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Should not be set even though it was 'before' existing key1.
+            response = lightClientRequest.SendCommand("GET key3");
+            expectedResponse = "$-1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("HSET key4 first 1");
+            expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists even if it's an object.
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key4 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         [Test]
@@ -1387,7 +1438,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
             server.Start();
 
             var key = "delKey";
@@ -1419,7 +1470,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1460,7 +1511,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1528,7 +1579,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1594,7 +1645,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1859,7 +1910,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3769,7 +3820,7 @@ namespace Garnet.test
             // Set up low-memory database
             TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
 
             string firstKey = null, firstValue = null, lastKey = null, lastValue = null;

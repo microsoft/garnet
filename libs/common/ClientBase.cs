@@ -2,31 +2,26 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 using Garnet.networking;
 
 namespace Garnet.common
 {
-
     /// <summary>
     /// Abstract base class for client session provider.
     /// </summary>
     public abstract unsafe class ClientBase : IDisposable
     {
         /// <summary>
-        /// host address
+        /// The host endpoint
         /// </summary>
-        protected readonly string address;
-
-        /// <summary>
-        /// host port
-        /// </summary>
-        protected readonly int port;
+        protected readonly EndPoint endpoint;
 
         /// <summary>
         /// connection status
         /// </summary>
-        protected bool connected_;
+        protected bool connected;
 
         /// <summary>
         /// Buffersize
@@ -44,17 +39,15 @@ namespace Garnet.common
         protected INetworkSender networkSender;
 
         /// <summary>
-        /// Create
+        /// Create client
         /// </summary>
-        /// <param name="address"></param>
-        /// <param name="port"></param>       
-        /// <param name="BufferSize"></param>        
-        public ClientBase(string address, int port, int BufferSize)
+        /// <param name="endpoint">The host endpoint to connect to</param>   
+        /// <param name="bufferSize">The buffer size</param>        
+        public ClientBase(EndPoint endpoint, int bufferSize)
         {
-            this.address = address;
-            this.port = port;
-            this.Buffersize = BufferSize;
-            this.connected_ = false;
+            this.endpoint = endpoint;
+            this.Buffersize = bufferSize;
+            this.connected = false;
             this.numPendingRequests = 0;
         }
 
