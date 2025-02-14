@@ -1657,10 +1657,10 @@ namespace Garnet.server
                     var dirName = new DirectoryInfo(dirs[i]).Name;
                     var sepIdx = dirName.IndexOf('_');
                     var dbId = 0;
-                    
+
                     if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out dbId))
                         continue;
-                    
+
                     dbIds[i] = dbId;
                 }
 

@@ -860,7 +860,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
-                } 
+                }
 
                 if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
                 {

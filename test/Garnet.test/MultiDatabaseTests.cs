@@ -615,7 +615,7 @@ namespace Garnet.test
                 // Issue DB SAVE for DB 1
                 var res = db1.Execute(backgroundSave ? "BGSAVE" : "SAVE", "1");
                 ClassicAssert.AreEqual(backgroundSave ? "Background saving started" : "OK", res.ToString());
-                
+
                 var lastSave = 0L;
                 string lastSaveStr;
                 bool parsed;
@@ -682,7 +682,7 @@ namespace Garnet.test
                 // Issue DB SAVE for DB 0
                 var res = db1.Execute(backgroundSave ? "BGSAVE" : "SAVE", "0");
                 ClassicAssert.AreEqual(backgroundSave ? "Background saving started" : "OK", res.ToString());
-                
+
                 // Verify DB 0 was saved by checking LASTSAVE
                 var lastSave = 0L;
                 string lastSaveStr;
