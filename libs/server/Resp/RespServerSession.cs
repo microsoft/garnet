@@ -195,7 +195,7 @@ namespace Garnet.server
             long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            SubscribeBroker subscribeBroker,
             IGarnetAuthenticator authenticator,
             bool enableScripts)
             : base(networkSender)
@@ -364,6 +364,12 @@ namespace Garnet.server
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
+
+                if (ex.Panic)
+                {
+                    // Does not return, finally block below will NOT be ran.
+                    Environment.Exit(-1);
+                }
 
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
@@ -687,6 +693,7 @@ namespace Garnet.server
                 RespCommand.ZINCRBY => SortedSetIncrement(ref storageApi),
                 RespCommand.ZRANK => SortedSetRank(cmd, ref storageApi),
                 RespCommand.ZRANGE => SortedSetRange(cmd, ref storageApi),
+                RespCommand.ZRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZRANGESTORE => SortedSetRangeStore(ref storageApi),
                 RespCommand.ZRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANK => SortedSetRank(cmd, ref storageApi),

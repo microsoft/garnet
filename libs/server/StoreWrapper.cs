@@ -52,7 +52,7 @@ namespace Garnet.server
         /// <summary>
         /// Subscribe broker
         /// </summary>
-        public readonly SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        public readonly SubscribeBroker subscribeBroker;
 
         internal readonly IClusterProvider clusterProvider;
 
@@ -137,7 +137,7 @@ namespace Garnet.server
             CustomCommandManager customCommandManager,
             TsavoriteLog appendOnlyFile,
             GarnetServerOptions serverOptions,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            SubscribeBroker subscribeBroker,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null
