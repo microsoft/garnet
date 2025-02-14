@@ -570,7 +570,7 @@ namespace Garnet.server
         /// <returns></returns>
         public bool TryAddDatabase(int dbId, ref GarnetDatabase db)
         {
-            if (!allowMultiDb || !databases.TrySetValue(dbId, ref db))
+            if ((!allowMultiDb && dbId != 0) || !databases.TrySetValue(dbId, ref db))
                 return false;
 
             HandleDatabaseAdded(dbId);
@@ -587,7 +587,7 @@ namespace Garnet.server
         {
             db = default;
 
-            if (!allowMultiDb || !databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId, out _, out _), out db, out var added))
+            if ((!allowMultiDb && dbId != 0) || !databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId, out _, out _), out db, out var added))
                 return false;
 
             if (added)
@@ -967,6 +967,7 @@ namespace Garnet.server
         /// <summary>
         /// Wait for commits from all active databases
         /// </summary>
+        /// </summary>
         internal void WaitForCommit()
         {
             if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
@@ -1036,6 +1037,7 @@ namespace Garnet.server
             var activeDbIdsSize = this.activeDbIdsLength;
             if (!allowMultiDb || activeDbIdsSize == 1 || dbId != -1)
             {
+                if (dbId == -1) dbId = 0;
                 var dbFound = TryGetDatabase(dbId, out var db);
                 Debug.Assert(dbFound);
                 await db.AppendOnlyFile.CommitAsync(token: token);

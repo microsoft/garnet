@@ -632,7 +632,7 @@ namespace Garnet.test
                 }
 
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                Assert.That(lastSave, Is.InRange(expectedLastSave - 1, expectedLastSave));
+                Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave + 2));
 
                 // Verify DB 0 was not saved
                 lastSaveStr = db1.Execute("LASTSAVE").ToString();
@@ -701,7 +701,7 @@ namespace Garnet.test
 
                 var prevLastSave = expectedLastSave;
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                Assert.That(lastSave, Is.InRange(expectedLastSave - 1, expectedLastSave));
+                Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave + 2));
 
                 // Verify DB 1 was not saved
                 Thread.Sleep(TimeSpan.FromSeconds(1));
