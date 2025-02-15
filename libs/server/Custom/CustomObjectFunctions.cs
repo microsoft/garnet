@@ -30,6 +30,13 @@ namespace Garnet.server
         protected static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, string errorMessage) => CustomCommandUtils.WriteError(ref output, errorMessage);
 
         /// <summary>
+        /// Writes the specified bytes directly to the output.
+        /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
+        /// <param name="bytes">The bytes to write.</param>
+        protected static unsafe void WriteDirect(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<byte> bytes) => CustomCommandUtils.WriteDirect(ref output, bytes);
+
+        /// <summary>
         /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
         /// <param name="input">Object Store input</param>
