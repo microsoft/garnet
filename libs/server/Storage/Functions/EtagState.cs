@@ -39,7 +39,7 @@ namespace Garnet.server
         /// <summary>
         /// Field provides access to getting an Etag from a record, hiding whether it is actually present or not.
         /// </summary>
-        public long etag { get; private set; } = EtagConstants.BaseEtag;
+        public long etag { get; set; } = EtagConstants.BaseEtag;
 
         /// <summary>
         /// Sets the values to indicate the presence of an Etag as a part of the payload value
