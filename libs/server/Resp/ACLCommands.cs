@@ -190,12 +190,12 @@ namespace Garnet.server
                     }
 
                     User newUser;
-                    User effectiveUser;
+                    User currentUser;
                     do
                     {
                         // Modifications to user permissions must be performed against the effective user.
-                        effectiveUser = userHandle.User;
-                        newUser = new User(effectiveUser);
+                        currentUser = userHandle.User;
+                        newUser = new User(currentUser);
 
                         // Remaining parameters are ACL operations
                         for (var i = 1; i < ops.Length; i++)
@@ -204,7 +204,7 @@ namespace Garnet.server
                         }
 
                     }
-                    while (!userHandle.TrySetUser(newUser, effectiveUser));
+                    while (!userHandle.TrySetUser(newUser, currentUser));
                 }
                 catch (ACLException exception)
                 {
