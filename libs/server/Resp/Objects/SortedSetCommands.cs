@@ -159,20 +159,34 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var op =
-                command switch
-                {
-                    RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
-                    RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
-                    RespCommand.ZRANGEBYLEX => SortedSetOperation.ZRANGEBYLEX,
-                    RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
-                    RespCommand.ZREVRANGEBYLEX => SortedSetOperation.ZREVRANGEBYLEX,
-                    RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            var rangeOpts = SortedSetRangeOpts.None;
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
+            switch (command)
+            {
+                case RespCommand.ZRANGE:
+                    break;
+                case RespCommand.ZREVRANGE:
+                    rangeOpts = SortedSetRangeOpts.Reverse;
+                    break;
+                case RespCommand.ZRANGEBYLEX:
+                    rangeOpts = SortedSetRangeOpts.ByLex;
+                    break;
+                case RespCommand.ZRANGEBYSCORE:
+                    rangeOpts = SortedSetRangeOpts.ByScore;
+                    break;
+                case RespCommand.ZREVRANGEBYLEX:
+                    rangeOpts = SortedSetRangeOpts.ByLex | SortedSetRangeOpts.Reverse;
+                    break;
+                case RespCommand.ZREVRANGEBYSCORE:
+                    rangeOpts = SortedSetRangeOpts.ByScore | SortedSetRangeOpts.Reverse;
+                    break;
+                case RespCommand.ZRANGESTORE:
+                    rangeOpts = SortedSetRangeOpts.Store;
+                    break;
+            }
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -208,8 +222,8 @@ namespace Garnet.server
             var dstKey = parseState.GetArgSliceByRef(0);
             var srcKey = parseState.GetArgSliceByRef(1);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGESTORE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
+            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion, arg2: (int)SortedSetRangeOpts.Store);
 
             var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
 

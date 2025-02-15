@@ -466,37 +466,18 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
 
-            ReadOnlySpan<byte> operation = default;
-            var sortedOperation = SortedSetOperation.ZRANGE;
-            switch (sortedSetOrderOperation)
+            var rangeOpts = sortedSetOrderOperation switch
             {
-                case SortedSetOrderOperation.ByScore:
-                    sortedOperation = SortedSetOperation.ZRANGEBYSCORE;
-                    operation = "BYSCORE"u8;
-                    break;
-                case SortedSetOrderOperation.ByLex:
-                    sortedOperation = SortedSetOperation.ZRANGE;
-                    operation = "BYLEX"u8;
-                    break;
-                case SortedSetOrderOperation.ByRank:
-                    if (reverse)
-                        sortedOperation = SortedSetOperation.ZREVRANGE;
-                    operation = default;
-                    break;
-            }
+                SortedSetOrderOperation.ByScore => SortedSetRangeOpts.ByScore,
+                SortedSetOrderOperation.ByLex => SortedSetRangeOpts.ByLex,
+                _ => SortedSetRangeOpts.None
+            };
 
             var arguments = new List<ArgSlice> { min, max };
 
-            // Operation order
-            if (!operation.IsEmpty)
+            if (reverse)
             {
-                arguments.Add(scratchBufferManager.CreateArgSlice(operation));
-            }
-
-            // Reverse
-            if (sortedOperation != SortedSetOperation.ZREVRANGE && reverse)
-            {
-                arguments.Add(scratchBufferManager.CreateArgSlice("REV"u8));
+                rangeOpts |= SortedSetRangeOpts.Reverse;
             }
 
             // Limit parameter
@@ -517,9 +498,9 @@ namespace Garnet.server
             parseState.InitializeWithArguments([.. arguments]);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = sortedOperation };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var inputArg = 2; // Default RESP server protocol version
-            var input = new ObjectInput(header, ref parseState, arg1: inputArg);
+            var input = new ObjectInput(header, ref parseState, arg1: inputArg, arg2: (int)rangeOpts);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
