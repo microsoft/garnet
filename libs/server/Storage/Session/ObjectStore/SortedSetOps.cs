@@ -466,38 +466,18 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
 
-            var rangeOpts = SortedSetRangeOpts.None;
-
-            ReadOnlySpan<byte> operation = default;
-            switch (sortedSetOrderOperation)
+            var rangeOpts = sortedSetOrderOperation switch
             {
-                case SortedSetOrderOperation.ByScore:
-                    rangeOpts = SortedSetRangeOpts.ByScore;
-                    operation = "BYSCORE"u8;
-                    break;
-                case SortedSetOrderOperation.ByLex:
-                    rangeOpts = SortedSetRangeOpts.ByLex;
-                    operation = "BYLEX"u8;
-                    break;
-                case SortedSetOrderOperation.ByRank:
-                    if (reverse)
-                        rangeOpts = SortedSetRangeOpts.Reverse;
-                    operation = default;
-                    break;
-            }
+                SortedSetOrderOperation.ByScore => SortedSetRangeOpts.ByScore,
+                SortedSetOrderOperation.ByLex => SortedSetRangeOpts.ByLex,
+                _ => SortedSetRangeOpts.None
+            };
 
             var arguments = new List<ArgSlice> { min, max };
 
-            // Operation order
-            if (!operation.IsEmpty)
+            if (reverse)
             {
-                arguments.Add(scratchBufferManager.CreateArgSlice(operation));
-            }
-
-            // Reverse
-            if (reverse && sortedSetOrderOperation != SortedSetOrderOperation.ByRank)
-            {
-                arguments.Add(scratchBufferManager.CreateArgSlice("REV"u8));
+                rangeOpts |= SortedSetRangeOpts.Reverse;
             }
 
             // Limit parameter
