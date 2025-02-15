@@ -2,7 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
+using System.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
@@ -65,8 +66,6 @@ namespace Tsavorite.core
         {
             try
             {
-                Debug.Assert(systemState.Phase == Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT);
-
                 // Iterate all the read-only records in the store
                 scannedUntilAddressCursor = Log.SafeReadOnlyAddress;
                 var scanFunctions = new ScanPhase1Functions(streamingSnapshotIteratorFunctions, _hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, _hybridLogCheckpoint.info.nextVersion);
@@ -75,9 +74,17 @@ namespace Tsavorite.core
                 _ = s.ScanCursor(ref cursor, long.MaxValue, scanFunctions, scannedUntilAddressCursor);
                 this.numberOfRecords = scanFunctions.numberOfRecords;
             }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Exception in StreamingSnapshotScanPhase1");
+                throw;
+            }
             finally
             {
-                Debug.Assert(systemState.Phase == Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT);
+                // We started this task before entering PREP_STREAMING_SNAPSHOT_CHECKPOINT, so we
+                // need to wait until the state machine is in PREP_STREAMING_SNAPSHOT_CHECKPOINT
+                while (systemState.Phase != Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT)
+                    Thread.Yield();
                 GlobalStateMachineStep(systemState);
             }
         }
@@ -120,14 +127,10 @@ namespace Tsavorite.core
         {
             try
             {
-                Debug.Assert(systemState.Phase == Phase.WAIT_FLUSH);
-
                 // Iterate all the (v) records in the store
                 var scanFunctions = new ScanPhase2Functions(streamingSnapshotIteratorFunctions, this.numberOfRecords);
                 using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
 
-                // TODO: This requires ScanCursor to provide a consistent snapshot considering only records up to untilAddress
-                // There is a bug in the current implementation of ScanCursor, where it does not provide such a consistent snapshot
                 _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress, maxAddress: untilAddress);
 
                 // Reset the cursor to 0
@@ -136,13 +139,21 @@ namespace Tsavorite.core
 
                 // Reset the callback functions
                 streamingSnapshotIteratorFunctions = null;
-
-                // Release the semaphore to allow the checkpoint waiting task to proceed
-                _hybridLogCheckpoint.flushedSemaphore.Release();
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Exception in StreamingSnapshotScanPhase2");
+                throw;
             }
             finally
             {
-                Debug.Assert(systemState.Phase == Phase.WAIT_FLUSH);
+                // Release the semaphore to allow the checkpoint waiting task to proceed
+                _hybridLogCheckpoint.flushedSemaphore.Release();
+
+                // We started this task before entering WAIT_FLUSH, so we
+                // need to wait until the state machine is in WAIT_FLUSH
+                while (systemState.Phase != Phase.WAIT_FLUSH)
+                    Thread.Yield();
                 GlobalStateMachineStep(systemState);
             }
         }

@@ -27,6 +27,7 @@ namespace Garnet.server
         ZINCRBY,
         ZRANK,
         ZRANGE,
+        ZRANGEBYLEX,
         ZRANGEBYSCORE,
         ZRANGESTORE,
         GEOADD,
@@ -262,6 +263,7 @@ namespace Garnet.server
                     case SortedSetOperation.ZRANGESTORE:
                         SortedSetRange(ref input, ref output.SpanByteAndMemory);
                         break;
+                    case SortedSetOperation.ZRANGEBYLEX:
                     case SortedSetOperation.ZRANGEBYSCORE:
                         SortedSetRange(ref input, ref output.SpanByteAndMemory);
                         break;
