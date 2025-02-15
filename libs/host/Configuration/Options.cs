@@ -11,6 +11,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
 using CommandLine;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
@@ -539,6 +540,10 @@ namespace Garnet
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 
+        [IntRangeValidation(10, int.MaxValue, isRequired: false)]
+        [Option("lua-script-timeout", Default = null, Required = false, HelpText = "Timeout for a Lua instance while running a script, specified in positive milliseconds (0 = disabled)")]
+        public int LuaScriptTimeoutMs { get; set; }
+
         [FilePathValidation(false, true, false)]
         [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
         public string UnixSocketPath { get; set; }
@@ -790,7 +795,7 @@ namespace Garnet
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
-                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), logger) : null,
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions
             };
