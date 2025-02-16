@@ -1,237 +1,147 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
-#if LOGRECORD_TODO
-
 namespace Tsavorite.test
 {
-    public class MyKey
+    public struct TestObjectKey
     {
         public int key;
 
         public override string ToString() => key.ToString();
 
-        public struct Comparer : IKeyComparer<MyKey>
+        public struct Comparer : IKeyComparer
         {
-            public long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
+            public readonly long GetHashCode64(SpanByte key) => Utility.GetHashCode(key.AsRef<TestObjectKey>().key);
 
-            public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
+            public readonly bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<TestObjectKey>().key == k2.AsRef<TestObjectKey>().key;
         }
     }
 
-    public class MyKeySerializer : BinaryObjectSerializer<MyKey>
-    {
-        public override void Deserialize(out MyKey obj) => obj = new MyKey { key = reader.ReadInt32() };
-
-        public override void Serialize(ref MyKey obj) => writer.Write(obj.key);
-    }
-
-    public class MyValue
+    public class TestObjectValue : IHeapObject
     {
         public int value;
 
+        public long Size { get => sizeof(int); set => throw new System.NotImplementedException("TestValueObject.Size.set"); }
+
+        public void Dispose() { }
+
         public override string ToString() => value.ToString();
 
-        public struct Comparer : IKeyComparer<MyValue> // This Value comparer is used by a test
+        public class Serializer : BinaryObjectSerializer<TestObjectValue>
         {
-            public long GetHashCode64(ref MyValue k) => Utility.GetHashCode(k.value);
+            public override void Deserialize(out TestObjectValue obj) => obj = new TestObjectValue { value = reader.ReadInt32() };
 
-            public bool Equals(ref MyValue k1, ref MyValue k2) => k1.value == k2.value;
+            public override void Serialize(ref TestObjectValue obj) => writer.Write(obj.value);
         }
     }
 
-    public class MyValueSerializer : BinaryObjectSerializer<MyValue>
-    {
-        public override void Deserialize(out MyValue obj) => obj = new MyValue { value = reader.ReadInt32() };
-
-        public override void Serialize(ref MyValue obj) => writer.Write(obj.value);
-    }
-
-    public class MyInput
+    public struct TestObjectInput
     {
         public int value;
 
+        public override readonly string ToString() => value.ToString();
+    }
+
+    public struct TestObjectOutput
+    {
+        public TestObjectValue value;
+
         public override string ToString() => value.ToString();
     }
 
-    public class MyOutput
+    public class TestObjectFunctions : SessionFunctionsBase<TestObjectValue, TestObjectInput, TestObjectOutput, Empty>
     {
-        public MyValue value;
+        public override bool InitialUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value });
 
-        public override string ToString() => value.ToString();
-    }
-
-    public class MyFunctions : SessionFunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
-    {
-        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
-            value = new MyValue { value = input.value };
+            logRecord.ValueObject.value += input.value;
             return true;
         }
 
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => true;
+
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TestObjectValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = srcLogRecord.ValueObject.value + input.value } );
+
+        public override bool ConcurrentReader(ref LogRecord<TestObjectValue> logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
-            value.value += input.value;
+            output.value = logRecord.ValueObject;
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output, ref RMWInfo rmwInfo) => true;
-
-        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            newValue = new MyValue { value = oldValue.value + input.value };
+            if (!logRecord.TrySetValueObject(srcValue))
+                return false;
+            output.value = logRecord.ValueObject;
             return true;
         }
 
-        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            if (dst == default)
-                dst = new MyOutput();
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = src.value;
-            return true;
-        }
-
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.AreEqual(output.value.value, key.key);
+            ClassicAssert.AreEqual(output.value.value, srcLogRecord.Key.AsRef<TestObjectKey>().key);
         }
 
-        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
+        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
-            if (dst == default)
-                dst = new MyOutput();
-            dst.value = value;
+            output.value = srcLogRecord.ValueObject;
             return true;
         }
 
-        public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-        {
-            dst = src;
-            return true;
-        }
+        public override bool SingleWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => logRecord.TrySetValueObject(srcValue);
+
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
+            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
+            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestObjectValue value, ref TestObjectInput input)
+            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
     }
 
-    public class MyFunctions2 : SessionFunctionsBase<MyValue, MyValue, MyInput, MyOutput, Empty>
+    public class TestObjectFunctionsDelete : SessionFunctionsBase<TestObjectValue, TestObjectInput, TestObjectOutput, int>
     {
-        public override bool InitialUpdater(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value });
+
+        public override bool InPlaceUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
-            value = new MyValue { value = input.value };
+            logRecord.ValueObject.value += input.value;
             return true;
         }
 
-        public override bool InPlaceUpdater(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => true;
+
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TestObjectValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = srcLogRecord.ValueObject.value + input.value });
+
+        public override bool ConcurrentReader(ref LogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
-            value.value += input.value;
+            output.value = srcLogRecord.ValueObject;
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref MyValue key, ref MyInput input, ref MyValue oldValue, ref MyOutput output, ref RMWInfo rmwInfo) => true;
+        public override bool ConcurrentWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            => logRecord.TrySetValueObject(srcValue);
 
-        public override bool CopyUpdater(ref MyValue key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            newValue = new MyValue { value = oldValue.value + input.value };
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            if (dst == default)
-                dst = new MyOutput();
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = src.value;
-            return true;
-        }
-
-        public override void ReadCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
-        {
-            ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.AreEqual(key.value, output.value.value);
-        }
-
-        public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
-        {
-            ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.IsTrue(status.Record.CopyUpdated);
-        }
-
-        public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
-        {
-            if (dst == default)
-                dst = new MyOutput();
-            dst.value = value;
-            return true;
-        }
-
-        public override bool SingleWriter(ref MyValue key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-        {
-            dst = src;
-            return true;
-        }
-    }
-
-    public class MyFunctionsDelete : SessionFunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
-    {
-        public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            value = new MyValue { value = input.value };
-            return true;
-        }
-
-        public override bool InPlaceUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            value.value += input.value;
-            return true;
-        }
-
-        public override bool NeedCopyUpdate(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyOutput output, ref RMWInfo rmwInfo) => true;
-
-        public override bool CopyUpdater(ref MyKey key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            newValue = new MyValue { value = oldValue.value + input.value };
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            dst ??= new MyOutput();
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-        {
-            dst = src;
-            return true;
-        }
-
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
                 ClassicAssert.IsTrue(status.Found);
-                ClassicAssert.AreEqual(key.key, output.value.value);
+                ClassicAssert.AreEqual(srcLogRecord.Key.AsRef<TestObjectKey>().key, output.value.value);
             }
             else if (ctx == 1)
             {
@@ -239,7 +149,7 @@ namespace Tsavorite.test
             }
         }
 
-        public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, int ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
@@ -250,109 +160,63 @@ namespace Tsavorite.test
                 ClassicAssert.IsFalse(status.Found);
         }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
+        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
-            dst ??= new MyOutput();
-            dst.value = value;
+            output.value = srcLogRecord.ValueObject;
             return true;
         }
 
-        public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-        {
-            dst = src;
-            return true;
-        }
+        public override bool SingleWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => logRecord.TrySetValueObject(srcValue);
+
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
+            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
+            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestObjectValue value, ref TestObjectInput input)
+            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
     }
 
-    public class MixedFunctions : SessionFunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
-    {
-        public override bool InitialUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            value = new MyValue { value = input.value };
-            return true;
-        }
-
-        public override bool InPlaceUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            value.value += input.value;
-            return true;
-        }
-
-        public override bool NeedCopyUpdate(ref int key, ref MyInput input, ref MyValue oldValue, ref MyOutput output, ref RMWInfo rmwInfo) => true;
-
-        public override bool CopyUpdater(ref int key, ref MyInput input, ref MyValue oldValue, ref MyValue newValue, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            newValue = new MyValue { value = oldValue.value + input.value };
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo updateInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = src.value;
-            return true;
-        }
-
-        public override bool SingleReader(ref int key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
-        {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool SingleWriter(ref int key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo updateInfo, WriteReason reason, ref RecordInfo recordInfo)
-        {
-            dst = src;
-            return true;
-        }
-    }
-
-    public class MyLargeValue
+    public class TestLargeObjectValue
     {
         public byte[] value;
 
-        public MyLargeValue()
+        public TestLargeObjectValue()
         {
         }
 
-        public MyLargeValue(int size)
+        public TestLargeObjectValue(int size)
         {
             value = new byte[size];
             for (int i = 0; i < size; i++)
-            {
                 value[i] = (byte)(size + i);
+        }
+
+        public class Serializer : BinaryObjectSerializer<TestLargeObjectValue>
+        {
+            public override void Deserialize(out TestLargeObjectValue obj)
+            {
+                obj = new TestLargeObjectValue();
+                int size = reader.ReadInt32();
+                obj.value = reader.ReadBytes(size);
+            }
+
+            public override void Serialize(ref TestLargeObjectValue obj)
+            {
+                writer.Write(obj.value.Length);
+                writer.Write(obj.value);
             }
         }
     }
 
-    public class MyLargeValueSerializer : BinaryObjectSerializer<MyLargeValue>
+    public class TestLargeObjectOutput
     {
-        public override void Deserialize(out MyLargeValue obj)
-        {
-            obj = new MyLargeValue();
-            int size = reader.ReadInt32();
-            obj.value = reader.ReadBytes(size);
-        }
-
-        public override void Serialize(ref MyLargeValue obj)
-        {
-            writer.Write(obj.value.Length);
-            writer.Write(obj.value);
-        }
+        public TestLargeObjectValue value;
     }
 
-    public class MyLargeOutput
+    public class TestLargeObjectFunctions : SessionFunctionsBase<TestLargeObjectValue, TestObjectInput, TestLargeObjectOutput, Empty>
     {
-        public MyLargeValue value;
-    }
-
-    public class MyLargeFunctions : SessionFunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
-    {
-        public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord<TestLargeObjectValue> srcLogRecord, ref TestObjectInput input, ref TestLargeObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             for (int i = 0; i < output.value.value.Length; i++)
@@ -361,30 +225,39 @@ namespace Tsavorite.test
             }
         }
 
-        public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst, ref ReadInfo readInfo)
+        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestLargeObjectOutput output, ref ReadInfo readInfo)
         {
-            dst.value = value;
+            output.value = srcLogRecord.ValueObject;
             return true;
         }
 
-        public override bool ConcurrentReader(ref MyKey key, ref MyInput input, ref MyLargeValue value, ref MyLargeOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentReader(ref LogRecord<TestLargeObjectValue> srcLogRecord, ref TestObjectInput input, ref TestLargeObjectOutput output, ref ReadInfo readInfo)
         {
-            dst.value = value;
+            output.value = srcLogRecord.ValueObject;
             return true;
         }
 
-        public override bool ConcurrentWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref MyLargeOutput output, ref UpsertInfo updateInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentWriter(ref LogRecord<TestLargeObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestLargeObjectValue srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
-            dst = src;
+            if (!logRecord.TrySetValueObject(srcValue))
+                return false;
+            output.value = logRecord.ValueObject;
             return true;
         }
 
-        public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyLargeValue src, ref MyLargeValue dst, ref MyLargeOutput output, ref UpsertInfo updateInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public override bool SingleWriter(ref LogRecord<TestLargeObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestLargeObjectValue srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo, WriteReason reason)
         {
-            dst = src;
+            if (!logRecord.TrySetValueObject(srcValue))
+                return false;
+            output.value = logRecord.ValueObject;
             return true;
         }
+
+        public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
+            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
+            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestLargeObjectValue value, ref TestObjectInput input)
+            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
     }
 }
-
-#endif // LOGRECORD_TODO

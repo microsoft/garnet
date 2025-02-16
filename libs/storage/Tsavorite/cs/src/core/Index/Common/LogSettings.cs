@@ -26,7 +26,7 @@ namespace Tsavorite.core
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
 
         /// <summary>Default number of bits for the size of an inline (not overflow) key</summary>
-        public const int kDefaultMaxInlineKeySizeBits = 7;
+        public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;
 
         /// <summary>Default number of bits for the size of an inline (not overflow) value, for <see cref="SpanByteAllocator{TStoreFunctions}"/></summary>
         public const int kDefaultMaxInlineValueSizeBits = 20;
@@ -35,7 +35,7 @@ namespace Tsavorite.core
         public const int kLowestMaxInlineSizeBits = kMinPageSizeBits - 1;
 
         /// <summary>Maximum number of bits for the size of a key or value overflow page</summary>
-        public const int kDefaultMaxOverflowFixedPageSizeBits = 24;
+        public const int kDefaultOverflowFixedPageSizeBits = 24;
 
         /// <summary>Maximum size of a string is 512MB</summary>
         public const int kMaxStringSizeBits = 29;
@@ -100,7 +100,7 @@ namespace Tsavorite.core
         /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySizeBits"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
         /// values larger than <see cref="MaxInlineValueSizeBits"/>
         /// </summary>
-        public int OverflowFixedPageSizeBits = 20;
+        public int OverflowFixedPageSizeBits = kDefaultOverflowFixedPageSizeBits;
 
         /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
@@ -108,8 +108,8 @@ namespace Tsavorite.core
         public int MaxInlineKeySizeBits = kDefaultMaxInlineKeySizeBits;
 
         /// <summary>
-        /// Maximum size of a valuie stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
         /// </summary>
-        public int MaxInlineValueSizeBits = kDefaultMaxInlineKeySizeBits;
+        public int MaxInlineValueSizeBits = kDefaultMaxInlineValueSizeBits;
     }
 }

@@ -7,17 +7,15 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-#if LOGRECORD_TODO
-
 namespace Tsavorite.test
 {
-    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = ObjectAllocator<TestObjectValue, StoreFunctions<TestObjectValue, TestObjectKey.Comparer, DefaultRecordDisposer<TestObjectValue>>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectValue, TestObjectKey.Comparer, DefaultRecordDisposer<TestObjectValue>>;
 
     [TestFixture]
     internal class ObjectTests
     {
-        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private TsavoriteKV<TestObjectValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -35,7 +33,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+            }, StoreFunctions<TestObjectValue>.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer<TestObjectValue>.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -57,17 +55,18 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ObjectInMemWriteRead()
         {
-            using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            MyKey key1 = new() { key = 9999999 };
-            MyValue value = new() { value = 23 };
+            TestObjectKey keyStruct = new() { key = 9999999 };
+            SpanByte key = SpanByteFrom(ref keyStruct);
+            TestObjectValue value = new() { value = 23 };
 
-            MyInput input = null;
-            MyOutput output = new();
+            TestObjectInput input = default;
+            TestObjectOutput output = default;
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            _ = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(key, value, Empty.Default);
+            _ = bContext.Read(key, ref input, ref output, Empty.Default);
             ClassicAssert.AreEqual(value.value, output.value.value);
         }
 
@@ -75,24 +74,26 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void ObjectInMemWriteRead2()
         {
-            using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            MyKey key1 = new() { key = 8999998 };
-            MyInput input1 = new() { value = 23 };
-            MyOutput output = new();
+            TestObjectKey key1Struct = new() { key = 8999998 };
+            SpanByte key1 = SpanByteFrom(ref key1Struct);
+            TestObjectInput input1 = new() { value = 23 };
+            TestObjectOutput output = new();
 
-            _ = bContext.RMW(ref key1, ref input1, Empty.Default);
+            _ = bContext.RMW(key1, ref input1, Empty.Default);
 
-            MyKey key2 = new() { key = 8999999 };
-            MyInput input2 = new() { value = 24 };
-            _ = bContext.RMW(ref key2, ref input2, Empty.Default);
+            TestObjectKey key2Struct = new() { key = 8999999 };
+            SpanByte key2 = SpanByteFrom(ref key2Struct);
+            TestObjectInput input2 = new() { value = 24 };
+            _ = bContext.RMW(key2, ref input2, Empty.Default);
 
-            _ = bContext.Read(ref key1, ref input1, ref output, Empty.Default);
+            _ = bContext.Read(key1, ref input1, ref output, Empty.Default);
 
             ClassicAssert.AreEqual(input1.value, output.value.value);
 
-            _ = bContext.Read(ref key2, ref input2, ref output, Empty.Default);
+            _ = bContext.Read(key2, ref input2, ref output, Empty.Default);
             ClassicAssert.AreEqual(input2.value, output.value.value);
 
         }
@@ -103,21 +104,23 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ObjectDiskWriteRead()
         {
-            using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
             for (int i = 0; i < 2000; i++)
             {
-                var key = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                _ = bContext.Upsert(ref key, ref value, Empty.Default);
+                var key1Struct = new TestObjectKey { key = i };
+                SpanByte key = SpanByteFrom(ref key1Struct);
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(key, value, Empty.Default);
                 // store.ShiftReadOnlyAddress(store.LogTailAddress);
             }
 
-            MyKey key2 = new() { key = 23 };
-            MyInput input = new();
-            MyOutput g1 = new();
-            var status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
+            TestObjectKey key2Struct = new() { key = 23 };
+            SpanByte key2 = SpanByteFrom(ref key2Struct);
+            TestObjectInput input = new();
+            TestObjectOutput g1 = new();
+            var status = bContext.Read(key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {
@@ -128,8 +131,8 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(23, g1.value.value);
 
-            key2 = new MyKey { key = 99999 };
-            status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
+            key2Struct.key = 99999;
+            status = bContext.Read(key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
                 (status, _) = bContext.GetSinglePendingResult();
@@ -138,29 +141,32 @@ namespace Tsavorite.test
             // Update last 100 using RMW in memory
             for (int i = 1900; i < 2000; i++)
             {
-                var key = new MyKey { key = i };
-                input = new MyInput { value = 1 };
-                status = bContext.RMW(ref key, ref input, Empty.Default);
+                var keyStruct = new TestObjectKey { key = i };
+                SpanByte key = SpanByteFrom(ref keyStruct);
+                input = new TestObjectInput { value = 1 };
+                status = bContext.RMW(key, ref input, Empty.Default);
                 ClassicAssert.IsFalse(status.IsPending, "Expected RMW to complete in-memory");
             }
 
             // Update first 100 using RMW from storage
             for (int i = 0; i < 100; i++)
             {
-                var key1 = new MyKey { key = i };
-                input = new MyInput { value = 1 };
-                status = bContext.RMW(ref key1, ref input, Empty.Default);
+                var keyStruct = new TestObjectKey { key = i };
+                SpanByte key = SpanByteFrom(ref keyStruct);
+                input = new TestObjectInput { value = 1 };
+                status = bContext.RMW(key, ref input, Empty.Default);
                 if (status.IsPending)
                     _ = bContext.CompletePending(true);
             }
 
             for (int i = 0; i < 2000; i++)
             {
-                var output = new MyOutput();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                var output = new TestObjectOutput();
+                var keyStruct = new TestObjectKey { key = i };
+                SpanByte key = SpanByteFrom(ref keyStruct);
+                var value = new TestObjectValue { value = i };
 
-                status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                status = bContext.Read(key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                     (status, output) = bContext.GetSinglePendingResult();
                 else
@@ -174,5 +180,3 @@ namespace Tsavorite.test
         }
     }
 }
-
-#endif // LOGRECORD_TODO

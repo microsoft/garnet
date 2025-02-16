@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -512,9 +513,8 @@ namespace Tsavorite.core
         private bool TryAddToBin(long logicalAddress, ref LogRecord<TValue> logRecord, ref RevivificationStats revivStats)
         {
             var minAddress = store.GetMinRevivifiableAddress();
-            int binIndex = 0;
             var recordSize = logRecord.GetInlineRecordSizes().allocatedSize;
-            if (logicalAddress < minAddress)
+            if (logicalAddress < minAddress || (!GetBinIndex(recordSize, out var binIndex)))
                 return false;
             if (!bins[binIndex].TryAdd(logicalAddress, recordSize, store, minAddress, ref revivStats))
                 return false;
@@ -533,7 +533,7 @@ namespace Tsavorite.core
                 ++revivStats.failedAdds;
                 return false;
             }
-            logRecord.Info.TrySeal(invalidate: true);
+            logRecord.InfoRef.TrySeal(invalidate: true);
             bool result = TryAddToBin(logicalAddress, ref logRecord, ref revivStats);
 
             if (result)

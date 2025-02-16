@@ -173,9 +173,6 @@ namespace Tsavorite.core
         /// <summary>
         /// The number of records for each partition. This count will be adjusted upward so the partition is cache-line aligned.
         /// </summary>
-        /// <remarks>
-        /// The first record is not available; its space is used to store the circular buffer read and write pointers
-        /// </remarks>
         public int NumberOfRecords = DefaultRecordsPerBin;
 
         /// <summary>

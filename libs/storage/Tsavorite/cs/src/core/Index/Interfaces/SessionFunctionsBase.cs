@@ -92,8 +92,7 @@ namespace Tsavorite.core
 
         // *FieldInfo require an implementation that knows what is in IInput
         /// <inheritdoc/>
-        public virtual RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+        public virtual RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input) where TSourceLogRecord : ISourceLogRecord<TValue>
             => throw new NotImplementedException("GetRMWModifiedFieldInfo");
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TInput input)

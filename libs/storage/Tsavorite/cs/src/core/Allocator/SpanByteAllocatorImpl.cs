@@ -264,7 +264,7 @@ namespace Tsavorite.core
         }
 
         internal void ClearPage(long page, int offset)
-            => NativeMemory.Clear((byte*)pagePointers[page] + offset, (nuint)(PageSize - offset));
+            => NativeMemory.Clear((byte*)pagePointers[page % BufferSize] + offset, (nuint)(PageSize - offset));
 
         internal void FreePage(long page)
         {

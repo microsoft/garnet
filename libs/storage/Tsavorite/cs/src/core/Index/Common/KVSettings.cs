@@ -123,6 +123,22 @@ namespace Tsavorite.core
         public RevivificationSettings RevivificationSettings;
 
         /// <summary>
+        /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySize"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
+        /// values larger than <see cref="MaxInlineValueSize"/>
+        /// </summary>
+        public int OverflowFixedPageSize = 1 << LogSettings.kDefaultOverflowFixedPageSizeBits;
+
+        /// <summary>
+        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
+        /// </summary>
+        public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+
+        /// <summary>
+        /// Maximum size of a valuie stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// </summary>
+        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -207,7 +223,10 @@ namespace Tsavorite.core
                 MutableFraction = MutableFraction,
                 MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,
-                ReadCacheSettings = GetReadCacheSettings()
+                ReadCacheSettings = GetReadCacheSettings(),
+                OverflowFixedPageSizeBits = Utility.NumBitsPreviousPowerOf2(OverflowFixedPageSize),
+                MaxInlineKeySizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineKeySize),
+                MaxInlineValueSizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineValueSize)
             };
         }
 

@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 
 namespace Tsavorite.core
 {
@@ -53,6 +54,9 @@ namespace Tsavorite.core
 
         /// <summary>Shortcut to see if either key or value is overflow.</summary>
         public bool HasOverflow => KeyIsOverflow || ValueIsOverflow;
+
+        /// <summary>Whether these values are set (default instances are used for Delete internally, for example).</summary>
+        public readonly bool IsSet => AllocatedInlineRecordSize != 0;
 
         /// <summary>
         /// Called from Upsert or RMW methods for Span Values with the actual data size of the update value; ensures consistency between the Get*FieldInfo methods and the actual update methods.

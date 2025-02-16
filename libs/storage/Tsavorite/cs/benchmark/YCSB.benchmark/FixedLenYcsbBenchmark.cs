@@ -22,7 +22,7 @@ namespace Tsavorite.benchmark
             [
                 new RevivificationBin()
                 {
-                    RecordSize = RecordInfo.GetLength() + 2 * (sizeof(int) + sizeof(long)), // We have "fixed length" for these integer bins
+                    RecordSize = RecordInfo.GetLength() + 2 * (sizeof(int) + sizeof(long)), // We have "fixed length" for these integer bins, with long Key and Value
                     BestFitScanLimit = RevivificationBin.UseFirstFit
                 }
             ]
