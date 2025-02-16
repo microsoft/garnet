@@ -1079,6 +1079,13 @@
     ]
   },
   {
+    "Command": "DEBUG",
+    "Name": "DEBUG",
+    "Arity": -2,
+    "Flags": "Admin, Noscript, Loading, Stale",
+    "AclCategories": "Admin, Dangerous, Slow"
+  },
+  {
     "Command": "DECR",
     "Name": "DECR",
     "Arity": 2,
@@ -5157,6 +5164,31 @@
   {
     "Command": "ZRANGE",
     "Name": "ZRANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZRANGEBYLEX",
+    "Name": "ZRANGEBYLEX",
     "Arity": -4,
     "Flags": "ReadOnly",
     "FirstKey": 1,

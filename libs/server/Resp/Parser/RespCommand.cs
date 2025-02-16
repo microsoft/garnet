@@ -91,6 +91,7 @@ namespace Garnet.server
         ZMSCORE,
         ZRANDMEMBER,
         ZRANGE,
+        ZRANGEBYLEX,
         ZRANGEBYSCORE,
         ZRANK,
         ZREVRANGE,
@@ -299,6 +300,8 @@ namespace Garnet.server
         CONFIG_GET,
         CONFIG_REWRITE,
         CONFIG_SET,
+
+        DEBUG,
 
         LATENCY,
         LATENCY_HELP,
@@ -1578,6 +1581,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZRANGESTORE;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("EBYLEX\r\n"u8))
+                                {
+                                    return RespCommand.ZRANGEBYLEX;
+                                }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.ZINTERSTORE;
@@ -2407,6 +2414,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.HCOLLECT))
             {
                 return RespCommand.HCOLLECT;
+            }
+            else if (command.SequenceEqual(CmdStrings.DEBUG))
+            {
+                return RespCommand.DEBUG;
             }
             else
             {

@@ -48,6 +48,11 @@ namespace Embedded.server
 
         public string LocalEndpointName => "";
 
+        public bool IsLocalConnection()
+        {
+            return true;
+        }
+
         /// <summary>
         /// Cleanup this DummyNetworkSender instance
         /// </summary>
