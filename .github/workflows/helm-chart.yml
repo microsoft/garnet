@@ -28,7 +28,7 @@ jobs:
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
 
       - name: Install helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@fe7b79cd5ee1e45176fcad797de68ecaf3ca4814 # v4 for security reasons have pinned tag (commit SHA) for 3rd party
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
@@ -63,7 +63,7 @@ jobs:
           git checkout -- charts/garnet/Chart.yaml
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@67ccf781d68cd99b580ae25a5c18a1cc84ffff1f # v7 for security reasons have pinned tag (commit SHA) for 3rd party
         with:
           add-paths: charts/garnet/README.md
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -98,4 +98,3 @@ jobs:
             fi
             helm push "${pkg}" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/helm-charts"
           done
-
