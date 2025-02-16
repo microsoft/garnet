@@ -190,10 +190,7 @@ namespace Garnet.server
                 ? ParseUtils.TryReadLong(ref offsetSlice, 1, out value)
                 : ParseUtils.TryReadLong(ref offsetSlice, out value);
 
-            if (!ret || value < 0)
-                return false;
-
-            return ret;
+            return ret && (value >= 0);
         }
 
         /// <summary>
