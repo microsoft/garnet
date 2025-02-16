@@ -1678,7 +1678,7 @@ namespace Garnet.server
             var remoteEndpoint = targetSession.networkSender.RemoteEndpointName;
             var localEndpoint = targetSession.networkSender.LocalEndpointName;
             var clientName = targetSession.clientName;
-            var user = targetSession._user;
+            var user = targetSession._userHandle.User;
             var resp = targetSession.respProtocolVersion;
             var nodeId = targetSession?.clusterSession?.RemoteNodeId;
 

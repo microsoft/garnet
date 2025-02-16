@@ -19,14 +19,14 @@ namespace Garnet.server.ACL
         const string DefaultUserName = "default";
 
         /// <summary>
-        /// Dictionary containing all users defined in the ACL
+        /// Dictionary containing all <see cref="UserHandle"/>s defined in the ACL.
         /// </summary>
-        ConcurrentDictionary<string, User> _users = new();
+        ConcurrentDictionary<string, UserHandle> _userHandles = new();
 
         /// <summary>
-        /// The currently configured default user (for fast default lookups)
+        /// The <see cref="UserHandle"/> for the currently configured default user (for fast default lookups).
         /// </summary>
-        User _defaultUser;
+        UserHandle _defaultUserHandle;
 
         /// <summary>
         /// Creates a new Access Control List from an optional ACL configuration file
@@ -45,77 +45,79 @@ namespace Garnet.server.ACL
             else
             {
                 // If no ACL file is defined, only create the default user
-                _defaultUser = CreateDefaultUser(defaultPassword);
+                _defaultUserHandle = CreateDefaultUserHandle(defaultPassword);
             }
         }
 
         /// <summary>
-        /// Returns the user with the given name.
+        /// Returns the <see cref="UserHandle"/> with the given name.
         /// </summary>
         /// <param name="username">Username of the user to retrieve.</param>
         /// <returns>Matching user object, or null if no user with the given name was found.</returns>
-        public User GetUser(string username)
+        public UserHandle GetUserHandle(string username)
         {
-            if (_users.TryGetValue(username, out var user))
+            if (_userHandles.TryGetValue(username, out var userHandle))
             {
-                return user;
+                return userHandle;
             }
             return null;
         }
 
         /// <summary>
-        /// Returns the currently configured default user.
+        /// Returns the currently configured default <see cref="UserHandle"/>.
         /// </summary>
         /// <returns>The default user of this access control list.</returns>
-        public User GetDefaultUser()
+        public UserHandle GetDefaultUserHandle()
         {
-            return _defaultUser;
+            return _defaultUserHandle;
         }
 
         /// <summary>
-        /// Adds the given user to the ACL.
+        /// Adds the given <see cref="UserHandle"/> to the ACL.
         /// </summary>
-        /// <param name="user">User to add to the list.</param>
+        /// <param name="userHandle">User to add to the list.</param>
         /// <exception cref="ACLUserAlreadyExistsException">Thrown if a user with the given username already exists.</exception>
-        public void AddUser(User user)
+        public void AddUserHandle(UserHandle userHandle)
         {
+            var username = userHandle?.User.Name;
+
             // If a user with the given name already exists in the ACL, the new user cannot be added
-            if (!_users.TryAdd(user.Name, user))
+            if (!_userHandles.TryAdd(username, userHandle))
             {
-                throw new ACLUserAlreadyExistsException(user.Name);
+                throw new ACLUserAlreadyExistsException(username);
             }
         }
 
         /// <summary>
-        /// Deletes the user associated with the given username.
+        /// Deletes the <see cref="UserHandle"/> associated with the given username.
         /// </summary>
         /// <param name="username">Username of the user to delete.</param>
         /// <returns>true if successful, false if no matching user was found.</returns>
         /// <exception cref="ACLException">Thrown if the given user exists but cannot be deleted.</exception>
-        public bool DeleteUser(string username)
+        public bool DeleteUserHandle(string username)
         {
             if (username == DefaultUserName)
             {
                 throw new ACLException("The special 'default' user cannot be removed from the system");
             }
-            return _users.TryRemove(username, out _);
+            return _userHandles.TryRemove(username, out _);
         }
 
         /// <summary>
-        /// Remove all users from the list.
+        /// Remove all <see cref="UserHandle"/>s from the list.
         /// </summary>
         public void ClearUsers()
         {
-            _users.Clear();
+            _userHandles.Clear();
         }
 
         /// <summary>
         /// Return a list of all usernames and user objects.
         /// </summary>
         /// <returns>Dictionary of username/user pairs.</returns>
-        public IReadOnlyDictionary<string, User> GetUsers()
+        public IReadOnlyDictionary<string, UserHandle> GetUserHandles()
         {
-            return _users;
+            return _userHandles;
         }
 
         /// <summary>
@@ -123,14 +125,14 @@ namespace Garnet.server.ACL
         /// </summary>
         /// <param name="defaultPassword">Password to use if new user is created.</param>
         /// <returns>The newly created or already existing default user.</returns>
-        User CreateDefaultUser(string defaultPassword = "")
+        UserHandle CreateDefaultUserHandle(string defaultPassword = "")
         {
-            User defaultUser;
+            UserHandle defaultUserHandle;
 
-            while (!_users.TryGetValue(DefaultUserName, out defaultUser))
+            while (!_userHandles.TryGetValue(DefaultUserName, out defaultUserHandle))
             {
                 // Default user always has full access
-                defaultUser = new User(DefaultUserName);
+                User defaultUser = new User(DefaultUserName);
                 defaultUser.AddCategory(RespAclCategories.All);
 
                 // Automatically created default users are always enabled
@@ -147,10 +149,11 @@ namespace Garnet.server.ACL
                     defaultUser.IsPasswordless = true;
                 }
 
+                defaultUserHandle = new UserHandle(defaultUser);
                 // Add the user to the user list
                 try
                 {
-                    AddUser(defaultUser);
+                    AddUserHandle(defaultUserHandle);
                     break;
                 }
                 catch (ACLUserAlreadyExistsException)
@@ -158,7 +161,7 @@ namespace Garnet.server.ACL
                     // If AddUser failed, continue looping to retrieve the concurrently created user
                 }
             }
-            return defaultUser;
+            return defaultUserHandle;
         }
 
         /// <summary>
@@ -192,7 +195,7 @@ namespace Garnet.server.ACL
             // Remove default user and load statements
             try
             {
-                acl._users.Clear();
+                acl._userHandles.Clear();
                 acl.Import(streamReader, aclConfigurationFile);
             }
             catch (ACLParsingException exception)
@@ -205,10 +208,10 @@ namespace Garnet.server.ACL
             }
 
             // Add back default user and update the cached default user handle
-            _defaultUser = acl.CreateDefaultUser(defaultPassword);
+            _defaultUserHandle = acl.CreateDefaultUserHandle(defaultPassword);
 
             // Atomically replace the user list
-            _users = acl._users;
+            _userHandles = acl._userHandles;
         }
 
         /// <summary>
@@ -235,8 +238,8 @@ namespace Garnet.server.ACL
                     };
 
                     // Write lines into buffer
-                    foreach (var user in _users)
-                        streamWriter.WriteLine(user.Value.DescribeUser());
+                    foreach (var userHandle in _userHandles)
+                        streamWriter.WriteLine(userHandle.Value.User.DescribeUser());
 
                     // Flush data buffer
                     streamWriter.Flush();

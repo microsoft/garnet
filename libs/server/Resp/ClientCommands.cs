@@ -463,7 +463,7 @@ namespace Garnet.server
                 if (user is not null)
                 {
                     // Using an ORDINAL match to fail-safe, if unicode normalization would change either name I'd prefer to not-match
-                    matches &= user.Equals(targetSession._user?.Name, StringComparison.Ordinal);
+                    matches &= user.Equals(targetSession._userHandle?.User.Name, StringComparison.Ordinal);
                 }
 
                 if (addr is not null)
