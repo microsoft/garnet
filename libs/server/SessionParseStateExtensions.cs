@@ -158,7 +158,7 @@ namespace Garnet.server
 
             return
                 encodingSlice.Length >= 2 &&
-                int.TryParse(encodingSlice.ReadOnlySpan[1..], out var bitCount) &&
+                ParseUtils.TryReadInt(ref encodingSlice, 1, out var bitCount) &&
                 (
                     (*encodingSlice.ptr == 'i' && bitCount <= 64) ||
                     (*encodingSlice.ptr == 'u' && bitCount < 64)
@@ -185,9 +185,15 @@ namespace Garnet.server
             if (offsetSlice.Length == 0)
                 return false;
 
-            return (*offsetSlice.ptr == '#')
-                ? long.TryParse(offsetSlice.ReadOnlySpan[1..], out _)
-                : long.TryParse(offsetSlice.ReadOnlySpan, out _);
+            long value;
+            var ret = (*offsetSlice.ptr == '#')
+                ? ParseUtils.TryReadLong(ref offsetSlice, 1, out value)
+                : ParseUtils.TryReadLong(ref offsetSlice, out value);
+
+            if (!ret || value < 0)
+                return false;
+
+            return ret;
         }
 
         /// <summary>
