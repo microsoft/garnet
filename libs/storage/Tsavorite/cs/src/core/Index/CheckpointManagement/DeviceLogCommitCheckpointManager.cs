@@ -49,15 +49,15 @@ namespace Tsavorite.core
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
-        /// <param name="deviceFactory">Factory for getting devices</param>
+        /// <param name="deviceFactoryCreator">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
         /// <param name="removeOutdated">Remote older Tsavorite log commits</param>
         /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Remote older Tsavorite log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
         {
             this.logger = logger;
-            this.deviceFactory = deviceFactory;
+            this.deviceFactory = deviceFactoryCreator.Create(checkpointNamingScheme.BaseName);
             this.checkpointNamingScheme = checkpointNamingScheme;
             this.fastCommitThrottleFreq = fastCommitThrottleFreq;
 
@@ -76,7 +76,6 @@ namespace Tsavorite.core
                 // // We only keep the latest TsavoriteLog commit
                 flogCommitHistory = new long[flogCommitCount];
             }
-            deviceFactory.Initialize(checkpointNamingScheme.BaseName);
         }
 
         /// <inheritdoc />
@@ -96,12 +95,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
-        /// <param name="deviceFactory">Factory for getting devices</param>
+        /// <param name="deviceFactoryCreator">Creator of factory for getting devices</param>
         /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
         /// <param name="removeOutdated">Remote older Tsavorite log commits</param>
         /// <param name="logger">Remote older Tsavorite log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactory deviceFactory, string baseName, bool removeOutdated = false, ILogger logger = null)
-            : this(deviceFactory, new DefaultCheckpointNamingScheme(baseName), removeOutdated)
+        public DeviceLogCommitCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, string baseName, bool removeOutdated = false, ILogger logger = null)
+            : this(deviceFactoryCreator, new DefaultCheckpointNamingScheme(baseName), removeOutdated)
         {
             this.logger = logger;
         }

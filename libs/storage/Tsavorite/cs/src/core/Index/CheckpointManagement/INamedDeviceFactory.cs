@@ -6,16 +6,10 @@ using System.Collections.Generic;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Factory for getting IDevice instances for checkpointing
+    /// Factory for getting IDevice instances for checkpointing. The factory is specific to a particular base path or container.
     /// </summary>
     public interface INamedDeviceFactory
     {
-        /// <summary>
-        /// Initialize base name or container
-        /// </summary>
-        /// <param name="baseName">Base name or container</param>
-        void Initialize(string baseName);
-
         /// <summary>
         /// Get IDevice instance for given file info
         /// </summary>

@@ -106,7 +106,7 @@ namespace Tsavorite.core
 
             checkpointManager = checkpointSettings.CheckpointManager ??
                 new DeviceLogCommitCheckpointManager
-                (new LocalStorageNamedDeviceFactory(),
+                (new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(
                         new DirectoryInfo(checkpointSettings.CheckpointDir ?? ".").FullName), removeOutdated: checkpointSettings.RemoveOutdated);
 

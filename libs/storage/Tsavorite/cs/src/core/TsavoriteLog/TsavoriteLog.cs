@@ -190,7 +190,7 @@ namespace Tsavorite.core
             AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
-                (new LocalStorageNamedDeviceFactory(),
+                (new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
                         new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),

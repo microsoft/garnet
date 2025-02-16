@@ -3,7 +3,6 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -14,50 +13,25 @@ namespace Tsavorite.devices
     /// </summary>
     public class AzureStorageNamedDeviceFactory : INamedDeviceFactory
     {
-        readonly BlobUtilsV12.ServiceClients pageBlobAccount;
-        BlobUtilsV12.ContainerClients pageBlobContainer;
-        BlobUtilsV12.BlobDirectory pageBlobDirectory;
         readonly ILogger logger;
-
-        /// <summary>
-        /// Create instance of factory for Azure devices
-        /// </summary>
-        /// <param name="connectionString"></param>
-        /// <param name="logger"></param>
-        public AzureStorageNamedDeviceFactory(string connectionString, ILogger logger = null)
-            : this(BlobUtilsV12.GetServiceClients(connectionString), logger)
-        {
-        }
-
-        /// <summary>
-        /// Create instance of factory for Azure devices
-        /// </summary>
-        /// <param name="pageBlobAccount"></param>
-        /// <param name="logger"></param>
-        AzureStorageNamedDeviceFactory(BlobUtilsV12.ServiceClients pageBlobAccount, ILogger logger = null)
-        {
-            this.pageBlobAccount = pageBlobAccount;
-            this.logger = logger;
-        }
+        readonly BlobUtilsV12.ContainerClients pageBlobContainer;
+        readonly BlobUtilsV12.BlobDirectory pageBlobDirectory;
 
         /// <inheritdoc />
-        public void Initialize(string baseName)
-            => InitializeAsync(baseName).GetAwaiter().GetResult();
-
-
-        async Task InitializeAsync(string baseName)
+        internal AzureStorageNamedDeviceFactory(string baseName, BlobUtilsV12.ServiceClients pageBlobAccount, ILogger logger)
         {
+            this.logger = logger;
+
             var path = baseName.Split('/');
             var containerName = path[0];
             var dirName = string.Join('/', path.Skip(1));
 
             pageBlobContainer = BlobUtilsV12.GetContainerClients(pageBlobAccount, containerName);
-            if (!await pageBlobContainer.WithRetries.ExistsAsync())
-                await pageBlobContainer.WithRetries.CreateIfNotExistsAsync();
+            if (!pageBlobContainer.WithRetries.ExistsAsync().GetAwaiter().GetResult())
+                _ = pageBlobContainer.WithRetries.CreateIfNotExistsAsync().GetAwaiter().GetResult();
 
             pageBlobDirectory = new BlobUtilsV12.BlobDirectory(pageBlobContainer, dirName);
         }
-
 
         /// <inheritdoc />
         public void Delete(FileDescriptor fileInfo)

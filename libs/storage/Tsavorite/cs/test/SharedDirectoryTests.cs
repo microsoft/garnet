@@ -196,7 +196,7 @@ namespace Tsavorite.test.recovery.sumstore
             var checkpointInfo = default(HybridLogRecoveryInfo);
             checkpointInfo.Recover(checkpointToken,
                 new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
+                    new LocalStorageNamedDeviceFactoryCreator(),
                         new DefaultCheckpointNamingScheme(
                           new DirectoryInfo(tsavoriteInstance.CheckpointDirectory).FullName)));
 

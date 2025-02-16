@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Local storage device factory
+    /// Null device factory
     /// </summary>
     public class NullNamedDeviceFactory : INamedDeviceFactory
     {

@@ -106,7 +106,7 @@ namespace Tsavorite.test
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
             {
                 using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
@@ -145,7 +145,7 @@ namespace Tsavorite.test
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
             {
                 using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
