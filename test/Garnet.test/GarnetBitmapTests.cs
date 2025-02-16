@@ -123,6 +123,17 @@ namespace Garnet.test
             {
                 ClassicAssert.IsFalse(db.StringGetBit(key, i));
             }
+
+            try
+            {
+                db.Execute("GETBIT", key, "-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
         }
 
         [Test, Order(3)]

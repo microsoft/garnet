@@ -50,7 +50,8 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(offset);
 
-            var input = new RawStringInput(RespCommand.GETBIT, ref parseState);
+            var input = new RawStringInput(RespCommand.GETBIT, ref parseState,
+                                           arg1: ParseUtils.ReadLong(ref offset));
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
