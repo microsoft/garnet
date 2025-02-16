@@ -64,7 +64,8 @@ namespace Garnet.server
         {
             number = default;
             var ptr = slice.ptr + offset;
-            return RespReadUtils.TryReadInt32Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
+            return slice.length > offset &&
+                   RespReadUtils.TryReadInt32Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
                        out _, out _, allowLeadingZeros: false) &&
                    (int)bytesRead == slice.length - offset;
         }
@@ -120,7 +121,8 @@ namespace Garnet.server
         {
             number = default;
             var ptr = slice.ptr + offset;
-            return RespReadUtils.TryReadInt64Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
+            return slice.length > offset &&
+                   RespReadUtils.TryReadInt64Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
                        out _, out _, allowLeadingZeros: false) &&
                    (int)bytesRead == slice.length - offset;
         }
