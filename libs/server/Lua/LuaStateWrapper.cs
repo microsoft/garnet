@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,8 @@ namespace Garnet.server
     internal struct LuaStateWrapper : IDisposable
     {
         private const int LUA_MINSTACK = 20;
+
+        private SingleWriterMultiReaderLock hookLock;
 
         private GCHandle customAllocatorHandle;
 
@@ -50,6 +53,8 @@ namespace Garnet.server
                     _ => throw new InvalidOperationException($"Unexpected mode/limit combination: {memMode}/{memLimitBytes}")
                 };
 
+            hookLock = new();
+
             if (customAllocator != null)
             {
                 customAllocatorHandle = GCHandle.Alloc(customAllocator, GCHandleType.Normal);
@@ -75,11 +80,23 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (state != 0)
+            // Synchronize with respect to hook'ing
+            hookLock.WriteLock();
+            try
             {
-                NativeMethods.Close(state);
-                state = 0;
+                // make sure we only close once
+                if (state != 0)
+                {
+
+                    NativeMethods.Close(state);
+                    state = 0;
+                }
             }
+            finally
+            {
+                hookLock.WriteUnlock();
+            }
+
 
             if (customAllocatorHandle.IsAllocated)
             {
@@ -501,6 +518,33 @@ namespace Garnet.server
         // Rarely used
 
         /// <summary>
+        /// This should be used to set all debug hooks for Lua when multiple threads are involved.
+        /// 
+        /// This can fail if there's a thread race to close the state.
+        /// 
+        /// This is the ONLY thread-safe method on <see cref="LuaStateWrapper"/>.
+        /// </summary>
+        internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        {
+            hookLock.ReadLock();
+            try
+            {
+                if (state == 0)
+                {
+                    return false;
+                }
+
+                NativeMethods.SetHook(state, hook, mask, count);
+            }
+            finally
+            {
+                hookLock.ReadUnlock();
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Remove everything from the Lua stack.
         /// </summary>
         internal void ClearStack()
@@ -632,7 +676,7 @@ namespace Garnet.server
         /// 
         /// If allocation cannot be performed, null is returned.
         /// </summary>
-        /// <param name="udPtr">Pointer to user data provided during <see cref="Lua.SetAllocFunction"/></param>
+        /// <param name="udPtr">Pointer to user data provided during allocation function registration</param>
         /// <param name="ptr">Either null (if new alloc) or pointer to existing allocation being resized or freed.</param>
         /// <param name="osize">If <paramref name="ptr"/> is not null, the <paramref name="nsize"/> value passed when allocation was obtained or resized.</param>
         /// <param name="nsize">The desired size of the allocation, in bytes.</param>
