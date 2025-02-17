@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Garnet.server.ACL;
 using NUnit.Framework;
@@ -67,6 +69,84 @@ namespace Garnet.test.Resp.ACL
                     ACLPassword.ACLPasswordFromString(DummyPasswordB);
                 }
             });
+        }
+
+        /// <summary>
+        /// Tests that ACL SETUSER works in parallel without corrupting the user's ACL.
+        ///
+        /// Test launches multiple clients that apply two simple ACL changes to the same user many times in parallel.
+        /// Validates that ACL result after each execution is one of the possible valid responses.
+        ///
+        /// Race conditions are not deterministic so test uses repeat.
+        ///
+        /// </summary>
+        [TestCase(128, 2048)]
+        [Repeat(2)]
+        public async Task ParallelAclSetUserTest(int degreeOfParallelism, int iterationsPerSession)
+        {
+            string activeUserWithGetCommand = $"ACL SETUSER {TestUserA} on >{DummyPassword} +get";
+            string inactiveUserWithoutGetCommand = $"ACL SETUSER {TestUserA} off >{DummyPassword} -get";
+
+            // This is a combination of the two commands above indicative of threading issues.
+            string inactiveUserWithGet = $"user {TestUserA} off #{DummyPasswordHash} +get";
+
+            var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+            _ = await c.ExecuteAsync(activeUserWithGetCommand.Split(" "));
+
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            {
+                using var c = TestUtils.GetGarnetClientSession();
+                c.Connect();
+
+                for (uint i = 0; i < iterationsPerSession; i++)
+                {
+                    await Task.WhenAll(
+                        c.ExecuteAsync(activeUserWithGetCommand.Split(" ")),
+                        c.ExecuteAsync(inactiveUserWithoutGetCommand.Split(" ")));
+
+                    var aclListResponse = await c.ExecuteForArrayAsync("ACL", "LIST");
+
+                    if (aclListResponse.Contains(inactiveUserWithGet))
+                    {
+                        string corruptedAcl = aclListResponse.First(line => line.Contains(TestUserA));
+                        throw new AssertionException($"Invalid ACL: {corruptedAcl}");
+                    }
+                }
+            });
+        }
+
+        /// <summary>
+        /// Tests that ACL SETUSER works in parallel without fatal contention on user in ACL map.
+        ///
+        /// Test launches multiple clients that apply the same ACL change to the same user. Creates race to become the
+        /// the first client to add the user to the ACL. Throws after initial insert into ACL if threading issues exist.
+        ///
+        /// Race conditions are not deterministic so test uses repeat.
+        ///
+        /// </summary>
+        [TestCase(128, 2048)]
+        [Repeat(5)]
+        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism, int iterationsPerSession)
+        {
+            string command1 = $"ACL SETUSER {TestUserA} on >{DummyPassword}";
+
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            {
+                using var c = TestUtils.GetGarnetClientSession();
+                c.Connect();
+
+                List<Task> tasks = new();
+                for (uint i = 0; i < iterationsPerSession; i++)
+                {
+                    // Creates race between threads contending for first insert into ACL. Throws after first ACL insert.
+                    tasks.Add(c.ExecuteAsync(command1.Split(" ")));
+                }
+
+                await Task.WhenAll(tasks);
+            });
+
+            ClassicAssert.Pass();
         }
     }
 }
