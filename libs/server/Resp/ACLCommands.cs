@@ -412,14 +412,17 @@ namespace Garnet.server
 
                 try
                 {
-                    user = aclAuthenticator
+                    var userHandle = aclAuthenticator
                         .GetAccessControlList()
-                        .GetUser(parseState.GetString(0));
+                        .GetUserHandle(parseState.GetString(0));
+
+                    if (userHandle != null)
+                    {
+                        user = new User(userHandle.User);
+                    }
                 }
                 catch (ACLException exception)
                 {
-                    logger?.LogDebug("ACLException: {message}", exception.Message);
-
                     // Abort command execution
                     while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
@@ -437,30 +440,25 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
                         SendAndReset();
 
-                    var flags = user.GetFlags();
-                    var passwordHashes = user.GetPasswordHashes();
-
                     while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(flags.Count, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(1, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var flag in flags)
-                    {
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(flag, ref dcurr, dend))
-                            SendAndReset();
-                    }
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
+                        SendAndReset();
 
+                    var passwords = user.Passwords;
                     while (!RespWriteUtils.TryWriteAsciiBulkString("passwords", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(passwordHashes.Count, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(passwords.Count, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var passwordHash in passwordHashes)
+                    foreach (var password in passwords)
                     {
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(passwordHash, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteAsciiBulkString($"#{password.ToString()}", ref dcurr, dend))
                             SendAndReset();
                     }
 
