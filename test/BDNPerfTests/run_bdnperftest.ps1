@@ -9,7 +9,7 @@
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
 
-    NOTE: If adding a new BDN perf test to the BDN_Benchmark_Config.json, then need to add to the "test: [..." line in the ce-bdnbenchmark.yml
+    NOTE: If adding a new BDN perf test to the BDN_Benchmark_Config.json, then need to add to the "test: [..." line in the ci-bdnbenchmark.yml
     
 .EXAMPLE
     ./run_bdnperftest.ps1
@@ -140,7 +140,7 @@ $testProperties = $json.$currentTest
 
 # create a matrix of expected results for specific test
 $splitTextArray = New-Object 'string[]' 3
-$expectedResultsArray = New-Object 'string[,]' 70, 3
+$expectedResultsArray = New-Object 'string[,]' 100, 3
 
 [int]$currentRow = 0
 
@@ -216,11 +216,16 @@ $testSuiteResult = $true
 Get-Content $resultsFile | ForEach-Object {
     $line = $_
 
+    # Skip lines that don't start with |
+    if (-not $line.StartsWith("|")) {
+        return
+    }
+    
     # Get a value
     for ($currentExpectedProp = 0; $currentExpectedProp -lt $totalExpectedResultValues; $currentExpectedProp++) {
 
-        # Check if the line contains the method name
-        if ($line -match [regex]::Escape($expectedResultsArray[$currentExpectedProp, 0])) {
+        # Check if the line contains the exact method name by using word boundaries
+        if ($line -match [regex]::Escape($expectedResultsArray[$currentExpectedProp, 0]) + "\b") {
 
             # Found the method in the results, now check the param we looking for is in the line
             if ($line -match [regex]::Escape($expectedResultsArray[$currentExpectedProp, 1])) {

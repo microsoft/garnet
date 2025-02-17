@@ -1148,6 +1148,43 @@
             "Type": "String"
           }
         ]
+      },
+      {
+        "Command": "CLIENT_UNBLOCK",
+        "Name": "CLIENT|UNBLOCK",
+        "Summary": "Unblocks a client blocked by a blocking command from a different connection.",
+        "Group": "Connection",
+        "Complexity": "O(log N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENT-ID",
+            "DisplayText": "client-id",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "UNBLOCK-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TIMEOUT",
+                "DisplayText": "timeout",
+                "Type": "PureToken",
+                "Token": "TIMEOUT"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ERROR",
+                "DisplayText": "error",
+                "Type": "PureToken",
+                "Token": "ERROR"
+              }
+            ]
+          }
+        ]
       }
     ]
   },
@@ -1753,6 +1790,13 @@
     "Command": "DBSIZE",
     "Name": "DBSIZE",
     "Summary": "Returns the number of keys in the database.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "DEBUG",
+    "Name": "DEBUG",
+    "Summary": "Depends on subcommand.",
     "Group": "Server",
     "Complexity": "O(1)"
   },
@@ -5391,7 +5435,7 @@
             "Name": "NUMPARAMS",
             "DisplayText": "numParams",
             "Type": "Integer",
-            "Summary": "Numer of parameters of the command to register"
+            "Summary": "Number of parameters of the command to register"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
@@ -6394,6 +6438,52 @@
     ]
   },
   {
+    "Command": "SLOWLOG",
+    "Name": "SLOWLOG",
+    "Summary": "A container for slow log commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "SLOWLOG_GET",
+        "Name": "SLOWLOG|GET",
+        "Summary": "Returns the slow log\u0027s entries.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries returned",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "SLOWLOG_HELP",
+        "Name": "SLOWLOG|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_LEN",
+        "Name": "SLOWLOG|LEN",
+        "Summary": "Returns the number of entries in the slow log.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_RESET",
+        "Name": "SLOWLOG|RESET",
+        "Summary": "Clears all entries from the slow log.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries in the slowlog"
+      }
+    ]
+  },
+  {
     "Command": "SMEMBERS",
     "Name": "SMEMBERS",
     "Summary": "Returns all members of a set.",
@@ -6569,6 +6659,27 @@
     ]
   },
   {
+    "Command": "SPUBLISH",
+    "Name": "SPUBLISH",
+    "Summary": "Posts a message to a shard channel.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of clients subscribed to the receiving shard channel.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "STRLEN",
     "Name": "STRLEN",
     "Summary": "Returns the length of a string value.",
@@ -6594,6 +6705,22 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANNEL",
+        "DisplayText": "channel",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SSUBSCRIBE",
+    "Name": "SSUBSCRIBE",
+    "Summary": "Listens for messages published to shard channels.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of shard channels to subscribe to.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "shardchannel",
         "DisplayText": "channel",
         "Type": "String",
         "ArgumentFlags": "Multiple"
@@ -6709,6 +6836,13 @@
         "KeySpecIndex": 0
       }
     ]
+  },
+  {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Summary": "Returns the replication role.",
+    "Group": "Server",
+    "Complexity": "O(1)"
   },
   {
     "Command": "UNLINK",
@@ -7469,6 +7603,57 @@
         "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZRANGEBYLEX",
+    "Name": "ZRANGEBYLEX",
+    "Summary": "Returns the number of members in a sorted set within a lexicographical range.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYLEX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
       }
     ]
   },

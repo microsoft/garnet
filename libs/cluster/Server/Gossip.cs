@@ -4,9 +4,11 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -159,7 +161,7 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger);
+                    gsn = new GarnetServerNode(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions?.TlsClientOptions, logger: logger);
                     created = true;
                 }
 
@@ -197,6 +199,47 @@ namespace Garnet.cluster
             finally
             {
                 resp.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Forward message by issuing CLUSTER PUBLISH|SPUBLISH
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        {
+            var conf = CurrentConfig;
+            List<(string NodeId, IPEndPoint Endpoint)> nodeEntries = null;
+            if (cmd == RespCommand.PUBLISH)
+                conf.GetAllNodeIds(out nodeEntries);
+            else
+                conf.GetNodeIdsForShard(out nodeEntries);
+            foreach (var entry in nodeEntries)
+            {
+                try
+                {
+                    var nodeId = entry.NodeId;
+                    var endpoint = entry.Endpoint;
+                    GarnetServerNode gsn = null;
+                    while (!clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, tlsOptions, nodeId, out gsn, logger: logger))
+                        Thread.Yield();
+
+                    if (gsn == null)
+                        continue;
+
+                    // Initialize GarnetServerNode
+                    // Thread-Safe initialization executes only once
+                    gsn.InitializeAsync().GetAwaiter().GetResult();
+
+                    // Publish to remote nodes
+                    gsn.TryClusterPublish(cmd, ref channel, ref message);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, $"{nameof(ClusterManager)}.{nameof(TryClusterPublish)}");
+                }
             }
         }
 
@@ -257,20 +300,25 @@ namespace Garnet.cluster
                     // Establish new connection only if it is not in banlist and not in dictionary
                     if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
                     {
-                        var gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger)
-                        {
-                            NodeId = nodeId
-                        };
                         try
                         {
+                            GarnetServerNode gsn = null;
+                            while (!clusterConnectionStore.GetOrAdd(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions, nodeId, out gsn, logger: logger))
+                                await Task.Yield();
+
+                            if (gsn == null)
+                            {
+                                logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                                _ = clusterConnectionStore.TryRemove(nodeId);
+                                continue;
+                            }
+
                             await gsn.InitializeAsync();
-                            if (!clusterConnectionStore.AddConnection(gsn))
-                                gsn.Dispose();
                         }
                         catch (Exception ex)
                         {
-                            logger?.LogWarning("Connection to remote node [{nodeId} {address}:{port}] failed with message:{msg}", nodeId, address, port, ex.Message);
-                            gsn?.Dispose();
+                            logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                            _ = clusterConnectionStore.TryRemove(nodeId);
                         }
                     }
                 }
@@ -315,12 +363,12 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                         gossipStats.gossip_failed_count++;
                     }
@@ -364,12 +412,12 @@ namespace Garnet.cluster
                         }
 
                         gossipStats.gossip_timeout_count++;
-                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogWarning("GOSSIP to remote node [{nodeId} {endpoint}] timeout!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
+                        logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {endpoint}] failed!", currNode.NodeId, currNode.EndPoint);
                         _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                         gossipStats.gossip_failed_count++;
                     }

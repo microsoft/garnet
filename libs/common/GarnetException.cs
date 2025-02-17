@@ -17,24 +17,27 @@ namespace Garnet.common
         /// </summary>
         public LogLevel LogLevel { get; } = LogLevel.Trace;
         public bool ClientResponse { get; } = true;
+        public bool Panic { get; } = false;
 
         /// <summary>
         /// Throw Garnet exception
         /// </summary>
-        public GarnetException(LogLevel logLevel = LogLevel.Trace, bool clientResponse = true)
+        public GarnetException(LogLevel logLevel = LogLevel.Trace, bool clientResponse = true, bool panic = false)
         {
             LogLevel = logLevel;
             ClientResponse = clientResponse;
+            Panic = panic;
         }
 
         /// <summary>
         /// Throw Garnet exception with message
         /// </summary>
         /// <param name="message"></param>
-        public GarnetException(string message, LogLevel logLevel = LogLevel.Trace, bool clientResponse = true) : base(message)
+        public GarnetException(string message, LogLevel logLevel = LogLevel.Trace, bool clientResponse = true, bool panic = false) : base(message)
         {
             LogLevel = logLevel;
             ClientResponse = clientResponse;
+            Panic = panic;
         }
 
         /// <summary>
@@ -42,10 +45,11 @@ namespace Garnet.common
         /// </summary>
         /// <param name="message"></param>
         /// <param name="innerException"></param>
-        public GarnetException(string message, Exception innerException, LogLevel logLevel = LogLevel.Trace, bool clientResponse = true) : base(message, innerException)
+        public GarnetException(string message, Exception innerException, LogLevel logLevel = LogLevel.Trace, bool clientResponse = true, bool panic = false) : base(message, innerException)
         {
             LogLevel = logLevel;
             ClientResponse = clientResponse;
+            Panic = panic;
         }
 
         /// <summary>

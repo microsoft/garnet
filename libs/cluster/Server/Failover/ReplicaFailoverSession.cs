@@ -40,29 +40,14 @@ namespace Garnet.cluster
         {
             _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out var gsn);
 
-            // If connection not available try to initialize it
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
+            while (!clusterProvider.clusterManager.clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, clusterProvider.serverOptions.TlsOptions, nodeId, out gsn, logger: logger))
+                _ = System.Threading.Thread.Yield();
+
             if (gsn == null)
             {
-                var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
-                gsn = new GarnetServerNode(
-                    clusterProvider,
-                    address,
-                    port,
-                    clusterProvider.storeWrapper.serverOptions.TlsOptions?.TlsClientOptions,
-                    logger: logger);
-
-                // Try add connection to the connection store
-                if (!clusterProvider.clusterManager.clusterConnectionStore.AddConnection(gsn))
-                {
-                    // If failed to add dispose connection resources
-                    gsn.Dispose();
-                    // Retry to get established connection if it was added after our first attempt
-                    _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out gsn);
-                }
-
-                // Final check fail, if connection is not established.
-                if (gsn == null)
-                    throw new GarnetException($"Connection not established to node {nodeId}");
+                logger?.LogWarning("TryMeet: Could not establish connection to remote node [{nodeId} {endpoint}] failed", nodeId, endpoint);
+                return null;
             }
 
             await gsn.InitializeAsync();
@@ -77,10 +62,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
         {
-            var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
-                address,
-                port,
+                endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 sendPageSize: sendPageSize,
                 maxOutstandingTasks: 8,

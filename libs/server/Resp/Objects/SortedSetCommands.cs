@@ -164,6 +164,7 @@ namespace Garnet.server
                 {
                     RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
                     RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
+                    RespCommand.ZRANGEBYLEX => SortedSetOperation.ZRANGEBYLEX,
                     RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
                     RespCommand.ZREVRANGEBYLEX => SortedSetOperation.ZREVRANGEBYLEX,
                     RespCommand.ZREVRANGEBYSCORE => SortedSetOperation.ZREVRANGEBYSCORE,

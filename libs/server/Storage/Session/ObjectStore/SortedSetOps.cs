@@ -897,6 +897,46 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
+        /// <param name="minScore"></param>
+        /// <param name="maxScore"></param>
+        /// <param name="numElements"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus SortedSetCount<TObjectContext>(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements, ref TObjectContext objectContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            numElements = 0;
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            // Prepare the parse state
+            parseState.InitializeWithArguments(minScore, maxScore);
+
+            // Prepare the input
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
+            var input = new ObjectInput(header, ref parseState);
+
+            const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                Debug.Assert(*outputContainer == (byte)':');
+                var read = TryProcessRespSimple64IntOutput(outputFooter, out var value);
+                numElements = read ? (int)value : default;
+                Debug.Assert(read);
+            }
+            return status;
+        }
+
+        /// <summary>
+        /// Returns the number of elements in the sorted set at key with a score between min and max.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>

@@ -241,8 +241,8 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var (host, port) = current.GetEndpointFromNodeId(nodeId);
-            while (!RespWriteUtils.TryWriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
+            var endpoint = current.GetEndpointFromNodeId(nodeId);
+            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -293,7 +293,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
+            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 1)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
                     SendAndReset();
@@ -448,6 +448,34 @@ namespace Garnet.cluster
             while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
                 SendAndReset();
 
+            return true;
+        }
+
+        /// <summary>
+        /// Implement CLUSTER PUBLISH command
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterPublish(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            //  CLUSTER PUBLISH|SPUBLISH channel message
+            // Expecting exactly 2 arguments
+            if (parseState.Count != 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            if (clusterProvider.storeWrapper.subscribeBroker == null)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
             return true;
         }
     }

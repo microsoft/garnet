@@ -15,6 +15,9 @@ namespace Garnet.server
         /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
         public static ReadOnlySpan<byte> SUBSCRIBE => "SUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> subscribe => "subscribe"u8;
+        public static ReadOnlySpan<byte> SSUBSCRIBE => "SSUBSCRIBE"u8;
+        public static ReadOnlySpan<byte> ssubscribe => "ssubscribe"u8;
         public static ReadOnlySpan<byte> RUNTXP => "RUNTXP"u8;
         public static ReadOnlySpan<byte> GET => "GET"u8;
         public static ReadOnlySpan<byte> get => "get"u8;
@@ -34,12 +37,15 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SETNAME => "SETNAME"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
         public static ReadOnlySpan<byte> info => "info"u8;
+        public static ReadOnlySpan<byte> DEBUG => "DEBUG"u8;
+        public static ReadOnlySpan<byte> PANIC => "PANIC"u8;
         public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
         public static ReadOnlySpan<byte> docs => "docs"u8;
         public static ReadOnlySpan<byte> GETKEYS => "GETKEYS"u8;
         public static ReadOnlySpan<byte> GETKEYSANDFLAGS => "GETKEYSANDFLAGS"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
+        public static ReadOnlySpan<byte> SLOWLOG => "SLOWLOG"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         public static ReadOnlySpan<byte> PURGEBP => "PURGEBP"u8;
@@ -52,10 +58,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
+        public static ReadOnlySpan<byte> SCRIPT => "SCRIPT"u8;
         public static ReadOnlySpan<byte> HELLO => "HELLO"u8;
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
+        public static ReadOnlySpan<byte> ROLE => "ROLE"u8;
         public static ReadOnlySpan<byte> QUIT => "QUIT"u8;
         public static ReadOnlySpan<byte> SAVE => "SAVE"u8;
         public static ReadOnlySpan<byte> LASTSAVE => "LASTSAVE"u8;
@@ -137,6 +145,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
+        public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
+        public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
 
         /// <summary>
         /// Response strings
@@ -202,7 +212,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_HASH_VALUE_IS_NOT_FLOAT => "ERR hash value is not a float."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE => "ERR value is out of range, must be positive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UKNOWN_SUBCOMMAND => "ERR Unknown subcommand. Try LATENCY HELP."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
@@ -224,6 +233,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_LIMIT_NOT_SUPPORTED => "ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SCRIPT => "NOSCRIPT No matching script. Please use EVAL."u8;
         public static ReadOnlySpan<byte> RESP_ERR_CANNOT_LIST_CLIENTS => "ERR Clients cannot be listed."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_UBLOCKING_CLINET => "ERR Unable to unblock client because of error."u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SUCH_CLIENT => "ERR No such client"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_DISABLED => "ERR ACL Authenticator is disabled."u8;
@@ -239,6 +249,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS => "ERR HCOLLECT scan already in progress"u8;
         public static ReadOnlySpan<byte> RESP_INVALID_COMMAND_SPECIFIED => "Invalid command specified"u8;
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
+        public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
+            @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
 
         /// <summary>
         /// Response string templates
@@ -247,6 +261,7 @@ namespace Garnet.server
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
         public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
+        public const string GenericErrUnknownSubCommandNoHelp = "ERR unknown subcommand '{0}'.";
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
@@ -307,6 +322,8 @@ namespace Garnet.server
         // subcommand parsing strings
         public static ReadOnlySpan<byte> CAT => "CAT"u8;
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
+        public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
         public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
@@ -336,6 +353,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KILL => "KILL"u8;
         public static ReadOnlySpan<byte> GETNAME => "GETNAME"u8;
         public static ReadOnlySpan<byte> SETINFO => "SETINFO"u8;
+        public static ReadOnlySpan<byte> UNBLOCK => "UNBLOCK"u8;
         public static ReadOnlySpan<byte> USER => "USER"u8;
         public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
         public static ReadOnlySpan<byte> LADDR => "LADDR"u8;
@@ -353,6 +371,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> delkeysinslotrange => "DELKEYSINSLOTRANGE"u8;
         public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
         public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
+        public static ReadOnlySpan<byte> publish => "PUBLISH"u8;
+        public static ReadOnlySpan<byte> spublish => "SPUBLISH"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using BDN.benchmark.CustomProcs;
@@ -34,7 +35,7 @@ namespace BDN.benchmark.Cluster
             {
                 QuietMode = true,
                 EnableCluster = !disableSlotVerification,
-                Port = port,
+                EndPoint = new IPEndPoint(IPAddress.Loopback, port),
                 CleanClusterConfig = true,
             };
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -68,7 +69,7 @@ namespace BDN.benchmark.Cluster
                 benchUtils.RandomBytes(ref pairs[i].Item2);
             }
 
-            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.CountDigits(valueSize) + 2 + valueSize + 2);
+            var setByteCount = batchSize * ("*3\r\n$3\r\nSET\r\n"u8.Length + 1 + NumUtils.CountDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.CountDigits(valueSize) + 2 + valueSize + 2);
             var setReq = new Request(setByteCount);
             var curr = setReq.ptr;
             var end = curr + setReq.buffer.Length;
