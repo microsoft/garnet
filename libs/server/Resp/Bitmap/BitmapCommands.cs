@@ -132,7 +132,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out _))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                            dend))
@@ -150,7 +150,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.SETBIT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.SETBIT, ref parseState, startIdx: 1, arg1: offset);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
@@ -178,7 +178,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out _))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                            dend))
@@ -186,7 +186,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.GETBIT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.GETBIT, ref parseState, startIdx: 1, arg1: offset);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
