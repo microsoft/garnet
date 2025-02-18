@@ -135,7 +135,7 @@ namespace Tsavorite.devices
             this.blobName = blobName;
 
             if (blobManager == null) localBlobManager = true;
-            BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Trace, null, underLease, pageBlobDirectory, blobName);
+            BlobManager = blobManager ?? new BlobManager(logger, logger, LogLevel.Information, null, underLease, pageBlobDirectory, blobName);
 
             StorageErrorHandler = BlobManager.StorageErrorHandler;
             StorageErrorHandler.Token.Register(CancelAllRequests);
