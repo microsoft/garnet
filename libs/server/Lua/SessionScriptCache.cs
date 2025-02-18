@@ -65,9 +65,9 @@ namespace Garnet.server
             processor.Dispose();
         }
 
-        public void SetUser(User user)
+        public void SetUserHandle(UserHandle userHandle)
         {
-            processor.SetUser(user);
+            processor.SetUserHandle(userHandle);
         }
 
         /// <summary>
