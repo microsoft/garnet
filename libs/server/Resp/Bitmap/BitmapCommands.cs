@@ -411,7 +411,7 @@ namespace Garnet.server
                 }
 
                 // Process offset argument
-                if (!parseState.TryGetOFfsetSlice(currTokenIdx++, out var offsetSlice))
+                if (!parseState.TryGetOffsetSlice(currTokenIdx++, out var offsetSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
@@ -503,7 +503,7 @@ namespace Garnet.server
                 }
 
                 // Process offset argument
-                if (!parseState.TryGetOFfsetSlice(currTokenIdx++, out var offsetSlice))
+                if (!parseState.TryGetOffsetSlice(currTokenIdx++, out var offsetSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
