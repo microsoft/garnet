@@ -416,6 +416,7 @@ namespace Garnet.server
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
+            var rangeOpts = (SortedSetRangeOpts)input.arg2;
             var count = input.parseState.Count;
             var respProtocolVersion = input.arg1;
 
@@ -436,30 +437,13 @@ namespace Garnet.server
                 var maxSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
 
                 // read the rest of the arguments
-                ZRangeOptions options = new();
-                switch (input.header.SortedSetOp)
+                ZRangeOptions options = new()
                 {
-                    case SortedSetOperation.ZRANGEBYLEX:
-                        options.ByLex = true;
-                        break;
-                    case SortedSetOperation.ZRANGESTORE:
-                        options.WithScores = true;
-                        break;
-                    case SortedSetOperation.ZRANGEBYSCORE:
-                        options.ByScore = true;
-                        break;
-                    case SortedSetOperation.ZREVRANGE:
-                        options.Reverse = true;
-                        break;
-                    case SortedSetOperation.ZREVRANGEBYSCORE:
-                        options.ByScore = true;
-                        options.Reverse = true;
-                        break;
-                    case SortedSetOperation.ZREVRANGEBYLEX:
-                        options.ByLex = true;
-                        options.Reverse = true;
-                        break;
-                }
+                    ByScore = (rangeOpts & SortedSetRangeOpts.ByScore) != 0,
+                    ByLex = (rangeOpts & SortedSetRangeOpts.ByLex) != 0,
+                    Reverse = (rangeOpts & SortedSetRangeOpts.Reverse) != 0,
+                    WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
+                };
 
                 if (count > 2)
                 {
