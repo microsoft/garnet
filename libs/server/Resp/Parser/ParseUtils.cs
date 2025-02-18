@@ -54,24 +54,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Try to read a signed 32-bit long from a given ArgSlice and offset.
-        /// </summary>
-        /// <returns>
-        /// True if integer parsed successfully
-        /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadInt(ref ArgSlice slice, int offset, out int number)
-        {
-            number = default;
-            var ptr = slice.ptr + offset;
-            return slice.length > offset &&
-                   RespReadUtils.TryReadInt32Safe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
-                       out _, out _, allowLeadingZeros: false) &&
-                   (int)bytesRead == slice.length - offset;
-        }
-
-
-        /// <summary>
         /// Read a signed 64-bit long from a given ArgSlice.
         /// </summary>
         /// <returns>
