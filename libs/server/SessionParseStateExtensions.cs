@@ -146,7 +146,7 @@ namespace Garnet.server
         /// <param name="idx">The argument index</param>
         /// <param name="encodingSlice">Parsed slice</param>
         /// <returns></returns>
-        internal static unsafe bool TryGetEncodingSlice(this SessionParseState parseState, int idx, out ArgSlice encodingSlice)
+        internal static unsafe bool TryGetBitfieldEncoding(this SessionParseState parseState, int idx, out ArgSlice encodingSlice)
         {
             if (idx >= parseState.Count)
             {
