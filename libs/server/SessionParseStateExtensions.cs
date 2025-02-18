@@ -185,12 +185,12 @@ namespace Garnet.server
             if (offsetSlice.Length == 0)
                 return false;
 
-            long offset;
+            long bitFieldOffset;
             var ret = (*offsetSlice.ptr == '#')
-                ? ParseUtils.TryReadLong(ref offsetSlice, 1, out offset)
-                : ParseUtils.TryReadLong(ref offsetSlice, out offset);
+                ? ParseUtils.TryReadLong(ref offsetSlice, byteOffset: 1, out bitFieldOffset)
+                : ParseUtils.TryReadLong(ref offsetSlice, out bitFieldOffset);
 
-            return ret && (offset >= 0);
+            return ret && (bitFieldOffset >= 0);
         }
 
         /// <summary>
