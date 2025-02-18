@@ -459,10 +459,10 @@ namespace Tsavorite.devices
             TryReadAsync(blobEntry, (long)sourceAddress, (long)destinationAddress, readLength, id);
         }
 
-        void TryReadAsync( BlobEntry blobEntry, long sourceAddress, long destinationAddress, uint readLength, long id)
+        void TryReadAsync(BlobEntry blobEntry, long sourceAddress, long destinationAddress, uint readLength, long id)
         {
             // If pageBlob is null, it means the blob has not been created yet. We should wait for it to be created.
-            if (blobEntry.PageBlob.Default==null
+            if (blobEntry.PageBlob.Default == null
             && blobEntry.TryQueueAction(() => ReadToBlobAsync(blobEntry, sourceAddress, destinationAddress, readLength, id)))
             {
                 return;
