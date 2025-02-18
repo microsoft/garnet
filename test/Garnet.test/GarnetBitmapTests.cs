@@ -2281,7 +2281,29 @@ namespace Garnet.test
 
             try
             {
+                db.Execute(testCmd.ToString(), key, "GET", "i-1", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
                 db.Execute(testCmd.ToString(), key, "GET", "i8", @"""");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i8", @"-1");
                 Assert.Fail("Should be unreachable, arguments are incorrect");
             }
             catch (RedisServerException ex)
