@@ -31,17 +31,6 @@ namespace Tsavorite.devices
         }
 
         /// <summary>
-        /// Create instance of factory of Azure devices
-        /// </summary>
-        /// <param name="serviceUri"></param>
-        /// <param name="managedIdentityClientId"></param>
-        /// <param name="logger"></param>
-        public AzureStorageNamedDeviceFactory( Uri serviceUri, string managedIdentityClientId,ILogger logger = null)
-            : this(BlobUtilsV12.GetServiceClients(serviceUri,managedIdentityClientId), logger)
-        {
-        }
-
-        /// <summary>
         /// Create instance of factory for Azure devices
         /// </summary>
         /// <param name="pageBlobAccount"></param>
