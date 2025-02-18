@@ -1,5 +1,5 @@
 <Project>
-	<!-- Versioning property for builds and packages -->
+	<!-- VersionPrefix property for builds and packages -->
 	<PropertyGroup>
 		<VersionPrefix>1.0.56</VersionPrefix>
 	</PropertyGroup>
