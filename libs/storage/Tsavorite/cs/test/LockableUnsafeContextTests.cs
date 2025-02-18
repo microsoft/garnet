@@ -1336,7 +1336,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
-                    };
+                    }
+                    ;
                     ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 }
                 catch (Exception)
@@ -1477,7 +1478,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
-                    };
+                    }
+                    ;
                     ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                     lastUpdaterKeys[2] = key;
                 }
