@@ -98,6 +98,17 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.StringGetBit(key, 7999));
             ClassicAssert.IsFalse(db.StringGetBit(key, 8999));
             ClassicAssert.IsTrue(db.StringGetBit(key, 9999));
+
+            try
+            {
+                db.Execute("SETBIT", key, "-1", "1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
         }
 
         [Test, Order(2)]
@@ -111,6 +122,17 @@ namespace Garnet.test
             for (long i = 0; i < (1 << 5); i++)
             {
                 ClassicAssert.IsFalse(db.StringGetBit(key, i));
+            }
+
+            try
+            {
+                db.Execute("GETBIT", key, "-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
             }
         }
 
