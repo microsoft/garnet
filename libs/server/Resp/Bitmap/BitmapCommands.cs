@@ -402,7 +402,7 @@ namespace Garnet.server
 
                 // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
                 // Process encoding argument
-                if (!parseState.TryGetEncodingSlice(currTokenIdx++, out var encodingSlice))
+                if (!parseState.TryGetBitfieldEncoding(currTokenIdx++, out var encodingSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
@@ -494,7 +494,7 @@ namespace Garnet.server
                 // GET Subcommand takes 2 args, encoding and offset
 
                 // Process encoding argument
-                if (!parseState.TryGetEncodingSlice(currTokenIdx++, out var encodingSlice))
+                if (!parseState.TryGetBitfieldEncoding(currTokenIdx++, out var encodingSlice))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
