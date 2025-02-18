@@ -8,6 +8,9 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
 
+permissions:
+  contents: read
+  
 jobs:
   build-test-garnet:
     name: Garnet

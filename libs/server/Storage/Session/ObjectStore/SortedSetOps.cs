@@ -466,37 +466,18 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
 
-            ReadOnlySpan<byte> operation = default;
-            var sortedOperation = SortedSetOperation.ZRANGE;
-            switch (sortedSetOrderOperation)
+            var rangeOpts = sortedSetOrderOperation switch
             {
-                case SortedSetOrderOperation.ByScore:
-                    sortedOperation = SortedSetOperation.ZRANGEBYSCORE;
-                    operation = "BYSCORE"u8;
-                    break;
-                case SortedSetOrderOperation.ByLex:
-                    sortedOperation = SortedSetOperation.ZRANGE;
-                    operation = "BYLEX"u8;
-                    break;
-                case SortedSetOrderOperation.ByRank:
-                    if (reverse)
-                        sortedOperation = SortedSetOperation.ZREVRANGE;
-                    operation = default;
-                    break;
-            }
+                SortedSetOrderOperation.ByScore => SortedSetRangeOpts.ByScore,
+                SortedSetOrderOperation.ByLex => SortedSetRangeOpts.ByLex,
+                _ => SortedSetRangeOpts.None
+            };
 
             var arguments = new List<ArgSlice> { min, max };
 
-            // Operation order
-            if (!operation.IsEmpty)
+            if (reverse)
             {
-                arguments.Add(scratchBufferManager.CreateArgSlice(operation));
-            }
-
-            // Reverse
-            if (sortedOperation != SortedSetOperation.ZREVRANGE && reverse)
-            {
-                arguments.Add(scratchBufferManager.CreateArgSlice("REV"u8));
+                rangeOpts |= SortedSetRangeOpts.Reverse;
             }
 
             // Limit parameter
@@ -517,9 +498,9 @@ namespace Garnet.server
             parseState.InitializeWithArguments([.. arguments]);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = sortedOperation };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var inputArg = 2; // Default RESP server protocol version
-            var input = new ObjectInput(header, ref parseState, arg1: inputArg);
+            var input = new ObjectInput(header, ref parseState, arg1: inputArg, arg2: (int)rangeOpts);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
@@ -891,6 +872,46 @@ namespace Garnet.server
         public GarnetStatus SortedSetPop<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+
+        /// <summary>
+        /// Returns the number of elements in the sorted set at key with a score between min and max.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="minScore"></param>
+        /// <param name="maxScore"></param>
+        /// <param name="numElements"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus SortedSetCount<TObjectContext>(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements, ref TObjectContext objectContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            numElements = 0;
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            // Prepare the parse state
+            parseState.InitializeWithArguments(minScore, maxScore);
+
+            // Prepare the input
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
+            var input = new ObjectInput(header, ref parseState);
+
+            const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                Debug.Assert(*outputContainer == (byte)':');
+                var read = TryProcessRespSimple64IntOutput(outputFooter, out var value);
+                numElements = read ? (int)value : default;
+                Debug.Assert(read);
+            }
+            return status;
+        }
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.

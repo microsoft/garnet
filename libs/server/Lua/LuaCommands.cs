@@ -30,13 +30,13 @@ namespace Garnet.server
 
             ref var digest = ref parseState.GetArgSliceByRef(0);
 
+            var convertedToLower = false;
             LuaRunner runner = null;
 
             // Length check is mandatory, as ScriptHashKey assumes correct length
             if (digest.length == SessionScriptCache.SHA1Len)
             {
-                AsciiUtils.ToLowerInPlace(digest.Span);
-
+            tryAgain:
                 var scriptKey = new ScriptHashKey(digest.Span);
 
                 if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner))
@@ -51,6 +51,17 @@ namespace Garnet.server
                             return true;
                         }
                     }
+                    else if (!convertedToLower)
+                    {
+                        // On a miss (which should be rare) make sure the hash is lower case and try again.
+                        //
+                        // We assume that hashes will be sent in the same format as we return them (lower)
+                        // most of the time, so optimize for that.
+
+                        AsciiUtils.ToLowerInPlace(digest.Span);
+                        convertedToLower = true;
+                        goto tryAgain;
+                    }
                 }
             }
 
@@ -61,7 +72,10 @@ namespace Garnet.server
             }
             else
             {
+                // We assume here that ExecuteScript does not raise exceptions
+                sessionScriptCache.StartRunningScript(runner);
                 ExecuteScript(count - 1, runner);
+                sessionScriptCache.StopRunningScript();
             }
 
             return true;
@@ -104,7 +118,10 @@ namespace Garnet.server
             }
             else
             {
+                // We assume here that ExecuteScript does not raise exceptions
+                sessionScriptCache.StartRunningScript(runner);
                 ExecuteScript(count - 1, runner);
+                sessionScriptCache.StopRunningScript();
             }
 
             return true;
@@ -168,7 +185,7 @@ namespace Garnet.server
             }
             else if (parseState.Count == 1)
             {
-                // we ignore this, but should validate it
+                // We ignore this, but should validate it
                 ref var arg = ref parseState.GetArgSliceByRef(0);
 
                 AsciiUtils.ToUpperInPlace(arg.Span);

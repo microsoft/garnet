@@ -27,7 +27,7 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
 
         /// <summary>
         /// Flush config
@@ -84,6 +84,7 @@ namespace Garnet.server
         /// <param name="message"></param>
         void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message);
 
+        /// <summary>
         /// Is Primary
         /// </summary>
         /// <returns></returns>
