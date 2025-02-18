@@ -172,7 +172,7 @@ namespace Garnet.server
         /// <param name="idx">The argument index</param>
         /// <param name="offsetSlice">Parsed slice</param>
         /// <returns></returns>
-        internal static unsafe bool TryGetOffsetSlice(this SessionParseState parseState, int idx, out ArgSlice offsetSlice)
+        internal static unsafe bool TryGetBitfieldOffset(this SessionParseState parseState, int idx, out ArgSlice offsetSlice)
         {
             if (idx >= parseState.Count)
             {
