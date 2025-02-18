@@ -2,11 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
-using Microsoft.Extensions.Azure;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -14,29 +16,35 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     // Limits chosen here to allow completion - if you have to bump them up, consider that you might have introduced a regression
-    [TestFixture(LuaMemoryManagementMode.Native, "")]
-    [TestFixture(LuaMemoryManagementMode.Tracked, "")]
-    [TestFixture(LuaMemoryManagementMode.Tracked, "13m")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "15m")]
+    [TestFixture(LuaMemoryManagementMode.Native, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Native, "", "00:00:02")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "15m", "")]
     public class LuaScriptTests
     {
         private readonly LuaMemoryManagementMode allocMode;
         private readonly string limitBytes;
+        private readonly string limitTimeout;
 
         protected GarnetServer server;
 
-        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes)
+        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
             this.allocMode = allocMode;
             this.limitBytes = limitBytes;
+            this.limitTimeout = limitTimeout;
         }
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes);
+
+            TimeSpan? timeout = string.IsNullOrEmpty(limitTimeout) ? null : TimeSpan.ParseExact(limitTimeout, "c", CultureInfo.InvariantCulture);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes, luaTimeout: timeout);
             server.Start();
         }
 
@@ -1043,6 +1051,143 @@ return retArray";
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
                 ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
+            }
+        }
+
+        [Test]
+        public void IntentionalTimeout()
+        {
+            const string TimeoutScript = @"
+local count = 0
+
+if @Ctrl == 'Timeout' then
+    while true do
+        count = count + 1
+    end
+end
+
+return count";
+
+            if (string.IsNullOrEmpty(limitTimeout))
+            {
+                ClassicAssert.Ignore("No timeout enabled");
+                return;
+            }
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var scriptTimeout = LuaScript.Prepare(TimeoutScript);
+            var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
+
+            // Timeout actually happens and is reported
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Timeout" }));
+            ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+
+            // We can still run the script without issue (with non-crashing args) afterwards
+            var res = db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Safe" });
+            ClassicAssert.AreEqual(0, (int)res);
+        }
+
+        [Test]
+        [Ignore("Long running, disabled by default")]
+        public void StressTimeouts()
+        {
+            // Psuedo-repeatably random
+            const int SEED = 2025_01_30_00;
+
+            const int DurationMS = 60 * 60 * 1_000;
+            const int ThreadCount = 16;
+            const string TimeoutScript = @"
+local count = 0
+
+if @Ctrl == 'Timeout' then
+    while true do
+        count = count + 1
+    end
+end
+
+return count";
+
+            if (string.IsNullOrEmpty(limitTimeout))
+            {
+                ClassicAssert.Ignore("No timeout enabled");
+                return;
+            }
+
+            using var startStress = new SemaphoreSlim(0, ThreadCount);
+
+            var threads = new Thread[ThreadCount];
+            for (var i = 0; i < threads.Length; i++)
+            {
+                using var threadStarted = new SemaphoreSlim(0, 1);
+
+                var rand = new Random(SEED + i);
+                threads[i] =
+                    new Thread(
+                        () =>
+                        {
+                            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                            var db = redis.GetDatabase();
+
+                            var scriptTimeout = LuaScript.Prepare(TimeoutScript);
+                            var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
+
+                            var timeout = new { Ctrl = "Timeout" };
+                            var safe = new { Ctrl = "Safe" };
+
+                            _ = threadStarted.Release();
+
+                            startStress.Wait();
+
+                            var sw = Stopwatch.StartNew();
+                            while (sw.ElapsedMilliseconds < DurationMS)
+                            {
+                                var roll = rand.Next(10);
+                                if (roll == 0)
+                                {
+                                    var subRoll = rand.Next(5);
+                                    if (subRoll == 0)
+                                    {
+                                        // Even more rarely, flush the script cache
+                                        var res = db.Execute("SCRIPT", "FLUSH");
+                                        ClassicAssert.AreEqual("OK", (string)res);
+                                    }
+                                    else
+                                    {
+                                        // Periodically cause a timeout
+                                        var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
+                                        ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+                                    }
+                                }
+                                else
+                                {
+                                    // ... but most of time, succeed
+                                    var res = db.ScriptEvaluate(loadedScriptTimeout, safe);
+                                    ClassicAssert.AreEqual(0, (int)res);
+                                }
+                            }
+                        }
+                    )
+                    {
+                        Name = $"{nameof(StressTimeouts)} #{i}",
+                        IsBackground = true,
+                    };
+
+                threads[i].Start();
+                threadStarted.Wait();
+            }
+
+            // Start threads, and wait from them to complete
+            _ = startStress.Release(ThreadCount);
+            var sw = Stopwatch.StartNew();
+
+            const int FinalTimeout = DurationMS + 60 * 1_000;
+
+            foreach (var thread in threads)
+            {
+                var timeout = thread.Join((int)(FinalTimeout - sw.ElapsedMilliseconds));
+                ClassicAssert.True(timeout, "Thread did not exit in expected time");
             }
         }
     }

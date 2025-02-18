@@ -355,6 +355,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task ShouldNotThrowExceptionForEmptyArrayResponseAsync()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var db = TestUtils.GetGarnetClient();
+            await db.ConnectAsync();
+
+            ClassicAssert.DoesNotThrowAsync(async () =>
+            {
+                var result = await db.ExecuteForStringResultAsync("KEYS", ["*"]);
+                ClassicAssert.IsNull(result);
+            });
+        }
+
+        [Test]
         public async Task CanUseMGetTests([Values] bool disableObjectStore)
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObjectStore);

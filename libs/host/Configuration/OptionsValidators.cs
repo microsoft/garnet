@@ -78,10 +78,18 @@ namespace Garnet
             validationResult = null;
             convertedValue = default;
 
-            if (!IsRequired && (value == GetDefault(value) || (value is string strVal && string.IsNullOrEmpty(strVal))))
+            if (!IsRequired)
             {
-                validationResult = ValidationResult.Success;
-                return true;
+                var isDefaultValue =
+                    (value == null && !typeof(T).IsValueType) ||
+                    (value?.Equals(GetDefault(typeof(T))) ?? false) ||
+                    (value is string strVal && string.IsNullOrEmpty(strVal));
+
+                if (isDefaultValue)
+                {
+                    validationResult = ValidationResult.Success;
+                    return true;
+                }
             }
 
             if (value is not T tValue)
@@ -605,7 +613,7 @@ namespace Garnet
 
                     if (forbiddenValues.Contains(otherOptionValueAsString, StringComparer.OrdinalIgnoreCase))
                     {
-                        return new ValidationResult($"{nameof(validationContext.DisplayName)} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
+                        return new ValidationResult($"{validationContext.DisplayName} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
                     }
                 }
             }
@@ -639,7 +647,7 @@ namespace Garnet
                     return ValidationResult.Success;
             }
 
-            return new ValidationResult($"{nameof(validationContext.DisplayName)} can only bet set on following platforms: {string.Join(',', supportedPlatforms)}");
+            return new ValidationResult($"{validationContext.DisplayName} can only bet set on following platforms: {string.Join(',', supportedPlatforms)}");
         }
     }
 }
