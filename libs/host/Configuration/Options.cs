@@ -603,6 +603,7 @@ namespace Garnet
             var useAzureStorage = UseAzureStorage.GetValueOrDefault();
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
+
             if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString))
                 throw new Exception("Cannot enable use-azure-storage without supplying storage-string.");
 
