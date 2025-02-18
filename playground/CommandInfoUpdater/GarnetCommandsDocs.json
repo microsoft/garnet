@@ -763,5 +763,28 @@
         ]
       }
     ]
+  },
+  {
+    "Command": "CLUSTER",
+    "Name": "CLUSTER",
+    "Summary": "A container for Redis Cluster internal commands.",
+    "Group": "Cluster",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "CLUSTER_PUBLISH",
+        "Name": "CLUSTER|PUBLISH",
+        "Summary": "Processes a forwarded published message from any node in the cluster",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "Summary": "Processes a forwarded published message from a node in the same shard",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      }
+    ]
   }
 ]

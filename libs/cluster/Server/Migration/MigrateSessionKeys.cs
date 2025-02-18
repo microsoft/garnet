@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -74,7 +73,7 @@ namespace Garnet.cluster
                 }
 
                 // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
+                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
                     return false;
 
                 DeleteKeys();
@@ -120,17 +119,17 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    if (!ClusterSession.Expired(ref value.garnetObject))
+                    if (!ClusterSession.Expired(ref value.GarnetObject))
                     {
-                        var objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
+                        var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
 
-                        if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
+                        if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.GarnetObject.Expiration))
                             return false;
                     }
                 }
 
                 // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
+                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
                     return false;
             }
             finally
@@ -183,14 +182,14 @@ namespace Garnet.cluster
                     return false;
 
                 // Migrate main store keys
-                _gcs.InitMigrateBuffer(clusterProvider.storeWrapper.loggingFrequncy);
+                _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequncy);
                 if (!MigrateKeysFromMainStore())
                     return false;
 
                 // Migrate object store keys
                 if (!clusterProvider.serverOptions.DisableObjects)
                 {
-                    _gcs.InitMigrateBuffer(clusterProvider.storeWrapper.loggingFrequncy);
+                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequncy);
                     if (!MigrateKeysFromObjectStore())
                         return false;
                 }

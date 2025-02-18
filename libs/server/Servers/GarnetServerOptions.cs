@@ -137,6 +137,11 @@ namespace Garnet.server
         public int CompactionFrequencySecs = 0;
 
         /// <summary>
+        /// Hash collection frequency in seconds. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation.
+        /// </summary>
+        public int HashCollectFrequencySecs = 0;
+
+        /// <summary>
         /// Hybrid log compaction type.
         ///  None - no compaction.
         ///  Shift - shift begin address without compaction (data loss).
@@ -195,6 +200,16 @@ namespace Garnet.server
         /// Enable per command latency tracking for all commands
         /// </summary>
         public bool LatencyMonitor = false;
+
+        /// <summary>
+        /// Threshold (microseconds) for logging command in the slow log. 0 to disable
+        /// </summary>
+        public int SlowLogThreshold = 0;
+
+        /// <summary>
+        /// Maximum number of slow log entries to keep
+        /// </summary>
+        public int SlowLogMaxEntries = 128;
 
         /// <summary>
         /// Metrics sampling frequency
@@ -378,6 +393,11 @@ namespace Garnet.server
         public int AdjustedObjectStoreIndexMaxCacheLines;
 
         /// <summary>
+        /// Enables the DEBUG command
+        /// </summary>
+        public ConnectionProtectionOption EnableDebugCommand;
+
+        /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
         /// </summary>
         public string[] ExtensionBinPaths;
@@ -403,6 +423,18 @@ namespace Garnet.server
         public string ObjectStoreReadCacheHeapMemorySize = "";
 
         public bool EnableObjectStoreReadCache = false;
+
+        public LuaOptions LuaOptions;
+
+        /// <summary>
+        /// Unix socket address path to bind server to
+        /// </summary>
+        public string UnixSocketPath { get; set; }
+
+        /// <summary>
+        /// Unix socket file permissions
+        /// </summary>
+        public UnixFileMode UnixSocketPermission { get; set; }
 
         /// <summary>
         /// Constructor

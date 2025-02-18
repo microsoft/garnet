@@ -103,10 +103,10 @@ namespace Garnet.cluster
                 var keyCount = *(int*)payloadPtr;
                 payloadPtr += 4;
                 var i = 0;
-                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
+                TrackImportProgress(keyCount, isMainStore: false, keyCount == 0);
                 while (i < keyCount)
                 {
-                    if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
+                    if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
                         return false;
 
                     // An error has occurred
@@ -138,12 +138,12 @@ namespace Garnet.cluster
             if (migrateState == 1)
             {
                 logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE));
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -166,7 +166,7 @@ namespace Garnet.cluster
             }
 
             var mtasks = clusterProvider.migrationManager.GetMigrationTaskCount();
-            while (!RespWriteUtils.WriteInteger(mtasks, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt32(mtasks, ref dcurr, dend))
                 SendAndReset();
 
             return true;

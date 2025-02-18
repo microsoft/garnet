@@ -196,7 +196,7 @@ namespace Garnet.server
                         .GroupBy(static t => t.Acl)
                         .ToDictionary(
                             static grp => grp.Key,
-                            static grp => (IReadOnlyList<RespCommandsInfo>)ImmutableArray.CreateRange(grp.Select(static t => t.CommandInfo))
+                            static grp => (IReadOnlyList<RespCommandsInfo>)[.. grp.Select(static t => t.CommandInfo)]
                         )
                 );
 
@@ -326,7 +326,7 @@ namespace Garnet.server
                 tmpRespCommandInfo = FlattenedRespCommandsInfo[cmd];
 
             if (tmpRespCommandInfo == default ||
-                (txnOnly && tmpRespCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))) return false;
+                (txnOnly && (tmpRespCommandInfo.Flags & RespCommandFlags.NoMulti) == RespCommandFlags.NoMulti)) return false;
 
             respCommandsInfo = tmpRespCommandInfo;
             return true;

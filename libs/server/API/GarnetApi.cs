@@ -166,6 +166,12 @@ namespace Garnet.server
 
         #endregion
 
+        #region MSETNX
+        /// <inheritdoc />
+        public GarnetStatus MSET_Conditional(ref RawStringInput input) =>
+            storageSession.MSET_Conditional(ref input, ref context);
+        #endregion
+
         #region APPEND
 
         /// <inheritdoc />

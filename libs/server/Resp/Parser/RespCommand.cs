@@ -25,6 +25,7 @@ namespace Garnet.server
         BITPOS,
         COSCAN,
         DBSIZE,
+        DUMP,
         EXISTS,
         EXPIRETIME,
         GEODIST,
@@ -48,6 +49,10 @@ namespace Garnet.server
         HVALS,
         KEYS,
         LCS,
+        HTTL,
+        HPTTL,
+        HEXPIRETIME,
+        HPEXPIRETIME,
         LINDEX,
         LLEN,
         LPOS,
@@ -65,8 +70,10 @@ namespace Garnet.server
         SISMEMBER,
         SMEMBERS,
         SMISMEMBER,
+        SPUBLISH,
         SRANDMEMBER,
         SSCAN,
+        SSUBSCRIBE,
         STRLEN,
         SUBSTR,
         SUNION,
@@ -84,6 +91,7 @@ namespace Garnet.server
         ZMSCORE,
         ZRANDMEMBER,
         ZRANGE,
+        ZRANGEBYLEX,
         ZRANGEBYSCORE,
         ZRANK,
         ZREVRANGE,
@@ -97,6 +105,9 @@ namespace Garnet.server
         // Write commands
         APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
+        BZMPOP,
+        BZPOPMAX,
+        BZPOPMIN,
         DECR,
         DECRBY,
         DEL,
@@ -109,7 +120,13 @@ namespace Garnet.server
         GETDEL,
         GETEX,
         GETSET,
+        HCOLLECT,
         HDEL,
+        HEXPIRE,
+        HPEXPIRE,
+        HEXPIREAT,
+        HPEXPIREAT,
+        HPERSIST,
         HINCRBY,
         HINCRBYFLOAT,
         HMSET,
@@ -142,6 +159,7 @@ namespace Garnet.server
         PFMERGE,
         PSETEX,
         RENAME,
+        RESTORE,
         RENAMENX,
         RPOP,
         RPOPLPUSH,
@@ -217,6 +235,7 @@ namespace Garnet.server
         CLIENT_GETNAME,
         CLIENT_SETNAME,
         CLIENT_SETINFO,
+        CLIENT_UNBLOCK,
 
         MONITOR,
         MODULE,
@@ -236,6 +255,7 @@ namespace Garnet.server
 
         INFO,
         TIME,
+        ROLE,
         SAVE,
         LASTSAVE,
         BGSAVE,
@@ -270,6 +290,8 @@ namespace Garnet.server
         COMMAND_COUNT,
         COMMAND_DOCS,
         COMMAND_INFO,
+        COMMAND_GETKEYS,
+        COMMAND_GETKEYSANDFLAGS,
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
@@ -279,10 +301,19 @@ namespace Garnet.server
         CONFIG_REWRITE,
         CONFIG_SET,
 
+        DEBUG,
+
         LATENCY,
         LATENCY_HELP,
         LATENCY_HISTOGRAM,
         LATENCY_RESET,
+
+        // SLOWLOG commands
+        SLOWLOG,
+        SLOWLOG_HELP,
+        SLOWLOG_LEN,
+        SLOWLOG_GET,
+        SLOWLOG_RESET,
 
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
@@ -314,6 +345,8 @@ namespace Garnet.server
         CLUSTER_MYID,
         CLUSTER_MYPARENTID,
         CLUSTER_NODES,
+        CLUSTER_PUBLISH,
+        CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,
         CLUSTER_REPLICATE,
         CLUSTER_RESET,
@@ -374,11 +407,14 @@ namespace Garnet.server
             RespCommand.CLIENT_GETNAME,
             RespCommand.CLIENT_SETNAME,
             RespCommand.CLIENT_SETINFO,
+            RespCommand.CLIENT_UNBLOCK,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
             RespCommand.COMMAND_DOCS,
             RespCommand.COMMAND_INFO,
+            RespCommand.COMMAND_GETKEYS,
+            RespCommand.COMMAND_GETKEYSANDFLAGS,
             RespCommand.MEMORY_USAGE,
             // Config
             RespCommand.CONFIG_GET,
@@ -388,6 +424,11 @@ namespace Garnet.server
             RespCommand.LATENCY_HELP,
             RespCommand.LATENCY_HISTOGRAM,
             RespCommand.LATENCY_RESET,
+            // Slowlog
+            RespCommand.SLOWLOG_HELP,
+            RespCommand.SLOWLOG_LEN,
+            RespCommand.SLOWLOG_GET,
+            RespCommand.SLOWLOG_RESET,
             // Transactions
             RespCommand.MULTI,
         ];
@@ -668,6 +709,7 @@ namespace Garnet.server
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
                         (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDUMP\r\n"u8) => RespCommand.DUMP,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
@@ -684,11 +726,13 @@ namespace Garnet.server
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETSET\r\n"u8) => RespCommand.GETSET,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P' => RespCommand.PFMERGE,
+                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SP"u8) => RespCommand.SPUBLISH,
                         (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETNX\r\n"u8) => RespCommand.SETNX,
                         (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
                         (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SUBSTR\r\n"u8) => RespCommand.SUBSTR,
+                        (3 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ESTORE\r\n"u8) && ptr[8] == 'R' => RespCommand.RESTORE,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
                         (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
 
@@ -704,7 +748,6 @@ namespace Garnet.server
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
                             >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
                             >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
-
                             _ => MatchedNone(this, oldReadHead)
                         }
                     };
@@ -809,6 +852,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHLEN\r\n"u8))
                                         {
                                             return RespCommand.HLEN;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHTTL\r\n"u8))
+                                        {
+                                            return RespCommand.HTTL;
                                         }
                                         break;
 
@@ -984,6 +1031,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HSCAN;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHPTTL\r\n"u8))
+                                        {
+                                            return RespCommand.HPTTL;
+                                        }
                                         break;
 
                                     case 'L':
@@ -1081,6 +1132,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMPOP\r\n"u8))
                                         {
                                             return RespCommand.BLMPOP;
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BZMPOP;
                                         }
                                         break;
                                     case 'D':
@@ -1275,6 +1330,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HEXISTS;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.HEXPIRE;
+                                        }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.HINCRBY;
@@ -1359,6 +1418,22 @@ namespace Garnet.server
                                 {
                                     return RespCommand.EXPIREAT;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIRE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.HPERSIST;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.BZPOPMAX;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.BZPOPMIN;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1388,6 +1463,16 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
                                 {
                                     return RespCommand.PEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIREAT;
+                                }
+                                break;
+                            case 10:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SSUBSCRI"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
+                                {
+                                    return RespCommand.SSUBSCRIBE;
                                 }
                                 break;
                         }
@@ -1454,6 +1539,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZINTERCARD;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nHPEX"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("PIREAT\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIREAT;
+                                }
                                 break;
                             case 11:
                                 if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nUNSUB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
@@ -1492,6 +1581,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZRANGESTORE;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRANG"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("EBYLEX\r\n"u8))
+                                {
+                                    return RespCommand.ZRANGEBYLEX;
+                                }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.ZINTERSTORE;
@@ -1499,6 +1592,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZUNIO"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("NSTORE\r\n"u8))
                                 {
                                     return RespCommand.ZUNIONSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nHEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIRETIME;
                                 }
                                 break;
 
@@ -1510,6 +1607,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHINCRB"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.HINCRBYFLOAT;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHPEXPI"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIRETIME;
                                 }
                                 break;
 
@@ -1596,9 +1697,54 @@ namespace Garnet.server
             {
                 return RespCommand.SUBSCRIBE;
             }
+            else if (command.SequenceEqual(CmdStrings.SSUBSCRIBE))
+            {
+                return RespCommand.SSUBSCRIBE;
+            }
             else if (command.SequenceEqual(CmdStrings.RUNTXP))
             {
                 return RespCommand.RUNTXP;
+            }
+            else if (command.SequenceEqual(CmdStrings.SCRIPT))
+            {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.SCRIPT)));
+                    return RespCommand.INVALID;
+                }
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.LOAD))
+                {
+                    return RespCommand.SCRIPT_LOAD;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.FLUSH))
+                {
+                    return RespCommand.SCRIPT_FLUSH;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.EXISTS))
+                {
+                    return RespCommand.SCRIPT_EXISTS;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.SCRIPT));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.ECHO))
             {
@@ -1618,33 +1764,38 @@ namespace Garnet.server
                 {
                     specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
                         nameof(RespCommand.CONFIG)));
+                    return RespCommand.INVALID;
                 }
-                else if (count >= 1)
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.GET))
-                    {
-                        return RespCommand.CONFIG_GET;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
-                    {
-                        return RespCommand.CONFIG_REWRITE;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.SET))
-                    {
-                        return RespCommand.CONFIG_SET;
-                    }
+                    success = false;
+                    return RespCommand.NONE;
                 }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.GET))
+                {
+                    return RespCommand.CONFIG_GET;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
+                {
+                    return RespCommand.CONFIG_REWRITE;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.SET))
+                {
+                    return RespCommand.CONFIG_SET;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.CONFIG));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.CLIENT))
             {
@@ -1652,49 +1803,58 @@ namespace Garnet.server
                 {
                     specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
                         nameof(RespCommand.CLIENT)));
+                    return RespCommand.INVALID;
                 }
-                else if (count >= 1)
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.ID))
-                    {
-                        return RespCommand.CLIENT_ID;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
-                    {
-                        return RespCommand.CLIENT_INFO;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
-                    {
-                        return RespCommand.CLIENT_LIST;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.KILL))
-                    {
-                        return RespCommand.CLIENT_KILL;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
-                    {
-                        return RespCommand.CLIENT_GETNAME;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
-                    {
-                        return RespCommand.CLIENT_SETNAME;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
-                    {
-                        return RespCommand.CLIENT_SETINFO;
-                    }
+                    success = false;
+                    return RespCommand.NONE;
                 }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.ID))
+                {
+                    return RespCommand.CLIENT_ID;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                {
+                    return RespCommand.CLIENT_INFO;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.LIST))
+                {
+                    return RespCommand.CLIENT_LIST;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.KILL))
+                {
+                    return RespCommand.CLIENT_KILL;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                {
+                    return RespCommand.CLIENT_GETNAME;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                {
+                    return RespCommand.CLIENT_SETNAME;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                {
+                    return RespCommand.CLIENT_SETINFO;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
+                {
+                    return RespCommand.CLIENT_UNBLOCK;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.CLIENT));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.AUTH))
             {
@@ -1703,6 +1863,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.INFO))
             {
                 return RespCommand.INFO;
+            }
+            else if (command.SequenceEqual(CmdStrings.ROLE))
+            {
+                return RespCommand.ROLE;
             }
             else if (command.SequenceEqual(CmdStrings.COMMAND))
             {
@@ -1736,6 +1900,22 @@ namespace Garnet.server
                 {
                     return RespCommand.COMMAND_DOCS;
                 }
+
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
+                {
+                    return RespCommand.COMMAND_GETKEYS;
+                }
+
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
+                {
+                    return RespCommand.COMMAND_GETKEYSANDFLAGS;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.COMMAND));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.PING))
             {
@@ -1747,6 +1927,13 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.CLUSTER)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -1866,6 +2053,14 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_SLOTSTATE;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.publish))
+                {
+                    return RespCommand.CLUSTER_PUBLISH;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.spublish))
+                {
+                    return RespCommand.CLUSTER_SPUBLISH;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
                 {
                     return RespCommand.CLUSTER_MIGRATE;
@@ -1919,12 +2114,59 @@ namespace Garnet.server
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.UTF8.GetString(subCommand), "CLUSTER");
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.CLUSTER));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.LATENCY))
             {
-                if (count >= 1)
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.LATENCY)));
+                    return RespCommand.INVALID;
+                }
+
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                AsciiUtils.ToUpperInPlace(subCommand);
+
+                count--;
+
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.LATENCY_HELP;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
+                {
+                    return RespCommand.LATENCY_HISTOGRAM;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                {
+                    return RespCommand.LATENCY_RESET;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.LATENCY));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
+            }
+            else if (command.SequenceEqual(CmdStrings.SLOWLOG))
+            {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.SLOWLOG)));
+                }
+                else if (count >= 1)
                 {
                     Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                     if (!gotSubCommand)
@@ -1939,15 +2181,19 @@ namespace Garnet.server
 
                     if (subCommand.SequenceEqual(CmdStrings.HELP))
                     {
-                        return RespCommand.LATENCY_HELP;
+                        return RespCommand.SLOWLOG_HELP;
                     }
-                    else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
+                    else if (subCommand.SequenceEqual(CmdStrings.GET))
                     {
-                        return RespCommand.LATENCY_HISTOGRAM;
+                        return RespCommand.SLOWLOG_GET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LEN))
+                    {
+                        return RespCommand.SLOWLOG_LEN;
                     }
                     else if (subCommand.SequenceEqual(CmdStrings.RESET))
                     {
-                        return RespCommand.LATENCY_RESET;
+                        return RespCommand.SLOWLOG_RESET;
                     }
                 }
             }
@@ -2001,22 +2247,32 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.MEMORY))
             {
-                if (count > 0)
+                if (count == 0)
                 {
-                    ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    count--;
-
-                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
-                    {
-                        return RespCommand.MEMORY_USAGE;
-                    }
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.MEMORY)));
+                    return RespCommand.INVALID;
                 }
+
+                ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                count--;
+
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
+                {
+                    return RespCommand.MEMORY_USAGE;
+                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.MEMORY));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.MONITOR))
             {
@@ -2024,6 +2280,13 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.ACL))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.ACL)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2067,6 +2330,12 @@ namespace Garnet.server
                 {
                     return RespCommand.ACL_WHOAMI;
                 }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.ACL));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
@@ -2078,6 +2347,13 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.MODULE))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.MODULE)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2091,9 +2367,22 @@ namespace Garnet.server
                 {
                     return RespCommand.MODULE_LOADCS;
                 }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.MODULE));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.PUBSUB))
             {
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.PUBSUB)));
+                    return RespCommand.INVALID;
+                }
+
                 Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
@@ -2115,11 +2404,20 @@ namespace Garnet.server
                 {
                     return RespCommand.PUBSUB_NUMPAT;
                 }
-                else
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                              Encoding.UTF8.GetString(subCommand),
+                                              nameof(RespCommand.PUBSUB));
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                return RespCommand.INVALID;
+            }
+            else if (command.SequenceEqual(CmdStrings.HCOLLECT))
+            {
+                return RespCommand.HCOLLECT;
+            }
+            else if (command.SequenceEqual(CmdStrings.DEBUG))
+            {
+                return RespCommand.DEBUG;
             }
             else
             {
@@ -2130,19 +2428,19 @@ namespace Garnet.server
                 Debug.Assert(currentCustomObjectCommand == null);
                 Debug.Assert(currentCustomProcedure == null);
 
-                if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
+                if (customCommandManagerSession.Match(command, out currentCustomTransaction))
                 {
                     return RespCommand.CustomTxn;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomRawStringCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
                 {
                     return RespCommand.CustomRawStringCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
+                else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
                 {
                     return RespCommand.CustomObjCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
+                else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
                 {
                     return RespCommand.CustomProcedure;
                 }
@@ -2158,7 +2456,6 @@ namespace Garnet.server
                 {
                     return RespCommand.GETIFNOTMATCH;
                 }
-
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
@@ -2278,7 +2575,7 @@ namespace Garnet.server
             }
 
             // Read the array length
-            if (!RespReadUtils.ReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
             {
                 success = false;
                 return RespCommand.INVALID;
@@ -2300,13 +2597,13 @@ namespace Garnet.server
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
-                    while (!RespWriteUtils.WriteError(specificErrorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
                     // Return "Unknown RESP Command" message
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                         SendAndReset();
                 }
             }

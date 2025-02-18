@@ -30,7 +30,7 @@ namespace Garnet.client
             byte* next = offset;
             int arraySize = 3;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -38,7 +38,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -46,7 +46,7 @@ namespace Garnet.client
             offset = curr;
 
             //2
-            while (!RespWriteUtils.WriteBulkString(GOSSIP, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(GOSSIP, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -54,7 +54,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(byteArray.Span, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(byteArray.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;

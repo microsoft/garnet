@@ -4,8 +4,10 @@
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using BDN.benchmark.Lua;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
+using Garnet.server;
 
 namespace BDN.benchmark.Operations
 {
@@ -13,7 +15,7 @@ namespace BDN.benchmark.Operations
     /// Benchmark for SCRIPT LOAD, SCRIPT EXISTS, EVAL, and EVALSHA
     /// </summary>
     [MemoryDiagnoser]
-    public unsafe class ScriptOperations : OperationsBase
+    public unsafe class ScriptOperations
     {
         // Small script that does 1 operation and no logic
         const string SmallScriptText = @"return redis.call('GET', KEYS[1]);";
@@ -156,9 +158,54 @@ return returnValue
         static ReadOnlySpan<byte> ARRAY_RETURN => "*3\r\n$4\r\nEVAL\r\n$22\r\nreturn {1, 2, 3, 4, 5}\r\n$1\r\n0\r\n"u8;
         Request arrayReturn;
 
-        public override void GlobalSetup()
+
+        /// <summary>
+        /// Lua parameters
+        /// </summary>
+        [ParamsSource(nameof(LuaParamsProvider))]
+        public LuaParams Params { get; set; }
+
+        /// <summary>
+        /// Lua parameters provider
+        /// </summary>
+        public static IEnumerable<LuaParams> LuaParamsProvider()
+        => [
+            new(LuaMemoryManagementMode.Native, false),
+            new(LuaMemoryManagementMode.Tracked, false),
+            new(LuaMemoryManagementMode.Tracked, true),
+            new(LuaMemoryManagementMode.Managed, false),
+            new(LuaMemoryManagementMode.Managed, true),
+        ];
+
+        /// <summary>
+        /// Batch size per method invocation
+        /// With a batchSize of 100, we have a convenient conversion of latency to throughput:
+        ///   5 us = 20 Mops/sec
+        ///  10 us = 10 Mops/sec
+        ///  20 us =  5 Mops/sec
+        ///  25 us =  4 Mops/sec
+        /// 100 us =  1 Mops/sec
+        /// </summary>
+        internal const int batchSize = 100;
+        internal EmbeddedRespServer server;
+        internal RespServerSession session;
+
+        /// <summary>
+        /// Setup
+        /// </summary>
+        [GlobalSetup]
+        public void GlobalSetup()
         {
-            base.GlobalSetup();
+            var opts = new GarnetServerOptions
+            {
+                QuietMode = true,
+                EnableLua = true,
+                LuaOptions = Params.CreateOptions(),
+            };
+
+            server = new EmbeddedRespServer(opts);
+
+            session = server.GetRespSession();
 
             SetupOperation(ref scriptLoad, SCRIPT_LOAD);
 
@@ -216,6 +263,16 @@ return returnValue
             SetupOperation(ref evalShaLargeScript, largeScriptEvals);
         }
 
+        /// <summary>
+        /// Cleanup
+        /// </summary>
+        [GlobalCleanup]
+        public virtual void GlobalCleanup()
+        {
+            session.Dispose();
+            server.Dispose();
+        }
+
         [Benchmark]
         public void ScriptLoad()
         {
@@ -262,6 +319,38 @@ return returnValue
         public void ArrayReturn()
         {
             Send(arrayReturn);
+        }
+
+        private void Send(Request request)
+        => Send(session, request);
+
+        internal static void Send(RespServerSession session, Request request)
+        => session.TryConsumeMessages(request.bufferPtr, request.buffer.Length);
+
+        internal static unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
+        {
+            request.buffer = GC.AllocateArray<byte>(operation.Length * batchSize, pinned: true);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                operation.CopyTo(new Span<byte>(request.buffer).Slice(i * operation.Length));
+        }
+
+        internal static unsafe void SetupOperation(ref Request request, string operation, int batchSize = batchSize)
+        {
+            request.buffer = GC.AllocateUninitializedArray<byte>(operation.Length * batchSize, pinned: true);
+            for (var i = 0; i < batchSize; i++)
+            {
+                var start = i * operation.Length;
+                Encoding.UTF8.GetBytes(operation, request.buffer.AsSpan().Slice(start, operation.Length));
+            }
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
+        }
+
+        internal static unsafe void SetupOperation(ref Request request, List<byte> operationBytes)
+        {
+            request.buffer = GC.AllocateUninitializedArray<byte>(operationBytes.Count, pinned: true);
+            operationBytes.CopyTo(request.buffer);
+            request.bufferPtr = (byte*)Unsafe.AsPointer(ref request.buffer[0]);
         }
     }
 }

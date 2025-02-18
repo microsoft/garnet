@@ -22,9 +22,13 @@ namespace BDN.benchmark.Lua
         /// Lua parameters provider
         /// </summary>
         public IEnumerable<LuaParams> LuaParamsProvider()
-        {
-            yield return new();
-        }
+        => [
+            new(LuaMemoryManagementMode.Native, false),
+            new(LuaMemoryManagementMode.Tracked, false),
+            new(LuaMemoryManagementMode.Tracked, true),
+            new(LuaMemoryManagementMode.Managed, false),
+            new(LuaMemoryManagementMode.Managed, true),
+        ];
 
         private EmbeddedRespServer server;
         private StoreWrapper storeWrapper;
@@ -38,9 +42,11 @@ namespace BDN.benchmark.Lua
         [GlobalSetup]
         public void GlobalSetup()
         {
-            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true });
+            var options = Params.CreateOptions();
+
+            server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = options });
             storeWrapper = server.StoreWrapper;
-            sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator());
+            sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator(), null);
             session = server.GetRespSession();
 
             outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
