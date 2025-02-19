@@ -6849,10 +6849,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZEXPIRE",
-                [DoHExpireAsync]
+                [DoZExpireAsync]
             );
 
-            static async Task DoHExpireAsync(GarnetClient client)
+            static async Task DoZExpireAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZEXPIRE", ["foo", "1", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6865,10 +6865,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZPEXPIRE",
-                [DoHPExpireAsync]
+                [DoZPExpireAsync]
             );
 
-            static async Task DoHPExpireAsync(GarnetClient client)
+            static async Task DoZPExpireAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZPEXPIRE", ["foo", "1", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6881,10 +6881,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZEXPIREAT",
-                [DoHExpireAtAsync]
+                [DoZExpireAtAsync]
             );
 
-            static async Task DoHExpireAtAsync(GarnetClient client)
+            static async Task DoZExpireAtAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6897,10 +6897,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZPEXPIREAT",
-                [DoHPExpireAtAsync]
+                [DoZPExpireAtAsync]
             );
 
-            static async Task DoHPExpireAtAsync(GarnetClient client)
+            static async Task DoZPExpireAtAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZPEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6913,10 +6913,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZEXPIRETIME",
-                [DoHExpireTimeAsync]
+                [DoZExpireTimeAsync]
             );
 
-            static async Task DoHExpireTimeAsync(GarnetClient client)
+            static async Task DoZExpireTimeAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZEXPIRETIME", ["foo", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6929,10 +6929,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZPEXPIRETIME",
-                [DoHPExpireTimeAsync]
+                [DoZPExpireTimeAsync]
             );
 
-            static async Task DoHPExpireTimeAsync(GarnetClient client)
+            static async Task DoZPExpireTimeAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZPEXPIRETIME", ["foo", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6945,10 +6945,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZTTL",
-                [DoHETTLAsync]
+                [DoZETTLAsync]
             );
 
-            static async Task DoHETTLAsync(GarnetClient client)
+            static async Task DoZETTLAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZTTL", ["foo", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6961,10 +6961,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZPTTL",
-                [DoHPETTLAsync]
+                [DoZPETTLAsync]
             );
 
-            static async Task DoHPETTLAsync(GarnetClient client)
+            static async Task DoZPETTLAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZPTTL", ["foo", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6977,10 +6977,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZPERSIST",
-                [DoHPersistAsync]
+                [DoZPersistAsync]
             );
 
-            static async Task DoHPersistAsync(GarnetClient client)
+            static async Task DoZPersistAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringArrayResultAsync("ZPERSIST", ["foo", "MEMBERS", "1", "bar"]);
                 ClassicAssert.AreEqual(1, val.Length);
@@ -6993,10 +6993,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "ZCOLLECT",
-                [DoHCollectAsync]
+                [DoZCollectAsync]
             );
 
-            static async Task DoHCollectAsync(GarnetClient client)
+            static async Task DoZCollectAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForStringResultAsync("ZCOLLECT", ["foo"]);
                 ClassicAssert.AreEqual("OK", val);

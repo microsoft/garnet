@@ -1611,6 +1611,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.PEXPIRETIME;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nHEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIRETIME;
+                                }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.INCRBYFLOAT;
