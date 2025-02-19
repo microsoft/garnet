@@ -142,7 +142,7 @@ namespace Garnet.server
 
         readonly CancellationTokenSource ctsCommit;
         SingleWriterMultiReaderLock checkpointTaskLock;
-        SingleWriterMultiReaderLock swapDbsLock;
+        SingleWriterMultiReaderLock databasesLock;
 
         // True if this server supports more than one logical database
         readonly bool allowMultiDb;
@@ -604,7 +604,7 @@ namespace Garnet.server
                 !this.TryGetOrAddDatabase(dbId2, out var db2))
                 return false;
 
-            swapDbsLock.WriteLock();
+            databasesLock.WriteLock();
             try
             {
                 var databaseMapSnapshot = this.databases.Map;
@@ -613,7 +613,7 @@ namespace Garnet.server
             }
             finally
             {
-                swapDbsLock.WriteUnlock();
+                databasesLock.WriteUnlock();
             }
 
             return true;
@@ -648,31 +648,41 @@ namespace Garnet.server
                         return;
                     }
 
-                    var databasesMapSnapshot = databases.Map;
-                    var activeDbIdsSnapshot = activeDbIds;
+                    var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+                    if (!lockAcquired) continue;
 
-                    if (dbIdsToCheckpoint == null || dbIdsToCheckpoint.Length < activeDbIdsSize)
-                        dbIdsToCheckpoint = new int[activeDbIdsSize];
-
-                    var dbIdsIdx = 0;
-                    for (var i = 0; i < activeDbIdsSize; i++)
+                    try
                     {
-                        var dbId = activeDbIdsSnapshot[i];
-                        var db = databasesMapSnapshot[dbId];
-                        Debug.Assert(!db.IsDefault());
+                        var databasesMapSnapshot = databases.Map;
+                        var activeDbIdsSnapshot = activeDbIds;
 
-                        var dbAofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
-                        if (dbAofSize > aofSizeLimit)
+                        if (dbIdsToCheckpoint == null || dbIdsToCheckpoint.Length < activeDbIdsSize)
+                            dbIdsToCheckpoint = new int[activeDbIdsSize];
+
+                        var dbIdsIdx = 0;
+                        for (var i = 0; i < activeDbIdsSize; i++)
                         {
-                            dbIdsToCheckpoint[dbIdsIdx++] = dbId;
-                            break;
+                            var dbId = activeDbIdsSnapshot[i];
+                            var db = databasesMapSnapshot[dbId];
+                            Debug.Assert(!db.IsDefault());
+
+                            var dbAofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
+                            if (dbAofSize > aofSizeLimit)
+                            {
+                                dbIdsToCheckpoint[dbIdsIdx++] = dbId;
+                                break;
+                            }
+                        }
+
+                        if (dbIdsIdx > 0)
+                        {
+                            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
+                            CheckpointDatabases(StoreType.All, ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
                         }
                     }
-
-                    if (dbIdsIdx > 0)
+                    finally
                     {
-                        logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                        CheckpointDatabases(StoreType.All, ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
+                        databasesLock.ReadUnlock();
                     }
                 }
             }
@@ -734,14 +744,8 @@ namespace Garnet.server
             tasks ??= new Task[activeDbIdsSize];
 
             // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = false;
-            while (!lockAcquired && !token.IsCancellationRequested && !disposed)
-            {
-                Task.Yield();
-                lockAcquired = swapDbsLock.TryReadLock();
-            }
-
-            if (token.IsCancellationRequested || disposed) return;
+            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+            if (!lockAcquired) return;
 
             for (var i = 0; i < activeDbIdsSize; i++)
             {
@@ -752,7 +756,7 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
             }
 
-            var completion = Task.WhenAll(tasks).ContinueWith(_ => swapDbsLock.ReadUnlock(), token);
+            var completion = Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock(), token);
 
             if (!spinWait)
                 return;
@@ -769,18 +773,28 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    var databasesMapSnapshot = databases.Map;
+                    var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+                    if (!lockAcquired) continue;
 
-                    var activeDbIdsSize = activeDbIdsLength;
-                    var activeDbIdsSnapshot = activeDbIds;
-
-                    for (var i = 0; i < activeDbIdsSize; i++)
+                    try
                     {
-                        var dbId = activeDbIdsSnapshot[i];
-                        var db = databasesMapSnapshot[dbId];
-                        Debug.Assert(!db.IsDefault());
+                        var databasesMapSnapshot = databases.Map;
 
-                        DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
+                        var activeDbIdsSize = activeDbIdsLength;
+                        var activeDbIdsSnapshot = activeDbIds;
+
+                        for (var i = 0; i < activeDbIdsSize; i++)
+                        {
+                            var dbId = activeDbIdsSnapshot[i];
+                            var db = databasesMapSnapshot[dbId];
+                            Debug.Assert(!db.IsDefault());
+
+                            DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
+                        }
+                    }
+                    finally
+                    {
+                        databasesLock.ReadUnlock();
                     }
 
                     if (!serverOptions.CompactionForceDelete)
@@ -1015,14 +1029,8 @@ namespace Garnet.server
             }
 
             // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = false;
-            while (!lockAcquired && !disposed)
-            {
-                Task.Yield();
-                lockAcquired = swapDbsLock.TryReadLock();
-            }
-
-            if (disposed) return;
+            var lockAcquired = TryGetDatabasesReadLockAsync().Result;
+            if (!lockAcquired) return;
 
             var databasesMapSnapshot = databases.Map;
             var activeDbIdsSnapshot = activeDbIds;
@@ -1035,7 +1043,7 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.WaitForCommitAsync().AsTask();
             }
 
-            Task.WhenAll(tasks).ContinueWith(_ => swapDbsLock.ReadUnlock()).Wait();
+            Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock()).Wait();
         }
 
         /// <summary>
@@ -1055,14 +1063,8 @@ namespace Garnet.server
             }
 
             // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = false;
-            while (!lockAcquired && !token.IsCancellationRequested && !disposed)
-            {
-                await Task.Yield();
-                lockAcquired = swapDbsLock.TryReadLock();
-            }
-
-            if (token.IsCancellationRequested || disposed) return;
+            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+            if (!lockAcquired) return;
 
             var databasesMapSnapshot = databases.Map;
             var activeDbIdsSnapshot = activeDbIds;
@@ -1075,7 +1077,7 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.WaitForCommitAsync(token: token).AsTask();
             }
 
-            await Task.WhenAll(tasks).ContinueWith(_ => swapDbsLock.ReadUnlock(), token);
+            await Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock(), token);
         }
 
         /// <summary>
@@ -1099,6 +1101,9 @@ namespace Garnet.server
                 return;
             }
 
+            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+            if (!lockAcquired) return;
+
             var databasesMapSnapshot = databases.Map;
             var activeDbIdsSnapshot = activeDbIds;
 
@@ -1110,7 +1115,7 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask();
             }
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock(), token);
         }
 
         internal void Start()
@@ -1168,10 +1173,6 @@ namespace Garnet.server
         {
             try
             {
-                var databaseDataInitialized = new bool[serverOptions.MaxDatabases];
-                var databaseMainStoreIndexMaxedOut = new bool[serverOptions.MaxDatabases];
-                var databaseObjectStoreIndexMaxedOut = new bool[serverOptions.MaxDatabases];
-
                 var allIndexesMaxedOut = false;
 
                 while (!allIndexesMaxedOut)
@@ -1182,44 +1183,64 @@ namespace Garnet.server
 
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
-                    var databasesMapSnapshot = databases.Map;
+                    var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+                    if (!lockAcquired) return;
 
-                    var activeDbIdsSize = activeDbIdsLength;
-                    var activeDbIdsSnapshot = activeDbIds;
-
-                    for (var i = 0; i < activeDbIdsSize; i++)
+                    try
                     {
-                        var dbId = activeDbIdsSnapshot[i];
-                        if (!databaseDataInitialized[dbId])
+                        var activeDbIdsSize = activeDbIdsLength;
+                        var activeDbIdsSnapshot = activeDbIds;
+
+                        var databasesMapSnapshot = databases.Map;
+
+                        for (var i = 0; i < activeDbIdsSize; i++)
                         {
-                            Debug.Assert(!databasesMapSnapshot[dbId].IsDefault());
-                            databaseMainStoreIndexMaxedOut[dbId] = serverOptions.AdjustedIndexMaxCacheLines == 0;
-                            databaseObjectStoreIndexMaxedOut[dbId] = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
-                            databaseDataInitialized[dbId] = true;
+                            var dbId = activeDbIdsSnapshot[i];
+                            var db = databasesMapSnapshot[dbId];
+                            var dbUpdated = false;
+
+                            if (!db.MainStoreIndexMaxedOut)
+                            {
+                                var dbMainStore = databasesMapSnapshot[dbId].MainStore;
+                                if (GrowIndexIfNeeded(StoreType.Main,
+                                        serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
+                                        () => dbMainStore.IndexSize, () => dbMainStore.GrowIndex()))
+                                {
+                                    db.MainStoreIndexMaxedOut = true;
+                                    dbUpdated = true;
+                                }
+                                else
+                                {
+                                    allIndexesMaxedOut = false;
+                                }
+                            }
+
+                            if (!db.ObjectStoreIndexMaxedOut)
+                            {
+                                var dbObjectStore = databasesMapSnapshot[dbId].ObjectStore;
+                                if (GrowIndexIfNeeded(StoreType.Object,
+                                        serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
+                                        dbObjectStore.OverflowBucketAllocations,
+                                        () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndex()))
+                                {
+                                    db.ObjectStoreIndexMaxedOut = true;
+                                    dbUpdated = true;
+                                }
+                                else
+                                {
+                                    allIndexesMaxedOut = false;
+                                }
+                            }
+
+                            if (dbUpdated)
+                            {
+                                databasesMapSnapshot[dbId] = db;
+                            }
                         }
-
-                        if (!databaseMainStoreIndexMaxedOut[dbId])
-                        {
-                            var dbMainStore = databasesMapSnapshot[dbId].MainStore;
-                            databaseMainStoreIndexMaxedOut[dbId] = GrowIndexIfNeeded(StoreType.Main,
-                                serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                                () => dbMainStore.IndexSize, () => dbMainStore.GrowIndex());
-
-                            if (!databaseMainStoreIndexMaxedOut[dbId])
-                                allIndexesMaxedOut = false;
-                        }
-
-                        if (!databaseObjectStoreIndexMaxedOut[dbId])
-                        {
-                            var dbObjectStore = databasesMapSnapshot[dbId].ObjectStore;
-                            databaseObjectStoreIndexMaxedOut[dbId] = GrowIndexIfNeeded(StoreType.Object,
-                                serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
-                                dbObjectStore.OverflowBucketAllocations,
-                                () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndex());
-
-                            if (!databaseObjectStoreIndexMaxedOut[dbId])
-                                allIndexesMaxedOut = false;
-                        }
+                    }
+                    finally
+                    {
+                        databasesLock.ReadUnlock();
                     }
                 }
             }
@@ -1292,10 +1313,46 @@ namespace Garnet.server
             => checkpointTaskLock.TryWriteLock();
 
         /// <summary>
+        /// Continuously try to take a lock for checkpointing until acquired or token was cancelled
+        /// </summary>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>True if lock acquired</returns>
+        public async Task<bool> TryPauseCheckpointsContinuousAsync(CancellationToken token = default)
+        {
+            var checkpointsPaused = TryPauseCheckpoints();
+
+            while (!checkpointsPaused && !token.IsCancellationRequested && !disposed)
+            {
+                await Task.Yield();
+                checkpointsPaused = TryPauseCheckpoints();
+            }
+
+            return checkpointsPaused;
+        }
+
+        /// <summary>
         /// Release checkpoint task lock
         /// </summary>
         public void ResumeCheckpoints()
             => checkpointTaskLock.WriteUnlock();
+
+        /// <summary>
+        /// Continuously try to take a database read lock that ensures no db swap operations occur
+        /// </summary>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>True if lock acquired</returns>
+        public async Task<bool> TryGetDatabasesReadLockAsync(CancellationToken token = default)
+        {
+            var lockAcquired = databasesLock.TryReadLock();
+
+            while (!lockAcquired && !token.IsCancellationRequested && !disposed)
+            {
+                await Task.Yield();
+                lockAcquired = databasesLock.TryReadLock();
+            }
+
+            return lockAcquired;
+        }
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -1306,23 +1363,18 @@ namespace Garnet.server
         public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
         {
             // Take lock to ensure no other task will be taking a checkpoint
-            var lockAcquired = TryPauseCheckpoints();
-            while (!lockAcquired && !disposed)
-            {
-                await Task.Yield();
-                lockAcquired = TryPauseCheckpoints();
-            }
+            var checkpointsPaused = TryPauseCheckpoints();
 
             // If an external task has taken a checkpoint beyond the provided entryTime return
-            if (disposed || databases.Map[dbId].LastSaveTime > entryTime)
+            if (!checkpointsPaused || databases.Map[dbId].LastSaveTime > entryTime)
             {
-                if (lockAcquired)
+                if (checkpointsPaused)
                     ResumeCheckpoints();
                 return;
             }
 
             // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-            await CheckpointTask(StoreType.All, dbId, lockAcquired: true, logger: logger);
+            await CheckpointTask(StoreType.All, dbId, checkpointsPaused: true, logger: logger);
         }
 
         /// <summary>
@@ -1349,10 +1401,20 @@ namespace Garnet.server
                 return true;
             }
 
-            var activeDbIdsSnapshot = activeDbIds;
+            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
+            if (!lockAcquired) return false;
 
-            var tasks = new Task[activeDbIdsSize];
-            return CheckpointDatabases(storeType, ref activeDbIdsSnapshot, ref tasks, logger: logger, token: token);
+            try
+            {
+                var activeDbIdsSnapshot = activeDbIds;
+
+                var tasks = new Task[activeDbIdsSize];
+                return CheckpointDatabases(storeType, ref activeDbIdsSnapshot, ref tasks, logger: logger, token: token);
+            }
+            finally
+            {
+                databasesLock.ReadUnlock();
+            }
         }
 
         /// <summary>
@@ -1360,22 +1422,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="storeType">Store type to checkpoint</param>
         /// <param name="dbId">ID of database to checkpoint (default: DB 0)</param>
-        /// <param name="lockAcquired">True if lock previously acquired</param>
+        /// <param name="checkpointsPaused">True if lock previously acquired</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>Task</returns>
-        private async Task CheckpointTask(StoreType storeType, int dbId = 0, bool lockAcquired = false, ILogger logger = null, CancellationToken token = default)
+        private async Task CheckpointTask(StoreType storeType, int dbId = 0, bool checkpointsPaused = false, ILogger logger = null, CancellationToken token = default)
         {
             try
             {
-                // Take lock to ensure no other task will be taking a checkpoint
-                while (!lockAcquired && !token.IsCancellationRequested && !disposed)
+                if (!checkpointsPaused)
                 {
-                    await Task.Yield();
-                    lockAcquired = TryPauseCheckpoints();
-                }
+                    // Take lock to ensure no other task will be taking a checkpoint
+                    checkpointsPaused = await TryPauseCheckpointsContinuousAsync(token);
 
-                if (token.IsCancellationRequested || disposed) return;
+                    if (!checkpointsPaused) return;
+                }
 
                 await CheckpointDatabaseTask(dbId, storeType, logger);
             }
@@ -1385,7 +1446,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (lockAcquired)
+                if (checkpointsPaused)
                     ResumeCheckpoints();
             }
         }
@@ -1670,7 +1731,8 @@ namespace Garnet.server
                 if (db.IsDefault()) continue;
 
                 var dbCopy = new GarnetDatabase(db.MainStore, db.ObjectStore, db.ObjectStoreSizeTracker,
-                    recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null);
+                    recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null,
+                    db.MainStoreIndexMaxedOut, db.ObjectStoreIndexMaxedOut);
                 this.TryAddDatabase(dbId, ref dbCopy);
             }
         }

@@ -224,7 +224,7 @@ namespace Garnet
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
             StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId, out string storeCheckpointDir, out string aofDir) =>
-                CreateDatabase(dbId, clusterFactory, customCommandManager, out storeCheckpointDir, out aofDir);
+                CreateDatabase(dbId, opts, clusterFactory, customCommandManager, out storeCheckpointDir, out aofDir);
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true, logger);
@@ -272,14 +272,16 @@ namespace Garnet
             LoadModules(customCommandManager);
         }
 
-        private GarnetDatabase CreateDatabase(int dbId, ClusterFactory clusterFactory,
+        private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager, out string storeCheckpointDir, out string aofDir)
         {
             var store = CreateMainStore(dbId, clusterFactory, out var checkpointDir, out storeCheckpointDir);
             var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, checkpointDir,
                 out var objectStoreSizeTracker);
             var (aofDevice, aof) = CreateAOF(dbId, out aofDir);
-            return new GarnetDatabase(store, objectStore, objectStoreSizeTracker, aofDevice, aof);
+            return new GarnetDatabase(store, objectStore, objectStoreSizeTracker, aofDevice, aof,
+                serverOptions.AdjustedIndexMaxCacheLines == 0,
+                serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)

@@ -66,11 +66,16 @@ namespace Garnet.server
         /// </summary>
         public DateTimeOffset LastSaveTime;
 
+        public bool MainStoreIndexMaxedOut;
+        
+        public bool ObjectStoreIndexMaxedOut;
+
         bool disposed = false;
 
         public GarnetDatabase(TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile)
+            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
+            bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut)
         {
             MainStore = mainStore;
             ObjectStore = objectStore;
@@ -81,6 +86,8 @@ namespace Garnet.server
             LastSaveStoreTailAddress = 0;
             LastSaveObjectStoreTailAddress = 0;
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
+            MainStoreIndexMaxedOut = mainStoreIndexMaxedOut;
+            ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
         }
 
         public bool IsDefault() => MainStore == null;
