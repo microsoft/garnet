@@ -199,6 +199,7 @@ namespace Tsavorite.test
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
 
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
+        internal static AzureStorageNamedDeviceFactoryCreator AzureStorageNamedDeviceFactoryCreator = IsRunningAzureTests ? new(AzureEmulatedStorageString) : null;
 
         public enum AllocatorType
         {
