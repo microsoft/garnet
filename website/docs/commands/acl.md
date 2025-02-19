@@ -34,9 +34,23 @@ One of the following:
 
 Delete all the specified ACL users and terminate all the connections that are authenticated with such users. Note: the special default user cannot be removed from the system, this is the default user that every new connection is authenticated with. The list of users may include usernames that do not exist, in such case no operation is performed for the non existing users.
 
+### ACL GETUSER
+
+#### Syntax
+
+```bash
+    ACL GETUSER username
+```
+
+The command returns all the rules defined for an existing ACL user.
+
+Specifically, it lists the user's ACL flags, password hashes and commands.
+
 #### Resp Reply
 
-Integer reply: the number of users that were deleted. This number will not always match the number of arguments since certain users may not exist.
+One of the following:
+- Array reply: a list of ACL rule definitions for the user.
+- Nil reply: if user does not exist.
 
 ---
 
