@@ -135,6 +135,8 @@ namespace Garnet.cluster
         {
             try
             {
+                logger?.LogSyncMetadata(LogLevel.Trace, nameof(ReplicaRecoverDiskless), primarySyncMetadata);
+
                 var aofBeginAddress = primarySyncMetadata.currentAofBeginAddress;
                 var aofTailAddress = aofBeginAddress;
                 var replicationOffset = aofBeginAddress;
