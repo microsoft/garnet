@@ -277,7 +277,7 @@ namespace Garnet.server
         public int NetworkConnectionLimit = -1;
 
         /// <summary>
-        /// Func to help create device factories
+        /// Instance of interface to create named device factories
         /// </summary>
         public INamedDeviceFactoryCreator DeviceFactoryCreator = null;
 
