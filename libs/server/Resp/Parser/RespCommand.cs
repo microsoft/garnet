@@ -279,6 +279,7 @@ namespace Garnet.server
         ACL,
         ACL_CAT,
         ACL_DELUSER,
+        ACL_GETUSER,
         ACL_LIST,
         ACL_LOAD,
         ACL_SAVE,
@@ -393,6 +394,7 @@ namespace Garnet.server
             // ACL
             RespCommand.ACL_CAT,
             RespCommand.ACL_DELUSER,
+            RespCommand.ACL_GETUSER,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
             RespCommand.ACL_SAVE,
@@ -2305,6 +2307,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
                 {
                     return RespCommand.ACL_DELUSER;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
+                {
+                    return RespCommand.ACL_GETUSER;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.LIST))
                 {

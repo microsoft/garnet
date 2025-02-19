@@ -24,6 +24,17 @@
         ]
       },
       {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      },
+      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Arity": 2,
