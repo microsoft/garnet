@@ -655,6 +655,7 @@ namespace Garnet.server
                 RespCommand.MSETNX => NetworkMSETNX(ref storageApi),
                 RespCommand.UNLINK => NetworkDEL(ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
+                RespCommand.SWAPDB => NetworkSWAPDB(),
                 RespCommand.WATCH => NetworkWATCH(),
                 RespCommand.WATCHMS => NetworkWATCH_MS(),
                 RespCommand.WATCHOS => NetworkWATCH_OS(),
@@ -1271,6 +1272,27 @@ namespace Garnet.server
                 return false;
 
             SwitchActiveDatabaseSession(dbId, ref db);
+            return true;
+        }
+
+        internal bool TrySwapDatabases(int dbId1, int dbId2)
+        {
+            if (!allowMultiDb) return false;
+            if (dbId1 == dbId2) return true;
+            if (!storeWrapper.TrySwapDatabases(dbId1, dbId2)) return false;
+
+            if (!databaseSessions.TryGetOrSet(dbId1, () => CreateDatabaseSession(dbId1), out var dbSession1, out _) ||
+                !databaseSessions.TryGetOrSet(dbId2, () => CreateDatabaseSession(dbId2), out var dbSession2, out _))
+                return false;
+
+            databaseSessions.Map[dbId1] = dbSession2;
+            databaseSessions.Map[dbId2] = dbSession1;
+
+            if (activeDbId == dbId1)
+                SwitchActiveDatabaseSession(dbId1, ref dbSession2);
+            else if (activeDbId == dbId2)
+                SwitchActiveDatabaseSession(dbId2, ref dbSession1);
+
             return true;
         }
 

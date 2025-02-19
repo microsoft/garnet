@@ -15,7 +15,6 @@ using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using IStreamProvider = Garnet.common.IStreamProvider;
 
 namespace Garnet.server
 {
@@ -36,34 +35,39 @@ namespace Garnet.server
         internal readonly long startupTime;
 
         /// <summary>
+        /// Reference to default database (DB 0)
+        /// </summary>
+        public ref GarnetDatabase DefaultDatabase => ref databases.Map[0];
+
+        /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => DefaultDatabase.MainStore;
 
         /// <summary>
         /// Object store (of DB 0)
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => DefaultDatabase.ObjectStore;
 
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog appendOnlyFile;
+        public TsavoriteLog appendOnlyFile => DefaultDatabase.AppendOnlyFile;
 
         /// <summary>
         /// Last save time (of DB 0)
         /// </summary>
-        public DateTimeOffset lastSaveTime;
+        public DateTimeOffset lastSaveTime => DefaultDatabase.LastSaveTime;
 
         /// <summary>
         /// Object store size tracker (of DB 0)
         /// </summary>
-        public CacheSizeTracker objectStoreSizeTracker;
+        public CacheSizeTracker objectStoreSizeTracker => DefaultDatabase.ObjectStoreSizeTracker;
 
         /// <summary>
         /// Version map (of DB 0)
         /// </summary>
-        internal WatchVersionMap versionMap;
+        internal WatchVersionMap versionMap => DefaultDatabase.VersionMap;
 
         /// <summary>
         /// Server options
@@ -138,6 +142,7 @@ namespace Garnet.server
 
         readonly CancellationTokenSource ctsCommit;
         SingleWriterMultiReaderLock checkpointTaskLock;
+        SingleWriterMultiReaderLock swapDbsLock;
 
         // True if this server supports more than one logical database
         readonly bool allowMultiDb;
@@ -173,9 +178,6 @@ namespace Garnet.server
 
         readonly string checkpointDirBaseName;
 
-        // Stream provider for serializing DB IDs file
-        readonly IStreamProvider databaseIdsStreamProvider;
-
         // True if StoreWrapper instance is disposed
         bool disposed = false;
 
@@ -201,7 +203,6 @@ namespace Garnet.server
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
-            this.lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
             this.createDatabasesDelegate = createsDatabaseDelegate;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
@@ -240,13 +241,6 @@ namespace Garnet.server
                 // Set new database in map
                 if (!this.TryAddDatabase(0, ref db))
                     throw new GarnetException("Failed to set initial database in databases map");
-
-                this.InitializeFieldsFromDatabase(databases.Map[0]);
-            }
-
-            if (allowMultiDb)
-            {
-                databaseIdsStreamProvider = serverOptions.StreamProviderCreator();
             }
 
             if (serverOptions.SlowLogThreshold > 0)
@@ -406,7 +400,7 @@ namespace Garnet.server
                     }
 
                     if (storeVersion > 0 || objectStoreVersion > 0)
-                        lastSaveTime = DateTimeOffset.UtcNow;
+                        DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
                 }
                 else
                 {
@@ -452,7 +446,7 @@ namespace Garnet.server
                 var lastSave = DateTimeOffset.UtcNow;
                 db.LastSaveTime = lastSave;
                 if (dbId == 0)
-                    lastSaveTime = lastSave;
+                    DefaultDatabase.LastSaveTime = lastSave;
 
                 var databasesMapSnapshot = databases.Map;
                 databasesMapSnapshot[dbId] = db;
@@ -496,7 +490,7 @@ namespace Garnet.server
         {
             try
             {
-                var db = databases.Map[dbId];
+                ref var db = ref databases.Map[dbId];
                 if (db.MainStore.Log.TailAddress > 64)
                     db.MainStore.Reset();
                 if (db.ObjectStore?.Log.TailAddress > 64)
@@ -505,7 +499,7 @@ namespace Garnet.server
 
                 var lastSave = DateTimeOffset.FromUnixTimeSeconds(0);
                 if (dbId == 0)
-                    lastSaveTime = lastSave;
+                    DefaultDatabase.LastSaveTime = lastSave;
                 db.LastSaveTime = lastSave;
             }
             catch (Exception ex)
@@ -546,7 +540,7 @@ namespace Garnet.server
                     if (dbId == 0)
                     {
                         replicationOffset = aofProcessor.ReplicationOffset;
-                        this.lastSaveTime = lastSave;
+                        DefaultDatabase.LastSaveTime = lastSave;
                     }
                 }
 
@@ -592,6 +586,35 @@ namespace Garnet.server
 
             if (added)
                 HandleDatabaseAdded(dbId);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Try to swap between two database instances
+        /// </summary>
+        /// <param name="dbId1">First database ID</param>
+        /// <param name="dbId2">Second database ID</param>
+        /// <returns>True if swap successful</returns>
+        public bool TrySwapDatabases(int dbId1, int dbId2)
+        {
+            if (!allowMultiDb) return false;
+
+            if (!this.TryGetOrAddDatabase(dbId1, out var db1) ||
+                !this.TryGetOrAddDatabase(dbId2, out var db2))
+                return false;
+
+            swapDbsLock.WriteLock();
+            try
+            {
+                var databaseMapSnapshot = this.databases.Map;
+                databaseMapSnapshot[dbId2] = db1;
+                databaseMapSnapshot[dbId1] = db2;
+            }
+            finally
+            {
+                swapDbsLock.WriteUnlock();
+            }
 
             return true;
         }
@@ -710,6 +733,16 @@ namespace Garnet.server
 
             tasks ??= new Task[activeDbIdsSize];
 
+            // Take a read lock to make sure that swap-db operation is not in progress
+            var lockAcquired = false;
+            while (!lockAcquired && !token.IsCancellationRequested && !disposed)
+            {
+                Task.Yield();
+                lockAcquired = swapDbsLock.TryReadLock();
+            }
+
+            if (token.IsCancellationRequested || disposed) return;
+
             for (var i = 0; i < activeDbIdsSize; i++)
             {
                 var dbId = activeDbIdsSnapshot[i];
@@ -719,10 +752,12 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
             }
 
+            var completion = Task.WhenAll(tasks).ContinueWith(_ => swapDbsLock.ReadUnlock(), token);
+
             if (!spinWait)
                 return;
 
-            Task.WhenAll(tasks).Wait(token);
+            completion.Wait(token);
         }
 
         async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
@@ -979,6 +1014,16 @@ namespace Garnet.server
                 return;
             }
 
+            // Take a read lock to make sure that swap-db operation is not in progress
+            var lockAcquired = false;
+            while (!lockAcquired && !disposed)
+            {
+                Task.Yield();
+                lockAcquired = swapDbsLock.TryReadLock();
+            }
+
+            if (disposed) return;
+
             var databasesMapSnapshot = databases.Map;
             var activeDbIdsSnapshot = activeDbIds;
 
@@ -990,7 +1035,7 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.WaitForCommitAsync().AsTask();
             }
 
-            Task.WaitAll(tasks);
+            Task.WhenAll(tasks).ContinueWith(_ => swapDbsLock.ReadUnlock()).Wait();
         }
 
         /// <summary>
@@ -1009,6 +1054,16 @@ namespace Garnet.server
                 return;
             }
 
+            // Take a read lock to make sure that swap-db operation is not in progress
+            var lockAcquired = false;
+            while (!lockAcquired && !token.IsCancellationRequested && !disposed)
+            {
+                await Task.Yield();
+                lockAcquired = swapDbsLock.TryReadLock();
+            }
+
+            if (token.IsCancellationRequested || disposed) return;
+
             var databasesMapSnapshot = databases.Map;
             var activeDbIdsSnapshot = activeDbIds;
 
@@ -1020,7 +1075,7 @@ namespace Garnet.server
                 tasks[i] = db.AppendOnlyFile.WaitForCommitAsync(token: token).AsTask();
             }
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(tasks).ContinueWith(_ => swapDbsLock.ReadUnlock(), token);
         }
 
         /// <summary>
@@ -1429,7 +1484,7 @@ namespace Garnet.server
 
             var lastSave = DateTimeOffset.UtcNow;
             if (dbId == 0)
-                lastSaveTime = lastSave;
+                DefaultDatabase.LastSaveTime = lastSave;
             db.LastSaveTime = lastSave;
             databasesMapSnapshot[dbId] = db;
         }
@@ -1618,22 +1673,6 @@ namespace Garnet.server
                     recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null);
                 this.TryAddDatabase(dbId, ref dbCopy);
             }
-
-            InitializeFieldsFromDatabase(databases.Map[0]);
-        }
-
-        /// <summary>
-        /// Initializes default fields to those of a specified database (i.e. DB 0)
-        /// </summary>
-        /// <param name="db">Input database</param>
-        private void InitializeFieldsFromDatabase(GarnetDatabase db)
-        {
-            // Set fields to default database
-            this.store = db.MainStore;
-            this.objectStore = db.ObjectStore;
-            this.objectStoreSizeTracker = db.ObjectStoreSizeTracker;
-            this.appendOnlyFile = db.AppendOnlyFile;
-            this.versionMap = db.VersionMap;
         }
 
         /// <summary>
@@ -1718,10 +1757,10 @@ namespace Garnet.server
                 // Set the last added ID
                 activeDbIdsUpdated[dbIdIdx] = dbId;
 
-                checkpointTasks = new Task[newSize];
-                aofTasks = new Task[newSize];
                 activeDbIds = activeDbIdsUpdated;
                 activeDbIdsLength = dbIdIdx + 1;
+                checkpointTasks = new Task[activeDbIdsLength];
+                aofTasks = new Task[activeDbIdsLength];
             }
         }
     }

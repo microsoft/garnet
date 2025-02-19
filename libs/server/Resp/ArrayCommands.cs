@@ -262,6 +262,56 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// SWAPDB
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkSWAPDB()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SWAPDB));
+            }
+
+            // Validate index
+            if (!parseState.TryGetInt(0, out var index1) || !parseState.TryGetInt(1, out var index2))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (index1 < storeWrapper.serverOptions.MaxDatabases && index2 < storeWrapper.serverOptions.MaxDatabases)
+            {
+                if (this.TrySwapDatabases(index1, index2))
+                {
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            else
+            {
+                if (storeWrapper.serverOptions.EnableCluster)
+                {
+                    // Cluster mode does not allow DBID
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
+            return true;
+        }
+
         private bool NetworkDBSIZE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {

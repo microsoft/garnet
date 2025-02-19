@@ -289,6 +289,7 @@ namespace CommandInfoUpdater
             new("SINTER", RespCommand.SINTER),
             new("SINTERCARD", RespCommand.SINTERCARD),
             new("SINTERSTORE", RespCommand.SINTERSTORE),
+            new("SWAPDB", RespCommand.SWAPDB),
             new("TIME", RespCommand.TIME),
             new("TTL", RespCommand.TTL),
             new("TYPE", RespCommand.TYPE),

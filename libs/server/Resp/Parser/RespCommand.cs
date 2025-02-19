@@ -263,6 +263,7 @@ namespace Garnet.server
         FORCEGC,
         PURGEBP,
         FAILOVER,
+        SWAPDB,
 
         // Custom commands
         CustomTxn,
@@ -383,6 +384,7 @@ namespace Garnet.server
             RespCommand.ASYNC,
             RespCommand.PING,
             RespCommand.SELECT,
+            RespCommand.SWAPDB,
             RespCommand.ECHO,
             RespCommand.MONITOR,
             RespCommand.MODULE_LOADCS,
@@ -1265,6 +1267,10 @@ namespace Garnet.server
                                                     }
                                                 }
                                             }
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SWAPDB\r\n"u8))
+                                        {
+                                            return RespCommand.SWAPDB;
                                         }
                                         break;
 
