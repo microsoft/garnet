@@ -660,24 +660,34 @@ namespace Garnet.server
                 // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
                 Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
 
-                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
+                var status = storageApi.SET_Conditional(ref key, ref input);
 
-                bool ok = status != GarnetStatus.NOTFOUND;
-
-                // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
-                if (cmd == RespCommand.SETEXNX)
-                    ok = !ok;
-
-                if (ok)
+                // KEEPTTL without flags doesn't care whether it was found or not.
+                if (cmd == RespCommand.SETKEEPTTL)
                 {
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    var ok = status != GarnetStatus.NOTFOUND;
+
+                    // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
+                    if (cmd == RespCommand.SETEXNX)
+                        ok = !ok;
+
+                    if (ok)
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
+
                 return true;
             }
             else
