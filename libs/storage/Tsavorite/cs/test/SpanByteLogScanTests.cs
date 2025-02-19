@@ -455,7 +455,7 @@ namespace Tsavorite.test.spanbyte
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
             IterationCollisionTestFunctions scanIteratorFunctions = new();
- 
+
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
 
