@@ -99,8 +99,8 @@ namespace Garnet.server
         unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
-        /// Sets the user currently authenticated in this session (used for permission checks)
+        /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
-        void SetUser(User user);
+        void SetUserHandle(UserHandle userHandle);
     }
 }

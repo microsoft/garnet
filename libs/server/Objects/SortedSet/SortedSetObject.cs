@@ -29,18 +29,12 @@ namespace Garnet.server
         ZINCRBY,
         ZRANK,
         ZRANGE,
-        ZRANGEBYLEX,
-        ZRANGEBYSCORE,
-        ZRANGESTORE,
         GEOADD,
         GEOHASH,
         GEODIST,
         GEOPOS,
         GEOSEARCH,
         GEOSEARCHSTORE,
-        ZREVRANGE,
-        ZREVRANGEBYLEX,
-        ZREVRANGEBYSCORE,
         ZREVRANK,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -55,6 +49,38 @@ namespace Garnet.server
         ZTTL,
         ZPERSIST,
         ZCOLLECT
+    }
+
+    /// <summary>
+    /// Options for specifying the range in sorted set operations.
+    /// </summary>
+    [Flags]
+    public enum SortedSetRangeOpts : byte
+    {
+        /// <summary>
+        /// No options specified.
+        /// </summary>
+        None = 0,
+        /// <summary>
+        /// Range by score.
+        /// </summary>
+        ByScore = 1,
+        /// <summary>
+        /// Range by lexicographical order.
+        /// </summary>
+        ByLex = 1 << 1,
+        /// <summary>
+        /// Reverse the range order.
+        /// </summary>
+        Reverse = 1 << 2,
+        /// <summary>
+        /// Store the result.
+        /// </summary>
+        Store = 1 << 3,
+        /// <summary>
+        /// Include scores in the result.
+        /// </summary>
+        WithScores = 1 << 4
     }
 
     [Flags]
@@ -327,14 +353,6 @@ namespace Garnet.server
                     case SortedSetOperation.ZRANK:
                         SortedSetRank(ref input, ref output.SpanByteAndMemory);
                         break;
-                    case SortedSetOperation.ZRANGE:
-                    case SortedSetOperation.ZRANGESTORE:
-                        SortedSetRange(ref input, ref output.SpanByteAndMemory);
-                        break;
-                    case SortedSetOperation.ZRANGEBYLEX:
-                    case SortedSetOperation.ZRANGEBYSCORE:
-                        SortedSetRange(ref input, ref output.SpanByteAndMemory);
-                        break;
                     case SortedSetOperation.ZEXPIRE:
                         SortedSetExpire(ref input, ref output.SpanByteAndMemory);
                         break;
@@ -363,11 +381,7 @@ namespace Garnet.server
                     case SortedSetOperation.GEOSEARCHSTORE:
                         GeoSearch(ref input, ref output.SpanByteAndMemory);
                         break;
-                    case SortedSetOperation.ZREVRANGE:
-                        SortedSetRange(ref input, ref output.SpanByteAndMemory);
-                        break;
-                    case SortedSetOperation.ZREVRANGEBYLEX:
-                    case SortedSetOperation.ZREVRANGEBYSCORE:
+                    case SortedSetOperation.ZRANGE:
                         SortedSetRange(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZREVRANK:

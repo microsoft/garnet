@@ -1027,6 +1027,14 @@
                         "Token": "NO"
                       }
                     ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
               }
@@ -1175,7 +1183,7 @@
   {
     "Command": "CLUSTER",
     "Name": "CLUSTER",
-    "Summary": "A container for Redis Cluster commands.",
+    "Summary": "A container for Redis Cluster internal commands.",
     "Group": "Cluster",
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
@@ -1430,6 +1438,13 @@
         "Complexity": "O(N) where N is the total number of Cluster nodes"
       },
       {
+        "Command": "CLUSTER_PUBLISH",
+        "Name": "CLUSTER|PUBLISH",
+        "Summary": "Processes a forwarded published message from any node in the cluster",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLUSTER_REPLICAS",
         "Name": "CLUSTER|REPLICAS",
         "Summary": "Lists the replica nodes of a master node.",
@@ -1570,6 +1585,13 @@
         "Complexity": "O(N) where N is the total number of Cluster nodes",
         "DocFlags": "Deprecated",
         "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "Summary": "Processes a forwarded published message from a node in the same shard",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
       }
     ]
   },
@@ -1591,22 +1613,6 @@
         "Command": "COMMAND_DOCS",
         "Name": "COMMAND|DOCS",
         "Summary": "Returns documentary information about one, multiple or all commands.",
-        "Group": "Server",
-        "Complexity": "O(N) where N is the number of commands to look up",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "COMMAND-NAME",
-            "DisplayText": "command-name",
-            "Type": "String",
-            "ArgumentFlags": "Optional, Multiple"
-          }
-        ]
-      },
-      {
-        "Command": "COMMAND_INFO",
-        "Name": "COMMAND|INFO",
-        "Summary": "Returns information about one, multiple or all commands.",
         "Group": "Server",
         "Complexity": "O(N) where N is the number of commands to look up",
         "Arguments": [
@@ -1658,6 +1664,22 @@
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ARG",
             "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_INFO",
+        "Name": "COMMAND|INFO",
+        "Summary": "Returns information about one, multiple or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands to look up",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND-NAME",
+            "DisplayText": "command-name",
             "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
@@ -1780,9 +1802,10 @@
   {
     "Command": "DEBUG",
     "Name": "DEBUG",
-    "Summary": "Depends on subcommand.",
+    "Summary": "A container for debugging commands.",
     "Group": "Server",
-    "Complexity": "O(1)"
+    "Complexity": "Depends on subcommand.",
+    "DocFlags": "SysCmd"
   },
   {
     "Command": "DECR",
@@ -3890,6 +3913,14 @@
         "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOVALUES",
+        "DisplayText": "novalues",
+        "Type": "PureToken",
+        "Token": "NOVALUES",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -5419,7 +5450,7 @@
             "Name": "NUMPARAMS",
             "DisplayText": "numParams",
             "Type": "Integer",
-            "Summary": "Number of parameters of the command to register"
+            "Summary": "Numer of parameters of the command to register"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
@@ -5615,11 +5646,50 @@
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "SERIALIZEDVALUE",
+        "Name": "SERIALIZED-VALUE",
         "DisplayText": "serialized-value",
         "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REPLACE",
+        "DisplayText": "replace",
+        "Type": "PureToken",
+        "Token": "REPLACE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ABSTTL",
+        "DisplayText": "absttl",
+        "Type": "PureToken",
+        "Token": "ABSTTL",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer",
+        "Token": "IDLETIME",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FREQUENCY",
+        "DisplayText": "frequency",
+        "Type": "Integer",
+        "Token": "FREQ",
+        "ArgumentFlags": "Optional"
       }
     ]
+  },
+  {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Summary": "Returns the replication role.",
+    "Group": "Server",
+    "Complexity": "O(1)"
   },
   {
     "Command": "RPOP",
@@ -6559,6 +6629,27 @@
     ]
   },
   {
+    "Command": "SPUBLISH",
+    "Name": "SPUBLISH",
+    "Summary": "Post a message to a shard channel",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of clients subscribed to the receiving shard channel.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "SRANDMEMBER",
     "Name": "SRANDMEMBER",
     "Summary": "Get one or multiple random members from a set",
@@ -6643,23 +6734,18 @@
     ]
   },
   {
-    "Command": "SPUBLISH",
-    "Name": "SPUBLISH",
-    "Summary": "Posts a message to a shard channel.",
+    "Command": "SSUBSCRIBE",
+    "Name": "SSUBSCRIBE",
+    "Summary": "Listens for messages published to shard channels.",
     "Group": "PubSub",
-    "Complexity": "O(N) where N is the number of clients subscribed to the receiving shard channel.",
+    "Complexity": "O(N) where N is the number of shard channels to subscribe to.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SHARDCHANNEL",
         "DisplayText": "shardchannel",
-        "Type": "String"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "MESSAGE",
-        "DisplayText": "message",
-        "Type": "String"
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
       }
     ]
   },
@@ -6689,22 +6775,6 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANNEL",
-        "DisplayText": "channel",
-        "Type": "String",
-        "ArgumentFlags": "Multiple"
-      }
-    ]
-  },
-  {
-    "Command": "SSUBSCRIBE",
-    "Name": "SSUBSCRIBE",
-    "Summary": "Listens for messages published to shard channels.",
-    "Group": "PubSub",
-    "Complexity": "O(N) where N is the number of shard channels to subscribe to.",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "shardchannel",
         "DisplayText": "channel",
         "Type": "String",
         "ArgumentFlags": "Multiple"
@@ -6820,13 +6890,6 @@
         "KeySpecIndex": 0
       }
     ]
-  },
-  {
-    "Command": "ROLE",
-    "Name": "ROLE",
-    "Summary": "Returns the replication role.",
-    "Group": "Server",
-    "Complexity": "O(1)"
   },
   {
     "Command": "UNLINK",
@@ -8063,7 +8126,7 @@
   {
     "Command": "ZRANGEBYLEX",
     "Name": "ZRANGEBYLEX",
-    "Summary": "Returns the number of members in a sorted set within a lexicographical range.",
+    "Summary": "Returns members in a sorted set within a lexicographical range.",
     "Group": "SortedSet",
     "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
     "DocFlags": "Deprecated",
@@ -8080,13 +8143,13 @@
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "Double"
+        "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "Double"
+        "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
