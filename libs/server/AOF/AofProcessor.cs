@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -212,10 +213,7 @@ namespace Garnet.server
                     {
                         if (header.storeVersion > storeWrapper.store.CurrentVersion)
                         {
-                            if (storeWrapper.serverOptions.ReplicaDisklessSync)
-                                storeWrapper.store.SetVersion(header.storeVersion);
-                            else
-                                storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
+                            storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
                         }
                     }
                     break;
@@ -224,12 +222,19 @@ namespace Garnet.server
                     {
                         if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
                         {
-                            if (storeWrapper.serverOptions.ReplicaDisklessSync)
-                                storeWrapper.objectStore.SetVersion(header.storeVersion);
-                            else
-                                storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
+                            storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
                         }
                     }
+                    break;
+                case AofEntryType.MainStoreStreamingCheckpointCommit:
+                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    if (header.storeVersion > storeWrapper.store.CurrentVersion)
+                        storeWrapper.store.SetVersion(header.storeVersion);
+                    break;
+                case AofEntryType.ObjectStoreStreamingCheckpointCommit:
+                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    if (header.storeVersion > storeWrapper.store.CurrentVersion)
+                        storeWrapper.objectStore.SetVersion(header.storeVersion);
                     break;
                 default:
                     ReplayOp(ptr);

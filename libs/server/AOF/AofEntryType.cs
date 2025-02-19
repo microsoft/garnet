@@ -16,10 +16,12 @@ namespace Garnet.server
         TxnAbort = 0x22,
         MainStoreCheckpointCommit = 0x30,
         ObjectStoreCheckpointCommit = 0x31,
+        MainStoreStreamingCheckpointCommit = 0x40,
+        ObjectStoreStreamingCheckpointCommit = 0x41,
         StoredProcedure = 0x50,
     }
 
-    enum AofStoreType : byte
+    internal enum AofStoreType : byte
     {
         MainStoreType = 0x0,
         ObjectStoreType = 0x1,
