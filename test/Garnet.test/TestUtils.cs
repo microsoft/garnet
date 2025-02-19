@@ -219,6 +219,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            TimeSpan? luaTimeout = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0)
@@ -297,10 +298,11 @@ namespace Garnet.test
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths,
+                EnableDebugCommand = ConnectionProtectionOption.Yes,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
@@ -505,6 +507,7 @@ namespace Garnet.test
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            TimeSpan? luaTimeout = null,
             string unixSocketPath = null)
         {
             if (useAzureStorage)
@@ -561,6 +564,7 @@ namespace Garnet.test
                 EndPoint = endpoint,
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
+                EnableDebugCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
                 IndexSize = "1m",
                 ObjectStoreIndexSize = "16k",
@@ -607,7 +611,7 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan) : null,
                 UnixSocketPath = unixSocketPath
             };
 

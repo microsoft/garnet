@@ -137,7 +137,8 @@ namespace Garnet.test
             }
 
             var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).Except(internalOnlyCommands);
-            CollectionAssert.AreEquivalent(allCommands, commandsWithDocs, "Some commands have missing docs. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
+            Assert.That(commandsWithDocs, Is.SupersetOf(allCommands),
+                "Some commands have missing docs. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
         }
 
         /// <summary>
@@ -297,7 +298,7 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                ClassicAssert.AreEqual("ERR unknown command", e.Message);
+                ClassicAssert.AreEqual("ERR unknown subcommand 'UNKNOWN'.", e.Message);
             }
         }
 

@@ -11,6 +11,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
 using CommandLine;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
@@ -498,6 +499,10 @@ namespace Garnet
         [Option("object-scan-count-limit", Required = false, HelpText = "Limit of items to return in one iteration of *SCAN command")]
         public int ObjectScanCountLimit { get; set; }
 
+        [OptionValidation]
+        [Option("enable-debug-command", Required = false, HelpText = "Enable DEBUG command for 'no', 'local' or 'all' connections")]
+        public ConnectionProtectionOption EnableDebugCommand { get; set; }
+
         [DirectoryPathsValidation(true, false)]
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
@@ -533,6 +538,10 @@ namespace Garnet
         [ForbiddenWithOption(nameof(LuaMemoryManagementMode), nameof(LuaMemoryManagementMode.Native))]
         [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
+
+        [IntRangeValidation(10, int.MaxValue, isRequired: false)]
+        [Option("lua-script-timeout", Default = null, Required = false, HelpText = "Timeout for a Lua instance while running a script, specified in positive milliseconds (0 = disabled)")]
+        public int LuaScriptTimeoutMs { get; set; }
 
         [FilePathValidation(false, true, false)]
         [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
@@ -610,10 +619,18 @@ namespace Garnet
             }
             else
             {
-                var address = string.IsNullOrEmpty(Address) || Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                    ? IPAddress.Loopback
-                    : IPAddress.Parse(Address);
-
+                IPAddress address;
+                if (string.IsNullOrEmpty(Address))
+                {
+                    address = IPAddress.Any;
+                }
+                else
+                {
+                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
+                        address = IPAddress.Loopback;
+                    else
+                        address = IPAddress.Parse(Address);
+                }
                 endpoint = new IPEndPoint(address, Port);
             }
 
@@ -769,6 +786,7 @@ namespace Garnet
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
+                EnableDebugCommand = EnableDebugCommand,
                 ExtensionBinPaths = ExtensionBinPaths?.ToArray(),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
@@ -776,7 +794,7 @@ namespace Garnet
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
-                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, logger) : null,
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), logger) : null,
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions
             };
