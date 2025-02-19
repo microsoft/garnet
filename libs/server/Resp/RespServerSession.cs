@@ -98,6 +98,7 @@ namespace Garnet.server
         readonly IGarnetAuthenticator _authenticator;
 
         internal int activeDbId;
+
         readonly bool allowMultiDb;
         readonly int maxDbs;
         ExpandableMap<GarnetDatabaseSession> databaseSessions;

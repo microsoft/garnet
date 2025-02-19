@@ -148,7 +148,7 @@ namespace Garnet.server
         readonly bool allowMultiDb;
 
         // Map of databases by database ID (by default: of size 1, contains only DB 0)
-        ExpandableMap<GarnetDatabase> databases;
+        private readonly ExpandableMap<GarnetDatabase> databases;
 
         // Array containing active database IDs
         int[] activeDbIds;

@@ -261,7 +261,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Add data to DB 1
-            lightClientRequest.SendCommand($"SELECT 1");
+            response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
@@ -277,7 +277,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Add data to DB 11
-            lightClientRequest.SendCommand($"SELECT 11");
+            response = lightClientRequest.SendCommand($"SELECT 11");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
@@ -293,7 +293,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Swap DB 1 AND DB 11 (from DB 11 context)
-            lightClientRequest.SendCommand($"SWAPDB 1 11");
+            response = lightClientRequest.SendCommand($"SWAPDB 1 11");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
@@ -310,7 +310,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Verify data in DB 1 is previous data from DB 11
-            lightClientRequest.SendCommand($"SELECT 1");
+            response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
@@ -326,18 +326,18 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Swap DB 11 AND DB 0 (from DB 1 context)
-            lightClientRequest.SendCommand($"SELECT 1");
+            response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
-            lightClientRequest.SendCommand($"SWAPDB 11 0");
+            response = lightClientRequest.SendCommand($"SWAPDB 11 0");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Verify data in DB 0 is previous data from DB 11
-            lightClientRequest.SendCommand($"SELECT 0");
+            response = lightClientRequest.SendCommand($"SELECT 0");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
@@ -353,7 +353,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // Verify data in DB 11 is previous data from DB 0
-            lightClientRequest.SendCommand($"SELECT 11");
+            response = lightClientRequest.SendCommand($"SELECT 11");
             expectedResponse = "+OK\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
@@ -364,6 +364,76 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"LPOP {db1Key2}", 2);
+            expectedResponse = "$8\r\ndb1:val2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [Ignore("")]
+        public void MultiDatabaseMultiSessionSwapDatabasesTestLC()
+        {
+            var db1Key1 = "db1:key1";
+            var db1Key2 = "db1:key2";
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key2";
+            var db12Key1 = "db12:key1";
+            var db12Key2 = "db12:key2";
+
+            using var lightClientRequest1 = TestUtils.CreateRequest(); // Session for DB 0 context
+            using var lightClientRequest2 = TestUtils.CreateRequest(); // Session for DB 1 context
+
+            // Add data to DB 0
+            var response = lightClientRequest1.SendCommand($"SET {db1Key1} db1:value1");
+            var expectedResponse = "+OK\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest1.SendCommand($"LPUSH {db1Key2} db1:val1 db1:val2");
+            expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Add data to DB 1
+            response = lightClientRequest2.SendCommand($"SELECT 1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest2.SendCommand($"SET {db2Key1} db2:value1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest2.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
+            expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Swap DB 0 AND DB 1 (from DB 0 context)
+            response = lightClientRequest1.SendCommand($"SWAPDB 0 1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Verify data in DB 0 is previous data from DB 1
+            response = lightClientRequest1.SendCommand($"GET {db2Key1}", 2);
+            expectedResponse = "$10\r\ndb2:value1\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest1.SendCommand($"SISMEMBER {db2Key2} db2:val2");
+            expectedResponse = ":1\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Verify data in DB 1 is previous data from DB 0
+            response = lightClientRequest2.SendCommand($"GET {db1Key1}", 2);
+            expectedResponse = "$10\r\ndb1:value1\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest2.SendCommand($"LPOP {db1Key2}", 2);
             expectedResponse = "$8\r\ndb1:val2\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
