@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -95,11 +96,12 @@ namespace Garnet.server
 
             if (endOffset - startOffset < 128)
                 count += __scalar_popc(value, startOffset, endOffset);
-            else
-                if (Avx2.IsSupported)
+            else if (Avx2.IsSupported)
                 count += __simd_popcX256(value, startOffset, endOffset);
-            else
+            else if (Ssse3.IsSupported)
                 count += __simd_popcX128(value, startOffset, endOffset);
+            else
+                count += __scalar_popc(value, startOffset, endOffset);
             return count;
         }
 
@@ -122,10 +124,10 @@ namespace Garnet.server
             #region popc_4x8
             while (curr < vend)
             {
-                ulong v00 = Popcnt.X64.PopCount(*(ulong*)(curr));
-                ulong v01 = Popcnt.X64.PopCount(*(ulong*)(curr + 8));
-                ulong v02 = Popcnt.X64.PopCount(*(ulong*)(curr + 16));
-                ulong v03 = Popcnt.X64.PopCount(*(ulong*)(curr + 24));
+                ulong v00 = (ulong)BitOperations.PopCount(*(ulong*)(curr));
+                ulong v01 = (ulong)BitOperations.PopCount(*(ulong*)(curr + 8));
+                ulong v02 = (ulong)BitOperations.PopCount(*(ulong*)(curr + 16));
+                ulong v03 = (ulong)BitOperations.PopCount(*(ulong*)(curr + 24));
                 v00 = v00 + v01;
                 v02 = v02 + v03;
                 count += v00 + v02;
@@ -140,7 +142,7 @@ namespace Garnet.server
             vend = curr + (len - (len & tail));
             while (curr < vend)
             {
-                count += Popcnt.X64.PopCount(*(ulong*)(curr));
+                count += (ulong)BitOperations.PopCount(*(ulong*)(curr));
                 curr += batchSize;
             }
 
@@ -152,7 +154,7 @@ namespace Garnet.server
             if (tail >= 3) tt |= (ulong)(((ulong)curr[2]) << 16);
             if (tail >= 2) tt |= (ulong)(((ulong)curr[1]) << 8);
             if (tail >= 1) tt |= (ulong)(((ulong)curr[0]));
-            count += Popcnt.X64.PopCount(tt);
+            count += (ulong)BitOperations.PopCount(tt);
             #endregion
 
             return (long)count;
