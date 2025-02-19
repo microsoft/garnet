@@ -57,6 +57,7 @@ namespace Garnet.cluster
             log.Log(logLevel,
                 "\n" +
                 "[{msg}]\n" +
+                "<<< SyncMetadataReceivedFromReplicaToPrimary >>>\n" +
                 "fullSync:{fullSync}\n" +
                 "originNodeRole:{originNodeRole}\n" +
                 "originNodeId:{originNodeId}\n" +
@@ -67,7 +68,7 @@ namespace Garnet.cluster
                 "currentAofTailAddress:{currentAofTailAddress}\n" +
                 "currentReplicationOffset:{currentReplicationOffset}\n" +
                 "checkpointEntry:{checkpointEntry}\n" +
-                "??\n" +
+                "\n<<< SyncMetadataSendFromPrimaryToReplica >>\n" +
                 "recoverFullSync:{fullSync}\n" +
                 "recoverOriginNodeRole:{originNodeRole}\n" +
                 "recoverOriginNodeId:{originNodeId}\n" +
