@@ -38,8 +38,7 @@ namespace Tsavorite.test.statemachine
                 MutableFraction = 0.1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 13,
-                CheckpointDir = checkpointDir,
-                CheckpointVersionSwitchBarrier = true
+                CheckpointDir = checkpointDir
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -66,7 +65,7 @@ namespace Tsavorite.test.statemachine
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
-            // Invoke Refresh on session s2, it will spin (blocked from working due to CheckpointVersionSwitchBarrier)
+            // Invoke Refresh on session s2, it will spin (blocked from working due to the checkpoint version switch barrier)
             s2.Refresh(waitComplete: false);
 
             // s1 has not refreshed, so we should still be in PREPARE, 1

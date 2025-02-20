@@ -122,15 +122,11 @@ namespace Tsavorite.core
 
     internal struct RecoveryOptions
     {
-        internal long headAddress;
-        internal long fuzzyRegionStartAddress;
-        internal bool undoNextVersion;
+        internal readonly long headAddress;
 
-        internal RecoveryOptions(long headAddress, long fuzzyRegionStartAddress, bool undoNextVersion)
+        internal RecoveryOptions(long headAddress)
         {
             this.headAddress = headAddress;
-            this.fuzzyRegionStartAddress = fuzzyRegionStartAddress;
-            this.undoNextVersion = undoNextVersion;
         }
     }
 
@@ -349,20 +345,20 @@ namespace Tsavorite.core
             return l1 <= l2;
         }
 
-        private long InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo)
+        private long InternalRecover(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, long recoverTo)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
             if (recoverTo != -1 && recoveredHLCInfo.deltaLog == null)
             {
                 throw new TsavoriteException("Recovering to a specific version within a token is only supported for incremental snapshots");
             }
-            return InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo);
+            return InternalRecover(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, recoverTo);
         }
 
-        private ValueTask<long> InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
+        private ValueTask<long> InternalRecoverAsync(Guid indexToken, Guid hybridLogToken, int numPagesToPreload, long recoverTo, CancellationToken cancellationToken)
         {
             GetRecoveryInfo(indexToken, hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo);
-            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
+            return InternalRecoverAsync(recoveredICInfo, recoveredHLCInfo, numPagesToPreload, recoverTo, cancellationToken);
         }
 
         private void GetRecoveryInfo(Guid indexToken, Guid hybridLogToken, out HybridLogCheckpointInfo recoveredHLCInfo, out IndexCheckpointInfo recoveredICInfo)
@@ -421,7 +417,7 @@ namespace Tsavorite.core
         }
 
 
-        private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
+        private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long recoverTo)
         {
             hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
@@ -431,12 +427,13 @@ namespace Tsavorite.core
                 Reset();
             }
 
-            if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
+            RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out var recoverFromAddress, out var recoverIndex);
+            if (recoverIndex)
                 RecoverFuzzyIndex(recoveredICInfo);
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress);
 
             long readOnlyAddress;
             long lastFreedPage;
@@ -467,7 +464,7 @@ namespace Tsavorite.core
             return recoveredHLCInfo.info.version;
         }
 
-        private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
+        private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long recoverTo, CancellationToken cancellationToken)
         {
             hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
@@ -477,12 +474,13 @@ namespace Tsavorite.core
                 Reset();
             }
 
-            if (!RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
+            RecoverToInitialPage(recoveredICInfo, recoveredHLCInfo, out var recoverFromAddress, out var recoverIndex);
+            if (recoverIndex)
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress);
 
             long readOnlyAddress;
             long lastFreedPage;
@@ -500,7 +498,7 @@ namespace Tsavorite.core
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
                 lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
-                                           new RecoveryOptions(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
+                                           new RecoveryOptions(headAddress), cancellationToken).ConfigureAwait(false);
                 // Then recover snapshot into mutable region
                 var snapshotLastFreedPage = await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                         recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
@@ -554,8 +552,7 @@ namespace Tsavorite.core
         /// <param name="recoveredICInfo">IndexCheckpointInfo</param>
         /// <param name="recoveredHLCInfo">HybridLogCheckpointInfo</param>
         /// <param name="recoverFromAddress">Address from which to perform recovery (undo v+1 records)</param>
-        /// <returns>Whether we are recovering to the initial page</returns>
-        private bool RecoverToInitialPage(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, out long recoverFromAddress)
+        private void RecoverToInitialPage(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, out long recoverFromAddress, out bool recoverIndex)
         {
             // Ensure active state machine to null
             currentSyncStateMachine = null;
@@ -569,34 +566,23 @@ namespace Tsavorite.core
                 recoveredICInfo = default;
             }
 
-            if (recoveredICInfo.IsDefault())
+            // Recover from begin of log
+            recoverFromAddress = recoveredHLCInfo.info.beginAddress;
+
+            // Unless we recovered previously until some hlog address
+            if (hlogBase.FlushedUntilAddress > recoverFromAddress)
+                recoverFromAddress = hlogBase.FlushedUntilAddress;
+
+            if (!recoveredICInfo.IsDefault() && recoveredICInfo.info.startLogicalAddress > recoverFromAddress)
             {
-                // No index checkpoint - recover from begin of log
-                recoverFromAddress = recoveredHLCInfo.info.beginAddress;
-
-                // Unless we recovered previously until some hlog address
-                if (hlogBase.FlushedUntilAddress > recoverFromAddress)
-                    recoverFromAddress = hlogBase.FlushedUntilAddress;
-
-                // Start recovery at least from beginning of fuzzy log region
-                // Needed if we are recovering to the same checkpoint a second time, with undo
-                // set to true during the second time.
-                if (recoveredHLCInfo.info.startLogicalAddress < recoverFromAddress)
-                    recoverFromAddress = recoveredHLCInfo.info.startLogicalAddress;
+                // Index checkpoint given - recover to that
+                recoverFromAddress = recoveredICInfo.info.startLogicalAddress;
+                recoverIndex = true;
             }
             else
             {
-                recoverFromAddress = recoveredHLCInfo.info.beginAddress;
-
-                if (recoveredICInfo.info.startLogicalAddress > recoverFromAddress)
-                {
-                    // Index checkpoint given - recover to that
-                    recoverFromAddress = recoveredICInfo.info.startLogicalAddress;
-                    return false;
-                }
+                recoverIndex = false;
             }
-
-            return true;
         }
 
         private bool SetRecoveryPageRanges(HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long fromAddress, out long tailAddress, out long headAddress, out long scanFromAddress)
@@ -840,25 +826,18 @@ namespace Tsavorite.core
 
         private void ProcessReadPageAndFlush(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
-            if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
-            {
-                // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
-                hlogBase.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
-                return;
-            }
-
-            // We do not need to flush
+            ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex);
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
-        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private void ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
             var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
 
             if (recoverFromAddress >= endLogicalAddress)
-                return false;
+                return;
 
             var pageFromAddress = 0L;
             var pageUntilAddress = hlogBase.GetPageSize();
@@ -869,15 +848,7 @@ namespace Tsavorite.core
             if (untilAddress < endLogicalAddress)
                 pageUntilAddress = hlogBase.GetOffsetInPage(untilAddress);
 
-            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
-            {
-                // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
-                recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-                return true;
-            }
-
-            return false;
+            RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options);
         }
 
         private void WaitUntilAllPagesHaveBeenFlushed(long startPage, long endPage, RecoveryStatus recoveryStatus)
@@ -1058,8 +1029,8 @@ namespace Tsavorite.core
                 if (endLogicalAddress > untilAddress)
                     pageUntilAddress = hlogBase.GetOffsetInPage(untilAddress);
 
-                _ = RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
-                                startLogicalAddress, physicalAddress, nextVersion, options);
+                RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
+                    startLogicalAddress, physicalAddress, nextVersion, options);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -1097,15 +1068,13 @@ namespace Tsavorite.core
         // Re-do the necessary log entries. We ensure that the InNewVersion test (to skip v+1 records)
         // runs ONLY for the fuzzy region (which has v and v+1 records) because the earlier parts may
         // have an incorrect InNewVersion status.
-        private unsafe bool RecoverFromPage(long startRecoveryAddress,
+        private unsafe void RecoverFromPage(long startRecoveryAddress,
                                      long fromLogicalAddressInPage,
                                      long untilLogicalAddressInPage,
                                      long pageLogicalAddress,
                                      long pagePhysicalAddress,
                                      long nextVersion, RecoveryOptions options)
         {
-            var touched = false;
-
             var pointer = default(long);
             var recordStart = default(long);
 
@@ -1126,33 +1095,13 @@ namespace Tsavorite.core
                     HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart)));
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
-                    bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
-                    if (!options.undoNextVersion) ignoreRecord = false;
-
-                    if (!ignoreRecord)
-                    {
-                        hei.entry.Address = pageLogicalAddress + pointer;
-                        hei.entry.Tag = hei.tag;
-                        hei.entry.Tentative = false;
-                        hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
-                    }
-                    else
-                    {
-                        touched = true;
-                        info.SetInvalid();
-                        if (info.PreviousAddress < startRecoveryAddress)
-                        {
-                            hei.entry.Address = info.PreviousAddress;
-                            hei.entry.Tag = hei.tag;
-                            hei.entry.Tentative = false;
-                            hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
-                        }
-                    }
+                    hei.entry.Address = pageLogicalAddress + pointer;
+                    hei.entry.Tag = hei.tag;
+                    hei.entry.Tentative = false;
+                    hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                 }
                 pointer += hlog.GetRecordSize(recordStart).Item2;
             }
-
-            return touched;
         }
 
         private void AsyncFlushPageCallbackForRecovery(uint errorCode, uint numBytes, object context)

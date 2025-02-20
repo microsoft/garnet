@@ -240,7 +240,7 @@ namespace Tsavorite.core
 
         protected override void WriteAsyncToDevice<TContext>
             (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets)
         {
             VerifyCompatibleSectorSize(device);
             VerifyCompatibleSectorSize(objectLogDevice);
@@ -264,7 +264,7 @@ namespace Tsavorite.core
                     WriteAsync(flushPage,
                             (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                             (uint)pageSize, callback, asyncResult,
-                            device, objectLogDevice, flushPage, localSegmentOffsets, fuzzyStartLogicalAddress);
+                            device, objectLogDevice, flushPage, localSegmentOffsets);
                 }
             }
             finally
@@ -299,7 +299,7 @@ namespace Tsavorite.core
 
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null, long fuzzyStartLogicalAddress = long.MaxValue)
+                        IDevice device, IDevice objlogDevice, long intendedDestinationPage = -1, long[] localSegmentOffsets = null)
         {
             // Short circuit if we are using a null device
             if ((device as NullDevice) != null)
@@ -415,37 +415,28 @@ namespace Tsavorite.core
                         // Calculate the logical address of the 'values' page currently being written.
                         var address = (flushPage << LogPageSizeBits) + i * RecordSize;
 
-                        // Do not write v+1 records (e.g. during a checkpoint)
-                        if (address < fuzzyStartLogicalAddress || !record.info.IsInNewVersion)
+                        if (KeyHasObjects())
                         {
-                            if (KeyHasObjects())
-                            {
-                                long pos = ms.Position;
-                                keySerializer.Serialize(ref src[i].key);
+                            long pos = ms.Position;
+                            keySerializer.Serialize(ref src[i].key);
 
-                                // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
-                                key_address->Address = pos;
-                                key_address->Size = (int)(ms.Position - pos);
-                                addr.Add((long)key_address);
-                                endPosition = pos + key_address->Size;
-                            }
-
-                            if (ValueHasObjects() && !record.info.Tombstone)
-                            {
-                                long pos = ms.Position;
-                                valueSerializer.Serialize(ref src[i].value);
-
-                                // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
-                                value_address->Address = pos;
-                                value_address->Size = (int)(ms.Position - pos);
-                                addr.Add((long)value_address);
-                                endPosition = pos + value_address->Size;
-                            }
+                            // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
+                            key_address->Address = pos;
+                            key_address->Size = (int)(ms.Position - pos);
+                            addr.Add((long)key_address);
+                            endPosition = pos + key_address->Size;
                         }
-                        else
+
+                        if (ValueHasObjects() && !record.info.Tombstone)
                         {
-                            // Mark v+1 records as invalid to avoid deserializing them on recovery
-                            record.info.SetInvalid();
+                            long pos = ms.Position;
+                            valueSerializer.Serialize(ref src[i].value);
+
+                            // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
+                            value_address->Address = pos;
+                            value_address->Size = (int)(ms.Position - pos);
+                            addr.Add((long)value_address);
+                            endPosition = pos + value_address->Size;
                         }
                     }
 
