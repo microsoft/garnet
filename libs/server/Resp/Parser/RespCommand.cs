@@ -98,6 +98,10 @@ namespace Garnet.server
         ZREVRANGEBYLEX,
         ZREVRANGEBYSCORE,
         ZREVRANK,
+        ZTTL,
+        ZPTTL,
+        ZEXPIRETIME,
+        ZPEXPIRETIME,
         ZSCAN,
         ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
         ZUNION,
@@ -184,7 +188,13 @@ namespace Garnet.server
         SUNIONSTORE,
         UNLINK,
         ZADD,
+        ZCOLLECT,
         ZDIFFSTORE,
+        ZEXPIRE,
+        ZPEXPIRE,
+        ZEXPIREAT,
+        ZPEXPIREAT,
+        ZPERSIST,
         ZINCRBY,
         ZMPOP,
         ZINTERSTORE,
@@ -942,6 +952,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZREM;
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZTTL\r\n"u8))
+                                        {
+                                            return RespCommand.ZTTL;
+                                        }
                                         break;
                                 }
                                 break;
@@ -1116,6 +1130,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZMPOP\r\n"u8))
                                         {
                                             return RespCommand.ZMPOP;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZPTTL\r\n"u8))
+                                        {
+                                            return RespCommand.ZPTTL;
                                         }
                                         break;
                                 }
@@ -1386,6 +1404,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.ZPOPMIN;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.ZEXPIRE;
+                                        }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMAX\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
                                             return RespCommand.ZPOPMAX;
@@ -1425,6 +1447,14 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.HPERSIST;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.ZPEXPIRE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.ZPERSIST;
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
@@ -1467,6 +1497,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
                                 {
                                     return RespCommand.HEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
+                                {
+                                    return RespCommand.ZEXPIREAT;
                                 }
                                 break;
                             case 10:
@@ -1543,6 +1577,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.HPEXPIREAT;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nZPEX"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("PIREAT\r\n"u8))
+                                {
+                                    return RespCommand.ZPEXPIREAT;
+                                }
                                 break;
                             case 11:
                                 if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nUNSUB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
@@ -1573,6 +1611,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.PEXPIRETIME;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nHEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIRETIME;
+                                }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
                                     return RespCommand.INCRBYFLOAT;
@@ -1593,9 +1635,9 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZUNIONSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nHEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
-                                    return RespCommand.HEXPIRETIME;
+                                    return RespCommand.ZEXPIRETIME;
                                 }
                                 break;
 
@@ -1611,6 +1653,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHPEXPI"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.HPEXPIRETIME;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZPEXPI"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.ZPEXPIRETIME;
                                 }
                                 break;
 
@@ -2418,6 +2464,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.DEBUG))
             {
                 return RespCommand.DEBUG;
+            }
+            else if (command.SequenceEqual(CmdStrings.ZCOLLECT))
+            {
+                return RespCommand.ZCOLLECT;
             }
             else
             {
