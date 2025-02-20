@@ -178,6 +178,22 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task AclGetUserACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GETUSER",
+                [DoAclGetUserAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoAclGetUserAsync(GarnetClient client)
+            {
+                // ACL GETUSER returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ACL", ["GETUSER", "default"]);
+            }
+        }
+
+        [Test]
         public async Task AclListACLsAsync()
         {
             await CheckCommandsAsync(

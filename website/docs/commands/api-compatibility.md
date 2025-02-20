@@ -43,7 +43,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DELUSER](acl.md#acl-deluser) | ➕ |  |
 |  | DRYRUN | ➖ |  |
 |  | GENPASS | ➖ |  |
-|  | GETUSER | ➖ |  |
+|  | [GETUSER](acl.md#acl-getuser) | ➕ |  |
 |  | [LIST](acl.md#acl-list) | ➕ |  |
 |  | [LOAD](acl.md#acl-load) | ➕ |  |
 |  | HELP | ➖ |  |

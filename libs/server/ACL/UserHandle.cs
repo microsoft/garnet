@@ -14,7 +14,7 @@ namespace Garnet.server.ACL
         /// <summary>
         /// The <see cref="User"/> referred to by the <see cref="UserHandle"/>.
         /// </summary>
-        public User user;
+        private User user;
 
         /// <summary>
         /// Constructor for a <see cref="UserHandle"/>.
