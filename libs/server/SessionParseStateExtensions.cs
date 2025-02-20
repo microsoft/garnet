@@ -157,7 +157,6 @@ namespace Garnet.server
             encodingSlice = parseState.GetArgSliceByRef(idx);
 
             return
-                encodingSlice.Length >= 2 &&
                 ParseUtils.TryReadLong(ref encodingSlice, 1, out var bitCount) &&
                 (
                     (*encodingSlice.ptr == 'i' && bitCount <= 64 && bitCount > 0) ||
