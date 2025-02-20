@@ -23,6 +23,9 @@ namespace Garnet.cluster
         readonly int numSessions;
 
         bool firstRead = false;
+        long currentFlushEventCount = 0;
+        long lastFlushEventCount = 0;
+
 
         public long CheckpointCoveredAddress { get; private set; }
 
@@ -47,14 +50,21 @@ namespace Garnet.cluster
                 objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
         }
 
-        void WaitForFlushAll()
+        /// <summary>
+        /// Check if stream is progressing
+        /// </summary>
+        /// <returns></returns>
+        public bool IsProgressing()
         {
-            // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
-            for (var i = 0; i < numSessions; i++)
+            var flushEventCount = currentFlushEventCount;
+            if (flushEventCount > lastFlushEventCount)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
-                sessions[i].WaitForFlush().GetAwaiter().GetResult();
-                if (sessions[i].Failed) sessions[i] = null;
+                return true;
+            }
+            else
+            {
+                lastFlushEventCount = flushEventCount;
+                return false;
             }
         }
 
@@ -65,6 +75,9 @@ namespace Garnet.cluster
                 logger?.LogError("{method} cancellationRequested", nameof(OnStart));
                 return false;
             }
+
+            // reset progress counter
+            lastFlushEventCount = currentFlushEventCount = 0;
 
             for (var i = 0; i < numSessions; i++)
             {
@@ -119,6 +132,7 @@ namespace Garnet.cluster
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                currentFlushEventCount++;
                 needToFlush = false;
             }
 
@@ -163,6 +177,7 @@ namespace Garnet.cluster
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
+                currentFlushEventCount++;
             }
 
             return true;
