@@ -303,12 +303,10 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(parseState.Count == 2);
-            var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.GET);
-            parseState.InitializeWithArguments(key, value, getOption);
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
 
-            return NetworkSETEXNX(ref storageApi);
+            return NetworkSET_Conditional(RespCommand.SET, 0, ref key, true,
+                                          false, false, ref storageApi);
         }
 
         /// <summary>
@@ -431,7 +429,11 @@ namespace Garnet.server
         private bool NetworkSETNX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETNX));
+            }
+
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
