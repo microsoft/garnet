@@ -202,8 +202,7 @@ namespace Tsavorite.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="localSegmentOffsets"></param>
-        /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets);
 
         /// <summary>Read objects to memory (async)</summary>
         protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default);
@@ -1642,12 +1641,11 @@ namespace Tsavorite.core
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="endLogicalAddress"></param>
-        /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
@@ -1685,7 +1683,7 @@ namespace Tsavorite.core
                     };
 
                     // Intended destination is flushPage
-                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets);
 
                     if (throttleCheckpointFlushDelayMs >= 0)
                     {

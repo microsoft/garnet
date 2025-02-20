@@ -31,11 +31,10 @@ namespace Tsavorite.core
                         store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     }
                     store._hybridLogCheckpoint.info.version = next.Version;
-                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
-                    // Capture begin address before checkpoint starts
-                    store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     break;
                 case Phase.IN_PROGRESS:
+                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     store.CheckpointVersionShift(lastVersion, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:

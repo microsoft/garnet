@@ -27,9 +27,13 @@ namespace Tsavorite.core
                     base.GlobalBeforeEnteringState(next, store);
                     store._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     break;
+                case Phase.IN_PROGRESS:
+                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
+                    base.GlobalBeforeEnteringState(next, store);
+                    break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, store);
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
+                    
                     store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
 
                     store._hybridLogCheckpoint.snapshotFileDevice =
@@ -58,7 +62,6 @@ namespace Tsavorite.core
                         startPage,
                         endPage,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
-                        store._hybridLogCheckpoint.info.startLogicalAddress,
                         store._hybridLogCheckpoint.snapshotFileDevice,
                         store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out store._hybridLogCheckpoint.flushedSemaphore,
