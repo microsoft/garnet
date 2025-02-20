@@ -506,8 +506,9 @@ namespace Tsavorite.core
         ///     TailAddress). A snapshot can be taken by calling ShiftReadOnlyToTail() and then using that TailAddress as endAddress and maxAddress.</param>
         /// <param name="validateCursor">If true, validate that the cursor is on a valid address boundary, and snap it to the highest lower address if it is not.</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
-        /// <returns>True if Scan completed and pushed <paramref name="count"/> records; false if Scan ended early due to finding less than <paramref name="count"/> records
-        /// or one of the TScanIterator reader functions returning false</returns>
+        /// <returns>True if Scan completed and pushed <paramref name="count"/> records and there may be more records; false if Scan ended early due to finding less than <paramref name="count"/> records
+        /// or one of the TScanIterator reader functions returning false, or if we determined that there are no records remaining. In other words, if this returns true,
+        /// there may be more records satisfying the iteration criteria beyond <paramref name="count"/>.</returns>
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false, long maxAddress = long.MaxValue)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress);
