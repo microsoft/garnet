@@ -79,7 +79,6 @@ namespace Tsavorite.test.ReadCacheTests
                         kvSettings.ReadCacheSecondChanceFraction = 0.1;
                         kvSettings.ReadCacheEnabled = true;
                     }
-                    ;
                     continue;
                 }
                 if (arg is DeviceType deviceType)
