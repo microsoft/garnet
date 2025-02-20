@@ -245,7 +245,7 @@ namespace Tsavorite.core
                 }
             }
 
-            // Drain any pending pushes. We have ended the iteration; there are no more records, so drop through to end it.
+            // Drain any pending pushes. We have ended the iteration; we know there are no more matching records, so drop through to end it and return false.
             if (numPending > 0)
                 bContext.CompletePending(wait: true);
 

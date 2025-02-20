@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -28,6 +29,7 @@ namespace Tsavorite.test
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
         internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
         internal const string RMWTestCategory = "RMW";
+        internal const string IteratorCategory = "Iterator";
         internal const string ModifiedBitTestCategory = "ModifiedBitTest";
         internal const string RevivificationCategory = "Revivification";
 
