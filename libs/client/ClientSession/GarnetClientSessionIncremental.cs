@@ -12,8 +12,15 @@ using Tsavorite.core;
 
 namespace Garnet.client
 {
+    enum IncrementalSendType : byte
+    {
+        MIGRATE,
+        SYNC
+    }
+
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
+        IncrementalSendType ist;
         bool isMainStore;
         byte* curr, head;
         int keyValuePairCount;
@@ -183,9 +190,9 @@ namespace Garnet.client
             var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
             if (completed || lastLog == 0 || duration >= iterationProgressFreq)
             {
-                logger?.LogTrace("[{op}]: isMainStore:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
-                    completed ? "COMPLETED" : "MIGRATING",
-                    isMainStore,
+                logger?.LogTrace("[{op}]: store:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                    completed ? "COMPLETED" : ist,
+                    isMainStore ? "MAIN STORE" : "OBJECT STORE",
                     totalKeyCount.ToString("N0"),
                     ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();

@@ -497,8 +497,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="isMainStore"></param>
         /// <param name="version"></param>
-        public void EnqueueCommit(bool isMainStore, long version)
+        /// <param name="streaming"></param>
+        public void EnqueueCommit(bool isMainStore, long version, bool streaming = false)
         {
+            var opType = streaming ?
+                isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit :
+                isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit;
+
             AofHeader header = new()
             {
                 opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
@@ -714,7 +719,7 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            //Wait for checkpoints to complete and disable checkpointing
+            // Wait for checkpoints to complete and disable checkpointing
             _checkpointTaskLock.WriteLock();
 
             itemBroker?.Dispose();
