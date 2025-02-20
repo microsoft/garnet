@@ -516,7 +516,7 @@ namespace Garnet.test
 
         public static List<long> ToList(RedisValue[] rss)
         {
-            return rss.Select(x => (long)x).ToList();
+            return [.. rss.Select(x => (long)x)];
         }
 
         [Test]

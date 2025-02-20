@@ -216,7 +216,7 @@ namespace Resp.benchmark
 
         static void RunBasicCommandsBenchmark(Options opts)
         {
-            int[] threadBench = opts.NumThreads.ToArray();
+            int[] threadBench = [.. opts.NumThreads];
             int keyLen = opts.KeyLength;
             int valueLen = opts.ValueLength;
 
@@ -276,7 +276,7 @@ namespace Resp.benchmark
         static void RunHLLBenchmark(Options opts)
         {
             var bench = new RespPerfBench(opts, 0, redis);
-            int[] threadBench = opts.NumThreads.ToArray();
+            int[] threadBench = [.. opts.NumThreads];
 
             int loadThreads = 8;
             int loadBatchSize = opts.DbSize / loadThreads;
