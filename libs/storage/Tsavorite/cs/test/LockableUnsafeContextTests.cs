@@ -1337,7 +1337,6 @@ namespace Tsavorite.test.LockableUnsafeContext
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
                     }
-                    ;
                     ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 }
                 catch (Exception)

@@ -79,7 +79,6 @@ namespace Tsavorite.test
                 for (int j = 0; j < len; j++)
                 {
                     unsafe { ClassicAssert.AreEqual((byte)_len, *(byte*)(address + j)); }
-                    ;
                 }
             }
             ClassicAssert.AreEqual(TotalCount, i, $"i={i} and TotalCount={TotalCount}");
