@@ -119,6 +119,7 @@ namespace Garnet.test.cluster
                 new ZUNION(),
                 new ZUNIONSTORE(),
                 new HEXPIRE(),
+                new ZEXPIRE(),
                 new ZPEXPIRE(),
                 new ZEXPIREAT(),
                 new ZPEXPIREAT(),
