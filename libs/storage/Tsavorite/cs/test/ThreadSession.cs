@@ -125,21 +125,26 @@ namespace Tsavorite.test.statemachine
         }
         public void Refresh()
         {
-            queue("refresh");
+            OtherSession("refresh");
+        }
+
+        public void CompleteOp()
+        {
+            _ = ev.WaitOne();
         }
 
         public void Dispose()
         {
-            queue("dispose");
+            OtherSession("dispose");
         }
         public void DisposeLUC()
         {
-            queue("DisposeLUC");
+            OtherSession("DisposeLUC");
         }
 
         public void getLUC()
         {
-            queue("getLUC");
+            OtherSession("getLUC");
         }
 
         private void LUCThread()
@@ -192,10 +197,11 @@ namespace Tsavorite.test.statemachine
                 }
             }
         }
-        private void queue(string command)
+        private void OtherSession(string command, bool waitComplete = true)
         {
             q.Enqueue(command);
-            _ = ev.WaitOne();
+            if (waitComplete)
+                _ = ev.WaitOne();
         }
     }
 }
