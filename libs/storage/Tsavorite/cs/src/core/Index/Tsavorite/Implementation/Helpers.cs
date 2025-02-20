@@ -81,9 +81,8 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
-            return sessionFunctions.Ctx.IsInV1
-                        && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.startLogicalAddress     // In checkpoint range
-                            || !srcRecordInfo.IsInNewVersion);                                                  // In fuzzy region and an old version
+            // If the session is in V1 and the record is within the checkpoint range, it must be frozen
+            return sessionFunctions.Ctx.IsInV1 && stackCtx.recSrc.LogicalAddress < _hybridLogCheckpoint.info.finalLogicalAddress;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

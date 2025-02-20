@@ -40,9 +40,9 @@ namespace Tsavorite.core
         /// </summary>
         public long snapshotStartFlushedLogicalAddress;
         /// <summary>
-        /// Start logical address
+        /// Placeholder (was formerly start logical address to indicate start of fuzzy region)
         /// </summary>
-        public long startLogicalAddress;
+        public long placeholder;
         /// <summary>
         /// Final logical address
         /// </summary>
@@ -91,7 +91,7 @@ namespace Tsavorite.core
             version = _version;
             flushedLogicalAddress = 0;
             snapshotStartFlushedLogicalAddress = 0;
-            startLogicalAddress = 0;
+            placeholder = 0;
             finalLogicalAddress = 0;
             snapshotFinalLogicalAddress = 0;
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
@@ -136,7 +136,7 @@ namespace Tsavorite.core
             snapshotStartFlushedLogicalAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            startLogicalAddress = long.Parse(value);
+            placeholder = long.Parse(value);
 
             value = reader.ReadLine();
             finalLogicalAddress = long.Parse(value);
@@ -256,7 +256,7 @@ namespace Tsavorite.core
                     writer.WriteLine(nextVersion);
                     writer.WriteLine(flushedLogicalAddress);
                     writer.WriteLine(snapshotStartFlushedLogicalAddress);
-                    writer.WriteLine(startLogicalAddress);
+                    writer.WriteLine(placeholder);
                     writer.WriteLine(finalLogicalAddress);
                     writer.WriteLine(snapshotFinalLogicalAddress);
                     writer.WriteLine(headAddress);
@@ -285,7 +285,7 @@ namespace Tsavorite.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
+            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ placeholder ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
                 ^ checkpointTokensCount ^ (objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
         }
 
@@ -300,7 +300,6 @@ namespace Tsavorite.core
             logger?.LogInformation("Is Snapshot?: {useSnapshotFile}", useSnapshotFile == 1);
             logger?.LogInformation("Flushed LogicalAddress: {flushedLogicalAddress}", flushedLogicalAddress);
             logger?.LogInformation("SnapshotStart Flushed LogicalAddress: {snapshotStartFlushedLogicalAddress}", snapshotStartFlushedLogicalAddress);
-            logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
             logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);

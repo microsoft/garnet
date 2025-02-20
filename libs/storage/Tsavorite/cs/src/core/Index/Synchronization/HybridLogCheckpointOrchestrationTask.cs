@@ -33,7 +33,6 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.version = next.Version;
                     break;
                 case Phase.IN_PROGRESS:
-                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     store.CheckpointVersionShift(lastVersion, next.Version);
                     break;

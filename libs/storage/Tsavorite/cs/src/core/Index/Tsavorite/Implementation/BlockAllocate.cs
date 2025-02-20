@@ -63,12 +63,6 @@ namespace Tsavorite.core
             {
                 if (!options.ElideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
                     minRevivAddress = stackCtx.hei.Address;
-                if (sessionFunctions.Ctx.IsInV1)
-                {
-                    var fuzzyStartAddress = _hybridLogCheckpoint.info.startLogicalAddress;
-                    if (fuzzyStartAddress > minRevivAddress)
-                        minRevivAddress = fuzzyStartAddress;
-                }
                 if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                     return true;
             }
