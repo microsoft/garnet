@@ -33,7 +33,7 @@ namespace Tsavorite.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, store);
-                    
+
                     store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
 
                     store._hybridLogCheckpoint.snapshotFileDevice =
