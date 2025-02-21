@@ -136,7 +136,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Maximum size of a valuie stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
         /// </summary>
-        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
 
         /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 

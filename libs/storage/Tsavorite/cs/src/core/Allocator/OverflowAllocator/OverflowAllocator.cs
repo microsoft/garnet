@@ -18,8 +18,8 @@ namespace Tsavorite.core
     /// </remarks>
     internal unsafe partial class OverflowAllocator : IDisposable
     {
-        private FixedSizePages fixedSizePages;
-        private OversizePages oversizePages;
+        internal FixedSizePages fixedSizePages;
+        internal OversizePages oversizePages;
 
         /// <summary>
         /// Constructor for the allocator

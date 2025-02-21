@@ -29,10 +29,10 @@ namespace Tsavorite.core
             internal readonly OverflowAllocator overflowAllocator { get; init; }
             internal readonly ObjectIdMap<TValue> objectIdMap { get; init; }
 
-            public ObjectPage(int fixedPageSize, int maxRecordCount)
+            public ObjectPage(int fixedPageSize)
             {
                 overflowAllocator = new(fixedPageSize);
-                objectIdMap = new(maxRecordCount);
+                objectIdMap = new();
             }
 
             internal readonly void Clear()
@@ -53,10 +53,6 @@ namespace Tsavorite.core
         // RecordSize and Value size are constant; only the key size is variable.
         private static int FixedValueSize => ObjectIdMap.ObjectIdSize;
 
-        /// <summary>Estimated average size of a record: header, key (length and 16 bytes), and Value Id. Does not include optional fields such as ETag, Expiration, or FillerLen.</summary>
-        private static int AverageRecordSize => RecordInfo.GetLength() + sizeof(int) + 16 + ObjectIdMap.ObjectIdSize;
-        readonly int initialObjectIdCount;
-
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TValue, TStoreFunctions>> wrapperCreator)
@@ -73,11 +69,9 @@ namespace Tsavorite.core
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
 
-            initialObjectIdCount = PageSize / AverageRecordSize;
-
             values = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ++ii)
-                values[ii] = new(overflowAllocatorFixedPageSize, initialObjectIdCount);
+                values[ii] = new(overflowAllocatorFixedPageSize);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -108,7 +102,7 @@ namespace Tsavorite.core
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new(overflowAllocatorFixedPageSize, initialObjectIdCount);
+            values[index] = new(overflowAllocatorFixedPageSize);
         }
 
         void ReturnPage(int index)

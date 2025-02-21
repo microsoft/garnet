@@ -142,7 +142,7 @@ namespace Tsavorite.core
             get
             {
                 Debug.Assert(IsObjectRecord, "ValueObject is not valid for String log records");
-                return (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? default : objectIdMap.GetRef(ValueObjectId);
+                return (*ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? default : objectIdMap.Get(ValueObjectId);
             }
         }
 
@@ -151,7 +151,7 @@ namespace Tsavorite.core
         public readonly TValue GetReadOnlyValue()
         {
             if (IsObjectRecord)
-                return objectIdMap.GetRef(ValueObjectId);
+                return objectIdMap.Get(ValueObjectId);
 
             var sb = ValueSpan;
             return Unsafe.As<SpanByte, TValue>(ref sb);
@@ -170,11 +170,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(IsObjectRecord, "ClearValueObject() is not valid for String log records");
             if (IsObjectRecord)
-            {
-                ref var valueObjectRef = ref objectIdMap.GetRef(ValueObjectId);
-                disposer(valueObjectRef);
-                valueObjectRef = default;
-            }
+                objectIdMap.ClearAt(ValueObjectId, disposer);
         }
 
         /// <inheritdoc/>
@@ -233,8 +229,6 @@ namespace Tsavorite.core
                 return *ValueObjectIdAddress;
             }
         }
-
-        internal readonly ref TValue ObjectRef => ref objectIdMap.GetRef(ValueObjectId);
 
         /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
         public readonly int ActualRecordSize
@@ -399,11 +393,10 @@ namespace Tsavorite.core
             var objectId = *ValueObjectIdAddress;
             if (objectId == ObjectIdMap.InvalidObjectId)
             {
-                if (!objectIdMap.Allocate(out objectId))
-                    return false;
+                objectIdMap.Allocate(out objectId);
                 *ValueObjectIdAddress = objectId;
             }
-            objectIdMap.GetRef(objectId) = value;
+            objectIdMap.Set(objectId, value);
             return true;
         }
 
@@ -415,11 +408,10 @@ namespace Tsavorite.core
             var objectId = *ValueObjectIdAddress;
             if (objectId == ObjectIdMap.InvalidObjectId)
             {
-                if (!objectIdMap.Allocate(out objectId))
-                    return false;
+                objectIdMap.Allocate(out objectId);
                 *ValueObjectIdAddress = objectId;
             }
-            objectIdMap.GetRef(objectId) = value;
+            objectIdMap.Set(objectId, value);
             return true;
         }
 

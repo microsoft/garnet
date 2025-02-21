@@ -16,7 +16,7 @@ namespace Tsavorite.benchmark
     {
         public const int Size = 8;
 
-        public unsafe SpanByte AsSpanByte() => new(sizeof(long) * 2, (nint)Unsafe.AsPointer(ref this));
+        public unsafe SpanByte AsSpanByte() => new(sizeof(long), (nint)Unsafe.AsPointer(ref this));
 
         [FieldOffset(0)]
         public long value;

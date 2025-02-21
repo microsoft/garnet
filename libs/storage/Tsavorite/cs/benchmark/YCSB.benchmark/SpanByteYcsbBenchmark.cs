@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
@@ -98,7 +97,8 @@ namespace Tsavorite.benchmark
                 PreallocateLog = true,
                 MemorySize = 1L << 35,
                 RevivificationSettings = revivificationSettings,
-                CheckpointDir = testLoader.BackupPath
+                CheckpointDir = testLoader.BackupPath,
+                MaxInlineValueSize = testLoader.Options.UseOverflowValues ? 64 : 128
             };
 
             if (testLoader.Options.UseSmallMemoryLog)
@@ -174,7 +174,7 @@ namespace Tsavorite.benchmark
                         unsafe
                         {
                             var keyNum = txn_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                            var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                            var key = new SpanByte(txn_keys_[idx].length, (IntPtr)(&keyNum));
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
                             {
@@ -265,7 +265,7 @@ namespace Tsavorite.benchmark
                     unsafe
                     {
                         var keyNum = txn_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                        var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                        var key = new SpanByte(txn_keys_[idx].length, (IntPtr)(&keyNum));
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
@@ -451,7 +451,7 @@ namespace Tsavorite.benchmark
                         unsafe
                         {
                             var keyNum = init_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                            var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                            var key = new SpanByte(init_keys_[idx].length, (IntPtr)(&keyNum));
                             uContext.Upsert(key, _value, Empty.Default);
                         }
                     }
@@ -500,7 +500,7 @@ namespace Tsavorite.benchmark
                     unsafe
                     {
                         var keyNum = init_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                        var key = new SpanByte(sizeof(long), (IntPtr)(&keyNum));
+                        var key = new SpanByte(init_keys_[idx].length, (IntPtr)(&keyNum));
                         bContext.Upsert(key, _value, Empty.Default);
                     }
                 }

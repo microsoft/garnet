@@ -82,6 +82,10 @@ namespace Tsavorite.benchmark
             HelpText = "Use Small Memory log in experiment")]
         public bool UseSmallMemoryLog { get; set; }
 
+        [Option("overflow", Required = false, Default = false,
+            HelpText = "Use Small MaxInlineValueSize in SpanByte benchmark to test overflow allocations")]
+        public bool UseOverflowValues { get; set; }
+
         [Option("hashpack", Required = false, Default = 2.0,
             HelpText = "The hash table packing; divide the number of keys by this to cause hash collisions")]
         public double HashPacking { get; set; }
@@ -91,7 +95,7 @@ namespace Tsavorite.benchmark
         public bool UseSafeContext { get; set; }
 
         [Option("chkptms", Required = false, Default = 0,
-            HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
+            HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done)")]
         public int PeriodicCheckpointMilliseconds { get; set; }
 
         [Option("chkptsnap", Required = false, Default = false,
@@ -112,7 +116,7 @@ namespace Tsavorite.benchmark
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
-                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; hp: {HashPacking};"
+                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; ov: {boolStr(UseOverflowValues)}; hp: {HashPacking};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
                         + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(PeriodicCheckpointTryIncremental)}";

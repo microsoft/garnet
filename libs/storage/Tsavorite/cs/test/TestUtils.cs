@@ -31,6 +31,9 @@ namespace Tsavorite.test
         internal const string RMWTestCategory = "RMW";
         internal const string ModifiedBitTestCategory = "ModifiedBitTest";
         internal const string RevivificationCategory = "Revivification";
+        internal const string MultiLevelPageArrayCategory = "MultiLevelPageArray";
+        internal const string ObjectIdMapCategory = "ObjectIdMap";
+        internal const string OverflowAllocatorCategory = "OverflowAllocator";
 
         public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);
 

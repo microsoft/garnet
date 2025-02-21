@@ -12,9 +12,11 @@ namespace Tsavorite.core
         /// A header for an individual block of memory (a single allocation)
         /// </summary>
 
-        [StructLayout(LayoutKind.Explicit, Size = sizeof(int) * 2)]
+        [StructLayout(LayoutKind.Explicit, Size = Size)]
         internal struct BlockHeader
         {
+            internal const int Size = sizeof(int) * 2;
+
             /// <summary>Full size of this block. For FixedSizePages this is the next-highest power of 2 and keys freelist operations; for OversizePages it is the size of the single allocation per page.</summary>
             /// <remarks>If this size is &lt;= <see cref="FixedSizePages.MaxBlockSize"/>, this allocation is from the fixed-size region, else it is from the oversize region.</remarks>
             [FieldOffset(0)]

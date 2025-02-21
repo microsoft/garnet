@@ -1,0 +1,185 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Threading;
+
+namespace Tsavorite.core
+{
+    struct MultiLevelPageArray
+    {
+        // TODO: Do MLPA config numbers need to be customizable?
+        internal const int InitialBookSizeBits = 10;
+        internal const int ChapterSizeBits = 16;
+
+        internal const int InitialBookSize = 1 << InitialBookSizeBits;
+        internal const int ChapterSize = 1 << ChapterSizeBits;
+        internal const int PageIndexMask = (1 << ChapterSizeBits) - 1;
+    }
+
+    /// <summary>
+    /// This creates a 3-d array of page vectors. As we allocate for caller use as pages, this can be envisioned as a book, where
+    /// the first two dimensions are infrastructure, and the third is where the user-visible allocations are created. This may be
+    /// used for sub-allocations within page, particularly where the pages are unmanaged pointers; for example, <see cref="OverflowAllocator.FixedSizePages"/>.
+    /// <list type="bullet">
+    ///     <item>The first dimension is the "book", which is a collection of "chapters".</item>
+    ///     <item>The second dimension is the "chapters", which is a collection of pages.</item>
+    ///     <item>The third dimension is the actual pages of data which are returned to the user</item>
+    /// </list>
+    /// This structure is chosen so that only the "book" is grown; individual chapters are allocated as a fixed size. This means that
+    /// getting and clearing items in the chapter does not have to take a latch to prevent a lost update as the array is grown, as
+    /// would be necessary if there was only a single level of infrastructure (i.e. a growable chapter).
+    /// </summary>
+    internal class MultiLevelPageArray<TElement>
+    {
+        internal TElement[][] book;
+
+        internal int tail = -1;         // Start at -1 so its Allocate() sets it to 0
+
+        public bool IsInitialized => book is not null;
+
+        public int Count => tail + 1;   // +1 because we start at -1 and increment before returning.
+
+        public int Allocate()
+        {
+            if (book is null)
+            {
+                // Two-step process in case the element allocation throws; book will still be null.
+                var newBook = new TElement[MultiLevelPageArray.InitialBookSize][];
+                newBook[0] = new TElement[MultiLevelPageArray.ChapterSize];
+
+                // Multiple threads can hit this at the same time, so use Interlocked to ensure that only one thread sets book;
+                // the others must drop through to normal handling.
+                if (Interlocked.CompareExchange(ref book, newBook, null) is null)
+                    return tail = 0;
+            }
+
+            while (true)
+            {
+                var originalTail = tail;
+                var originalChapter = originalTail >> MultiLevelPageArray.ChapterSizeBits;
+                if (originalChapter >= book.Length || book[originalChapter] is null)
+                {
+                    // One or more other threads has incremented tail into a new, not-yet-allocated page, and one owns the new-page "latch".
+                    // Don't increment tail; just wait for that owning thread to allocate the new chapter.
+                    _ = Thread.Yield();
+                    continue;
+                }
+
+                // We'll return the incremented value of tail.
+                var newTail = Interlocked.Increment(ref tail);
+                var newChapter = newTail >> MultiLevelPageArray.ChapterSizeBits;
+
+                Debug.Assert(newChapter >= originalChapter, $"newChapter {newChapter} should not be < originalChapter {originalChapter}");
+                if (newChapter > originalChapter)
+                {
+                    // We are on a new chapter, and possibly need to grow the book. If we incremented such that the value of newTail is the first page of the next chapter,
+                    // then we are the first to cross the threshold to the new chapter and we "own the latch" for allocating that new chapter. If the increment put it past that,
+                    // then someone else has the threshold increment and is allocating the new chapter, and we must wait until that chapter is allocated.
+                    var newPage = newTail & MultiLevelPageArray.PageIndexMask;
+                    if (newPage == 0)
+                    {
+                        AddChapter(newChapter);
+                    }
+                    else
+                    {
+                        // Wait for the thread that owns the new-page "latch" to allocate the new chapter. TODO: Tail is reset on OOM; need to break out of the inner loop and retry if that happens.
+                        while (newChapter >= book.Length || book[newChapter] is null)
+                            _ = Thread.Yield(); // TODO consider SpinWait.SpinOnce() with backoff
+                    }
+                }
+
+                Debug.Assert(newTail <= tail, $"newTail {newTail} should not be > tail {tail}");
+                Debug.Assert(book[newChapter] is not null, $"Expected new chapter {newChapter} to be non-null pt 2");
+                return newTail;
+            }
+        }
+
+        /// <summary>
+        /// Add a chapter. <paramref name="newChapterIndex"/> has been incremented to be the next chapter after the last non-null chapter.
+        /// </summary>
+        private void AddChapter(int newChapterIndex)
+        {
+            // If the chapter is already allocated (e.g. reusing on a new Allocator page), we don't need to do anything, and especially
+            // must not change tail, because the caller will see a non-null chapter and will increment tail and expect that increment to persist.
+            if (newChapterIndex < book.Length && book[newChapterIndex] is not null)
+                return;
+
+            try
+            {
+                if (newChapterIndex == book.Length)
+                {
+                    // We need to grow the book.
+                    var newBook = new TElement[book.Length * 2][];
+                    Array.Copy(book, newBook, book.Length);
+                    book = newBook;
+                }
+
+                book[newChapterIndex] = new TElement[MultiLevelPageArray.ChapterSize];
+            }
+            catch
+            {
+                // Restore tail to the last index on the last non-null chapter--that is, the chapter before chapterIndex.
+                tail = (newChapterIndex << MultiLevelPageArray.ChapterSizeBits) - 1;
+                throw;
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public TElement Get(int index)
+        {
+            Debug.Assert(index <= tail, $"index {index} out of range of tail {tail}");
+            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the chapter indexing remains unchanged and the chapter remains valid).
+
+            var chapterIndex = index >> MultiLevelPageArray.ChapterSizeBits;
+            var pageIndex = index & MultiLevelPageArray.PageIndexMask;
+            Debug.Assert(localBook[chapterIndex] is not null, $"index {index} out of range of chapters {chapterIndex}");
+            return localBook[chapterIndex][pageIndex];
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set(int index, TElement element)
+        {
+            Debug.Assert(index <= tail, $"index {index} out of range of tail {tail}");
+            var localBook = book;   // Temp copy as 'book' may be reallocated while we do this (but the chapter indexing remains unchanged and the chapter remains valid).
+
+            var chapterIndex = index >> MultiLevelPageArray.ChapterSizeBits;
+            var pageIndex = index & MultiLevelPageArray.PageIndexMask;
+            Debug.Assert(localBook[chapterIndex] is not null, $"index {index} out of range of chapters {chapterIndex}");
+            localBook[chapterIndex][pageIndex] = element;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Clear()
+        {
+            if (!IsInitialized)
+                return;
+            var lastChapterIndex = tail >> MultiLevelPageArray.ChapterSizeBits;
+            for (int chapter = 0; chapter <= lastChapterIndex; chapter++)
+                Array.Clear(book[chapter], 0, MultiLevelPageArray.ChapterSize);
+            tail = 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Clear(Action<TElement> action)
+        {
+            if (!IsInitialized)
+                return;
+            var lastChapterIndex = tail >> MultiLevelPageArray.ChapterSizeBits;
+            for (int chapter = 0; chapter <= lastChapterIndex; ++chapter)
+            {
+                for (int page = 0; page < MultiLevelPageArray.ChapterSize; ++page)
+                {
+                    // Note: 'action' must check for null/default.
+                    action(book[chapter][page]);
+                }
+            }
+            tail = 0;
+        }
+
+        /// <inheritdoc/>
+        public override string ToString() => $"Tail: {tail}, IsInitialized: {IsInitialized}";
+    }
+}

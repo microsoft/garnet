@@ -15,10 +15,10 @@ namespace Tsavorite.core
     /// </remarks>
     internal unsafe partial class OverflowAllocator
     {
-        internal struct OversizePages
+        internal class OversizePages
         {
             /// <summary>The pages allocated by this allocator.</summary>
-            internal NativePageVector PageVector;
+            internal NativePageAllocator PageVector;
 
             private const int InvalidSlot = -1;
 
@@ -41,17 +41,30 @@ namespace Tsavorite.core
                 size = PromoteSize(size);
 
                 BlockHeader* blockPtr;
-                if (freeList.TryPop(out var pageSlot))
-                    blockPtr = PageVector.AllocatePage(pageSlot, size);
-                else
-                {
+                int pageSlot;
+                while (true)
+                { 
+                    if (freeList.TryPop(out pageSlot))
+                    { 
+                        try
+                        {
+                            blockPtr = PageVector.AllocatePage(pageSlot, size);
+                        }
+                        catch
+                        {
+                            // Return the free slot on OOM
+                            freeList.Push(pageSlot);
+                            throw;
+                        }
+                    }
+
                     // No free slots, so go through the "extend the page vector" logic to allocate a page of the requested size.
                     PageOffset localPageOffset = new() { PageAndOffset = PageVector.TailPageOffset.PageAndOffset };
-                    while (!PageVector.TryAllocateNewPage(ref localPageOffset, size, out blockPtr, out pageSlot))
-                    {
-                        // Re-get the PageVector's PageAndOffset and retry the loop. This is consistent with the loop control in FixedSizePages.
-                        localPageOffset.PageAndOffset = PageVector.TailPageOffset.PageAndOffset;
-                    }
+                    if (PageVector.TryAllocateNewPage(ref localPageOffset, size, out blockPtr, out pageSlot))
+                        break;
+
+                    // Re-get the PageVector's PageAndOffset and retry the loop. This is consistent with the loop control in FixedSizePages.
+                    localPageOffset.PageAndOffset = PageVector.TailPageOffset.PageAndOffset;
                 }
                 return BlockHeader.Initialize((BlockHeader*)blockPtr, size, pageSlot, zeroInit);
             }
@@ -62,7 +75,7 @@ namespace Tsavorite.core
                 // This leaves the allocation in the allocated page array, but pushes it onto the freelist first, so we will null out that slot
                 // in Clear(). To null it in the allocated page array would require taking another latch to ensure stability of the page array.
                 var slot = blockPtr->Slot;
-                freeList.TryPush(slot);
+                freeList.Push(slot);
                 PageVector.FreePage(blockPtr);
             }
 
@@ -85,7 +98,7 @@ namespace Tsavorite.core
             {
                 // The PageVector has no concept of the FreeList, so we must set "free" slots to null before claring the PageVector.
                 while (freeList.TryPop(out var slot))
-                    PageVector.Pages[slot] = null;
+                    PageVector.Set(slot, null);
                 freeList = new();
                 PageVector.Clear();
             }

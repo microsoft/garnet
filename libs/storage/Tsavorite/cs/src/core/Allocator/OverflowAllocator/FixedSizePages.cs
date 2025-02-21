@@ -22,10 +22,10 @@ namespace Tsavorite.core
         /// deallocates the page. This scheme provides the fastest performance for smaller allocations, at the cost of some memory overhead, especially
         /// as block sizes become larger.
         /// </remarks>
-        internal unsafe struct FixedSizePages
+        internal unsafe class FixedSizePages
         {
             /// <summary>Size of the largest free-list bin</summary>
-            internal const int MaxBlockSize = 64 * 1024;
+            internal const int MaxBlockSize = 64 * 1024 - BlockHeader.Size;
 
             /// <summary>Size of the smallest free-list bin</summary>
             internal const int MinBlockSize = 1 << MinPowerOf2;
@@ -36,7 +36,7 @@ namespace Tsavorite.core
             internal int PageSize;
 
             /// <summary>The pages allocated by this allocator, all of size <see cref="PageSize"/>.</summary>
-            internal NativePageVector PageVector;
+            internal NativePageAllocator PageAllocator;
 
             /// <summary>The heads of the fixed-size freelists, from 64 to <see cref="MaxBlockSize"/>.</summary>
             private long[] freeList;
@@ -45,7 +45,7 @@ namespace Tsavorite.core
             internal FixedSizePages(int pageSize)
             {
                 PageSize = pageSize;
-                PageVector = new();
+                PageAllocator = new();
                 var numBins = GetLogBase2(MaxBlockSize) - GetLogBase2(MinBlockSize) + 1;
                 freeList = new long[numBins];
             }
@@ -62,33 +62,42 @@ namespace Tsavorite.core
                 if (ptr != null)
                     return ptr;
 
-                PageOffset localPageOffset = new() { PageAndOffset = PageVector.TailPageOffset.PageAndOffset };
+                PageOffset localPageOffset = new() { PageAndOffset = PageAllocator.TailPageOffset.PageAndOffset };
 
-                if (PageVector.Pages is null)
-                    PageVector.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _);
+                if (!PageAllocator.IsInitialized)
+                    PageAllocator.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _);
 
                 // We need to pointer-advance, and possibly allocate a new page.
                 while (true)
                 { 
+                    if (localPageOffset.Offset == NativePageAllocator.OffsetAsLatch)
+                    {
+                        _ = Thread.Yield();
+
+                        // Re-get the PageVector's PageAndOffset and retry the loop.
+                        localPageOffset.PageAndOffset = PageAllocator.TailPageOffset.PageAndOffset;
+                        continue;
+                    }
+
                     // See if it fits on the current last page. This also applies to the "no pages allocated" case, because we initialize tailPageOffset.Offset to out-of-range
-                    while (localPageOffset.Offset + blockSize < PageSize && localPageOffset.Offset != NativePageVector.OffsetAsLatch)
+                    while (localPageOffset.Offset + blockSize < PageSize)
                     {
                         // Fast path; simple offset pointer advance. If it fails, someone else advanced the pointer, so retry.
-                        if (Interlocked.CompareExchange(ref PageVector.TailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + blockSize, localPageOffset.PageAndOffset)
+                        if (Interlocked.CompareExchange(ref PageAllocator.TailPageOffset.PageAndOffset, localPageOffset.PageAndOffset + blockSize, localPageOffset.PageAndOffset)
                             == localPageOffset.PageAndOffset)
                         {
-                            var blockPtr = (BlockHeader*)PageVector.Pages[localPageOffset.Page] + localPageOffset.Offset;
+                            var blockPtr = PageAllocator.Get(localPageOffset.Page, localPageOffset.Offset);
                             return BlockHeader.Initialize(blockPtr, blockSize, userSize, zeroInit);
                         }
 
                         // Re-get the PageVector's PageAndOffset and retry the loop.
-                        localPageOffset.PageAndOffset = PageVector.TailPageOffset.PageAndOffset;
+                        localPageOffset.PageAndOffset = PageAllocator.TailPageOffset.PageAndOffset;
                     }
 
-                    // If we are here, we advanced the pointer past end of page without returning an allocation. We need to allocate a new page. We ignore the return pointer
-                    // here, because we obtain the return pointer in the pointer-advance on the next iteration of this loop.
+                    // If we are here, the pointer is past where adding blockSize would place it beyond the end of the page. We need to allocate a new page. We ignore the
+                    // return pointer here, because we obtain the return pointer in the pointer-advance on the next iteration of this loop.
                     // TODO: possibly handle the page-end fragment by "allocating" it to ourselves here and storing it the next-lowest freelist bin
-                    _ = PageVector.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _);
+                    _ = PageAllocator.TryAllocateNewPage(ref localPageOffset, PageSize, out _, out _);
                 }
             }
 
@@ -99,7 +108,7 @@ namespace Tsavorite.core
                 // so this is likely to be faster than Utility.GetLogBase2), and from there to end of list if we need to search higher bins.
                 Debug.Assert(size <= MaxBlockSize && IsPowerOfTwo(size), $"Size is {size}; it should be a power of 2 <= MaxBlockSize {MaxBlockSize}");
                 var bin = MinPowerOf2;
-                for (; 1 << bin < size; ++bin)
+                for (; 1 << bin <= size; ++bin)
                     ;
                 return bin - MinPowerOf2;
             }
@@ -174,7 +183,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Clear()
             {
-                PageVector.Clear();
+                PageAllocator.Clear();
                 if (freeList is not null)
                     System.Array.Clear(freeList);
             }
