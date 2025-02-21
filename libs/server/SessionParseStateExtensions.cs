@@ -156,12 +156,19 @@ namespace Garnet.server
 
             encodingSlice = parseState.GetArgSliceByRef(idx);
 
+            if (encodingSlice.length <= 1)
+                return false;
+
+            var ptr = encodingSlice.ptr + 1;
+
             return
-                ParseUtils.TryReadLong(ref encodingSlice, 1, out var bitCount) &&
-                (
-                    (*encodingSlice.ptr == 'i' && bitCount <= 64 && bitCount > 0) ||
-                    (*encodingSlice.ptr == 'u' && bitCount < 64 && bitCount > 0)
-                );
+                RespReadUtils.TryReadInt64Safe(ref ptr, encodingSlice.ptr + encodingSlice.length,
+                                           out var bitCount, out var bytesRead,
+                                           out _, out _, allowLeadingZeros: false) &&
+                ((int)bytesRead == encodingSlice.length - 1) && (bytesRead > 0L) &&
+                (bitCount > 0) &&
+                ((*encodingSlice.ptr == 'i' && bitCount <= 64) ||
+                 (*encodingSlice.ptr == 'u' && bitCount < 64));
         }
 
         /// <summary>
@@ -181,15 +188,27 @@ namespace Garnet.server
 
             offsetSlice = parseState.GetArgSliceByRef(idx);
 
-            if (offsetSlice.Length == 0)
+            if (offsetSlice.Length <= 0)
                 return false;
 
-            long bitFieldOffset;
-            var ret = (*offsetSlice.ptr == '#')
-                ? ParseUtils.TryReadLong(ref offsetSlice, byteOffset: 1, out bitFieldOffset)
-                : ParseUtils.TryReadLong(ref offsetSlice, out bitFieldOffset);
+            var ptr = offsetSlice.ptr;
+            var len = offsetSlice.length;
 
-            return ret && (bitFieldOffset >= 0);
+            if (*ptr == '#')
+            {
+                if (offsetSlice.length == 1)
+                    return false;
+
+                ptr++;
+                len--;
+            }
+
+            return
+                RespReadUtils.TryReadInt64Safe(ref ptr, offsetSlice.ptr + offsetSlice.length,
+                                           out var bitFieldOffset, out var bytesRead,
+                                           out _, out _, allowLeadingZeros: false) &&
+                ((int)bytesRead == len) && (bytesRead > 0L) &&
+                (bitFieldOffset >= 0);
         }
 
         /// <summary>
