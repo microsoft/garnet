@@ -22,6 +22,11 @@ namespace Garnet.server
         const int DefaultVersionMapSize = 1 << 16;
 
         /// <summary>
+        /// Database ID
+        /// </summary>
+        public int Id;
+
+        /// <summary>
         /// Main Store
         /// </summary>
         public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore;
@@ -72,22 +77,39 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabase(TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
+        public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
-            bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut)
+            bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut) : this()
         {
+            Id = id;
             MainStore = mainStore;
             ObjectStore = objectStore;
             ObjectStoreSizeTracker = objectStoreSizeTracker;
             AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
+            MainStoreIndexMaxedOut = mainStoreIndexMaxedOut;
+            ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
+        }
+
+        public GarnetDatabase(ref GarnetDatabase srcDb, bool enableAof) : this()
+        {
+            Id = srcDb.Id;
+            MainStore = srcDb.MainStore;
+            ObjectStore = srcDb.ObjectStore;
+            ObjectStoreSizeTracker = srcDb.ObjectStoreSizeTracker;
+            AofDevice = enableAof ? AofDevice : null;
+            AppendOnlyFile = enableAof ? AppendOnlyFile : null;
+            MainStoreIndexMaxedOut = srcDb.MainStoreIndexMaxedOut;
+            ObjectStoreIndexMaxedOut = srcDb.ObjectStoreIndexMaxedOut;
+        }
+
+        public GarnetDatabase()
+        {
             VersionMap = new WatchVersionMap(DefaultVersionMapSize);
             LastSaveStoreTailAddress = 0;
             LastSaveObjectStoreTailAddress = 0;
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
-            MainStoreIndexMaxedOut = mainStoreIndexMaxedOut;
-            ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
         }
 
         public bool IsDefault() => MainStore == null;

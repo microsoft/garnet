@@ -16,9 +16,7 @@ namespace Garnet.server
 
     internal abstract class DatabaseManagerBase : IDatabaseManager
     {
-        /// <summary>
-        /// Reference to default database (DB 0)
-        /// </summary>
+        /// <inheritdoc/>
         public abstract ref GarnetDatabase DefaultDatabase { get; }
 
         /// <inheritdoc/>
@@ -42,19 +40,56 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract int DatabaseCount { get; }
 
+        /// <summary>
+        /// The main logger instance associated with the database manager.
+        /// </summary>
+        protected ILogger Logger;
+
+        /// <summary>
+        /// Store Wrapper
+        /// </summary>
+        public readonly StoreWrapper StoreWrapper;
+
         /// <inheritdoc/>
         public abstract bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db);
 
-        public abstract void RecoverCheckpoint(bool failOnRecoveryError, bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+
+        /// <inheritdoc/>
+        public abstract void RecoverAOF();
+
+        /// <inheritdoc/>
+        public abstract long ReplayAOF(long untilAddress = -1);
+
+        /// <inheritdoc/>
+        public abstract void Reset(int dbId = 0);
+
+        /// <inheritdoc/>
+        public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0);
+
+        /// <inheritdoc/>
+        public abstract bool TryGetDatabase(int dbId, out GarnetDatabase db);
+
+        /// <inheritdoc/>
+        public abstract void FlushDatabase(bool unsafeTruncateLog, int dbId = 0);
+
+        /// <inheritdoc/>
+        public abstract void FlushAllDatabases(bool unsafeTruncateLog);
 
         public abstract FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0);
 
         protected bool Disposed;
 
-        protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db)
+        protected DatabaseManagerBase(StoreWrapper storeWrapper)
         {
-            var storeVersion = db.MainStore.Recover();
-            long objectStoreVersion = -1;
+            this.StoreWrapper = storeWrapper;
+        }
+
+        protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
+        {
+            storeVersion = db.MainStore.Recover();
+            objectStoreVersion = -1;
+
             if (db.ObjectStore != null)
                 objectStoreVersion = db.ObjectStore.Recover();
 
@@ -64,12 +99,51 @@ namespace Garnet.server
             }
         }
 
-        private void RecoverDatabaseAOF(ref GarnetDatabase db)
+        protected void RecoverDatabaseAOF(ref GarnetDatabase db)
         {
             if (db.AppendOnlyFile == null) return;
 
             db.AppendOnlyFile.Recover();
-            logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
+            Logger?.LogInformation($"Recovered AOF: begin address = {db.AppendOnlyFile.BeginAddress}, tail address = {db.AppendOnlyFile.TailAddress}");
+        }
+
+        protected void ResetDatabase(ref GarnetDatabase db)
+        {
+            try
+            {
+                if (db.MainStore.Log.TailAddress > 64)
+                    db.MainStore.Reset();
+                if (db.ObjectStore?.Log.TailAddress > 64)
+                    db.ObjectStore?.Reset();
+                db.AppendOnlyFile?.Reset();
+
+                var lastSave = DateTimeOffset.FromUnixTimeSeconds(0);
+                db.LastSaveTime = lastSave;
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError(ex, "Error during reset of store");
+            }
+        }
+
+        protected void EnqueueDatabaseCommit(ref GarnetDatabase db, bool isMainStore, long version)
+        {
+            if (db.AppendOnlyFile == null) return;
+
+            AofHeader header = new()
+            {
+                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
+                storeVersion = version,
+                sessionID = -1
+            };
+
+            db.AppendOnlyFile.Enqueue(header, out _);
+        }
+
+        protected void FlushDatabase(ref GarnetDatabase db, bool unsafeTruncateLog)
+        {
+            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         public abstract void Dispose();

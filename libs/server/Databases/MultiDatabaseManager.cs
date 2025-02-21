@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,10 +62,12 @@ namespace Garnet.server
 
         readonly string checkpointDirBaseName;
 
-        public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, int maxDatabases, bool createDefaultDatabase = true)
+        public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, int maxDatabases,
+            ILoggerFactory loggerFactory = null, bool createDefaultDatabase = true) : base(storeWrapper)
         {
             this.createDatabaseDelegate = createsDatabaseDelegate;
             this.maxDatabases = maxDatabases;
+            this.Logger = loggerFactory?.CreateLogger(nameof(MultiDatabaseManager));
 
             // Create default databases map of size 1
             databases = new ExpandableMap<GarnetDatabase>(1, 0, this.maxDatabases - 1);
@@ -93,36 +94,93 @@ namespace Garnet.server
             }
         }
 
-        public override void RecoverCheckpoint(bool failOnRecoveryError, bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
             if (replicaRecover)
                 throw new GarnetException(
                     $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpoint)} with {nameof(replicaRecover)} == true.");
 
+            int[] dbIdsToRecover;
             try
             {
-                if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out var dbIdsToRecover))
+                if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out dbIdsToRecover))
                     return;
 
-                foreach (var dbId in dbIdsToRecover)
-                {
-                    if (!TryGetOrAddDatabase(dbId, out var db))
-                        throw new GarnetException($"Failed create initial database for recovery (DB ID = {dbId}).");
-
-                    RecoverDatabaseCheckpoint(ref db);
-                }
-            }
-            catch (TsavoriteNoHybridLogException ex)
-            {
-                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-                if (failOnRecoveryError)
+                Logger?.LogInformation(ex, $"Error during recovery of database ids; checkpointParentDir = {checkpointParentDir}; checkpointDirBaseName = {checkpointDirBaseName}");
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
+                return;
             }
+
+            long storeVersion = -1, objectStoreVersion = -1;
+            
+            foreach (var dbId in dbIdsToRecover)
+            {
+                if (!TryGetOrAddDatabase(dbId, out var db))
+                    throw new GarnetException($"Failed to retrieve or create database for checkpoint recovery (DB ID = {dbId}).");
+
+                try
+                {
+                    RecoverDatabaseCheckpoint(ref db, out storeVersion, out objectStoreVersion);
+                }
+                catch (TsavoriteNoHybridLogException ex)
+                {
+                    // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
+                    Logger?.LogInformation(ex, $"No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                }
+                catch (Exception ex)
+                {
+                    Logger?.LogInformation(ex, $"Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                    if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                        throw;
+                }
+            }
+        }
+
+        /// <inheritdoc/>
+        public override void RecoverAOF()
+        {
+            int[] dbIdsToRecover;
+            try
+            {
+                if (!TryGetSavedDatabaseIds(aofParentDir, aofDirBaseName, out dbIdsToRecover))
+                    return;
+
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogInformation(ex, $"Error during recovery of database ids; aofParentDir = {aofParentDir}; aofDirBaseName = {aofDirBaseName}");
+                return;
+            }
+
+            foreach (var dbId in dbIdsToRecover)
+            {
+                if (!TryGetOrAddDatabase(dbId, out var db))
+                    throw new GarnetException($"Failed to retrieve or create database for AOF recovery (DB ID = {dbId}).");
+
+                RecoverDatabaseAOF(ref db);
+            }
+        }
+
+        public override long ReplayAOF(long untilAddress = -1) => throw new NotImplementedException();
+
+        public override void Reset(int dbId = 0)
+        {
+            if (!this.TryGetOrAddDatabase(dbId, out var db))
+                throw new GarnetException($"Database with ID {dbId} was not found.");
+
+            ResetDatabase(ref db);
+        }
+
+        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
+        {
+            if (!this.TryGetOrAddDatabase(dbId, out var db))
+                throw new GarnetException($"Database with ID {dbId} was not found.");
+
+            EnqueueDatabaseCommit(ref db, isMainStore, version);
         }
 
         public override FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0)
@@ -137,8 +195,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db)
         {
-            db = default;
-
             if (!databases.TryGetOrSet(dbId, () => createDatabaseDelegate(dbId, out _, out _), out db, out var added))
                 return false;
 
@@ -146,6 +202,53 @@ namespace Garnet.server
                 HandleDatabaseAdded(dbId);
 
             return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool TryGetDatabase(int dbId, out GarnetDatabase db)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+
+            if (dbId == 0)
+            {
+                db = databasesMapSnapshot[0];
+                Debug.Assert(!db.IsDefault());
+                return true;
+            }
+
+            // Check if database already exists
+            if (dbId < databasesMapSize)
+            {
+                db = databasesMapSnapshot[dbId];
+                if (!db.IsDefault()) return true;
+            }
+
+            // Try to retrieve or add database
+            return this.TryGetOrAddDatabase(dbId, out db);
+        }
+
+        /// <inheritdoc/>
+        public override void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
+        {
+            if (!this.TryGetOrAddDatabase(dbId, out var db))
+                throw new GarnetException($"Database with ID {dbId} was not found.");
+
+            FlushDatabase(ref db, unsafeTruncateLog);
+        }
+
+        /// <inheritdoc/>
+        public override void FlushAllDatabases(bool unsafeTruncateLog)
+        {
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+            var databaseMapSnapshot = databases.Map;
+
+            for (var i = 0; i < activeDbIdsSize; i++)
+            {
+                var dbId = activeDbIdsSnapshot[i];
+                this.FlushDatabase(ref databaseMapSnapshot[dbId], unsafeTruncateLog);
+            }
         }
 
         /// <summary>
@@ -242,6 +345,37 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Copy active databases from specified IDatabaseManager instance
+        /// </summary>
+        /// <param name="src">Source IDatabaseManager</param>
+        /// <param name="enableAof">True if should enable AOF in copied databases</param>
+        private void CopyDatabases(IDatabaseManager src, bool enableAof)
+        {
+            switch (src)
+            {
+                case SingleDatabaseManager sdbm:
+                    var defaultDbCopy = new GarnetDatabase(ref sdbm.DefaultDatabase, enableAof);
+                    this.TryAddDatabase(0, ref defaultDbCopy);
+                    return;
+                case MultiDatabaseManager mdbm:
+                    var activeDbIdsSize = mdbm.activeDbIdsLength;
+                    var activeDbIdsSnapshot = mdbm.activeDbIds;
+                    var databasesMapSnapshot = mdbm.databases.Map;
+
+                    for (var i = 0; i < activeDbIdsSize; i++)
+                    {
+                        var dbId = activeDbIdsSnapshot[i];
+                        var dbCopy = new GarnetDatabase(ref databasesMapSnapshot[dbId], enableAof);
+                        this.TryAddDatabase(dbId, ref dbCopy);
+                    }
+
+                    return;
+                default:
+                    throw new NotImplementedException();
+            }
         }
 
         public override void Dispose()

@@ -4,7 +4,6 @@
 using System;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using static System.Formats.Asn1.AsnWriter;
 
 namespace Garnet.server
 {
@@ -18,8 +17,10 @@ namespace Garnet.server
 
         GarnetDatabase defaultDatabase;
 
-        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate)
+        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, ILoggerFactory loggerFactory = null) : 
+            base(storeWrapper)
         {
+            this.Logger = loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
             defaultDatabase = createsDatabaseDelegate(0, out _, out _);
         }
 
@@ -32,7 +33,7 @@ namespace Garnet.server
             return true;
         }
 
-        public override void RecoverCheckpoint(bool failOnRecoveryError, bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
             long storeVersion = -1, objectStoreVersion = -1;
             try
@@ -40,7 +41,7 @@ namespace Garnet.server
                 if (replicaRecover)
                 {
                     // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
-                    if (metadata.storeIndexToken != default && metadata.storeHlogToken != default)
+                    if (metadata!.storeIndexToken != default && metadata.storeHlogToken != default)
                     {
                         storeVersion = !recoverMainStoreFromToken ? MainStore.Recover() : MainStore.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
                     }
@@ -58,21 +59,89 @@ namespace Garnet.server
                 }
                 else
                 {
-                    RecoverDatabaseCheckpoint(ref DefaultDatabase);
+                    RecoverDatabaseCheckpoint(ref DefaultDatabase, out storeVersion, out objectStoreVersion);
                 }
             }
             catch (TsavoriteNoHybridLogException ex)
             {
                 // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                Logger?.LogInformation(ex, $"No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}");
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-                if (failOnRecoveryError)
+                Logger?.LogInformation(ex, $"Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}");
+                
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
         }
+
+        /// <inheritdoc/>
+        public override void RecoverAOF() => RecoverDatabaseAOF(ref DefaultDatabase);
+
+        /// <inheritdoc/>
+        public override long ReplayAOF(long untilAddress = -1)
+        {
+            if (!StoreWrapper.serverOptions.EnableAOF)
+                return -1;
+
+            long replicationOffset = 0;
+            try
+            {
+                // When replaying AOF we do not want to write record again to AOF.
+                // So initialize local AofProcessor with recordToAof: false.
+                var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
+
+                aofProcessor.Recover(0, untilAddress);
+                DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                replicationOffset = aofProcessor.ReplicationOffset;
+
+                aofProcessor.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError(ex, "Error during recovery of AofProcessor");
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                    throw;
+            }
+
+            return replicationOffset;
+        }
+        
+        /// <inheritdoc/>
+        public override void Reset(int dbId = 0)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            ResetDatabase(ref DefaultDatabase);
+        }
+
+        /// <inheritdoc/>
+        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            EnqueueDatabaseCommit(ref DefaultDatabase, isMainStore, version);
+        }
+
+        /// <inheritdoc/>
+        public override bool TryGetDatabase(int dbId, out GarnetDatabase db)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            db = DefaultDatabase;
+            return true;
+        }
+
+        public override void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
+        }
+
+        public override void FlushAllDatabases(bool unsafeTruncateLog) =>
+            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
 
         public override FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0)
         {

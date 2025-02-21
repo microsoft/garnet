@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -285,99 +284,10 @@ namespace Garnet.server
             {
                 if (serverOptions.Recover)
                 {
-                    RecoverCheckpoint();
-                    RecoverAOF();
+                    databaseManager.RecoverCheckpoint();
+                    databaseManager.RecoverAOF();
                     ReplayAOF();
                 }
-            }
-        }
-
-        /// <summary>
-        /// Caller will have to decide if recover is necessary, so we do not check if recover option is enabled
-        /// </summary>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
-        {
-            long storeVersion = -1, objectStoreVersion = -1;
-            try
-            {
-                if (replicaRecover)
-                {
-                    // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
-                    if (metadata.storeIndexToken != default && metadata.storeHlogToken != default)
-                    {
-                        storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
-                    }
-
-                    if (!serverOptions.DisableObjects)
-                    {
-                        if (metadata.objectStoreIndexToken != default && metadata.objectStoreHlogToken != default)
-                        {
-                            objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(metadata.objectStoreIndexToken, metadata.objectStoreHlogToken);
-                        }
-                    }
-
-                    if (storeVersion > 0 || objectStoreVersion > 0)
-                        databaseManager.UpdateDatabaseLastSaveTime();
-                }
-                else
-                {
-                    databaseManager.RecoverCheckpoint();
-                }
-            }
-            catch (TsavoriteNoHybridLogException ex)
-            {
-                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-                if (serverOptions.FailOnRecoveryError)
-                    throw;
-            }
-        }
-
-        /// <summary>
-        /// Recover AOF
-        /// </summary>
-        public void RecoverAOF()
-        {
-            if (!allowMultiDb)
-            {
-                RecoverDatabaseAOF(0);
-            }
-            else if (aofParentDir != null)
-            {
-                if (!TryGetSavedDatabaseIds(aofParentDir, aofDirBaseName, out var dbIdsToRecover))
-                    return;
-
-                foreach (var dbId in dbIdsToRecover)
-                    RecoverDatabaseAOF(dbId);
-            }
-        }
-
-        /// <summary>
-        /// Reset
-        /// </summary>
-        public void Reset(int dbId = 0)
-        {
-            try
-            {
-                ref var db = ref databases.Map[dbId];
-                if (db.MainStore.Log.TailAddress > 64)
-                    db.MainStore.Reset();
-                if (db.ObjectStore?.Log.TailAddress > 64)
-                    db.ObjectStore?.Reset();
-                db.AppendOnlyFile?.Reset();
-
-                var lastSave = DateTimeOffset.FromUnixTimeSeconds(0);
-                if (dbId == 0)
-                    DefaultDatabase.LastSaveTime = lastSave;
-                db.LastSaveTime = lastSave;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Error during reset of store");
             }
         }
 
@@ -699,25 +609,6 @@ namespace Garnet.server
             if (serverOptions.CompactionFrequencySecs > 0) return;
 
             DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
-        }
-
-        /// <summary>
-        /// Append a checkpoint commit to the AOF
-        /// </summary>
-        /// <param name="isMainStore"></param>
-        /// <param name="version"></param>
-        /// <param name="dbId"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
-        {
-            AofHeader header = new()
-            {
-                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
-                storeVersion = version,
-                sessionID = -1
-            };
-
-            var aof = databases.Map[dbId].AppendOnlyFile;
-            aof?.Enqueue(header, out _);
         }
 
         void DoCompaction(ref GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
@@ -1381,9 +1272,9 @@ namespace Garnet.server
             databasesMapSnapshot[dbId] = db;
         }
 
-        private async Task InitiateCheckpoint(int dbId, GarnetDatabase db, bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
+        private async Task InitiateCheckpoint(GarnetDatabase db, bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
         {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}, dbId = {dbId}", full, checkpointType, tryIncremental, storeType, dbId);
+            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}, dbId = {dbId}", full, checkpointType, tryIncremental, storeType, db.Id);
 
             long CheckpointCoveredAofAddress = 0;
             if (db.AppendOnlyFile != null)
@@ -1444,16 +1335,13 @@ namespace Garnet.server
             logger?.LogInformation("Completed checkpoint");
         }
 
-        public bool HasKeysInSlots(List<int> slots, int dbId = 0)
+        public bool HasKeysInSlots(List<int> slots)
         {
             if (slots.Count > 0)
             {
-                var dbFound = TryGetDatabase(dbId, out var db);
-                Debug.Assert(dbFound);
-
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = db.MainStore.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
+                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
                         ref var key = ref iter.GetKey();
@@ -1465,11 +1353,11 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots && db.ObjectStore != null)
+                if (!hasKeyInSlots && objectStore != null)
                 {
-                    var functionsState = CreateFunctionsState();
+                    var functionsState = databaseManager.CreateFunctionsState(customCommandManager, GarnetObjectSerializer);
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
-                    var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
                     var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
@@ -1486,86 +1374,6 @@ namespace Garnet.server
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// Get database DB ID
-        /// </summary>
-        /// <param name="dbId">DB Id</param>
-        /// <param name="db">Database</param>
-        /// <returns>True if database found</returns>
-        public bool TryGetDatabase(int dbId, out GarnetDatabase db)
-        {
-            var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-
-            if (dbId == 0)
-            {
-                db = databasesMapSnapshot[0];
-                Debug.Assert(!db.IsDefault());
-                return true;
-            }
-
-            // Check if database already exists
-            if (dbId < databasesMapSize)
-            {
-                db = databasesMapSnapshot[dbId];
-                if (!db.IsDefault()) return true;
-            }
-
-            // Try to retrieve or add database
-            return this.TryGetOrAddDatabase(dbId, out db);
-        }
-
-        /// <summary>
-        /// Flush database with specified ID
-        /// </summary>
-        /// <param name="unsafeTruncateLog">Truncate log</param>
-        /// <param name="dbId">Database ID</param>
-        public void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
-        {
-            var dbFound = TryGetDatabase(dbId, out var db);
-            Debug.Assert(dbFound);
-
-            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-        }
-
-        /// <summary>
-        /// Flush all active databases 
-        /// </summary>
-        /// <param name="unsafeTruncateLog">Truncate log</param>
-        public void FlushAllDatabases(bool unsafeTruncateLog)
-        {
-            var activeDbIdsSize = activeDbIdsLength;
-            var activeDbIdsSnapshot = activeDbIds;
-            for (var i = 0; i < activeDbIdsSize; i++)
-            {
-                var dbId = activeDbIdsSnapshot[i];
-                this.FlushDatabase(unsafeTruncateLog, dbId);
-            }
-        }
-
-        /// <summary>
-        /// Copy active databases from specified StoreWrapper instance
-        /// </summary>
-        /// <param name="src">Source StoreWrapper</param>
-        /// <param name="recordToAof">True if should enable AOF in copied databases</param>
-        private void CopyDatabases(StoreWrapper src, bool recordToAof)
-        {
-            var databasesMapSize = src.databases.ActualSize;
-            var databasesMapSnapshot = src.databases.Map;
-
-            for (var dbId = 0; dbId < databasesMapSize; dbId++)
-            {
-                var db = databasesMapSnapshot[dbId];
-                if (db.IsDefault()) continue;
-
-                var dbCopy = new GarnetDatabase(db.MainStore, db.ObjectStore, db.ObjectStoreSizeTracker,
-                    recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null,
-                    db.MainStoreIndexMaxedOut, db.ObjectStoreIndexMaxedOut);
-                this.TryAddDatabase(dbId, ref dbCopy);
-            }
         }
     }
 }

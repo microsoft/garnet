@@ -279,7 +279,7 @@ namespace Garnet
             var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, checkpointDir,
                 out var objectStoreSizeTracker);
             var (aofDevice, aof) = CreateAOF(dbId, out aofDir);
-            return new GarnetDatabase(store, objectStore, objectStoreSizeTracker, aofDevice, aof,
+            return new GarnetDatabase(dbId, store, objectStore, objectStoreSizeTracker, aofDevice, aof,
                 serverOptions.AdjustedIndexMaxCacheLines == 0,
                 serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0);
         }
