@@ -66,6 +66,26 @@ namespace Tsavorite.test
             public readonly void OnStop(bool completed, long numberOfRecords) { }
         }
 
+        internal struct IterationCollisionTestFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
+        {
+            internal List<long> keys;
+            public IterationCollisionTestFunctions() => keys = new();
+
+            public unsafe bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            {
+                keys.Add(*(long*)key.ToPointer());
+                cursorRecordResult = CursorRecordResult.Accept; // default; not used here
+                return true;
+            }
+
+            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
+        }
+
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]

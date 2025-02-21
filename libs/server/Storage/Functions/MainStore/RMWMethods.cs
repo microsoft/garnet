@@ -174,7 +174,7 @@ namespace Garnet.server
                     throw new Exception();
 
                 case RespCommand.SETBIT:
-                    var bOffset = input.parseState.GetLong(0);
+                    var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
@@ -649,7 +649,7 @@ namespace Garnet.server
 
                 case RespCommand.SETBIT:
                     var v = value.ToPointer() + functionsState.etagState.etagSkippedStart;
-                    var bOffset = input.parseState.GetLong(0);
+                    var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     if (!BitmapManager.IsLargeEnough(functionsState.etagState.etagAccountedLength, bOffset)) return false;
@@ -1207,7 +1207,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETBIT:
-                    var bOffset = input.parseState.GetLong(0);
+                    var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValue.ToPointer(), newValue.Length, oldValue.Length);
                     var oldValSet = BitmapManager.UpdateBitmap(newValue.ToPointer(), bOffset, bSetVal);
