@@ -144,9 +144,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
+        public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
 
         /// <summary>
         /// Response strings
@@ -251,8 +253,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ETAG must be a numerical value greater than or equal to 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
+
 
         /// <summary>
         /// Response string templates
