@@ -137,10 +137,10 @@ namespace Garnet.server
                     {
                         recordInfo.SetHasETag();
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                        value.SetEtagInPayload(EtagConstants.BaseEtag + 1);
+                        value.SetEtagInPayload(EtagConstants.NoETag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
                         // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
-                        CopyRespNumber(EtagConstants.BaseEtag + 1, ref output);
+                        CopyRespNumber(EtagConstants.NoETag + 1, ref output);
                     }
 
                     break;
@@ -154,10 +154,10 @@ namespace Garnet.server
                     if (spaceForEtag != 0)
                     {
                         recordInfo.SetHasETag();
-                        value.SetEtagInPayload(EtagConstants.BaseEtag + 1);
+                        value.SetEtagInPayload(EtagConstants.NoETag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
                         // Copy initial etag to output
-                        CopyRespNumber(EtagConstants.BaseEtag + 1, ref output);
+                        CopyRespNumber(EtagConstants.NoETag + 1, ref output);
                     }
 
                     break;
