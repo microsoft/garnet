@@ -13,8 +13,12 @@ namespace Tsavorite.core
     {
         SystemState systemState;
         IStateMachine stateMachine;
-        List<SemaphoreSlim> waitingList;
+        readonly List<SemaphoreSlim> waitingList;
         SemaphoreSlim stateMachineCompleted;
+        // All threads have entered the given state
+        SemaphoreSlim waitForTransitionIn;
+        // All threads have exited the given state
+        SemaphoreSlim waitForTransitionOut;
 
         readonly LightEpoch epoch;
         readonly ILogger logger;
@@ -75,38 +79,67 @@ namespace Tsavorite.core
 
             var nextState = stateMachine.NextState(systemState, out var bumpEpoch);
 
-            if (bumpEpoch)
+            stateMachine.GlobalBeforeEnteringState(nextState, this);
+
+            // Write new phase
+            systemState.Word = nextState.Word;
+
+            // Release waiters for new phase
+            waitForTransitionOut.Release(int.MaxValue);
+
+            // Write new semaphore
+            waitForTransitionOut = new SemaphoreSlim(0);
+            waitForTransitionIn = new SemaphoreSlim(0);
+
+            logger?.LogTrace("Moved to {0}, {1}", nextState.Phase, nextState.Version);
+
+            Debug.Assert(!epoch.ThisInstanceProtected());
+            try
             {
-                Debug.Assert(!epoch.ThisInstanceProtected());
-                var waitForTransition = new SemaphoreSlim(0);
-                try
-                {
-                    epoch.Resume();
-                    epoch.BumpCurrentEpoch(() => MakeTransitionWorker(expectedState, nextState, waitForTransition));
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
-                waitingList.Add(waitForTransition);
+                epoch.Resume();
+                epoch.BumpCurrentEpoch(() => MakeTransitionWorker(nextState));
             }
-            else
+            finally
             {
-                MakeTransitionWorker(expectedState, nextState);
+                epoch.Suspend();
+            }
+            waitingList.Add(waitForTransitionIn);
+        }
+
+        /// <summary>
+        /// Wait for the state machine to change state out of currentState.
+        /// </summary>
+        /// <param name="currentState"></param>
+        /// <returns></returns>
+        public async Task WaitForStateChange(SystemState currentState)
+        {
+            var _waitForTransitionOut = waitForTransitionOut;
+            if (SystemState.Equal(currentState, systemState))
+            {
+                await _waitForTransitionOut.WaitAsync();
             }
         }
 
-        void MakeTransitionWorker(SystemState currentState, SystemState nextState, SemaphoreSlim onComplete = null)
+        /// <summary>
+        /// Wait for all thread participants to complete currentState.
+        /// </summary>
+        /// <param name="currentState"></param>
+        /// <returns></returns>
+        public async Task WaitForCompletion(SystemState currentState)
         {
-            stateMachine.GlobalBeforeEnteringState(nextState, this);
+            await WaitForStateChange(currentState);
+            currentState = systemState;
+            var _waitForTransitionIn = waitForTransitionIn;
+            if (SystemState.Equal(currentState, systemState))
+            {
+                await _waitForTransitionIn.WaitAsync();
+            }
+        }
 
-            Debug.Assert(SystemState.Equal(currentState, systemState));
-            systemState.Word = nextState.Word;
-            logger?.LogTrace("Moved to {0}, {1}", nextState.Phase, nextState.Version);
-
+        void MakeTransitionWorker(SystemState nextState)
+        {
             stateMachine.GlobalAfterEnteringState(nextState, this);
-
-            onComplete?.Release();
+            waitForTransitionIn.Release(int.MaxValue);
         }
 
         async Task ProcessWaitingListAsync(CancellationToken token = default)
@@ -133,7 +166,7 @@ namespace Tsavorite.core
                 var _stateMachineCompleted = stateMachineCompleted;
                 stateMachineCompleted = null;
                 _ = Interlocked.Exchange(ref stateMachine, null);
-                _stateMachineCompleted.Release();
+                _stateMachineCompleted.Release(int.MaxValue);
             }
         }
     }
