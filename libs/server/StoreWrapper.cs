@@ -35,39 +35,34 @@ namespace Garnet.server
         internal readonly long startupTime;
 
         /// <summary>
-        /// Reference to default database (DB 0)
-        /// </summary>
-        public ref GarnetDatabase DefaultDatabase => ref databases.Map[0];
-
-        /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => DefaultDatabase.MainStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
 
         /// <summary>
         /// Object store (of DB 0)
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => DefaultDatabase.ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
 
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog appendOnlyFile => DefaultDatabase.AppendOnlyFile;
+        public TsavoriteLog appendOnlyFile => databaseManager.AppendOnlyFile;
 
         /// <summary>
         /// Last save time (of DB 0)
         /// </summary>
-        public DateTimeOffset lastSaveTime => DefaultDatabase.LastSaveTime;
+        public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;
 
         /// <summary>
         /// Object store size tracker (of DB 0)
         /// </summary>
-        public CacheSizeTracker objectStoreSizeTracker => DefaultDatabase.ObjectStoreSizeTracker;
+        public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
 
         /// <summary>
         /// Version map (of DB 0)
         /// </summary>
-        internal WatchVersionMap versionMap => DefaultDatabase.VersionMap;
+        internal WatchVersionMap versionMap => databaseManager.VersionMap;
 
         /// <summary>
         /// Server options
@@ -115,19 +110,11 @@ namespace Garnet.server
         public readonly TimeSpan loggingFrequency;
 
         /// <summary>
-        /// Number of current logical databases
-        /// </summary>
-        public int DatabaseCount => activeDbIdsLength;
-
-        /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
         public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId, out string storeCheckpointDir, out string aofDir);
 
-        /// <summary>
-        /// Delegate for creating a new logical database
-        /// </summary>
-        internal readonly DatabaseCreatorDelegate createDatabasesDelegate;
+        internal readonly IDatabaseManager databaseManager;
 
         internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
@@ -142,41 +129,9 @@ namespace Garnet.server
 
         readonly CancellationTokenSource ctsCommit;
         SingleWriterMultiReaderLock checkpointTaskLock;
-        SingleWriterMultiReaderLock databasesLock;
 
         // True if this server supports more than one logical database
         readonly bool allowMultiDb;
-
-        // Map of databases by database ID (by default: of size 1, contains only DB 0)
-        private readonly ExpandableMap<GarnetDatabase> databases;
-
-        // Array containing active database IDs
-        int[] activeDbIds;
-
-        // Total number of current active database IDs
-        int activeDbIdsLength;
-
-        // Last DB ID activated
-        int lastActivatedDbId = -1;
-
-        // Reusable task array for tracking checkpointing of multiple DBs
-        // Used by recurring checkpointing task if multiple DBs exist
-        Task[] checkpointTasks;
-
-        // Reusable task array for tracking aof commits of multiple DBs
-        // Used by recurring aof commits task if multiple DBs exist
-        Task[] aofTasks;
-        readonly object activeDbIdsLock = new();
-
-        // Path of serialization for the DB IDs file used when committing / recovering to / from AOF
-        readonly string aofParentDir;
-
-        readonly string aofDirBaseName;
-
-        // Path of serialization for the DB IDs file used when committing / recovering to / from a checkpoint
-        readonly string checkpointParentDir;
-
-        readonly string checkpointDirBaseName;
 
         // True if StoreWrapper instance is disposed
         bool disposed = false;
@@ -218,30 +173,6 @@ namespace Garnet.server
 
             // If cluster mode is off and more than one database allowed multi-db mode is turned on
             this.allowMultiDb = !this.serverOptions.EnableCluster && this.serverOptions.MaxDatabases > 1;
-
-            // Create default databases map of size 1
-            databases = new ExpandableMap<GarnetDatabase>(1, 0, this.serverOptions.MaxDatabases - 1);
-
-            // Create default database of index 0 (unless specified otherwise)
-            if (createDefaultDatabase)
-            {
-                var db = createDatabasesDelegate(0, out var storeCheckpointDir, out var aofDir);
-
-                var checkpointDirInfo = new DirectoryInfo(storeCheckpointDir);
-                this.checkpointDirBaseName = checkpointDirInfo.Name;
-                this.checkpointParentDir = checkpointDirInfo.Parent!.FullName;
-
-                if (aofDir != null)
-                {
-                    var aofDirInfo = new DirectoryInfo(aofDir);
-                    this.aofDirBaseName = aofDirInfo.Name;
-                    this.aofParentDir = aofDirInfo.Parent!.FullName;
-                }
-
-                // Set new database in map
-                if (!this.TryAddDatabase(0, ref db))
-                    throw new GarnetException("Failed to set initial database in databases map");
-            }
 
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
@@ -341,20 +272,6 @@ namespace Garnet.server
             return localEndpoint.Address.ToString();
         }
 
-        internal FunctionsState CreateFunctionsState(int dbId = 0)
-        {
-            Debug.Assert(dbId == 0 || allowMultiDb);
-
-            if (dbId == 0)
-                return new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
-
-            if (!this.TryGetOrAddDatabase(dbId, out var db))
-                throw new GarnetException($"Database with ID {dbId} was not found.");
-
-            return new(db.AppendOnlyFile, db.VersionMap, customCommandManager, null, db.ObjectStoreSizeTracker,
-                GarnetObjectSerializer);
-        }
-
         internal void Recover()
         {
             if (serverOptions.EnableCluster)
@@ -400,22 +317,11 @@ namespace Garnet.server
                     }
 
                     if (storeVersion > 0 || objectStoreVersion > 0)
-                        DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                        databaseManager.UpdateDatabaseLastSaveTime();
                 }
                 else
                 {
-                    if (!allowMultiDb)
-                    {
-                        RecoverDatabaseCheckpoint(0);
-                    }
-                    else
-                    {
-                        if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out var dbIdsToRecover))
-                            return;
-
-                        foreach (var dbId in dbIdsToRecover)
-                            RecoverDatabaseCheckpoint(dbId);
-                    }
+                    databaseManager.RecoverCheckpoint();
                 }
             }
             catch (TsavoriteNoHybridLogException ex)
@@ -428,28 +334,6 @@ namespace Garnet.server
                 logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
                 if (serverOptions.FailOnRecoveryError)
                     throw;
-            }
-        }
-
-        private void RecoverDatabaseCheckpoint(int dbId)
-        {
-            long storeVersion = -1, objectStoreVersion = -1;
-
-            var success = TryGetOrAddDatabase(dbId, out var db);
-            Debug.Assert(success);
-
-            storeVersion = db.MainStore.Recover();
-            if (db.ObjectStore != null) objectStoreVersion = db.ObjectStore.Recover();
-
-            if (storeVersion > 0 || objectStoreVersion > 0)
-            {
-                var lastSave = DateTimeOffset.UtcNow;
-                db.LastSaveTime = lastSave;
-                if (dbId == 0)
-                    DefaultDatabase.LastSaveTime = lastSave;
-
-                var databasesMapSnapshot = databases.Map;
-                databasesMapSnapshot[dbId] = db;
             }
         }
 
@@ -470,17 +354,6 @@ namespace Garnet.server
                 foreach (var dbId in dbIdsToRecover)
                     RecoverDatabaseAOF(dbId);
             }
-        }
-
-        private void RecoverDatabaseAOF(int dbId)
-        {
-            var success = TryGetOrAddDatabase(dbId, out var db);
-            Debug.Assert(success);
-
-            if (db.AppendOnlyFile == null) return;
-
-            db.AppendOnlyFile.Recover();
-            logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
         }
 
         /// <summary>
@@ -554,40 +427,6 @@ namespace Garnet.server
             }
 
             return replicationOffset;
-        }
-
-        /// <summary>
-        /// Try to add a new database
-        /// </summary>
-        /// <param name="dbId">Database ID</param>
-        /// <param name="db">Database</param>
-        /// <returns></returns>
-        public bool TryAddDatabase(int dbId, ref GarnetDatabase db)
-        {
-            if ((!allowMultiDb && dbId != 0) || !databases.TrySetValue(dbId, ref db))
-                return false;
-
-            HandleDatabaseAdded(dbId);
-            return true;
-        }
-
-        /// <summary>
-        /// Try to get or add a new database
-        /// </summary>
-        /// <param name="dbId">Database ID</param>
-        /// <param name="db">Database</param>
-        /// <returns>True if database was retrieved or added successfully</returns>
-        public bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db)
-        {
-            db = default;
-
-            if ((!allowMultiDb && dbId != 0) || !databases.TryGetOrSet(dbId, () => createDatabasesDelegate(dbId, out _, out _), out db, out var added))
-                return false;
-
-            if (added)
-                HandleDatabaseAdded(dbId);
-
-            return true;
         }
 
         /// <summary>
@@ -1293,14 +1132,6 @@ namespace Garnet.server
             monitor?.Dispose();
             ctsCommit?.Cancel();
 
-            while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)
-                Thread.Yield();
-
-            // Disable changes to databases map and dispose all databases
-            databases.mapLock.WriteLock();
-            foreach (var db in databases.Map)
-                db.Dispose();
-
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
         }
@@ -1734,95 +1565,6 @@ namespace Garnet.server
                     recordToAof ? db.AofDevice : null, recordToAof ? db.AppendOnlyFile : null,
                     db.MainStoreIndexMaxedOut, db.ObjectStoreIndexMaxedOut);
                 this.TryAddDatabase(dbId, ref dbCopy);
-            }
-        }
-
-        /// <summary>
-        /// Retrieves saved database IDs from parent checkpoint / AOF path
-        /// e.g. if path contains directories: baseName, baseName_1, baseName_2, baseName_10
-        /// DB IDs 0,1,2,10 will be returned
-        /// </summary>
-        /// <param name="path">Parent path</param>
-        /// <param name="baseName">Base name of directories containing database-specific checkpoints / AOFs</param>
-        /// <param name="dbIds">DB IDs extracted from parent path</param>
-        /// <returns>True if successful</returns>
-        private bool TryGetSavedDatabaseIds(string path, string baseName, out int[] dbIds)
-        {
-            dbIds = default;
-            if (!Directory.Exists(path)) return false;
-
-            try
-            {
-                var dirs = Directory.GetDirectories(path, $"{baseName}*", SearchOption.TopDirectoryOnly);
-                dbIds = new int[dirs.Length];
-                for (var i = 0; i < dirs.Length; i++)
-                {
-                    var dirName = new DirectoryInfo(dirs[i]).Name;
-                    var sepIdx = dirName.IndexOf('_');
-                    var dbId = 0;
-
-                    if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out dbId))
-                        continue;
-
-                    dbIds[i] = dbId;
-                }
-
-                return true;
-            }
-            catch (Exception e)
-            {
-                logger?.LogError(e, "Encountered an error while trying to parse save databases IDs.");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Handle a new database added
-        /// </summary>
-        /// <param name="dbId">ID of database added</param>
-        private void HandleDatabaseAdded(int dbId)
-        {
-            // If size tracker exists and is stopped, start it (only if DB 0 size tracker is started as well)
-            var db = databases.Map[dbId];
-            if (dbId != 0 && objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped &&
-                db.ObjectStoreSizeTracker != null && db.ObjectStoreSizeTracker.Stopped)
-                db.ObjectStoreSizeTracker.Start(ctsCommit.Token);
-
-            var dbIdIdx = Interlocked.Increment(ref lastActivatedDbId);
-
-            // If there is no size increase needed for activeDbIds, set the added ID in the array
-            if (activeDbIds != null && dbIdIdx < activeDbIds.Length)
-            {
-                activeDbIds[dbIdIdx] = dbId;
-                Interlocked.Increment(ref activeDbIdsLength);
-                return;
-            }
-
-            lock (activeDbIdsLock)
-            {
-                // Select the next size of activeDbIds (as multiple of 2 from the existing size)
-                var newSize = activeDbIds?.Length ?? 1;
-                while (dbIdIdx + 1 > newSize)
-                {
-                    newSize = Math.Min(this.serverOptions.MaxDatabases, newSize * 2);
-                }
-
-                // Set an updated instance of activeDbIds
-                var activeDbIdsSnapshot = activeDbIds;
-                var activeDbIdsUpdated = new int[newSize];
-
-                if (activeDbIdsSnapshot != null)
-                {
-                    Array.Copy(activeDbIdsSnapshot, activeDbIdsUpdated, dbIdIdx);
-                }
-
-                // Set the last added ID
-                activeDbIdsUpdated[dbIdIdx] = dbId;
-
-                activeDbIds = activeDbIdsUpdated;
-                activeDbIdsLength = dbIdIdx + 1;
-                checkpointTasks = new Task[activeDbIdsLength];
-                aofTasks = new Task[activeDbIdsLength];
             }
         }
     }
