@@ -207,11 +207,21 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
+                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs,
+                                                value.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                                value.Length - functionsState.etagState.etagSkippedStart);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                    return;
+
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    var retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO,
+                                                value.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                                value.Length - functionsState.etagState.etagSkippedStart);
+                    CopyRespNumber(retValue_RO, ref dst);
                     return;
 
                 case RespCommand.PFCOUNT:
@@ -756,11 +766,11 @@ namespace Garnet.server
             // Get secondary command. Legal commands: GET, SET & INCRBY.
             var cmd = RespCommand.NONE;
             var sbCmd = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-            if (sbCmd.EqualsUpperCaseSpanIgnoringCase("GET"u8))
+            if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 cmd = RespCommand.GET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("SET"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SET))
                 cmd = RespCommand.SET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INCRBY))
                 cmd = RespCommand.INCRBY;
 
             var encodingArg = input.parseState.GetString(currTokenIdx++);

@@ -140,6 +140,78 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Parse bit field ENCODING slice from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="encodingSlice">Parsed slice</param>
+        /// <returns></returns>
+        internal static unsafe bool TryGetBitfieldEncoding(this SessionParseState parseState, int idx, out ArgSlice encodingSlice)
+        {
+            if (idx >= parseState.Count)
+            {
+                encodingSlice = default;
+                return false;
+            }
+
+            encodingSlice = parseState.GetArgSliceByRef(idx);
+
+            if (encodingSlice.length <= 1)
+                return false;
+
+            var ptr = encodingSlice.ptr + 1;
+
+            return
+                RespReadUtils.TryReadInt64Safe(ref ptr, encodingSlice.ptr + encodingSlice.length,
+                                           out var bitCount, out var bytesRead,
+                                           out _, out _, allowLeadingZeros: false) &&
+                ((int)bytesRead == encodingSlice.length - 1) && (bytesRead > 0L) &&
+                (bitCount > 0) &&
+                ((*encodingSlice.ptr == 'i' && bitCount <= 64) ||
+                 (*encodingSlice.ptr == 'u' && bitCount < 64));
+        }
+
+        /// <summary>
+        /// Parse bit field OFFSET slice from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="offsetSlice">Parsed slice</param>
+        /// <returns></returns>
+        internal static unsafe bool TryGetBitfieldOffset(this SessionParseState parseState, int idx, out ArgSlice offsetSlice)
+        {
+            if (idx >= parseState.Count)
+            {
+                offsetSlice = default;
+                return false;
+            }
+
+            offsetSlice = parseState.GetArgSliceByRef(idx);
+
+            if (offsetSlice.Length <= 0)
+                return false;
+
+            var ptr = offsetSlice.ptr;
+            var len = offsetSlice.length;
+
+            if (*ptr == '#')
+            {
+                if (offsetSlice.length == 1)
+                    return false;
+
+                ptr++;
+                len--;
+            }
+
+            return
+                RespReadUtils.TryReadInt64Safe(ref ptr, offsetSlice.ptr + offsetSlice.length,
+                                           out var bitFieldOffset, out var bytesRead,
+                                           out _, out _, allowLeadingZeros: false) &&
+                ((int)bytesRead == len) && (bytesRead > 0L) &&
+                (bitFieldOffset >= 0);
+        }
+
+        /// <summary>
         /// Parse manager type from parse state at specified index
         /// </summary>
         /// <param name="parseState">The parse state</param>
