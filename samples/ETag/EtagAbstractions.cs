@@ -108,7 +108,7 @@ public static class ETagAbstractions
         // You may notice the "!" that is because we know that SETIFMATCH doesn't return null
         RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedItem, etag))!;
 
-        T? deserializedItem = res[1].IsNull ? default(T) : 
+        T? deserializedItem = res[1].IsNull ? default(T) :
             JsonSerializer.Deserialize<T>((string)res[1]!)!;
 
         return (false, (long)res[0], deserializedItem);
