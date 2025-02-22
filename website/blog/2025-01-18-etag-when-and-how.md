@@ -6,7 +6,7 @@ tags: [garnet, concurrency, caching, lock-free, etags]
 ---
 
 **Garnet recently announced native support for ETag-based commands.**  
-ETags are a powerful feature that enable techniques such as **Optimistic Concurrency Control**, **more efficient network bandwidth utilization for caching**, and **keeping cache consistent with the database.**
+ETags are a powerful feature that enable techniques such as **Optimistic Concurrency Control**, **more efficient network bandwidth utilization for caching**, and **keeping your cache consistent with the database.**
 
 Currently, Garnet provides ETags as raw strings. This feature is available without requiring any migration, allowing your existing key-value pairs to start leveraging ETags immediately without impacting performance metrics.  
 You can find the [ETag API documentation here](/docs/commands/garnet-specific-commands#native-etag-support).
@@ -252,4 +252,4 @@ In a read-heavy system where contention is not high on the same key this update 
 
 ---
 
-ETags are not a silver bullet. However, in low contention scenarios, they reduce transaction overhead and network bandwidth usage, offering a lightweight alternative to traditional locking mechanisms.
+ETags are more of a lower level primitives that you can use to build abstractions that let you build logical clocks, and lock free transactions tailored to your needs. If you find yourself in the above commonly found distributed scenarios, you now have another tool in your toolbag to help overcome your scaling needs.
