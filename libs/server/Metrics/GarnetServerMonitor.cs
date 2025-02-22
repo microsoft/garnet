@@ -188,8 +188,8 @@ namespace Garnet.server
                     session.GetSessionMetrics.Reset();
                 }
 
-                garnetServer.reset_conn_recv();
-                garnetServer.reset_conn_disp();
+                garnetServer.ResetConnectionsReceived();
+                garnetServer.ResetConnectionsDiposed();
 
                 storeWrapper.clusterProvider?.ResetGossipStats();
 
@@ -256,8 +256,9 @@ namespace Garnet.server
                     monitor_iterations++;
 
                     var garnetServer = ((GarnetServerBase)server);
-                    globalMetrics.total_connections_received = garnetServer.get_conn_recv();
-                    globalMetrics.total_connections_disposed = garnetServer.get_conn_disp();
+                    globalMetrics.total_connections_received = garnetServer.TotalConnectionsReceived;
+                    globalMetrics.total_connections_disposed = garnetServer.TotalConnectionsDisposed;
+                    globalMetrics.total_connections_active = garnetServer.get_conn_active();
 
                     UpdateInstantaneousMetrics();
                     UpdateAllMetricsHistory();

@@ -68,32 +68,32 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
             sizeChange = 0;
-            removeKey = false;
 
             switch (input.header.cmd)
             {
                 // Scan Command
                 case RespCommand.COSCAN:
-                    if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                            out var patternLength, out var limitCount, out bool _, out var error))
+                    if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
+                            out var patternLength, out var limitCount, out _, out var error))
                     {
                         Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                             patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
                     }
                     else
                     {
-                        ObjectUtils.WriteScanError(error, ref output);
+                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
                     }
                     break;
                 default:
                     if ((byte)input.header.type != this.type)
                     {
                         // Indicates an incorrect type of key
-                        output.Length = 0;
+                        output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                        output.SpanByteAndMemory.Length = 0;
                         return true;
                     }
                     break;

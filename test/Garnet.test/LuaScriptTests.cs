@@ -2,8 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -13,29 +16,35 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     // Limits chosen here to allow completion - if you have to bump them up, consider that you might have introduced a regression
-    [TestFixture(LuaMemoryManagementMode.Native, "")]
-    [TestFixture(LuaMemoryManagementMode.Tracked, "")]
-    [TestFixture(LuaMemoryManagementMode.Tracked, "13m")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "15m")]
+    [TestFixture(LuaMemoryManagementMode.Native, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Native, "", "00:00:02")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "15m", "")]
     public class LuaScriptTests
     {
         private readonly LuaMemoryManagementMode allocMode;
         private readonly string limitBytes;
+        private readonly string limitTimeout;
 
         protected GarnetServer server;
 
-        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes)
+        public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
             this.allocMode = allocMode;
             this.limitBytes = limitBytes;
+            this.limitTimeout = limitTimeout;
         }
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes);
+
+            TimeSpan? timeout = string.IsNullOrEmpty(limitTimeout) ? null : TimeSpan.ParseExact(limitTimeout, "c", CultureInfo.InvariantCulture);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes, luaTimeout: timeout);
             server.Start();
         }
 
@@ -276,7 +285,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+            var server = redis.GetServer(TestUtils.EndPoint);
 
             // Load a script in the memory
             var script = "return 1;";
@@ -297,7 +306,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var extendedCharsScript = "return '僕'";
 
-            var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+            var server = redis.GetServer(TestUtils.EndPoint);
             var scriptSha = server.ScriptLoad(extendedCharsScript);
             var result = redis.GetDatabase(0).ScriptEvaluate(scriptSha);
             ClassicAssert.AreNotEqual("僕", result);
@@ -837,6 +846,349 @@ return foo";
             // We can still run the script without issue (with non-crashing args) afterwards
             var res = db.ScriptEvaluate(loadedScriptOOM, new { Ctrl = "Safe" });
             ClassicAssert.AreEqual("abcdefghijklmnopqrstuvwxyz", (string)res);
+        }
+
+        [Test]
+        public void Issue939()
+        {
+            // See: https://github.com/microsoft/garnet/issues/939
+            const string Script = @"
+local retArray = {}
+local lockValue = ''
+local writeLockValue = redis.call('GET',@LockName)
+if writeLockValue ~= false then
+    lockValue = writeLockValue
+end
+retArray[1] = lockValue
+if lockValue == '' then 
+    retArray[2] = redis.call('GET',@CollectionName) 
+else 
+    retArray[2] = ''
+end
+
+local SessionTimeout = redis.call('GET', @TimeoutName)
+if SessionTimeout ~= false then
+    retArray[3] = SessionTimeout
+    redis.call('EXPIRE',@CollectionName, SessionTimeout)
+    redis.call('EXPIRE',@TimeoutName, SessionTimeout)
+else
+    retArray[3] = '-1'
+end
+
+return retArray";
+
+            const string LockName = "{/hello}-lockname";
+            const string CollectionName = "{/hello}-collectionName";
+            const string TimeoutName = "{/hello}-sessionTimeout";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var preparedScript = LuaScript.Prepare(Script);
+
+            // 8 combos, keys presents or not for all 8
+
+            Span<bool> present = [true, false];
+
+            foreach (var lockSet in present)
+            {
+                foreach (var colSet in present)
+                {
+                    foreach (var sessionSet in present)
+                    {
+                        if (lockSet)
+                        {
+                            ClassicAssert.True(db.StringSet(LockName, "present"));
+                        }
+                        else
+                        {
+                            _ = db.KeyDelete(LockName);
+                        }
+
+                        if (colSet)
+                        {
+                            ClassicAssert.True(db.StringSet(CollectionName, "present"));
+                        }
+                        else
+                        {
+                            _ = db.KeyDelete(CollectionName);
+                        }
+
+                        if (sessionSet)
+                        {
+                            ClassicAssert.True(db.StringSet(TimeoutName, "123456"));
+                        }
+                        else
+                        {
+                            _ = db.KeyDelete(TimeoutName);
+                        }
+
+                        var res = (RedisResult[])db.ScriptEvaluate(preparedScript, new { LockName, CollectionName, TimeoutName });
+                        ClassicAssert.AreEqual(3, res.Length);
+                    }
+                }
+            }
+
+            // Finally, check that nil is an illegal argument
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
+            ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
+        }
+
+        [Test]
+        public void LuaToResp2Conversions()
+        {
+            // Per: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+            //
+            // Number -> Integer
+            // String -> Bulk String
+            // Table -> Array
+            // False -> Null Bulk
+            // True -> Integer 1
+            // Float -> Integer
+            // Table with nil key -> Array (truncated at first nil)
+            // Table with string keys -> Array (string keys excluded)
+            //
+            // Nil is unspecified, but experimentally is mapped to Null Bulk
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var numberRes = db.ScriptEvaluate("return 1");
+            ClassicAssert.AreEqual(ResultType.Integer, numberRes.Resp2Type);
+
+            var stringRes = db.ScriptEvaluate("return 'hello'");
+            ClassicAssert.AreEqual(ResultType.BulkString, stringRes.Resp2Type);
+
+            var tableRes = db.ScriptEvaluate("return { 0, 1, 2 }");
+            ClassicAssert.AreEqual(ResultType.Array, tableRes.Resp2Type);
+            ClassicAssert.AreEqual(3, ((int[])tableRes).Length);
+
+            var falseRes = db.ScriptEvaluate("return false");
+            ClassicAssert.AreEqual(ResultType.BulkString, falseRes.Resp2Type);
+            ClassicAssert.True(falseRes.IsNull);
+
+            var trueRes = db.ScriptEvaluate("return true");
+            ClassicAssert.AreEqual(ResultType.Integer, trueRes.Resp2Type);
+            ClassicAssert.AreEqual(1, (int)trueRes);
+
+            var floatRes = db.ScriptEvaluate("return 3.7");
+            ClassicAssert.AreEqual(ResultType.Integer, floatRes.Resp2Type);
+            ClassicAssert.AreEqual(3, (int)floatRes);
+
+            var tableNilRes = db.ScriptEvaluate("return { 0, 1, nil, 2 }");
+            ClassicAssert.AreEqual(ResultType.Array, tableNilRes.Resp2Type);
+            ClassicAssert.AreEqual(2, ((int[])tableNilRes).Length);
+
+            var tableStringRes = db.ScriptEvaluate("local x = { 0, 1 }; x['y'] = 'hello'; return x");
+            ClassicAssert.AreEqual(ResultType.Array, tableStringRes.Resp2Type);
+            ClassicAssert.AreEqual(2, ((int[])tableStringRes).Length);
+
+            var nilRes = db.ScriptEvaluate("return nil");
+            ClassicAssert.AreEqual(ResultType.BulkString, nilRes.Resp2Type);
+            ClassicAssert.True(nilRes.IsNull);
+        }
+
+        [Test]
+        public void Resp2ToLuaConversions()
+        {
+            // Per: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#resp2-to-lua-type-conversion
+            //
+            // Integer -> Number
+            // Bulk String -> String
+            // Array -> Table
+            // Simple String -> Table with ok field
+            // Error reply -> Table with err field
+            // Null bulk -> false
+            // Null multibulk -> false
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var integerRes = db.ScriptEvaluate("local res = redis.call('INCR', KEYS[1]); return type(res);", [(RedisKey)"foo"]);
+            ClassicAssert.AreEqual("number", (string)integerRes);
+
+            _ = db.StringSet("hello", "world");
+            var bulkStringRes = db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return type(res);", [(RedisKey)"hello"]);
+            ClassicAssert.AreEqual("string", (string)bulkStringRes);
+
+            _ = db.ListLeftPush("fizz", "buzz");
+            var arrayRes = db.ScriptEvaluate("local res = redis.call('LRANGE', KEYS[1], '0', '1'); return type(res);", [(RedisKey)"fizz"]);
+            ClassicAssert.AreEqual("table", (string)arrayRes);
+
+            var simpleStringRes = (string[])db.ScriptEvaluate("local res = redis.call('PING'); return { type(res), res.ok };");
+            ClassicAssert.AreEqual(2, simpleStringRes.Length);
+            ClassicAssert.AreEqual("table", simpleStringRes[0]);
+            ClassicAssert.AreEqual("PONG", simpleStringRes[1]);
+
+            // TODO: ERR reply - requires redis.pcall
+
+            var nullBulkRes = (string[])db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
+            ClassicAssert.AreEqual(2, nullBulkRes.Length);
+            ClassicAssert.AreEqual("boolean", nullBulkRes[0]);
+            ClassicAssert.AreEqual("false", nullBulkRes[1]);
+
+            // Since GET is special cased, use a different nil responding command to test that path
+            var nullBulk2Res = (string[])db.ScriptEvaluate("local res = redis.call('HGET', KEYS[1], ARGV[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"], [(RedisValue)"never-ever"]);
+            ClassicAssert.AreEqual(2, nullBulk2Res.Length);
+            ClassicAssert.AreEqual("boolean", nullBulk2Res[0]);
+            ClassicAssert.AreEqual("false", nullBulk2Res[1]);
+
+            var nullMultiBulk = (string[])db.ScriptEvaluate("local res = redis.call('BLPOP', KEYS[1], '1'); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
+            ClassicAssert.AreEqual(2, nullMultiBulk.Length);
+            ClassicAssert.AreEqual("boolean", nullMultiBulk[0]);
+            ClassicAssert.AreEqual("false", nullMultiBulk[1]);
+        }
+
+        [Test]
+        public void NoScriptCommandsForbidden()
+        {
+            ClassicAssert.True(RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true));
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            foreach (var (cmd, _) in allCommands.Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript)))
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"redis.call('{cmd}')"));
+                ClassicAssert.True(exc.Message.StartsWith("ERR This Redis command is not allowed from script"), $"Allowed NoScript command: {cmd}");
+            }
+        }
+
+        [Test]
+        public void IntentionalTimeout()
+        {
+            const string TimeoutScript = @"
+local count = 0
+
+if @Ctrl == 'Timeout' then
+    while true do
+        count = count + 1
+    end
+end
+
+return count";
+
+            if (string.IsNullOrEmpty(limitTimeout))
+            {
+                ClassicAssert.Ignore("No timeout enabled");
+                return;
+            }
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase();
+
+            var scriptTimeout = LuaScript.Prepare(TimeoutScript);
+            var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
+
+            // Timeout actually happens and is reported
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Timeout" }));
+            ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+
+            // We can still run the script without issue (with non-crashing args) afterwards
+            var res = db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Safe" });
+            ClassicAssert.AreEqual(0, (int)res);
+        }
+
+        [Test]
+        [Ignore("Long running, disabled by default")]
+        public void StressTimeouts()
+        {
+            // Psuedo-repeatably random
+            const int SEED = 2025_01_30_00;
+
+            const int DurationMS = 60 * 60 * 1_000;
+            const int ThreadCount = 16;
+            const string TimeoutScript = @"
+local count = 0
+
+if @Ctrl == 'Timeout' then
+    while true do
+        count = count + 1
+    end
+end
+
+return count";
+
+            if (string.IsNullOrEmpty(limitTimeout))
+            {
+                ClassicAssert.Ignore("No timeout enabled");
+                return;
+            }
+
+            using var startStress = new SemaphoreSlim(0, ThreadCount);
+
+            var threads = new Thread[ThreadCount];
+            for (var i = 0; i < threads.Length; i++)
+            {
+                using var threadStarted = new SemaphoreSlim(0, 1);
+
+                var rand = new Random(SEED + i);
+                threads[i] =
+                    new Thread(
+                        () =>
+                        {
+                            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                            var db = redis.GetDatabase();
+
+                            var scriptTimeout = LuaScript.Prepare(TimeoutScript);
+                            var loadedScriptTimeout = scriptTimeout.Load(redis.GetServers()[0]);
+
+                            var timeout = new { Ctrl = "Timeout" };
+                            var safe = new { Ctrl = "Safe" };
+
+                            _ = threadStarted.Release();
+
+                            startStress.Wait();
+
+                            var sw = Stopwatch.StartNew();
+                            while (sw.ElapsedMilliseconds < DurationMS)
+                            {
+                                var roll = rand.Next(10);
+                                if (roll == 0)
+                                {
+                                    var subRoll = rand.Next(5);
+                                    if (subRoll == 0)
+                                    {
+                                        // Even more rarely, flush the script cache
+                                        var res = db.Execute("SCRIPT", "FLUSH");
+                                        ClassicAssert.AreEqual("OK", (string)res);
+                                    }
+                                    else
+                                    {
+                                        // Periodically cause a timeout
+                                        var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(loadedScriptTimeout, timeout));
+                                        ClassicAssert.AreEqual("ERR Lua script exceeded configured timeout", exc.Message);
+                                    }
+                                }
+                                else
+                                {
+                                    // ... but most of time, succeed
+                                    var res = db.ScriptEvaluate(loadedScriptTimeout, safe);
+                                    ClassicAssert.AreEqual(0, (int)res);
+                                }
+                            }
+                        }
+                    )
+                    {
+                        Name = $"{nameof(StressTimeouts)} #{i}",
+                        IsBackground = true,
+                    };
+
+                threads[i].Start();
+                threadStarted.Wait();
+            }
+
+            // Start threads, and wait from them to complete
+            _ = startStress.Release(ThreadCount);
+            var sw = Stopwatch.StartNew();
+
+            const int FinalTimeout = DurationMS + 60 * 1_000;
+
+            foreach (var thread in threads)
+            {
+                var timeout = thread.Join((int)(FinalTimeout - sw.ElapsedMilliseconds));
+                ClassicAssert.True(timeout, "Thread did not exit in expected time");
+            }
         }
     }
 }

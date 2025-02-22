@@ -76,7 +76,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNAME](client.md#client-setname) | ➕ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
-|  | UNBLOCK | ➖ |  |
+|  | [UNBLOCK](client.md#client-unblock) | ➖ |  |
 |  | UNPAUSE | ➖ |  |
 | <span id="cluster">**CLUSTER**</span> | [ADDSLOTS](cluster.md#cluster-addslots) | ➕ |  |
 |  | [ADDSLOTSRANGE](cluster.md#cluster-addslotsrange) | ➕ |  |
@@ -125,13 +125,13 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="functions">**FUNCTIONS**</span> | FCALL | ➖ |  |
 |  | FCALL_RO | ➖ |  |
 |  | DELETE | ➖ |
-|  | DUMP | ➖ |
+|  | DUMP | ➖ |  |
 |  | FLUSH | ➖ |
 |  | HELP | ➖ |
 |  | KILL | ➖ |
 |  | LIST | ➖ |
 |  | LOAD | ➖ |
-|  | RESTORE | ➖ |
+|  | RESTORE | ➖ |  |
 |  | STATS | ➖ |
 | <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
@@ -141,7 +141,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
 |  | [RENAMENX](generic-commands.md#renamenx) | ➕ |  |
-|  | RESTORE | ➖ |  |
+|  | [RESTORE](generic-commands.md#restore) | ➕ |
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
 |  | SORT | ➖ |  |
 |  | SORT_RO | ➖ |  |
@@ -193,7 +193,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | PFSELFTEST | ➖ | Internal command |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
 |  | [DEL](generic-commands.md#del) | ➕ |  |
-|  | DUMP | ➖ |  |
+|  | [DUMP](generic-commands.md#dump) | ➕ |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
 |  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
@@ -277,7 +277,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | CONFIG REWRITE | ➖ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |
 |  | [DBSIZE](server.md#dbsize) | ➕ |  |
-|  | DEBUG | ➖ | Internal command |
+|  | [DEBUG](server.md#debug) | ➕ | Internal command |
 |  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
@@ -287,7 +287,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |
 |  | RESTORE-ASKING | ➖ |  |
-|  | ROLE | ➖ |  |
+|  | [ROLE](server.md#role) | ➕ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
 |  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |
@@ -314,13 +314,13 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
 |  | SUNSUBSCRIBE | ➖ |  |
-| <span id="sorted-set">**SLOWLOG**</span> | GET | ➖ |  |
-|  | HELP | ➖ |  |
-|  | LEN | ➖ |  |
-|  | RESET | ➖ |  |
-| <span id="sorted-set">**SORTED SET**</span> | BZMPOP | ➖ |  |
-|  | BZPOPMAX | ➖ |  |
-|  | BZPOPMIN | ➖ |  |
+| <span id="sorted-set">**SLOWLOG**</span> | GET | ➕ |  |
+|  | HELP | ➕ |  |
+|  | LEN | ➕ |  |
+|  | RESET | ➕ |  |
+| <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](data-structures.md#bzmpop) | ➕ |  |
+|  | [BZPOPMAX](data-structures.md#bzpopmax) | ➕ |  |
+|  | [BZPOPMIN](data-structures.md#bzpopmin) | ➕ |  |
 |  | [ZADD](data-structures.md#zadd) | ➕ |  |
 |  | [ZCARD](data-structures.md#zcard) | ➕ |  |
 |  | [ZCOUNT](data-structures.md#zcount) | ➕ |  |
@@ -397,7 +397,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNX](raw-string.md#setnx) | ➕ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | [SUBSTR](raw-string.md#substr) | ➖ | (Deprecated) |
+|  | [SUBSTR](raw-string.md#substr) | ➕ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |

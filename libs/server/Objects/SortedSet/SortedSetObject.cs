@@ -27,17 +27,12 @@ namespace Garnet.server
         ZINCRBY,
         ZRANK,
         ZRANGE,
-        ZRANGEBYSCORE,
-        ZRANGESTORE,
         GEOADD,
         GEOHASH,
         GEODIST,
         GEOPOS,
         GEOSEARCH,
         GEOSEARCHSTORE,
-        ZREVRANGE,
-        ZREVRANGEBYLEX,
-        ZREVRANGEBYSCORE,
         ZREVRANK,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -48,6 +43,38 @@ namespace Garnet.server
         ZDIFF,
         ZSCAN,
         ZMSCORE
+    }
+
+    /// <summary>
+    /// Options for specifying the range in sorted set operations.
+    /// </summary>
+    [Flags]
+    public enum SortedSetRangeOpts : byte
+    {
+        /// <summary>
+        /// No options specified.
+        /// </summary>
+        None = 0,
+        /// <summary>
+        /// Range by score.
+        /// </summary>
+        ByScore = 1,
+        /// <summary>
+        /// Range by lexicographical order.
+        /// </summary>
+        ByLex = 1 << 1,
+        /// <summary>
+        /// Reverse the range order.
+        /// </summary>
+        Reverse = 1 << 2,
+        /// <summary>
+        /// Store the result.
+        /// </summary>
+        Store = 1 << 3,
+        /// <summary>
+        /// Include scores in the result.
+        /// </summary>
+        WithScores = 1 << 4
     }
 
     [Flags]
@@ -212,17 +239,18 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SortedSetObject(sortedSet, sortedSetDict, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
-            fixed (byte* outputSpan = output.SpanByte.AsSpan())
+            sizeChange = 0;
+
+            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
             {
                 var header = input.header;
                 if (header.type != GarnetObjectType.SortedSet)
                 {
                     // Indicates an incorrect type of key
-                    output.Length = 0;
-                    sizeChange = 0;
-                    removeKey = false;
+                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                    output.SpanByteAndMemory.Length = 0;
                     return true;
                 }
 
@@ -231,7 +259,7 @@ namespace Garnet.server
                 switch (op)
                 {
                     case SortedSetOperation.ZADD:
-                        SortedSetAdd(ref input, ref output);
+                        SortedSetAdd(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZREM:
                         SortedSetRemove(ref input, outputSpan);
@@ -240,94 +268,86 @@ namespace Garnet.server
                         SortedSetLength(outputSpan);
                         break;
                     case SortedSetOperation.ZPOPMAX:
-                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
+                        SortedSetPopMinOrMaxCount(ref input, ref output.SpanByteAndMemory, op);
                         break;
                     case SortedSetOperation.ZSCORE:
-                        SortedSetScore(ref input, ref output);
+                        SortedSetScore(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZMSCORE:
-                        SortedSetScores(ref input, ref output);
+                        SortedSetScores(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZCOUNT:
-                        SortedSetCount(ref input, ref output);
+                        SortedSetCount(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZINCRBY:
-                        SortedSetIncrement(ref input, ref output);
+                        SortedSetIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZRANK:
-                        SortedSetRank(ref input, ref output);
-                        break;
-                    case SortedSetOperation.ZRANGE:
-                    case SortedSetOperation.ZRANGESTORE:
-                        SortedSetRange(ref input, ref output);
-                        break;
-                    case SortedSetOperation.ZRANGEBYSCORE:
-                        SortedSetRange(ref input, ref output);
+                        SortedSetRank(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(ref input, ref output);
+                        GeoAdd(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEOHASH:
-                        GeoHash(ref input, ref output);
+                        GeoHash(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEODIST:
-                        GeoDistance(ref input, ref output);
+                        GeoDistance(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEOPOS:
-                        GeoPosition(ref input, ref output);
+                        GeoPosition(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEOSEARCH:
                     case SortedSetOperation.GEOSEARCHSTORE:
-                        GeoSearch(ref input, ref output);
+                        GeoSearch(ref input, ref output.SpanByteAndMemory);
                         break;
-                    case SortedSetOperation.ZREVRANGE:
-                        SortedSetRange(ref input, ref output);
-                        break;
-                    case SortedSetOperation.ZREVRANGEBYLEX:
-                    case SortedSetOperation.ZREVRANGEBYSCORE:
-                        SortedSetRange(ref input, ref output);
+                    case SortedSetOperation.ZRANGE:
+                        SortedSetRange(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZREVRANK:
-                        SortedSetRank(ref input, ref output, ascending: false);
+                        SortedSetRank(ref input, ref output.SpanByteAndMemory, ascending: false);
                         break;
                     case SortedSetOperation.ZREMRANGEBYLEX:
                         SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZREMRANGEBYRANK:
-                        SortedSetRemoveRangeByRank(ref input, ref output);
+                        SortedSetRemoveRangeByRank(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZREMRANGEBYSCORE:
-                        SortedSetRemoveRangeByScore(ref input, ref output);
+                        SortedSetRemoveRangeByScore(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZLEXCOUNT:
                         SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZPOPMIN:
-                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
+                        SortedSetPopMinOrMaxCount(ref input, ref output.SpanByteAndMemory, op);
                         break;
                     case SortedSetOperation.ZRANDMEMBER:
-                        SortedSetRandomMember(ref input, ref output);
+                        SortedSetRandomMember(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                        if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
                                 out var patternLength, out var limitCount, out var _, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
                         }
                         else
                         {
-                            ObjectUtils.WriteScanError(error, ref output);
+                            ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
                         }
                         break;
                     default:
                         throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
                 }
+
                 sizeChange = this.Size - prevSize;
             }
 
-            removeKey = sortedSetDict.Count == 0;
+            if (sortedSetDict.Count == 0)
+                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+
             return true;
         }
 

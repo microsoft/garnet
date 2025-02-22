@@ -85,6 +85,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual("Tsavorite", r);
         }
 
+        // Covers the fix of #954.
+        [Test]
+        public void CanFieldPersistAndGetTimeToLive()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "user:user1";
+            var field = "field1";
+
+            db.HashSet(key, [new HashEntry(field, "v1")]);
+            db.HashFieldExpire(key, [field], TimeSpan.FromHours(1));
+            db.HashFieldPersist(key, [field]);
+            var ttl = db.HashFieldGetTimeToLive(key, [field]);
+            ClassicAssert.AreEqual(-1, ttl[0]);
+        }
+
         [Test]
         public void CanSetAndGetOnePairLarge()
         {
@@ -1014,26 +1030,26 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "3", "field1", "field5", "nonexistfield");
+            var result = db.Execute("HEXPIRE", "myhash", "4", "FIELDS", "3", "field1", "field5", "nonexistfield");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(3, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            result = db.Execute("HPEXPIRE", "myhash", "3000", "FIELDS", "2", "field2", "nonexistfield");
+            result = db.Execute("HPEXPIRE", "myhash", "4000", "FIELDS", "2", "field2", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "FIELDS", "2", "field3", "nonexistfield");
+            result = db.Execute("HEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString(), "FIELDS", "2", "field3", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
-            result = db.Execute("HPEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "FIELDS", "2", "field4", "nonexistfield");
+            result = db.Execute("HPEXPIREAT", "myhash", DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString(), "FIELDS", "2", "field4", "nonexistfield");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1041,25 +1057,25 @@ namespace Garnet.test
 
             var ttl = (RedisResult[])db.Execute("HTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 3);
+            ClassicAssert.LessOrEqual((long)ttl[0], 4);
             ClassicAssert.Greater((long)ttl[0], 1);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HPTTL", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], 3000);
+            ClassicAssert.LessOrEqual((long)ttl[0], 4000);
             ClassicAssert.Greater((long)ttl[0], 1000);
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds());
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds());
             ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds());
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
             ttl = (RedisResult[])db.Execute("HPEXPIRETIME", "myhash", "FIELDS", "2", "field1", "nonexistfield");
             ClassicAssert.AreEqual(2, ttl.Length);
-            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds());
+            ClassicAssert.LessOrEqual((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds());
             ClassicAssert.Greater((long)ttl[0], DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds());
             ClassicAssert.AreEqual(-2, (long)results[1]);
 
@@ -1069,7 +1085,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, (long)results[1]); // -1 if the field exists but has no associated expiration set.
             ClassicAssert.AreEqual(-2, (long)results[2]);
 
-            await Task.Delay(3500);
+            await Task.Delay(4500);
 
             var items = db.HashGetAll("myhash");
             ClassicAssert.AreEqual(2, items.Length);
@@ -1097,7 +1113,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var server = redis.GetServer(TestUtils.Address, TestUtils.Port);
+            var server = redis.GetServer(TestUtils.EndPoint);
 
             string[] smallExpireKeys = ["user:user0", "user:user1"];
             string[] largeExpireKeys = ["user:user2", "user:user3"];
@@ -1243,10 +1259,10 @@ namespace Garnet.test
 
             (var expireTimeField1, var expireTimeField3, var newExpireTimeField) = command switch
             {
-                "HEXPIRE" => ("1", "3", "2"),
-                "HPEXPIRE" => ("1000", "3000", "2000"),
-                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString()),
-                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(1).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString()),
+                "HEXPIRE" => ("2", "6", "4"),
+                "HPEXPIRE" => ("2000", "6000", "4000"),
+                "HEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeSeconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeSeconds().ToString()),
+                "HPEXPIREAT" => (DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(6).ToUnixTimeMilliseconds().ToString(), DateTimeOffset.UtcNow.AddSeconds(4).ToUnixTimeMilliseconds().ToString()),
                 _ => throw new ArgumentException("Invalid command")
             };
 
@@ -1286,6 +1302,7 @@ namespace Garnet.test
 
         #region LightClientTests
 
+
         /// <summary>
         /// HSET used explictly always returns the number of fields that were added.
         /// HSET can manage more than one field in the input
@@ -1300,7 +1317,6 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
-
 
         [Test]
         [TestCase(30)]
@@ -1778,6 +1794,20 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
+        [Test]
+        public void CanIncrementBeyond32bits()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand($"HSET myhash int64 {1L + int.MaxValue}");
+            var expectedResponse = ":1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("HINCRBY myhash int64 1");
+            expectedResponse = $":{2L + int.MaxValue}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
         #endregion
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";

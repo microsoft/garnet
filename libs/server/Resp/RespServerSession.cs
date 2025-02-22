@@ -12,6 +12,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using HdrHistogram;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -99,7 +100,7 @@ namespace Garnet.server
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
-        User _user = null;
+        UserHandle _userHandle = null;
 
         readonly ILogger logger = null;
 
@@ -148,7 +149,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        byte respProtocolVersion = 2;
+        internal byte respProtocolVersion = 2;
 
         /// <summary>
         /// Client name for the session
@@ -185,11 +186,16 @@ namespace Garnet.server
         /// </summary>
         public long CreationTicks { get; }
 
+        // Track start time (in ticks) of last command for slow log purposes
+        long slowLogStartTime;
+        // Threshold for slow log in ticks (0 means disabled)
+        readonly long slowLogThreshold;
+
         public RespServerSession(
             long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            SubscribeBroker subscribeBroker,
             IGarnetAuthenticator authenticator,
             bool enableScripts)
             : base(networkSender)
@@ -218,22 +224,24 @@ namespace Garnet.server
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
-                sessionScriptCache = new(storeWrapper, _authenticator, logger);
+                sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
             // Associate new session with default user and automatically authenticate, if possible
-            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
+            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
             txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
-            clusterSession?.SetUser(this._user);
-            sessionScriptCache?.SetUser(this._user);
+            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            clusterSession?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetUserHandle(this._userHandle);
 
             parseState.Initialize();
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
+            if (storeWrapper.serverOptions.SlowLogThreshold > 0)
+                slowLogThreshold = (long)(storeWrapper.serverOptions.SlowLogThreshold * OutputScalingFactor.TimeStampToMicroseconds);
 
             // Reserve minimum 4 bytes to send pending sequence number as output
             if (this.networkSender != null)
@@ -243,10 +251,10 @@ namespace Garnet.server
             }
         }
 
-        internal void SetUser(User user)
+        internal void SetUserHandle(UserHandle userHandle)
         {
-            this._user = user;
-            clusterSession?.SetUser(user);
+            this._userHandle = userHandle;
+            clusterSession?.SetUserHandle(userHandle);
         }
 
         public override void Dispose()
@@ -292,16 +300,16 @@ namespace Garnet.server
                 // NOTE: Currently only GarnetACLAuthenticator supports multiple users
                 if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
                 {
-                    this._user = aclAuthenticator.GetUser();
+                    this._userHandle = aclAuthenticator.GetUserHandle();
                 }
                 else
                 {
-                    this._user = this.storeWrapper.accessControlList.GetDefaultUser();
+                    this._userHandle = this.storeWrapper.accessControlList.GetDefaultUserHandle();
                 }
 
                 // Propagate authentication to cluster session
-                clusterSession?.SetUser(this._user);
-                sessionScriptCache?.SetUser(this._user);
+                clusterSession?.SetUserHandle(this._userHandle);
+                sessionScriptCache?.SetUserHandle(this._userHandle);
             }
 
             return _authenticator.CanAuthenticate ? success : false;
@@ -315,6 +323,10 @@ namespace Garnet.server
             try
             {
                 latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                if (slowLogThreshold > 0)
+                {
+                    slowLogStartTime = latencyMetrics != null ? latencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
+                }
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
@@ -327,7 +339,7 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
-                while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
                 // Send message and dispose the network sender to end the session
@@ -345,13 +357,19 @@ namespace Garnet.server
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
                         SendAndReset();
                 }
 
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
+
+                if (ex.Panic)
+                {
+                    // Does not return, finally block below will NOT be ran.
+                    Environment.Exit(-1);
+                }
 
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
@@ -438,7 +456,9 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
                 {
-                    if (CheckACLPermissions(cmd))
+                    var noScriptPassed = true;
+
+                    if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
                     {
                         if (txnManager.state != TxnState.None)
                         {
@@ -463,8 +483,16 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                            SendAndReset();
+                        if (noScriptPassed)
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOSCRIPT, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                 }
                 else
@@ -477,6 +505,7 @@ namespace Garnet.server
 
                 // Handle metrics and special cases
                 if (latencyMetrics != null) opCount++;
+                if (slowLogThreshold > 0) HandleSlowLog(cmd);
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed++;
@@ -501,14 +530,52 @@ namespace Garnet.server
         // Make first command in string as uppercase
         private bool MakeUpperCase(byte* ptr)
         {
-            byte* tmp = ptr;
+            // Assume most commands are already upper case.
+            // Assume most commands are 2-8 bytes long.
+            // If that's the case, we would see the following bit patterns:
+            //  *.\r\n$2\r\n..\r\n        = 12 bytes
+            //  *.\r\n$3\r\n...\r\n       = 13 bytes
+            //  ...
+            //  *.\r\n$8\r\n........\r\n  = 18 bytes
+            //
+            // Where . is <= 95
+            // 
+            // Note that _all_ of these bytes are <= 95 in the common case
+            // and there's no need to scan the whole string in those cases.
 
-            while (tmp < ptr + bytesRead - readHead)
+            var len = bytesRead - readHead;
+            if (len >= 12)
+            {
+                var cmdLen = (uint)(*(ptr + 5) - '2');
+                if (cmdLen <= 6 && (ptr + 4 + cmdLen + sizeof(ulong)) <= (ptr + len))
+                {
+                    var firstUlong = *(ulong*)(ptr + 4);
+                    var secondUlong = *((ulong*)ptr + 4 + cmdLen);
+
+                    // Ye olde bit twiddling to check if any sub-byte is > 95
+                    // See: https://graphics.stanford.edu/~seander/bithacks.html#HasMoreInWord
+                    var firstAllUpper = (((firstUlong + (~0UL / 255 * (127 - 95))) | (firstUlong)) & (~0UL / 255 * 128)) == 0;
+                    var secondAllUpper = (((secondUlong + (~0UL / 255 * (127 - 95))) | (secondUlong)) & (~0UL / 255 * 128)) == 0;
+
+                    var allLower = firstAllUpper && secondAllUpper;
+                    if (allLower)
+                    {
+                        // Nothing in the "command" part of the string would be upper cased, so return early
+                        return false;
+                    }
+                }
+            }
+
+            // If we're in a weird case, or there are lower case bytes, do the full scan
+
+            var tmp = ptr;
+
+            while (tmp < (ptr + len))
             {
                 if (*tmp > 64) // found string
                 {
-                    bool ret = false;
-                    while (*tmp > 64 && *tmp < 123 && tmp < ptr + bytesRead - readHead)
+                    var ret = false;
+                    while (*tmp > 64 && *tmp < 123 && tmp < (ptr + len))
                     {
                         if (*tmp > 96) { ret = true; *tmp -= 32; }
                         tmp++;
@@ -564,7 +631,8 @@ namespace Garnet.server
                 RespCommand.GETBIT => NetworkStringGetBit(ref storageApi),
                 RespCommand.BITCOUNT => NetworkStringBitCount(ref storageApi),
                 RespCommand.BITPOS => NetworkStringBitPosition(ref storageApi),
-                RespCommand.PUBLISH => NetworkPUBLISH(),
+                RespCommand.PUBLISH => NetworkPUBLISH(RespCommand.PUBLISH),
+                RespCommand.SPUBLISH => NetworkPUBLISH(RespCommand.SPUBLISH),
                 RespCommand.PING => parseState.Count == 0 ? NetworkPING() : NetworkArrayPING(),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
@@ -577,6 +645,8 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
                 RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.DUMP => NetworkDUMP(ref storageApi),
+                RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -602,7 +672,8 @@ namespace Garnet.server
                 RespCommand.WATCHMS => NetworkWATCH_MS(),
                 RespCommand.WATCHOS => NetworkWATCH_OS(),
                 // Pub/sub commands
-                RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
+                RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(cmd),
+                RespCommand.SSUBSCRIBE => NetworkSUBSCRIBE(cmd),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
@@ -622,6 +693,7 @@ namespace Garnet.server
                 RespCommand.ZINCRBY => SortedSetIncrement(ref storageApi),
                 RespCommand.ZRANK => SortedSetRank(cmd, ref storageApi),
                 RespCommand.ZRANGE => SortedSetRange(cmd, ref storageApi),
+                RespCommand.ZRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZRANGESTORE => SortedSetRangeStore(ref storageApi),
                 RespCommand.ZRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANK => SortedSetRank(cmd, ref storageApi),
@@ -634,6 +706,9 @@ namespace Garnet.server
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(ref storageApi),
                 RespCommand.ZDIFFSTORE => SortedSetDifferenceStore(ref storageApi),
+                RespCommand.BZMPOP => SortedSetBlockingMPop(),
+                RespCommand.BZPOPMAX => SortedSetBlockingPop(cmd),
+                RespCommand.BZPOPMIN => SortedSetBlockingPop(cmd),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYLEX => SortedSetRange(cmd, ref storageApi),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, ref storageApi),
@@ -751,6 +826,7 @@ namespace Garnet.server
                 RespCommand.CLIENT_GETNAME => NetworkCLIENTGETNAME(),
                 RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
                 RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
+                RespCommand.CLIENT_UNBLOCK => NetworkCLIENTUNBLOCK(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
@@ -790,6 +866,7 @@ namespace Garnet.server
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };
@@ -801,7 +878,7 @@ namespace Garnet.server
                     return AbortWithWrongNumberOfArguments("client|id");
                 }
 
-                while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt64(Id, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -809,7 +886,7 @@ namespace Garnet.server
 
             bool NetworkCustomTxn()
             {
-                if (!IsCommandArityValid(currentCustomTransaction.NameStr, parseState.Count))
+                if (!IsCommandArityValid(currentCustomTransaction.NameStr, currentCustomTransaction.arity, parseState.Count))
                 {
                     currentCustomTransaction = null;
                     return true;
@@ -826,7 +903,7 @@ namespace Garnet.server
 
             bool NetworkCustomProcedure()
             {
-                if (!IsCommandArityValid(currentCustomProcedure.NameStr, parseState.Count))
+                if (!IsCommandArityValid(currentCustomProcedure.NameStr, currentCustomProcedure.Arity, parseState.Count))
                 {
                     currentCustomProcedure = null;
                     return true;
@@ -851,7 +928,7 @@ namespace Garnet.server
         private bool NetworkCustomRawStringCmd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, parseState.Count))
+            if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, currentCustomRawStringCommand.arity, parseState.Count))
             {
                 currentCustomRawStringCommand = null;
                 return true;
@@ -867,7 +944,7 @@ namespace Garnet.server
         bool NetworkCustomObjCmd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, parseState.Count))
+            if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, currentCustomObjectCommand.arity, parseState.Count))
             {
                 currentCustomObjectCommand = null;
                 return true;
@@ -881,19 +958,18 @@ namespace Garnet.server
             return true;
         }
 
-        private bool IsCommandArityValid(string cmdName, int count)
+        private bool IsCommandArityValid(string cmdName, int arity, int count)
         {
-            if (storeWrapper.customCommandManager.customCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
-            {
-                Debug.Assert(cmdInfo != null, "Custom command info should not be null");
-                if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||
-                    (cmdInfo.Arity < 0 && count < -cmdInfo.Arity - 1))
-                {
-                    while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
-                        SendAndReset();
+            // Arity is not set for this command
+            if (arity == 0) return true;
 
-                    return false;
-                }
+            if ((arity > 0 && count != arity - 1) ||
+                (arity < 0 && count < -arity - 1))
+            {
+                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
+                    SendAndReset();
+
+                return false;
             }
 
             return true;
@@ -905,7 +981,7 @@ namespace Garnet.server
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
             {
                 success = false;
                 return default;
@@ -1074,12 +1150,12 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
         {
-            while (!RespWriteUtils.WriteBulkStringLength(message, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
                 SendAndReset();
 
             WriteDirectLarge(message);
 
-            while (!RespWriteUtils.WriteNewLine(ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                 SendAndReset();
         }
 

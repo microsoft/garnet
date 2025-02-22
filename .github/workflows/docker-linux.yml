@@ -41,7 +41,7 @@ jobs:
       -
         name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@8e1d5461f02b7886d3c1a774bfbd873650445aa2 # was v5 but now v6 with this commit for security reasons have pinned tag (commit SHA) for 3rd party
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -56,21 +56,22 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
       -
         name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@4574d27a4764455b42196d70a065bc6853246a25  # v3 for security reasons have pinned tag (commit SHA) for 3rd party
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3 for security reasons have pinned tag (commit SHA) for 3rd party
       -
         name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@327cd5a69de6c009b9ce71bce8395f28e651bf99  # was v3 but now v6 with this commit for security reasons have pinned tag (commit SHA) for 3rd party
+
         with:
             registry: ghcr.io
             username: ${{ github.actor }}
             password: ${{ secrets.GITHUB_TOKEN }}
       -
         name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v5 for security reasons have pinned tag (commit SHA) for 3rd party
         with:
           file: ${{ matrix.dockerfile }}
           provenance: false

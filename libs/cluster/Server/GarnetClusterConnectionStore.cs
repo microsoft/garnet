@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Security.Cryptography;
 using Garnet.common;
+using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -63,6 +65,59 @@ namespace Garnet.cluster
                 _lock.WriteLock();
 
                 if (_disposed) return false;
+
+                // Iterate array of existing connections
+                for (int i = 0; i < numConnection; i++)
+                {
+                    var _conn = connections[i];
+                    if (_conn.NodeId.Equals(conn.NodeId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+                }
+
+                if (numConnection == connections.Length)
+                {
+                    var oldArray = connections;
+                    var newArray = new GarnetServerNode[connections.Length * 2];
+                    Array.Copy(oldArray, newArray, oldArray.Length);
+                    Array.Clear(oldArray);
+                    connections = newArray;
+                }
+                connections[numConnection++] = conn;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Get or add a connection to the store.
+        /// </summary>
+        /// <param name="clusterProvider"></param>
+        /// <param name="endpoint">The cluster node endpoint</param>
+        /// <param name="tlsOptions"></param>
+        /// <param name="nodeId"></param>
+        /// <param name="conn"></param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
+        public bool GetOrAdd(ClusterProvider clusterProvider, IPEndPoint endpoint, IGarnetTlsOptions tlsOptions, string nodeId, out GarnetServerNode conn, ILogger logger = null)
+        {
+            conn = null;
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return false;
+
+                if (UnsafeGetConnection(nodeId, out conn)) return true;
+
+                conn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, logger: logger)
+                {
+                    NodeId = nodeId
+                };
 
                 // Iterate array of existing connections
                 for (int i = 0; i < numConnection; i++)

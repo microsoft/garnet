@@ -24,7 +24,7 @@ namespace Garnet.cluster
                 if (!parseState.TryGetFailoverOption(currTokenIdx, out var failoverOption) ||
                     failoverOption == FailoverOption.DEFAULT || failoverOption == FailoverOption.INVALID)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -41,7 +41,7 @@ namespace Garnet.cluster
                         // 2. Port
                         if (!parseState.TryGetInt(currTokenIdx++, out replicaPort))
                         {
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
@@ -49,7 +49,7 @@ namespace Garnet.cluster
                     case FailoverOption.TIMEOUT:
                         if (!parseState.TryGetInt(currTokenIdx++, out timeout))
                         {
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
@@ -67,7 +67,7 @@ namespace Garnet.cluster
 
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -78,7 +78,7 @@ namespace Garnet.cluster
                 var replicaNodeId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(replicaAddress, replicaPort);
                 if (replicaNodeId == null)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -86,14 +86,14 @@ namespace Garnet.cluster
                 var worker = clusterProvider.clusterManager.CurrentConfig.GetWorkerFromNodeId(replicaNodeId);
                 if (worker.Role != NodeRole.REPLICA)
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not a replica.", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Node @{replicaAddress}:{replicaPort} is not a replica.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
                 if (worker.ReplicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.LocalNodeId)
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not my replica.", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Node @{replicaAddress}:{replicaPort} is not my replica.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -111,7 +111,7 @@ namespace Garnet.cluster
                 _ = clusterProvider.failoverManager.TryStartPrimaryFailover(replicaAddress, replicaPort, force ? FailoverOption.FORCE : FailoverOption.DEFAULT, timeoutTimeSpan);
             }
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

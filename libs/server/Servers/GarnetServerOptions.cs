@@ -202,6 +202,16 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Threshold (microseconds) for logging command in the slow log. 0 to disable
+        /// </summary>
+        public int SlowLogThreshold = 0;
+
+        /// <summary>
+        /// Maximum number of slow log entries to keep
+        /// </summary>
+        public int SlowLogMaxEntries = 128;
+
+        /// <summary>
         /// Metrics sampling frequency
         /// </summary>
         public int MetricsSamplingFrequency = 0;
@@ -267,9 +277,9 @@ namespace Garnet.server
         public int NetworkConnectionLimit = -1;
 
         /// <summary>
-        /// Creator of device factories
+        /// Instance of interface to create named device factories
         /// </summary>
-        public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
+        public INamedDeviceFactoryCreator DeviceFactoryCreator = null;
 
         /// <summary>
         /// Whether and by how much should we throttle the disk IO for checkpoints (default = 0)
@@ -383,6 +393,11 @@ namespace Garnet.server
         public int AdjustedObjectStoreIndexMaxCacheLines;
 
         /// <summary>
+        /// Enables the DEBUG command
+        /// </summary>
+        public ConnectionProtectionOption EnableDebugCommand;
+
+        /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
         /// </summary>
         public string[] ExtensionBinPaths;
@@ -410,6 +425,16 @@ namespace Garnet.server
         public bool EnableObjectStoreReadCache = false;
 
         public LuaOptions LuaOptions;
+
+        /// <summary>
+        /// Unix socket address path to bind server to
+        /// </summary>
+        public string UnixSocketPath { get; set; }
+
+        /// <summary>
+        /// Unix socket file permissions
+        /// </summary>
+        public UnixFileMode UnixSocketPermission { get; set; }
 
         /// <summary>
         /// Constructor
@@ -475,7 +500,7 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
-            DeviceFactoryCreator ??= () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -715,7 +740,7 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
-                MainMemoryReplication ? new NullNamedDeviceFactory() : DeviceFactoryCreator(),
+                MainMemoryReplication ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
@@ -728,9 +753,7 @@ namespace Garnet.server
         /// <returns></returns>
         public INamedDeviceFactory GetInitializedDeviceFactory(string baseName)
         {
-            var deviceFactory = GetDeviceFactory();
-            deviceFactory.Initialize(baseName);
-            return deviceFactory;
+            return DeviceFactoryCreator.Create(baseName);
         }
 
         /// <summary>
@@ -809,11 +832,5 @@ namespace Garnet.server
             if (UseAofNullDevice) return new NullDevice();
             else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
         }
-
-        /// <summary>
-        /// Get device factory
-        /// </summary>
-        /// <returns></returns>
-        public INamedDeviceFactory GetDeviceFactory() => DeviceFactoryCreator();
     }
 }

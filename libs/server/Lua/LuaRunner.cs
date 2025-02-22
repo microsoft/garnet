@@ -209,6 +209,8 @@ end
 
         private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
 
+        private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
+
         // References into Registry on the Lua side
         //
         // These are mix of objects we regularly update,
@@ -258,7 +260,15 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public unsafe LuaRunner(LuaMemoryManagementMode memMode, int? memLimitBytes, ReadOnlyMemory<byte> source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public unsafe LuaRunner(
+            LuaMemoryManagementMode memMode,
+            int? memLimitBytes,
+            ReadOnlyMemory<byte> source,
+            bool txnMode = false,
+            RespServerSession respServerSession = null,
+            ScratchBufferNetworkSender scratchBufferNetworkSender = null,
+            ILogger logger = null
+        )
         {
             this.source = source;
             this.txnMode = txnMode;
@@ -267,6 +277,15 @@ end
             this.logger = logger;
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
+
+            // Explicitly force to RESP2 for now
+            if (respServerSession != null)
+            {
+                respServerSession.respProtocolVersion = 2;
+
+                // The act of setting these fields causes NoScript checks to be performed
+                (respServerSession.noScriptStart, respServerSession.noScriptBitmap) = NoScriptDetails;
+            }
 
             keysTableRegistryIndex = -1;
             argvTableRegistryIndex = -1;
@@ -433,7 +452,7 @@ end
                 var res = state.PCall(0, 0);
                 if (res != LuaStatus.OK)
                 {
-                    while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref session.dcurr, session.dend))
+                    while (!RespWriteUtils.TryWriteError("Internal Lua Error"u8, ref session.dcurr, session.dend))
                         session.SendAndReset();
 
                     return false;
@@ -506,7 +525,7 @@ end
                 state.KnownStringToBuffer(1, out var errorBuf);
 
                 var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
-                while (!RespWriteUtils.WriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
+                while (!RespWriteUtils.TryWriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
             }
 
@@ -617,13 +636,15 @@ end
                     // Span is (implicitly) pinned since it's actually on the Lua stack
                     var key = ArgSlice.FromPinnedSpan(keySpan);
                     var status = api.GET(key, out var value);
+
                     if (status == GarnetStatus.OK)
                     {
                         state.PushBuffer(value.ReadOnlySpan);
                     }
                     else
                     {
-                        state.PushNil();
+                        // Redis is weird, but false instead of Nil is correct here
+                        state.PushBoolean(false);
                     }
 
                     return 1;
@@ -672,10 +693,13 @@ end
                 var response = scratchBufferNetworkSender.GetResponse();
                 var result = ProcessResponse(response.ptr, response.length);
                 scratchBufferNetworkSender.Reset();
+
                 return result;
             }
             catch (Exception e)
             {
+                // We cannot let exceptions propogate back to Lua, that is not something .NET promises will work
+
                 logger?.LogError(e, "During Lua script execution");
 
                 return state.RaiseError(e.Message);
@@ -711,15 +735,20 @@ end
                 case (byte)'+':
                     ptr++;
                     length--;
-                    if (RespReadUtils.ReadAsSpan(out var resultSpan, ref ptr, ptr + length))
+                    if (RespReadUtils.TryReadAsSpan(out var resultSpan, ref ptr, ptr + length))
                     {
+                        // Construct a table = { 'ok': value }
+                        state.CreateTable(0, 1);
+                        state.PushConstantString(okLowerConstStringRegistryIndex);
                         state.PushBuffer(resultSpan);
+                        state.RawSet(1);
+
                         return 1;
                     }
                     goto default;
 
                 case (byte)':':
-                    if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
+                    if (RespReadUtils.TryReadInt64(out var number, ref ptr, ptr + length))
                     {
                         state.PushInteger(number);
                         return 1;
@@ -729,7 +758,7 @@ end
                 case (byte)'-':
                     ptr++;
                     length--;
-                    if (RespReadUtils.ReadAsSpan(out var errSpan, ref ptr, ptr + length))
+                    if (RespReadUtils.TryReadAsSpan(out var errSpan, ref ptr, ptr + length))
                     {
                         if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
                         {
@@ -752,7 +781,7 @@ end
 
                         return 1;
                     }
-                    else if (RespReadUtils.ReadSpanWithLengthHeader(out var bulkSpan, ref ptr, ptr + length))
+                    else if (RespReadUtils.TryReadSpanWithLengthHeader(out var bulkSpan, ref ptr, ptr + length))
                     {
                         state.PushBuffer(bulkSpan);
 
@@ -761,42 +790,50 @@ end
                     goto default;
 
                 case (byte)'*':
-                    if (RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref ptr, ptr + length))
+                    if (RespReadUtils.TryReadSignedArrayLength(out var itemCount, ref ptr, ptr + length))
                     {
-                        // Create the new table
-                        state.CreateTable(itemCount, 0);
-
-                        for (var itemIx = 0; itemIx < itemCount; itemIx++)
+                        if (itemCount == -1)
                         {
-                            if (*ptr == '$')
+                            // Null multi-bulk -> maps to false
+                            state.PushBoolean(false);
+                        }
+                        else
+                        {
+                            // Create the new table
+                            state.CreateTable(itemCount, 0);
+
+                            for (var itemIx = 0; itemIx < itemCount; itemIx++)
                             {
-                                // Bulk String
-                                if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                                if (*ptr == '$')
                                 {
-                                    // Null strings are mapped to false
-                                    // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                    state.PushBoolean(false);
-                                }
-                                else if (RespReadUtils.ReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
-                                {
-                                    state.PushBuffer(strSpan);
+                                    // Bulk String
+                                    if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                                    {
+                                        // Null strings are mapped to false
+                                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                                        state.PushBoolean(false);
+                                    }
+                                    else if (RespReadUtils.TryReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
+                                    {
+                                        state.PushBuffer(strSpan);
+                                    }
+                                    else
+                                    {
+                                        // Error, drop the table we allocated
+                                        state.Pop(1);
+                                        goto default;
+                                    }
                                 }
                                 else
                                 {
-                                    // Error, drop the table we allocated
-                                    state.Pop(1);
-                                    goto default;
+                                    // In practice, we ONLY ever return bulk strings
+                                    // So just... not implementing the rest for now
+                                    throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
                                 }
-                            }
-                            else
-                            {
-                                // In practice, we ONLY ever return bulk strings
-                                // So just... not implementing the rest for now
-                                throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
-                            }
 
-                            // Stack now has table and value at itemIx on it
-                            state.RawSetInteger(1, itemIx + 1);
+                                // Stack now has table and value at itemIx on it
+                                state.RawSetInteger(1, itemIx + 1);
+                            }
                         }
 
                         return 1;
@@ -824,6 +861,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
+                ResetTimeout();
 
                 try
                 {
@@ -831,7 +869,7 @@ end
                     var callRes = state.PCall(0, 0);
                     if (callRes != LuaStatus.OK)
                     {
-                        while (!RespWriteUtils.WriteError("Internal Lua Error"u8, ref outerSession.dcurr, outerSession.dend))
+                        while (!RespWriteUtils.TryWriteError("Internal Lua Error"u8, ref outerSession.dcurr, outerSession.dend))
                             outerSession.SendAndReset();
 
                         return;
@@ -945,6 +983,7 @@ end
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
+                ResetTimeout();
 
                 try
                 {
@@ -1006,13 +1045,13 @@ end
                 switch (*cur)
                 {
                     case (byte)'+':
-                        var simpleStrRes = RespReadUtils.ReadSimpleString(out var simpleStr, ref cur, end);
+                        var simpleStrRes = RespReadUtils.TryReadSimpleString(out var simpleStr, ref cur, end);
                         Debug.Assert(simpleStrRes, "Should never fail");
 
                         return simpleStr;
 
                     case (byte)':':
-                        var readIntRes = RespReadUtils.Read64Int(out var int64, ref cur, end);
+                        var readIntRes = RespReadUtils.TryReadInt64(out var int64, ref cur, end);
                         Debug.Assert(readIntRes, "Should never fail");
 
                         return int64;
@@ -1028,13 +1067,13 @@ end
                             return null;
                         }
 
-                        var bulkStrRes = RespReadUtils.ReadStringResponseWithLengthHeader(out var bulkStr, ref cur, end);
+                        var bulkStrRes = RespReadUtils.TryReadStringResponseWithLengthHeader(out var bulkStr, ref cur, end);
                         Debug.Assert(bulkStrRes, "Should never fail");
 
                         return bulkStr;
 
                     case (byte)'*':
-                        var arrayLengthRes = RespReadUtils.ReadUnsignedArrayLength(out var itemCount, ref cur, end);
+                        var arrayLengthRes = RespReadUtils.TryReadUnsignedArrayLength(out var itemCount, ref cur, end);
                         Debug.Assert(arrayLengthRes, "Should never fail");
 
                         if (itemCount == 0)
@@ -1096,6 +1135,26 @@ end
                     respServerSession.storageSession.objectStoreLockableContext.EndLockable();
             }
         }
+
+        /// <summary>
+        /// Clear timeout state before running.
+        /// </summary>
+        private unsafe void ResetTimeout()
+        => state.TrySetHook(null, 0, 0);
+
+        /// <summary>
+        /// Request that the current execution of this <see cref="LuaRunner"/> timeout.
+        /// </summary>
+        internal unsafe void RequestTimeout()
+        => state.TrySetHook(&LuaRunnerTrampolines.ForceTimeout, LuaHookMask.Count, 1);
+
+        /// <summary>
+        /// Raises a Lua error reporting that the script has timed out.
+        /// 
+        /// If you call this outside of PCALL context, the process will crash.
+        /// </summary>
+        internal void UnsafeForceTimeout()
+        => state.RaiseError("ERR Lua script exceeded configured timeout");
 
         /// <summary>
         /// Remove extra keys and args from KEYS and ARGV globals.
@@ -1279,7 +1338,7 @@ end
 
                     if (state.StackTop == 0)
                     {
-                        while (!RespWriteUtils.WriteError("ERR An error occurred while invoking a Lua script"u8, ref resp.BufferCur, resp.BufferEnd))
+                        while (!RespWriteUtils.TryWriteError("ERR An error occurred while invoking a Lua script"u8, ref resp.BufferCur, resp.BufferEnd))
                             resp.SendAndReset();
 
                         return;
@@ -1292,7 +1351,7 @@ end
                         if (errBuf.Length >= 4 && MemoryMarshal.Read<int>("ERR "u8) == Unsafe.As<byte, int>(ref MemoryMarshal.GetReference(errBuf)))
                         {
                             // Response came back with a ERR, already - just pass it along
-                            while (!RespWriteUtils.WriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                            while (!RespWriteUtils.TryWriteError(errBuf, ref resp.BufferCur, resp.BufferEnd))
                                 resp.SendAndReset();
                         }
                         else
@@ -1300,13 +1359,13 @@ end
                             // Otherwise, this is probably a Lua error - and those aren't very descriptive
                             // So slap some more information in
 
-                            while (!RespWriteUtils.WriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
+                            while (!RespWriteUtils.TryWriteDirect("-ERR Lua encountered an error: "u8, ref resp.BufferCur, resp.BufferEnd))
                                 resp.SendAndReset();
 
-                            while (!RespWriteUtils.WriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
+                            while (!RespWriteUtils.TryWriteDirect(errBuf, ref resp.BufferCur, resp.BufferEnd))
                                 resp.SendAndReset();
 
-                            while (!RespWriteUtils.WriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
+                            while (!RespWriteUtils.TryWriteDirect("\r\n"u8, ref resp.BufferCur, resp.BufferEnd))
                                 resp.SendAndReset();
                         }
 
@@ -1318,7 +1377,7 @@ end
                     {
                         logger?.LogError("Got an unexpected number of values back from a pcall error {callRes}", callRes);
 
-                        while (!RespWriteUtils.WriteError("ERR Unexpected error response"u8, ref resp.BufferCur, resp.BufferEnd))
+                        while (!RespWriteUtils.TryWriteError("ERR Unexpected error response"u8, ref resp.BufferCur, resp.BufferEnd))
                             resp.SendAndReset();
 
                         state.ClearStack();
@@ -1335,7 +1394,7 @@ end
             // Write a null RESP value, remove the top value on the stack if there is one
             static void WriteNull(LuaRunner runner, ref TResponse resp)
             {
-                while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                while (!RespWriteUtils.TryWriteNull(ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 // The stack _could_ be empty if we're writing a null, so check before popping
@@ -1355,7 +1414,7 @@ end
                 // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                 var num = (long)runner.state.CheckNumber(runner.state.StackTop);
 
-                while (!RespWriteUtils.WriteInteger(num, ref resp.BufferCur, resp.BufferEnd))
+                while (!RespWriteUtils.TryWriteInt64(num, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 runner.state.Pop(1);
@@ -1366,7 +1425,7 @@ end
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var buf);
 
-                while (!RespWriteUtils.WriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
+                while (!RespWriteUtils.TryWriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 runner.state.Pop(1);
@@ -1382,12 +1441,12 @@ end
                 // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                 if (runner.state.ToBoolean(runner.state.StackTop))
                 {
-                    while (!RespWriteUtils.WriteInteger(1, ref resp.BufferCur, resp.BufferEnd))
+                    while (!RespWriteUtils.TryWriteInt32(1, ref resp.BufferCur, resp.BufferEnd))
                         resp.SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteNull(ref resp.BufferCur, resp.BufferEnd))
+                    while (!RespWriteUtils.TryWriteNull(ref resp.BufferCur, resp.BufferEnd))
                         resp.SendAndReset();
                 }
 
@@ -1399,7 +1458,7 @@ end
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var errBuff);
 
-                while (!RespWriteUtils.WriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
+                while (!RespWriteUtils.TryWriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 runner.state.Pop(1);
@@ -1431,7 +1490,7 @@ end
                     }
                 }
 
-                while (!RespWriteUtils.WriteArrayLength(trueLen, ref resp.BufferCur, resp.BufferEnd))
+                while (!RespWriteUtils.TryWriteArrayLength(trueLen, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 for (var i = 1; i <= trueLen; i++)
@@ -1466,6 +1525,47 @@ end
                 runner.state.Pop(1);
             }
         }
+
+        /// <summary>
+        /// Construct a bitmap we can quickly check for NoScript commands in.
+        /// </summary>
+        /// <returns></returns>
+        private static (int Start, ulong[] Bitmap) InitializeNoScriptDetails()
+        {
+            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true))
+            {
+                throw new InvalidOperationException("Could not build NoScript bitmap");
+            }
+
+            var noScript =
+                allCommands
+                    .Where(static kv => kv.Value.Flags.HasFlag(RespCommandFlags.NoScript))
+                    .Select(static kv => kv.Value.Command)
+                    .OrderBy(static x => x)
+                    .ToList();
+
+            var start = (int)noScript[0];
+            var end = (int)noScript[^1];
+            var size = end - start + 1;
+            var numULongs = size / sizeof(ulong);
+            if ((size % numULongs) != 0)
+            {
+                numULongs++;
+            }
+
+            var bitmap = new ulong[numULongs];
+            foreach (var member in noScript)
+            {
+                var asInt = (int)member;
+                var stepped = asInt - start;
+                var ulongIndex = stepped / sizeof(ulong);
+                var bitIndex = stepped % sizeof(ulong);
+
+                bitmap[ulongIndex] |= 1UL << bitIndex;
+            }
+
+            return (start, bitmap);
+        }
     }
 
     /// <summary>
@@ -1477,7 +1577,7 @@ end
     internal static class LuaRunnerTrampolines
     {
         [ThreadStatic]
-        private static LuaRunner callbackContext;
+        private static LuaRunner CallbackContext;
 
         /// <summary>
         /// Set a <see cref="LuaRunner"/> that will be available in trampolines.
@@ -1489,8 +1589,8 @@ end
         /// </summary>
         internal static void SetCallbackContext(LuaRunner context)
         {
-            Debug.Assert(callbackContext == null, "Expected null context");
-            callbackContext = context;
+            Debug.Assert(CallbackContext == null, "Expected null context");
+            CallbackContext = context;
         }
 
         /// <summary>
@@ -1498,8 +1598,8 @@ end
         /// </summary>
         internal static void ClearCallbackContext(LuaRunner context)
         {
-            Debug.Assert(ReferenceEquals(callbackContext, context), "Expected context to match");
-            callbackContext = null;
+            Debug.Assert(ReferenceEquals(CallbackContext, context), "Expected context to match");
+            CallbackContext = null;
         }
 
         /// <summary>
@@ -1510,7 +1610,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CompileForRunner(nint _)
-        => callbackContext.UnsafeCompileForRunner();
+        => CallbackContext.UnsafeCompileForRunner();
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeCompileForSession"/>.
@@ -1520,7 +1620,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CompileForSession(nint _)
-        => callbackContext.UnsafeCompileForSession();
+        => CallbackContext.UnsafeCompileForSession();
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeRunPreambleForRunner"/>.
@@ -1530,7 +1630,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int RunPreambleForRunner(nint _)
-        => callbackContext.UnsafeRunPreambleForRunner();
+        => CallbackContext.UnsafeRunPreambleForRunner();
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeRunPreambleForSession"/>.
@@ -1540,7 +1640,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int RunPreambleForSession(nint _)
-        => callbackContext.UnsafeRunPreambleForSession();
+        => CallbackContext.UnsafeRunPreambleForSession();
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -1550,7 +1650,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoSession(nint luaState)
-        => callbackContext.NoSessionResponse(luaState);
+        => CallbackContext.NoSessionResponse(luaState);
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -1559,7 +1659,7 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallWithTransaction(nint luaState)
-        => callbackContext.GarnetCallWithTransaction(luaState);
+        => CallbackContext.GarnetCallWithTransaction(luaState);
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -1568,6 +1668,14 @@ end
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoTransaction(nint luaState)
-        => callbackContext.GarnetCall(luaState);
+        => CallbackContext.GarnetCall(luaState);
+
+        /// <summary>
+        /// Entry point for checking timeouts, called periodically from Lua.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Callback must take these parameters")]
+        internal static void ForceTimeout(nint luaState, nint debugState)
+        => CallbackContext?.UnsafeForceTimeout();
     }
 }

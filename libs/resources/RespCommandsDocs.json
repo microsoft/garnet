@@ -774,6 +774,110 @@
     ]
   },
   {
+    "Command": "BZMPOP",
+    "Name": "BZMPOP",
+    "Summary": "Removes and returns a member by score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMAX",
+    "Name": "BZPOPMAX",
+    "Summary": "Removes and returns the member with the highest score from one or more sorted sets. Blocks until a member available otherwise.  Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMIN",
+    "Name": "BZPOPMIN",
+    "Summary": "Removes and returns the member with the lowest score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "Summary": "A container for client connection commands.",
@@ -923,6 +1027,14 @@
                         "Token": "NO"
                       }
                     ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
               }
@@ -1028,13 +1140,50 @@
             "Type": "String"
           }
         ]
+      },
+      {
+        "Command": "CLIENT_UNBLOCK",
+        "Name": "CLIENT|UNBLOCK",
+        "Summary": "Unblocks a client blocked by a blocking command from a different connection.",
+        "Group": "Connection",
+        "Complexity": "O(log N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENT-ID",
+            "DisplayText": "client-id",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "UNBLOCK-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TIMEOUT",
+                "DisplayText": "timeout",
+                "Type": "PureToken",
+                "Token": "TIMEOUT"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ERROR",
+                "DisplayText": "error",
+                "Type": "PureToken",
+                "Token": "ERROR"
+              }
+            ]
+          }
+        ]
       }
     ]
   },
   {
     "Command": "CLUSTER",
     "Name": "CLUSTER",
-    "Summary": "A container for Redis Cluster commands.",
+    "Summary": "A container for Redis Cluster internal commands.",
     "Group": "Cluster",
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
@@ -1289,6 +1438,13 @@
         "Complexity": "O(N) where N is the total number of Cluster nodes"
       },
       {
+        "Command": "CLUSTER_PUBLISH",
+        "Name": "CLUSTER|PUBLISH",
+        "Summary": "Processes a forwarded published message from any node in the cluster",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLUSTER_REPLICAS",
         "Name": "CLUSTER|REPLICAS",
         "Summary": "Lists the replica nodes of a master node.",
@@ -1429,6 +1585,13 @@
         "Complexity": "O(N) where N is the total number of Cluster nodes",
         "DocFlags": "Deprecated",
         "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "Summary": "Processes a forwarded published message from a node in the same shard",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
       }
     ]
   },
@@ -1450,22 +1613,6 @@
         "Command": "COMMAND_DOCS",
         "Name": "COMMAND|DOCS",
         "Summary": "Returns documentary information about one, multiple or all commands.",
-        "Group": "Server",
-        "Complexity": "O(N) where N is the number of commands to look up",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "COMMAND-NAME",
-            "DisplayText": "command-name",
-            "Type": "String",
-            "ArgumentFlags": "Optional, Multiple"
-          }
-        ]
-      },
-      {
-        "Command": "COMMAND_INFO",
-        "Name": "COMMAND|INFO",
-        "Summary": "Returns information about one, multiple or all commands.",
         "Group": "Server",
         "Complexity": "O(N) where N is the number of commands to look up",
         "Arguments": [
@@ -1517,6 +1664,22 @@
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ARG",
             "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_INFO",
+        "Name": "COMMAND|INFO",
+        "Summary": "Returns information about one, multiple or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands to look up",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND-NAME",
+            "DisplayText": "command-name",
             "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
@@ -1637,6 +1800,14 @@
     "Complexity": "O(1)"
   },
   {
+    "Command": "DEBUG",
+    "Name": "DEBUG",
+    "Summary": "A container for debugging commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "DocFlags": "SysCmd"
+  },
+  {
     "Command": "DECR",
     "Name": "DECR",
     "Summary": "Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
@@ -1697,6 +1868,22 @@
     "Summary": "Discards a transaction.",
     "Group": "Transactions",
     "Complexity": "O(N), when N is the number of queued commands"
+  },
+  {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Summary": "Returns a serialized representation of the value stored at a key.",
+    "Group": "Generic",
+    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
   },
   {
     "Command": "ECHO",
@@ -3726,6 +3913,14 @@
         "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOVALUES",
+        "DisplayText": "novalues",
+        "Type": "PureToken",
+        "Token": "NOVALUES",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -5430,6 +5625,73 @@
     ]
   },
   {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Summary": "Creates a key from the serialized representation of a value.",
+    "Group": "Generic",
+    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TTL",
+        "DisplayText": "ttl",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SERIALIZED-VALUE",
+        "DisplayText": "serialized-value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REPLACE",
+        "DisplayText": "replace",
+        "Type": "PureToken",
+        "Token": "REPLACE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ABSTTL",
+        "DisplayText": "absttl",
+        "Type": "PureToken",
+        "Token": "ABSTTL",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer",
+        "Token": "IDLETIME",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FREQUENCY",
+        "DisplayText": "frequency",
+        "Type": "Integer",
+        "Token": "FREQ",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Summary": "Returns the replication role.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
     "Command": "RPOP",
     "Name": "RPOP",
     "Summary": "Returns and removes the last elements of a list. Deletes the list if the last element was popped.",
@@ -5976,9 +6238,9 @@
     ]
   },
   {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "Summary": "Sets the string value of a key, ignoring its type, if the key\u0027s current etag matches the given etag.",
+    "Command": "SETIFGREATER",
+    "Name": "SETIFGREATER",
+    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request is greater than the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was greater than 0.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -6022,6 +6284,70 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
+      }
+    ]
+  },
+  {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request matches the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was 0.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
       }
     ]
   },
@@ -6230,6 +6556,52 @@
     ]
   },
   {
+    "Command": "SLOWLOG",
+    "Name": "SLOWLOG",
+    "Summary": "A container for slow log commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "SLOWLOG_GET",
+        "Name": "SLOWLOG|GET",
+        "Summary": "Returns the slow log\u0027s entries.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries returned",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "SLOWLOG_HELP",
+        "Name": "SLOWLOG|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_LEN",
+        "Name": "SLOWLOG|LEN",
+        "Summary": "Returns the number of entries in the slow log.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_RESET",
+        "Name": "SLOWLOG|RESET",
+        "Summary": "Clears all entries from the slow log.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries in the slowlog"
+      }
+    ]
+  },
+  {
     "Command": "SMEMBERS",
     "Name": "SMEMBERS",
     "Summary": "Returns all members of a set.",
@@ -6321,6 +6693,27 @@
     ]
   },
   {
+    "Command": "SPUBLISH",
+    "Name": "SPUBLISH",
+    "Summary": "Post a message to a shard channel",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of clients subscribed to the receiving shard channel.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "SRANDMEMBER",
     "Name": "SRANDMEMBER",
     "Summary": "Get one or multiple random members from a set",
@@ -6401,6 +6794,22 @@
         "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SSUBSCRIBE",
+    "Name": "SSUBSCRIBE",
+    "Summary": "Listens for messages published to shard channels.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of shard channels to subscribe to.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
       }
     ]
   },
@@ -7305,6 +7714,57 @@
         "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZRANGEBYLEX",
+    "Name": "ZRANGEBYLEX",
+    "Summary": "Returns members in a sorted set within a lexicographical range.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYLEX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
       }
     ]
   },

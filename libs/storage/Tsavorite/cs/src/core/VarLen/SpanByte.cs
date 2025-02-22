@@ -175,12 +175,24 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Span<byte> AsSpan()
+        {
+            if (Serialized)
+                return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
+            else
+                return new Span<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
+        }
+
+        /// <summary>
+        /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
         /// <paramref name="offset">
-        /// Optional Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
+        /// Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
         /// </paramref>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Span<byte> AsSpan(int offset = 0)
+        public Span<byte> AsSpan(int offset)
         {
             if (Serialized)
                 return new Span<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload) + offset, Length - MetadataSize - offset);
@@ -190,12 +202,24 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<byte> AsReadOnlySpan()
+        {
+            if (Serialized)
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload), Length - MetadataSize);
+            else
+                return new ReadOnlySpan<byte>(MetadataSize + (byte*)payload, Length - MetadataSize);
+        }
+
+        /// <summary>
+        /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
         /// <paramref name="offset">
-        /// Optional Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
+        /// Parameter to avoid having to call slice when wanting to interact directly with payload skipping ETag at the front of the payload
         /// </paramref>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsReadOnlySpan(int offset = 0)
+        public ReadOnlySpan<byte> AsReadOnlySpan(int offset)
         {
             if (Serialized)
                 return new ReadOnlySpan<byte>(MetadataSize + (byte*)Unsafe.AsPointer(ref payload) + offset, Length - MetadataSize - offset);

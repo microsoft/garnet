@@ -169,9 +169,11 @@ namespace Garnet.server
             var globalMetrics = metricsDisabled ? default : storeWrapper.monitor.GlobalMetrics;
             var tt = metricsDisabled ? 0 : (double)(globalMetrics.globalSessionMetrics.get_total_found() + globalMetrics.globalSessionMetrics.get_total_notfound());
             var garnet_hit_rate = metricsDisabled ? 0 : (tt > 0 ? (double)globalMetrics.globalSessionMetrics.get_total_found() / tt : 0) * 100;
+
             statsInfo =
                 [
-                    new("total_connections_active", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString()),
+                    new("total_connections_active", metricsDisabled ? "0" : globalMetrics.total_connections_active.ToString()),
+                    new("total_connections_received", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString()),
                     new("total_connections_disposed", metricsDisabled ? "0" : globalMetrics.total_connections_disposed.ToString()),
                     new("total_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_commands_processed().ToString()),
                     new("instantaneous_ops_per_sec", metricsDisabled ? "0" : globalMetrics.instantaneous_cmd_per_sec.ToString()),
@@ -289,7 +291,7 @@ namespace Garnet.server
 
         private void PopulateClusterBufferPoolStats(StoreWrapper storeWrapper)
         {
-            bufferPoolStats = [new("server_socket", storeWrapper.GetTcpServer().GetBufferPoolStats())];
+            bufferPoolStats = [new("server_socket", storeWrapper.TcpServer.GetBufferPoolStats())];
             if (storeWrapper.clusterProvider != null)
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
         }
@@ -303,17 +305,17 @@ namespace Garnet.server
                 InfoMetricsType.CLUSTER => "Cluster",
                 InfoMetricsType.REPLICATION => "Replication",
                 InfoMetricsType.STATS => "Stats",
-                InfoMetricsType.STORE => "Main Store",
-                InfoMetricsType.OBJECTSTORE => "Object Store",
-                InfoMetricsType.STOREHASHTABLE => "Main Store Hash Table Distribution",
-                InfoMetricsType.OBJECTSTOREHASHTABLE => "Object Store Hash Table Distribution",
-                InfoMetricsType.STOREREVIV => "Main Store Deleted Record Revivification",
-                InfoMetricsType.OBJECTSTOREREVIV => "Object Store Deleted Record Revivification",
+                InfoMetricsType.STORE => "MainStore",
+                InfoMetricsType.OBJECTSTORE => "ObjectStore",
+                InfoMetricsType.STOREHASHTABLE => "MainStoreHashTableDistribution",
+                InfoMetricsType.OBJECTSTOREHASHTABLE => "ObjectStoreHashTableDistribution",
+                InfoMetricsType.STOREREVIV => "MainStoreDeletedRecordRevivification",
+                InfoMetricsType.OBJECTSTOREREVIV => "ObjectStoreDeletedRecordRevivification",
                 InfoMetricsType.PERSISTENCE => "Persistence",
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
-                InfoMetricsType.BPSTATS => "BufferPool Stats",
+                InfoMetricsType.BPSTATS => "BufferPoolStats",
                 _ => "Default",
             };
         }

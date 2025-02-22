@@ -58,7 +58,7 @@ dotnet_diagnostic.IDE0303.severity = warning
 # Use collection expression for builder
 dotnet_diagnostic.IDE0304.severity = warning
 # Use collection expression for fluent
-dotnet_diagnostic.IDE0305.severity = warning
+dotnet_diagnostic.IDE0305.severity = suggestion
 
 # Miscellaneous style rules
 dotnet_separate_import_directive_groups = false

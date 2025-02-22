@@ -137,7 +137,8 @@ namespace Garnet.test
             }
 
             var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).Except(internalOnlyCommands);
-            CollectionAssert.AreEquivalent(allCommands, commandsWithDocs, "Some commands have missing docs. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
+            Assert.That(commandsWithDocs, Is.SupersetOf(allCommands),
+                "Some commands have missing docs. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
         }
 
         /// <summary>
@@ -297,7 +298,7 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                ClassicAssert.AreEqual("ERR unknown command", e.Message);
+                ClassicAssert.AreEqual("ERR unknown subcommand 'UNKNOWN'.", e.Message);
             }
         }
 
@@ -450,6 +451,7 @@ namespace Garnet.test
                 RespCommand.CLIENT_GETNAME,
                 RespCommand.CLIENT_SETNAME,
                 RespCommand.CLIENT_SETINFO,
+                RespCommand.CLIENT_UNBLOCK,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,
@@ -466,6 +468,11 @@ namespace Garnet.test
                 RespCommand.LATENCY_HELP,
                 RespCommand.LATENCY_HISTOGRAM,
                 RespCommand.LATENCY_RESET,
+                // Slowlog
+                RespCommand.SLOWLOG_HELP,
+                RespCommand.SLOWLOG_LEN,
+                RespCommand.SLOWLOG_GET,
+                RespCommand.SLOWLOG_RESET,
                 // Transactions
                 RespCommand.MULTI,
             ];

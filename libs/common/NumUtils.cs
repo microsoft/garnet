@@ -8,7 +8,7 @@ using System.Diagnostics;
 namespace Garnet.common
 {
     /// <summary>
-    /// Utilities for numeric parsing
+    /// Utilities for numeric parsing and formatting
     /// </summary>
     public static unsafe class NumUtils
     {
@@ -16,36 +16,36 @@ namespace Garnet.common
         public const int MaximumFormatDoubleLength = 310;   // (i.e. -1.7976931348623157E+308)
 
         /// <summary>
-        /// Convert long number into sequence of ASCII bytes
+        /// Writes 64-bit signed integer as ASCII.
         /// </summary>
-        /// <param name="value">Value to convert</param>
-        /// <param name="dest">Span Byte </param>
-        /// <returns>Length of number in result</returns>
-        public static int LongToSpanByte(long value, Span<byte> dest)
+        /// <param name="value">The value to write</param>
+        /// <param name="destination">Span Byte </param>
+        /// <returns>The length of written text in bytes.</returns>
+        public static int WriteInt64(long value, Span<byte> destination)
         {
-            int valueLen = NumDigitsInLong(value);
-            byte sign = (byte)(value < 0 ? 1 : 0);
-            int totalLen = sign + valueLen;
-            if (totalLen > dest.Length)
+            var valueLen = CountDigits(value);
+            var signLen = (byte)(value < 0 ? 1 : 0);
+            var totalLen = signLen + valueLen;
+            if (totalLen > destination.Length)
                 return 0;
-            fixed (byte* ptr = dest)
+            fixed (byte* ptr = destination)
             {
                 byte* curr = ptr;
-                LongToBytes(value, valueLen, ref curr);
+                WriteInt64(value, valueLen, ref curr);
             }
 
             return totalLen;
         }
 
         /// <summary>
-        /// Convert long into sequence of ASCII bytes
+        /// Writes 64-bit signed integer as ASCII.
         /// </summary>
-        /// <param name="value"></param>
+        /// <param name="value">The value to write</param>
         /// <param name="length"></param>
-        /// <param name="result"></param>
-        public static unsafe void LongToBytes(long value, int length, ref byte* result)
+        /// <param name="result">Byte pointer, will be updated to point after the written number</param>
+        public static unsafe void WriteInt64(long value, int length, ref byte* result)
         {
-            byte sign = (byte)(value < 0 ? 1 : 0);
+            var isNegative = value < 0;
             if (value == long.MinValue)
             {
                 *(long*)(result) = 3618417120593983789L;
@@ -61,7 +61,7 @@ namespace Garnet.common
                 return;
             }
 
-            if (sign == 0x1)
+            if (isNegative)
             {
                 *result++ = 0x2d;
                 value = -value;
@@ -77,34 +77,34 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Convert double number into sequence of ASCII bytes
+        /// Writes <see langword="double"/> as ASCII.
         /// </summary>
-        /// <param name="value">Value to convert</param>
-        /// <param name="dest">Span Byte</param>
-        /// <returns>Length of number in result</returns>
-        public static int DoubleToSpanByte(double value, Span<byte> dest)
+        /// <param name="value">The value to write</param>
+        /// <param name="destination">Buffer to write the ASCII formatted value to</param>
+        /// <returns>The length of written text in bytes.</returns>
+        public static int WriteDouble(double value, Span<byte> destination)
         {
-            int totalLen = NumOfCharInDouble(value, out var integerDigits, out var signSize, out var fractionalDigits);
-            bool isNegative = value < 0;
-            if (totalLen > dest.Length)
+            var totalLen = CountCharsInDouble(value, out var integerDigits, out var signSize, out var fractionalDigits);
+            var isNegative = value < 0;
+            if (totalLen > destination.Length)
                 return 0;
-            fixed (byte* ptr = dest)
+            fixed (byte* ptr = destination)
             {
                 byte* curr = ptr;
-                DoubleToBytes(value, integerDigits, fractionalDigits, ref curr);
+                WriteDouble(value, integerDigits, fractionalDigits, ref curr);
             }
 
             return totalLen;
         }
 
         /// <summary>
-        /// Convert double number into sequence of ASCII bytes
+        /// Writes <see langword="double"/> as ASCII.
         /// </summary>
-        /// <param name="value">Value to convert</param>
+        /// <param name="value">The value to write</param>
         /// <param name="integerDigits">Number of digits in the integer part of the double value</param>
         /// <param name="fractionalDigits">Number of digits in the fractional part of the double value</param>
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
-        public static unsafe void DoubleToBytes(double value, int integerDigits, int fractionalDigits, ref byte* result)
+        public static unsafe void WriteDouble(double value, int integerDigits, int fractionalDigits, ref byte* result)
         {
             Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
 
@@ -114,7 +114,7 @@ namespace Garnet.common
                 return;
             }
 
-            bool isNegative = value < 0;
+            var isNegative = value < 0;
             if (isNegative)
             {
                 *result++ = (byte)'-';
@@ -123,7 +123,7 @@ namespace Garnet.common
 
             result += integerDigits;
             var integerPart = Math.Truncate(value);
-            double fractionalPart = fractionalDigits > 0 ? Math.Round(value - integerPart, fractionalDigits) : 0;
+            var fractionalPart = fractionalDigits > 0 ? Math.Round(value - integerPart, fractionalDigits) : 0;
 
             // Convert integer part
             do
@@ -152,57 +152,57 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Convert sequence of ASCII bytes into long number
+        /// Parses 64-bit signed integer from ASCII.
         /// </summary>
-        /// <param name="source">Source bytes</param>
-        /// <returns>Result</returns>
-        public static long BytesToLong(ReadOnlySpan<byte> source)
+        /// <param name="source">Source buffer</param>
+        /// <returns>The double value parsed from the <paramref name="source"/> buffer.</returns>
+        public static long ReadInt64(ReadOnlySpan<byte> source)
         {
             fixed (byte* ptr = source)
-                return BytesToLong(source.Length, ptr);
+                return ReadInt64(source.Length, ptr);
         }
 
         /// <summary>
-        /// Convert sequence of ASCII bytes into long number
+        /// Parses 64-bit signed integer from ASCII.
         /// </summary>
         /// <param name="length">Length of number</param>
         /// <param name="source">Source bytes</param>
-        /// <returns>Result</returns>
-        public static long BytesToLong(int length, byte* source)
+        /// <returns>The double value parsed from the buffer which <paramref name="source"/> points to.</returns>
+        public static long ReadInt64(int length, byte* source)
         {
-            bool fNeg = (*source == '-');
-            var beg = fNeg ? source + 1 : source;
+            var isNegative = (*source == '-');
+            var beg = isNegative ? source + 1 : source;
             var end = source + length;
             long result = 0;
             while (beg < end)
                 result = result * 10 + (*beg++ - '0');
-            return fNeg ? -(result) : result;
+            return isNegative ? -result : result;
         }
 
         /// <summary>
-        /// Convert sequence of ASCII bytes into long number
+        /// Parses 64-bit signed integer from ASCII.
         /// </summary>
-        /// <param name="source">Source bytes</param>
+        /// <param name="source">Pointer to source buffer</param>
         /// <param name="result">Long value extracted from sequence</param>
-        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
-        public static bool TryBytesToLong(ReadOnlySpan<byte> source, out long result)
+        /// <returns>True if buffer <paramref name="source"/> consisted only of a valid signed 64-bit integer, otherwise false</returns>
+        public static bool TryReadInt64(ReadOnlySpan<byte> source, out long result)
         {
             fixed (byte* ptr = source)
-                return TryBytesToLong(source.Length, ptr, out result);
+                return TryReadInt64(source.Length, ptr, out result);
         }
 
         /// <summary>
-        /// Convert sequence of ASCII bytes into long number
+        /// Parses 64-bit signed integer from ASCII.
         /// </summary>
-        /// <param name="length">Length of number</param>
-        /// <param name="source">Source bytes</param>
-        /// <param name="result">Long value extracted from sequence</param>
-        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
-        public static bool TryBytesToLong(int length, byte* source, out long result)
+        /// <param name="length">The expected length of the integer in the buffer which <paramref name="source"/> points to</param>
+        /// <param name="source">Pointer to the source buffer</param>
+        /// <param name="result">64-bit signed integer parsed from the buffer which <paramref name="source"/> points to</param>
+        /// <returns>True if the buffer which <paramref name="source"/> points to consisted only of a valid signed 64-bit integer, otherwise false</returns>
+        public static bool TryReadInt64(int length, byte* source, out long result)
         {
-            var fNeg = *source == '-';
-            var beg = fNeg ? source + 1 : source;
-            var len = fNeg ? length - 1 : length;
+            var isNegative = *source == '-';
+            var beg = isNegative ? source + 1 : source;
+            var len = isNegative ? length - 1 : length;
             result = 0;
 
             // Do not allow leading zeros
@@ -214,34 +214,34 @@ namespace Garnet.common
                 return false;
 
             // Negate if parsed value has a leading negative sign
-            result = fNeg ? -result : result;
+            result = isNegative ? -result : result;
             return true;
         }
 
         /// <summary>
-        /// Convert sequence of ASCII bytes into double number
+        /// Parses <see langword="double"/> from ASCII.
         /// </summary>
-        /// <param name="source">Source bytes</param>
-        /// <param name="result">Double value extracted from sequence</param>
-        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
-        public static bool TryBytesToDouble(ReadOnlySpan<byte> source, out double result)
+        /// <param name="source">Source buffer</param>
+        /// <param name="result"><see langword="double"/> parsed from the <paramref name="source"/> buffer</param>
+        /// <returns>True if the <paramref name="source"/> buffer consisted only of a valid <see langword="double"/>, otherwise false</returns>
+        public static bool TryReadDouble(ReadOnlySpan<byte> source, out double result)
         {
             fixed (byte* ptr = source)
-                return TryBytesToDouble(source.Length, ptr, out result);
+                return TryReadDouble(source.Length, ptr, out result);
         }
 
         /// <summary>
-        /// Convert sequence of ASCII bytes into double number
+        /// Writes <see langword="double"/> as ASCII.
         /// </summary>
-        /// <param name="length">Length of number</param>
-        /// <param name="source">Source bytes</param>
+        /// <param name="length">The expected length of the number in the buffer <paramref name="source"/> points to</param>
+        /// <param name="source">Pointer to the source buffer</param>
         /// <param name="result">Double value extracted from sequence</param>
-        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
-        public static bool TryBytesToDouble(int length, byte* source, out double result)
+        /// <returns>True if the buffer which <paramref name="source"/> points to consisted only of a valid <see langword="double"/>, otherwise false</returns>
+        public static bool TryReadDouble(int length, byte* source, out double result)
         {
-            var fNeg = *source == '-';
-            var beg = fNeg ? source + 1 : source;
-            var len = fNeg ? length - 1 : length;
+            var isNegative = *source == '-';
+            var beg = isNegative ? source + 1 : source;
+            var len = isNegative ? length - 1 : length;
             result = 0;
 
             // Do not allow leading zeros
@@ -253,53 +253,19 @@ namespace Garnet.common
                 return false;
 
             // Negate if parsed value has a leading negative sign
-            result = fNeg ? -result : result;
+            result = isNegative ? -result : result;
             return true;
-        }
-
-        /// <summary>
-        /// Convert sequence of ASCII bytes into ulong number
-        /// </summary>
-        /// <param name="length">Length of number</param>
-        /// <param name="source">Source bytes</param>
-        /// <returns>Result</returns>
-        public static ulong BytesToULong(int length, byte* source)
-        {
-            Debug.Assert(*source != '-');
-            var beg = source;
-            var end = source + length;
-            ulong result = 0;
-            while (beg < end)
-                result = result * 10 + (ulong)(*beg++ - '0');
-            return result;
-        }
-
-        /// <summary>
-        /// Convert sequence of ASCII bytes into int number
-        /// </summary>
-        /// <param name="length">Length of number</param>
-        /// <param name="source">Source bytes</param>
-        /// <returns></returns>
-        public static int BytesToInt(int length, byte* source)
-        {
-            bool fNeg = (*source == '-');
-            var beg = fNeg ? source + 1 : source;
-            var end = source + length;
-            int result = 0;
-            while (beg < end)
-                result = result * 10 + (*beg++ - '0');
-            return fNeg ? -(result) : result;
         }
 
         /// <summary>
         /// Convert integer into sequence of ASCII bytes
         /// </summary>
-        /// <param name="value">Value to convert</param>
-        /// <param name="length">Number of digits in value</param>
+        /// <param name="value">The value to write</param>
+        /// <param name="length">Number of digits in the integer value</param>
         /// <param name="result">Byte pointer, will updated to point after the written number</param>
-        public static unsafe void IntToBytes(int value, int length, ref byte* result)
+        public static unsafe void WriteInt32(int value, int length, ref byte* result)
         {
-            bool isNegative = value < 0;
+            var isNegative = value < 0;
             if (value == 0)
             {
                 *result++ = (byte)'0';
@@ -322,117 +288,112 @@ namespace Garnet.common
             result += length;
         }
 
-        static ReadOnlySpan<byte> digits => "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"u8;
-
         /// <summary>
-        /// Return number of digits in given number
+        /// Counts the number of digits in a given integer.
         /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
-        public static int NumDigits(int v)
+        /// <param name="value">Integer value</param>
+        /// <remarks>Doesn't count the sign as a digit.</remarks>
+        /// <returns>The number of digits in <paramref name="value"/>.</returns>
+        public static int CountDigits(int value)
         {
-            v = v < 0 ? ((~v) + 1) : v;
+            value = value < 0 ? ((~value) + 1) : value;
 
-            if (v < 10) return 1;
-            if (v < 100) return 2;
-            if (v < 1000) return 3;
-            if (v < 100000000L)
+            if (value < 10) return 1;
+            if (value < 100) return 2;
+            if (value < 1000) return 3;
+            if (value < 100000000L)
             {
-                if (v < 1000000)
+                if (value < 1000000)
                 {
-                    if (v < 10000) return 4;
-                    return 5 + (v >= 100000 ? 1 : 0);
+                    if (value < 10000) return 4;
+                    return 5 + (value >= 100000 ? 1 : 0);
                 }
-                return 7 + (v >= 10000000L ? 1 : 0);
+                return 7 + (value >= 10000000L ? 1 : 0);
             }
-            return 9 + (v >= 1000000000L ? 1 : 0);
+            return 9 + (value >= 1000000000L ? 1 : 0);
         }
 
-        /// <summary>
-        /// Num digits in long divide n conquer.
-        /// </summary>
-        /// <param name="v"></param>
-        /// <returns>returns digit count not including sign.</returns>
-        public static int NumDigitsInLong(long v)
-        {
-            if (v == long.MinValue) return 19;
-            v = v < 0 ? -v : v;
-            int c = 0;
 
-            if (v < 10000000000L)//1 - 10000000000L
+        /// <inheritdoc cref="CountDigits(int)"/>
+        public static int CountDigits(long value)
+        {
+            if (value == long.MinValue) return 19;
+            value = value < 0 ? -value : value;
+
+            if (value < 10000000000L)//1 - 10000000000L
             {
-                if (v < 100000) //1 - 100000
+                if (value < 100000) //1 - 100000
                 {
-                    if (v < 100) //1 - 100
+                    if (value < 100) //1 - 100
                     {
-                        if (v < 10) return c + 1; else return c + 2;
+                        if (value < 10) return 1; else return 2;
                     }
                     else//100 - 100000
                     {
-                        if (v < 10000)//100 - 10000
+                        if (value < 10000)//100 - 10000
                         {
-                            if (v < 1000) return c + 3; else return c + 4;
+                            if (value < 1000) return 3; else return 4;
                         }
                         else//10000 - 100000
                         {
-                            return c + 5;
+                            return 5;
                         }
                     }
                 }
                 else // 100 000 - 10 000 000 000L
                 {
-                    if (v < 10000000) // 100 000 - 10 000 000
+                    if (value < 10000000) // 100 000 - 10 000 000
                     {
-                        if (v < 1000000) return c + 6; else return c + 7;
+                        if (value < 1000000) return 6; else return 7;
                     }
                     else // 10 000 000 - 10 000 000 000L
                     {
-                        if (v < 1000000000)
+                        if (value < 1000000000)
                         {
-                            if (v < 100000000) return c + 8; else return c + 9;
+                            if (value < 100000000) return 8; else return 9;
                         }
                         else // 1 000 000 000 - 10 000 000 000L
                         {
-                            return c + 10;
+                            return 10;
                         }
                     }
                 }
             }
             else // 10 000 000 000L - 1 000 000 000 000 000 000L
             {
-                if (v < 100000000000000L) //10 000 000 000L - 100 000 000 000 000L
+                if (value < 100000000000000L) //10 000 000 000L - 100 000 000 000 000L
                 {
-                    if (v < 1000000000000L) // 10 000 000 000L - 1 000 000 000 000L
+                    if (value < 1000000000000L) // 10 000 000 000L - 1 000 000 000 000L
                     {
-                        if (v < 100000000000L) return c + 11; else return c + 12;
+                        if (value < 100000000000L) return 11; else return 12;
                     }
                     else // 1 000 000 000 000L - 100 000 000 000 000L
                     {
-                        if (v < 10000000000000L) // 1 000 000 000 000L - 10 000 000 000 000L
+                        if (value < 10000000000000L) // 1 000 000 000 000L - 10 000 000 000 000L
                         {
-                            return c + 13;
+                            return 13;
                         }
                         else
                         {
-                            return c + 14;
+                            return 14;
                         }
                     }
                 }
                 else//100 000 000 000 000L - 1 000 000 000 000 000 000L
                 {
-                    if (v < 10000000000000000L)//100 000 000 000 000L - 10 000 000 000 000 000L                    
+                    if (value < 10000000000000000L)//100 000 000 000 000L - 10 000 000 000 000 000L                    
                     {
-                        if (v < 1000000000000000L) return c + 15; else return c + 16;
+                        if (value < 1000000000000000L) return 15; else return 16;
                     }
                     else
                     {
-                        if (v < 1000000000000000000L)
+                        if (value < 1000000000000000000L)
                         {
-                            if (v < 100000000000000000L) return c + 17; else return c + 18;
+                            if (value < 100000000000000000L) return 17; else return 18;
                         }
                         else
                         {
-                            return c + 19;
+                            return 19;
                         }
                     }
                 }
@@ -440,59 +401,60 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Return number of digits in given number
+        /// Counts the number of digits in a given integer.
         /// </summary>
-        /// <param name="v"></param>
-        /// <param name="fNeg"></param>
-        /// <returns></returns>
-        public static int NumDigitsInLong(long v, ref bool fNeg)
+        /// <param name="value">Integer value</param>
+        /// <param name="isNegative">Whether the <paramref name="value"/> is negative or not</param>
+        /// <remarks>Doesn't count the sign as a digit.</remarks>
+        /// <returns>The number of digits in <paramref name="value"/>.</returns>
+        public static int CountDigits(long value, out bool isNegative)
         {
-            if (v == long.MinValue)
+            if (value == long.MinValue)
             {
-                fNeg = true;
+                isNegative = true;
                 return 19;
             }
 
-            fNeg = false;
-            if (v < 0)
+            isNegative = false;
+            if (value < 0)
             {
-                fNeg = true;
-                v = -(v);
+                isNegative = true;
+                value = -value;
             }
 
-            if (v < 10) return 1;
-            if (v < 100) return 2;
-            if (v < 1000) return 3;
-            if (v < 1_000_000_00L) // 9 digit
+            if (value < 10) return 1;
+            if (value < 100) return 2;
+            if (value < 1000) return 3;
+            if (value < 1_000_000_00L) // 9 digit
             {
-                if (v < 1000000)// 7 dgiit
+                if (value < 1000000)// 7 dgiit
                 {
-                    if (v < 10000) return 4;
-                    return 5 + (v >= 100000 ? 1 : 0); // 5 or 6 digit
+                    if (value < 10000) return 4;
+                    return 5 + (value >= 100000 ? 1 : 0); // 5 or 6 digit
                 }
-                return 7 + (v >= 1_000_000_0L ? 1 : 0);
+                return 7 + (value >= 1_000_000_0L ? 1 : 0);
             }
-            if (v < 1000000000L) return 9;
-            if (v < 10000000000L) return 10;
-            if (v < 100000000000L) return 11;
-            if (v < 1000000000000L) return 12;
-            if (v < 10000000000000L) return 13;
-            if (v < 100000000000000L) return 14;
-            if (v < 1000000000000000L) return 15;
-            if (v < 10000000000000000L) return 16;
-            if (v < 100000000000000000L) return 17;
-            if (v < 1000000000000000000L) return 18;
+            if (value < 1000000000L) return 9;
+            if (value < 10000000000L) return 10;
+            if (value < 100000000000L) return 11;
+            if (value < 1000000000000L) return 12;
+            if (value < 10000000000000L) return 13;
+            if (value < 100000000000000L) return 14;
+            if (value < 1000000000000000L) return 15;
+            if (value < 10000000000000000L) return 16;
+            if (value < 100000000000000000L) return 17;
+            if (value < 1000000000000000000L) return 18;
             return 19;
         }
 
         /// <summary>
         /// Return number of digits in given double number incluing the decimal part and `.` character
         /// </summary>
-        /// <param name="v">Double value</param>
+        /// <param name="value">Double value</param>
         /// <returns>Number of digits in the integer part of the double value</returns>
-        public static int NumOfCharInDouble(double v, out int integerDigits, out byte signSize, out int fractionalDigits)
+        public static int CountCharsInDouble(double value, out int integerDigits, out byte signSize, out int fractionalDigits)
         {
-            if (v == 0)
+            if (value == 0)
             {
                 integerDigits = 1;
                 signSize = 0;
@@ -500,14 +462,14 @@ namespace Garnet.common
                 return 1;
             }
 
-            Debug.Assert(!double.IsNaN(v) && !double.IsInfinity(v));
+            Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value));
 
-            signSize = (byte)(v < 0 ? 1 : 0); // Add sign if the number is negative
-            v = Math.Abs(v);
-            integerDigits = (int)Math.Log10(v) + 1;
+            signSize = (byte)(value < 0 ? 1 : 0); // Add sign if the number is negative
+            value = Math.Abs(value);
+            integerDigits = (int)Math.Log10(value) + 1;
 
             fractionalDigits = 0; // Max of 15 significant digits
-            while (fractionalDigits <= 14 && Math.Abs(v - Math.Round(v, fractionalDigits)) > 2 * Double.Epsilon) // 2 * Double.Epsilon is used to handle floating point errors
+            while (fractionalDigits <= 14 && Math.Abs(value - Math.Round(value, fractionalDigits)) > 2 * Double.Epsilon) // 2 * Double.Epsilon is used to handle floating point errors
             {
                 fractionalDigits++;
             }
