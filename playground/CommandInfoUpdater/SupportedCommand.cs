@@ -261,6 +261,7 @@ namespace CommandInfoUpdater
             new("SETBIT", RespCommand.SETBIT),
             new("SETEX", RespCommand.SETEX),
             new("SETIFMATCH", RespCommand.SETIFMATCH),
+            new("SETIFGREATER", RespCommand.SETIFGREATER),
             new("SETNX", RespCommand.SETNX),
             new("SETRANGE", RespCommand.SETRANGE),
             new("SISMEMBER", RespCommand.SISMEMBER),

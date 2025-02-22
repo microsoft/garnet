@@ -5450,8 +5450,23 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoSetIfMatchAsync(GarnetClient client)
             {
-                var res = await client.ExecuteForStringResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
-                ClassicAssert.IsNull(res);
+                var res = await client.ExecuteForStringArrayResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
+        public async Task SetIfGreaterACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "SETIFGREATER",
+               [DoSetIfGreaterAsync]
+           );
+
+            static async Task DoSetIfGreaterAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
             }
         }
 
