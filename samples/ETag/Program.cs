@@ -8,7 +8,7 @@ class Program
     {
         // Uncomment whichever example you want to run
 
-        // await OccSimulation.RunSimulation();
-        await Caching.RunSimulation();
+        await OccSimulation.RunSimulation();
+        // await Caching.RunSimulation();
     }
 }

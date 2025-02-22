@@ -147,8 +147,8 @@ for details.
 Garnet provides support for ETags on raw strings. By using the ETag-related commands outlined below, you can associate any **string based key-value pair** inserted into Garnet with an automatically updated ETag.
 
 Compatibility with non-ETag commands and the behavior of data inserted with ETags are detailed at the end of this document.
-
 To initialize a key value pair with an ETag you can use either the SET command with the newly added "WITHETAG" optional flag, or you can take any existing Key value pair and call SETIFMATCH with the ETag argument as 0 (Any key value pair without an explicit ETag has an ETag of 0 implicitly). **You can read more about setting an initial ETag via SET [here](../commands/raw-string#set)**
+
 ---
 
 ### **SET (WITHETAG)**

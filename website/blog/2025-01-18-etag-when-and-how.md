@@ -6,7 +6,7 @@ tags: [garnet, concurrency, caching, lock-free, etags]
 ---
 
 **Garnet recently announced native support for ETag-based commands.**  
-ETags are a powerful feature that enable techniques such as **Optimistic Concurrency Control** and **more efficient network bandwidth utilization for caching.**
+ETags are a powerful feature that enable techniques such as **Optimistic Concurrency Control**, **more efficient network bandwidth utilization for caching**, and **keeping cache consistent with the database.**
 
 Currently, Garnet provides ETags as raw strings. This feature is available without requiring any migration, allowing your existing key-value pairs to start leveraging ETags immediately without impacting performance metrics.  
 You can find the [ETag API documentation here](/docs/commands/garnet-specific-commands#native-etag-support).
@@ -20,13 +20,87 @@ This article explores when and how you can use this new Garnet feature for both 
 ## Why Read This Article?  
 If you're looking to:  
 
-1. **Reduce network bandwidth utilization for caching.**  
-2. **Avoid the cost of transactions when working with non-atomic values in your cache store.**
+1. **Keep your cache consistent with your Database for contentended keys**
+2. **Reduce network bandwidth utilization for caching.**  
+3. **Avoid the cost of transactions when working with non-atomic values in your cache store.**
 
 We'll cover these scenarios case by case.
 
 
 ---
+
+## Keeping Cache consistent state with Database for High Contention Keys with Concurrent Clients
+
+In a distributed environment it is common to have a cache being updated along with your main source of truth database. This is not a challenge when every client is interacting with keys with no contention. However, in cases where a key in your cache is being updated concurrently by multiple clients as they coordinate writing to the database and then updating the cache. In such a situation whichever client writes to the cache last decides the final state (last write wins), even if they were not the last client to update the database!
+
+To make the above scenario consider a cache-database setup where 2 clients are interacting with the pair. They both follow the same protocol where on writes they first update the database, and then update the cache. We will denote each client by c1 and c2, the request to update the datbase as D, and the request to update the cache as C.
+All is good when the sequence of events is as follows:
+```mermaid
+sequenceDiagram
+    participant c1 as Client 1
+    participant db as Database
+    participant cache as Cache
+    participant c2 as Client 2
+
+    c1->>db: D (older state)
+    c1->>cache: C (older state)
+    c2->>db: D (latest state)
+    c2->>cache: C (latest state)
+```
+
+If c1 finishes its database-cache update protocol strictly before c2 starts its protocol. Even the case of interleaving is not entirely bound to produce errors! In the below sequencing the cache will eventually be consistent with the database!
+
+```mermaid
+sequenceDiagram
+    participant c1 as Client 1
+    participant db as Database
+    participant cache as Cache
+    participant c2 as Client 2
+
+    c1->>db: D (older state)
+    c2->>db: D (latest state)
+    c1->>cache: C (older state)
+    c2->>cache: C (latest state)
+```
+
+However, in the case where between c1 updating the database and the cache, c2 happens to interleave such that it updates the database and the cache before c1, we hit a consistency issue!
+```mermaid
+sequenceDiagram
+    participant c1 as Client 1
+    participant db as Database
+    participant cache as Cache
+    participant c2 as Client 2
+
+    c1->>db: D (older state)
+    c2->>db: D (latest state)
+    c2->>cache: C (latest state)
+    c1->>cache: C (older state)
+```
+In the above sequencing you will see that c2 is the last write to the database but c1 has the last write to the cache. So the cache and datbase have gone out of sync.
+
+For handling such cases we can rely on the newly introduced ETag feature in Garnet to construct a logical clock around the updates that protect establishing cache consistency (*provided your database also supports ETags such as Cosmos DB).
+
+In such a scenario the client should use our `SETIFGREATER` API [here](/docs/commands/garnet-specific-commands#setifgreater), when interacting with the cache. `SETIFGREATER` sends a key-value pair along with an etag from the client, and only sets the value if the sent ETag is greater than what is set against the key-value pair already.
+
+Every client would now follow the following protocol:
+- `SETIFGREATER` or `SETIFMATCH` [API](/docs/commands/garnet-specific-commands#setifmatch) based update to the source of truth first.
+- Use the retrieved ETag from our previous call as an argument for SETIFGREATER to update the cache.
+
+If every client follows the above protocol. We can ensure that only the last/latest database write is reflected in the client as well.
+The same sequencing of events but with the clients following our new updated protocol.
+```mermaid
+sequenceDiagram
+    participant c1 as Client 1
+    participant db as Database
+    participant cache as Cache
+    participant c2 as Client 2
+
+    c1->>db: D (older state with etag 'x')
+    c2->>db: D (latest state with etag 'x+1')
+    c2->>cache: C (latest state with etag 'x+1')
+    c1->>cache: C (older state REJECTED because latest etag on server ('x+1' is higher than sent etag 'x')
+```
+
 
 ## Reducing Network Bandwidth Utilization for Caching  
 
@@ -36,24 +110,24 @@ Every network call incurs a cost: the amount of data transmitted and the distanc
 Consider the following setup:  
 
 #### High-Level Diagram  
-```
-(server 1)----[server 1 reads from cache]----(cache)
-                                                |
-                                                |
-                                    [server 2 writes to the cache, invalidating whatever server 1 had read]
-                                                |
-                                                |
-                                            (server 2)
+```mermaid
+graph TD
+    S1[Server 1] -->|reads from cache| C[Cache]
+    S2[Server 2] -->|writes to cache, invalidating server 1's read| C 
 ```
 
 #### Sequence Diagram  
-```
-    server 1                                            cache                              server 2
-1. initial read from cache for k1----------------------->
-2.        <----------------------------------------Send Data and ETag
-                                                        <-------------------------update value for k1 (invalidates k1)
-3. second read to cache for k1 ------------------------->
-                <--------------------------------------(What is sent back?)
+```mermaid
+sequenceDiagram
+    participant S1 as Server 1
+    participant C as Cache
+    participant S2 as Server 2
+
+    S1->>C: initial read from cache for k1
+    C-->>S1: Send Data and ETag
+    S2->>C: update value for k1 (invalidates k1)
+    S1->>C: second read to cache for k1
+    C-->>S1: (What is sent back?)
 ```
 
 In the absence of ETags, the entire payload for `k1` is returned on every read, regardless of whether the value associated with `k1` has changed.  

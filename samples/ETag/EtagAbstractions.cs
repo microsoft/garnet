@@ -18,7 +18,7 @@ public static class ETagAbstractions
     /// <param name="initialItem">The initial state of the item.</param>
     /// <param name="updateAction">The action to perform on the item before updating it in the database.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains a tuple with the final ETag value and the updated item.</returns>
-    public static async Task<(long, T)> PerformLockFreeSafeUpdate<T>(IDatabase db, string key, long initialEtag, T initialItem, Action<T> updateAction)
+    public static async Task<(long, T?)> PerformLockFreeSafeUpdate<T>(IDatabase db, string key, long initialEtag, T initialItem, Action<T> updateAction)
     {
         // Compare and Swap Updating
         long etag = initialEtag;
@@ -31,6 +31,12 @@ public static class ETagAbstractions
             updateAction(item);
 
             var (updatedSuccesful, newEtag, newItem) = await _updateItemIfMatch(db, etag, key, item);
+            if (newItem == null)
+            {
+                // item was deleted, break out of the loop
+                return (newEtag, newItem);
+            }
+
             etag = newEtag;
             item = newItem;
 
@@ -96,16 +102,15 @@ public static class ETagAbstractions
         return (etag, item);
     }
 
-    private static async Task<(bool updated, long etag, T)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
+    private static async Task<(bool updated, long etag, T?)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
     {
-        // You may notice the "!" that is because we know that SETIFMATCH doesn't return null
         string serializedItem = JsonSerializer.Serialize<T>(value);
+        // You may notice the "!" that is because we know that SETIFMATCH doesn't return null
         RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedItem, etag))!;
 
-        if (res[1].IsNull)
-            return (true, (long)res[0], value);
+        T? deserializedItem = res[1].IsNull ? default(T) : 
+            JsonSerializer.Deserialize<T>((string)res[1]!)!;
 
-        T deserializedItem = JsonSerializer.Deserialize<T>((string)res[1]!)!;
         return (false, (long)res[0], deserializedItem);
     }
 }
