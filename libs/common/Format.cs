@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 #if UNIX_SOCKET
@@ -135,6 +136,55 @@ namespace Garnet.common
                 endpoint = new IPEndPoint(ip, port ?? 0);
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Try to parse endpoint from address and port
+        /// </summary>
+        /// <param name="address"></param>
+        /// <param name="port"></param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
+        public static async Task<IPEndPoint> TryParseEndpoint(string address, int port, ILogger logger = null)
+        {
+            IPEndPoint endpoint = null;
+            if (!IPAddress.TryParse(address, out var ipAddress))
+            {
+                // Try to identify reachable IP address from hostname
+                var hostEntry = Dns.GetHostEntry(address);
+                foreach (var entry in hostEntry.AddressList)
+                {
+                    endpoint = new IPEndPoint(entry, port);
+                    var IsValid = await IsReachable(endpoint);
+                    if (await IsReachable(endpoint))
+                        break;
+                }
+            }
+            else
+            {
+                // If address is valid create endpoint
+                endpoint = new IPEndPoint(ipAddress, port);
+            }
+
+            async Task<bool> IsReachable(IPEndPoint endpoint)
+            {
+                using (var tcpClient = new TcpClient())
+                {
+                    try
+                    {
+                        await tcpClient.ConnectAsync(endpoint.Address, endpoint.Port);
+                        logger?.LogTrace("Reachable {ip} {port}", endpoint.Address, endpoint.Port);
+                        return true;
+                    }
+                    catch
+                    {
+                        logger?.LogTrace("Unreachable {ip} {port}", endpoint.Address, endpoint.Port);
+                        return false;
+                    }
+                }
+            }
+
+            return endpoint;
         }
 
         /// <summary>
