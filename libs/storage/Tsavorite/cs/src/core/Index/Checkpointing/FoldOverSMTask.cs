@@ -1,34 +1,39 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The FoldOver task simply sets the read only offset to the current end of the log, so a captured version
-    /// is immutable and will eventually be flushed to disk.
+    /// A FoldOver checkpoint persists a version by setting the read-only marker past the last entry of that
+    /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
+    /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    internal sealed class FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator> : IStateMachineTask
+    internal sealed class FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
-
         public FoldOverSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            : base(store)
         {
-            this.store = store;
         }
 
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
+        public override void GlobalBeforeEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
-            // Before leaving the checkpoint, make sure all previous versions are read-only.
-            if (next.Phase == Phase.REST)
-                _ = store.hlogBase.ShiftReadOnlyToTail(out _, out _);
-        }
+            base.GlobalBeforeEnteringState(next, stateMachineDriver);
 
-        /// <inheritdoc />
-        public void GlobalAfterEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
-        {
+            if (next.Phase == Phase.PREPARE)
+            {
+                store._lastSnapshotCheckpoint.Dispose();
+            }
+
+            if (next.Phase == Phase.IN_PROGRESS)
+                base.GlobalBeforeEnteringState(next, stateMachineDriver);
+
+            if (next.Phase != Phase.WAIT_FLUSH) return;
+
+            _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
+            store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
         }
     }
 }
