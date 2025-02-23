@@ -20,7 +20,7 @@ This article explores when and how you can use this new Garnet feature for both 
 ## Why Read This Article?  
 If you're looking to:  
 
-1. **Keep your cache consistent with your Database for contentended keys**
+1. **Keep your cache consistent with your Database for keys with contention**
 2. **Reduce network bandwidth utilization for caching.**  
 3. **Avoid the cost of transactions when working with non-atomic values in your cache store.**
 
