@@ -1,7 +1,7 @@
 ---
 slug: etags-when-and-how
 title: ETags, When and How
-authors: hkhalid 
+authors: [hkhalid, badrishc]
 tags: [garnet, concurrency, caching, lock-free, etags]
 ---
 
