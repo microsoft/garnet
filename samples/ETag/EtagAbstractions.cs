@@ -18,7 +18,7 @@ public static class ETagAbstractions
     /// <param name="initialItem">The initial state of the item.</param>
     /// <param name="updateAction">The action to perform on the item before updating it in the database.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains a tuple with the final ETag value and the updated item.</returns>
-    public static async Task<(long, T?)> PerformLockFreeSafeUpdate<T>(IDatabase db, string key, long initialEtag, T initialItem, Action<T> updateAction)
+    public static async Task<(long, T)> PerformLockFreeSafeUpdate<T>(IDatabase db, string key, long initialEtag, T initialItem, Action<T> updateAction)
     {
         // Compare and Swap Updating
         long etag = initialEtag;
@@ -29,18 +29,11 @@ public static class ETagAbstractions
             // an item before it is finally updated on the server.
             // NOTE: Based on your application's needs you can modify this method to update a pure function that returns a copy of the data and does not use mutations as side effects.
             updateAction(item);
-
             var (updatedSuccesful, newEtag, newItem) = await _updateItemIfMatch(db, etag, key, item);
-            if (newItem == null)
-            {
-                // item was deleted, break out of the loop
-                return (newEtag, newItem);
-            }
-
             etag = newEtag;
-            item = newItem;
-
-            if (updatedSuccesful)
+            if (!updatedSuccesful)
+                item = newItem!;
+            else
                 break;
         }
 
@@ -92,9 +85,7 @@ public static class ETagAbstractions
         var executeResult = await db.ExecuteAsync("GETWITHETAG", key);
         // If key is not found we get null
         if (executeResult.IsNull)
-        {
             return (-1, default(T));
-        }
 
         RedisResult[] result = (RedisResult[])executeResult!;
         long etag = (long)result[0];
@@ -102,14 +93,15 @@ public static class ETagAbstractions
         return (etag, item);
     }
 
-    private static async Task<(bool updated, long etag, T?)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
+    private static async Task<(bool updated, long etag, T)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
     {
         string serializedItem = JsonSerializer.Serialize<T>(value);
-        // You may notice the "!" that is because we know that SETIFMATCH doesn't return null
         RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedItem, etag))!;
+        // successful update does not return updated value so we can just return what was passed for value. 
+        if (res[1].IsNull)
+            return (true, (long)res[0], value);
 
-        T? deserializedItem = res[1].IsNull ? default(T) :
-            JsonSerializer.Deserialize<T>((string)res[1]!)!;
+        T deserializedItem = JsonSerializer.Deserialize<T>((string)res[1]!)!;
 
         return (false, (long)res[0], deserializedItem);
     }

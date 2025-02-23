@@ -214,8 +214,6 @@ Sets/updates a key value pair with the given etag only if (1) the etag given in 
 
 #### **Response**
 
-One of the following:
-
 - **Array reply**: If the sent etag matches the existing etag the reponse will be an array where the first item is the updated etag, and the second value is nil. If the etags do not match then the response array will hold the latest etag, and the latest value in order.
 
 ---
@@ -235,8 +233,6 @@ Sets/updates a key value pair with the given etag only if (1) the etag given in 
 * NOGET -- The value is not returned even if the sent etag was not greater to existing etag. 
 
 #### **Response**
-
-One of the following:
 
 - **Array reply**: If the sent etag is greater than the existing etag then an array where the first item is the updated etag, and the second value is nil is returned. If the sentEtag is less than or equal to the existing etag then the response array will hold the latest etag, and the latest value in order.
 

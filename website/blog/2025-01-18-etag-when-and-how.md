@@ -215,31 +215,36 @@ public static async Task<(long, T?)> GetWithEtag<T>(IDatabase db, string key)
 
 public static async Task<(long, T)> PerformLockFreeSafeUpdate<T>(IDatabase db, string key, long initialEtag, T initialItem, Action<T> updateAction)
 {
+    // Compare and Swap Updating
     long etag = initialEtag;
     T item = initialItem;
-
     while (true)
     {
+        // perform custom action, since item is updated to it's correct latest state by the server this action is performed exactly once on
+        // an item before it is finally updated on the server.
+        // NOTE: Based on your application's needs you can modify this method to update a pure function that returns a copy of the data and does not use mutations as side effects.
         updateAction(item);
-
-        var (updated, newEtag, newItem) = await _updateItemIfMatch(db, etag, key, item);
+        var (updatedSuccesful, newEtag, newItem) = await _updateItemIfMatch(db, etag, key, item);
         etag = newEtag;
-        item = newItem;
-
-        if (updated) break;
+        if (!updatedSuccesful)
+            item = newItem!;
+        else
+            break;
     }
 
     return (etag, item);
 }
 
-private static async Task<(bool, long, T)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
+private static async Task<(bool updated, long etag, T?)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
 {
-    string serializedItem = JsonSerializer.Serialize(value);
+    string serializedItem = JsonSerializer.Serialize<T>(value);
     RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedItem, etag))!;
-
-    if (res[1].IsNull) return (true, (long)res[0], value);
+    // successful update does not return updated value so we can just return what was passed for value. 
+    if (res[1].IsNull)
+        return (true, (long)res[0], value);
 
     T deserializedItem = JsonSerializer.Deserialize<T>((string)res[1]!)!;
+
     return (false, (long)res[0], deserializedItem);
 }
 ```
