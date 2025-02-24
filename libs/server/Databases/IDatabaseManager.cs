@@ -12,7 +12,7 @@ namespace Garnet.server
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
-    internal interface IDatabaseManager : IDisposable
+    public interface IDatabaseManager : IDisposable
     {
         /// <summary>
         /// Reference to default database (DB 0)
@@ -108,6 +108,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="unsafeTruncateLog">Truncate log</param>
         public void FlushAllDatabases(bool unsafeTruncateLog);
+
+        /// <summary>
+        /// Create a shallow copy of the IDatabaseManager instance and copy databases to the new instance
+        /// </summary>
+        /// <param name="enableAof">True if AOF should be enabled in the clone</param>
+        /// <returns></returns>
+        public IDatabaseManager Clone(bool enableAof);
 
         internal FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0);
     }

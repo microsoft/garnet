@@ -72,7 +72,7 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
-            SwitchActiveDatabaseContext(0, true);
+            SwitchActiveDatabaseContext(ref storeWrapper.DefaultDatabase, true);
 
             parseState.Initialize();
             storeInput.parseState = parseState;
@@ -99,23 +99,22 @@ namespace Garnet.server
         /// <summary>
         /// Recover store using AOF
         /// </summary>
-        public unsafe void Recover(int dbId = 0, long untilAddress = -1)
+        public unsafe void Recover(ref GarnetDatabase db, long untilAddress = -1)
         {
             logger?.LogInformation("Begin AOF recovery");
-            RecoverReplay(dbId, untilAddress);
+            RecoverReplay(ref db, untilAddress);
         }
 
         MemoryResult<byte> output = default;
-        private unsafe void RecoverReplay(int dbId, long untilAddress)
+        private unsafe void RecoverReplay(ref GarnetDatabase db, long untilAddress)
         {
             logger?.LogInformation("Begin AOF replay");
             try
             {
                 int count = 0;
-                storeWrapper.TryGetOrAddDatabase(dbId, out var db);
                 var appendOnlyFile = db.AppendOnlyFile;
 
-                SwitchActiveDatabaseContext(dbId);
+                SwitchActiveDatabaseContext(ref db);
 
                 if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
                 using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
@@ -266,22 +265,22 @@ namespace Garnet.server
             return true;
         }
 
-        private void SwitchActiveDatabaseContext(int dbId, bool initialSetup = false)
+        private void SwitchActiveDatabaseContext(ref GarnetDatabase db, bool initialSetup = false)
         {
-            if (respServerSession.activeDbId != dbId)
+            if (respServerSession.activeDbId != db.Id)
             {
-                var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(dbId);
+                var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
                 Debug.Assert(switchDbSuccessful);
             }
 
-            if (this.activeDbId != dbId || initialSetup)
+            if (this.activeDbId != db.Id || initialSetup)
             {
                 var session = respServerSession.storageSession.basicContext.Session;
                 basicContext = session.BasicContext;
                 var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
                 if (objectStoreSession is not null)
                     objectStoreBasicContext = objectStoreSession.BasicContext;
-                this.activeDbId = dbId;
+                this.activeDbId = db.Id;
             }
         }
 

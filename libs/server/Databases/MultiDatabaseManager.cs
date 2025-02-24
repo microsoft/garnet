@@ -20,11 +20,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override int DatabaseCount => activeDbIdsLength;
 
-        /// <summary>
-        /// Delegate for creating a new logical database
-        /// </summary>
-        readonly StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate;
-
         readonly CancellationTokenSource cts = new();
 
         readonly int maxDatabases;
@@ -63,9 +58,8 @@ namespace Garnet.server
         readonly string checkpointDirBaseName;
 
         public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, int maxDatabases,
-            ILoggerFactory loggerFactory = null, bool createDefaultDatabase = true) : base(storeWrapper)
+            ILoggerFactory loggerFactory = null, bool createDefaultDatabase = true) : base(createsDatabaseDelegate, storeWrapper, loggerFactory)
         {
-            this.createDatabaseDelegate = createsDatabaseDelegate;
             this.maxDatabases = maxDatabases;
             this.Logger = loggerFactory?.CreateLogger(nameof(MultiDatabaseManager));
 
@@ -75,7 +69,7 @@ namespace Garnet.server
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
             {
-                var db = createDatabaseDelegate(0, out var storeCheckpointDir, out var aofDir);
+                var db = CreateDatabaseDelegate(0, out var storeCheckpointDir, out var aofDir);
 
                 var checkpointDirInfo = new DirectoryInfo(storeCheckpointDir);
                 this.checkpointDirBaseName = checkpointDirInfo.Name;
@@ -92,6 +86,12 @@ namespace Garnet.server
                 if (!this.TryAddDatabase(0, ref db))
                     throw new GarnetException("Failed to set initial database in databases map");
             }
+        }
+
+        public MultiDatabaseManager(MultiDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate,
+            src.StoreWrapper, src.maxDatabases, src.LoggerFactory, false)
+        {
+            this.CopyDatabases(src, enableAof);
         }
 
         public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
@@ -165,7 +165,37 @@ namespace Garnet.server
             }
         }
 
-        public override long ReplayAOF(long untilAddress = -1) => throw new NotImplementedException();
+        public override long ReplayAOF(long untilAddress = -1)
+        {
+            if (!StoreWrapper.serverOptions.EnableAOF)
+                return -1;
+
+            // When replaying AOF we do not want to write record again to AOF.
+            // So initialize local AofProcessor with recordToAof: false.
+            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
+
+            long replicationOffset = 0;
+            try
+            {
+                var databasesMapSnapshot = databases.Map;
+
+                var activeDbIdsSize = activeDbIdsLength;
+                var activeDbIdsSnapshot = activeDbIds;
+
+                for (var i = 0; i < activeDbIdsSize; i++)
+                {
+                    var dbId = activeDbIdsSnapshot[i];
+                    var offset = ReplayDatabaseAOF(aofProcessor, ref databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : -1);
+                    if (dbId == 0) replicationOffset = offset;
+                }
+            }
+            finally
+            {
+                aofProcessor.Dispose();
+            }
+
+            return replicationOffset;
+        }
 
         public override void Reset(int dbId = 0)
         {
@@ -183,6 +213,8 @@ namespace Garnet.server
             EnqueueDatabaseCommit(ref db, isMainStore, version);
         }
 
+        public override IDatabaseManager Clone(bool enableAof) => new MultiDatabaseManager(this, enableAof);
+
         public override FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0)
         {
             if (!this.TryGetOrAddDatabase(dbId, out var db))
@@ -195,7 +227,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db)
         {
-            if (!databases.TryGetOrSet(dbId, () => createDatabaseDelegate(dbId, out _, out _), out db, out var added))
+            if (!databases.TryGetOrSet(dbId, () => CreateDatabaseDelegate(dbId, out _, out _), out db, out var added))
                 return false;
 
             if (added)
@@ -352,7 +384,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="src">Source IDatabaseManager</param>
         /// <param name="enableAof">True if should enable AOF in copied databases</param>
-        private void CopyDatabases(IDatabaseManager src, bool enableAof)
+        protected void CopyDatabases(IDatabaseManager src, bool enableAof)
         {
             switch (src)
             {

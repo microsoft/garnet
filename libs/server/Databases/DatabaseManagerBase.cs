@@ -41,11 +41,6 @@ namespace Garnet.server
         public abstract int DatabaseCount { get; }
 
         /// <summary>
-        /// The main logger instance associated with the database manager.
-        /// </summary>
-        protected ILogger Logger;
-
-        /// <summary>
         /// Store Wrapper
         /// </summary>
         public readonly StoreWrapper StoreWrapper;
@@ -78,11 +73,28 @@ namespace Garnet.server
 
         public abstract FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0);
 
+        /// <summary>
+        /// Delegate for creating a new logical database
+        /// </summary>
+        protected readonly StoreWrapper.DatabaseCreatorDelegate CreateDatabaseDelegate;
+
+        /// <summary>
+        /// The main logger instance associated with the database manager.
+        /// </summary>
+        protected ILogger Logger;
+
+        /// <summary>
+        /// The logger factory used to create logger instances
+        /// </summary>
+        protected ILoggerFactory LoggerFactory;
+
         protected bool Disposed;
 
-        protected DatabaseManagerBase(StoreWrapper storeWrapper)
+        protected DatabaseManagerBase(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, ILoggerFactory loggerFactory = null)
         {
+            this.CreateDatabaseDelegate = createDatabaseDelegate;
             this.StoreWrapper = storeWrapper;
+            this.LoggerFactory = loggerFactory;
         }
 
         protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
@@ -105,6 +117,25 @@ namespace Garnet.server
 
             db.AppendOnlyFile.Recover();
             Logger?.LogInformation($"Recovered AOF: begin address = {db.AppendOnlyFile.BeginAddress}, tail address = {db.AppendOnlyFile.TailAddress}");
+        }
+
+        protected long ReplayDatabaseAOF(AofProcessor aofProcessor, ref GarnetDatabase db, long untilAddress = -1)
+        {
+            long replicationOffset = 0;
+            try
+            {
+                aofProcessor.Recover(ref db, untilAddress);
+                db.LastSaveTime = DateTimeOffset.UtcNow;
+                replicationOffset = aofProcessor.ReplicationOffset;
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError(ex, "Error during recovery of AofProcessor");
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                    throw;
+            }
+
+            return replicationOffset;
         }
 
         protected void ResetDatabase(ref GarnetDatabase db)
@@ -147,5 +178,7 @@ namespace Garnet.server
         }
 
         public abstract void Dispose();
+
+        public abstract IDatabaseManager Clone(bool enableAof);
     }
 }

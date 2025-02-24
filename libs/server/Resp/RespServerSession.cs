@@ -1269,10 +1269,10 @@ namespace Garnet.server
         {
             if (!allowMultiDb) return false;
 
-            if (!databaseSessions.TryGetOrSet(dbId, () => CreateDatabaseSession(dbId), out var db, out _))
+            if (!databaseSessions.TryGetOrSet(dbId, () => CreateDatabaseSession(dbId), out var dbSession, out _))
                 return false;
 
-            SwitchActiveDatabaseSession(dbId, ref db);
+            SwitchActiveDatabaseSession(dbId, ref dbSession);
             return true;
         }
 

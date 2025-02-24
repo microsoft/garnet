@@ -17,11 +17,21 @@ namespace Garnet.server
 
         GarnetDatabase defaultDatabase;
 
-        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, ILoggerFactory loggerFactory = null) : 
-            base(storeWrapper)
+        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, ILoggerFactory loggerFactory = null, bool createDefaultDatabase = true) : 
+            base(createsDatabaseDelegate, storeWrapper)
         {
             this.Logger = loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
-            defaultDatabase = createsDatabaseDelegate(0, out _, out _);
+
+            // Create default database of index 0 (unless specified otherwise)
+            if (createDefaultDatabase)
+            {
+                defaultDatabase = createsDatabaseDelegate(0, out _, out _);
+            }
+        }
+
+        public SingleDatabaseManager(SingleDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate, src.StoreWrapper, src.LoggerFactory)
+        {
+            this.CopyDatabases(src, enableAof);
         }
 
         /// <inheritdoc/>
@@ -85,27 +95,18 @@ namespace Garnet.server
             if (!StoreWrapper.serverOptions.EnableAOF)
                 return -1;
 
-            long replicationOffset = 0;
+            // When replaying AOF we do not want to write record again to AOF.
+            // So initialize local AofProcessor with recordToAof: false.
+            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
+            
             try
             {
-                // When replaying AOF we do not want to write record again to AOF.
-                // So initialize local AofProcessor with recordToAof: false.
-                var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
-
-                aofProcessor.Recover(0, untilAddress);
-                DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
-                replicationOffset = aofProcessor.ReplicationOffset;
-
+                return ReplayDatabaseAOF(aofProcessor, ref DefaultDatabase, untilAddress);
+            }
+            finally
+            {
                 aofProcessor.Dispose();
             }
-            catch (Exception ex)
-            {
-                Logger?.LogError(ex, "Error during recovery of AofProcessor");
-                if (StoreWrapper.serverOptions.FailOnRecoveryError)
-                    throw;
-            }
-
-            return replicationOffset;
         }
         
         /// <inheritdoc/>
@@ -143,11 +144,18 @@ namespace Garnet.server
         public override void FlushAllDatabases(bool unsafeTruncateLog) =>
             FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
 
+        public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
+
         public override FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             return new(AppendOnlyFile, VersionMap, customCommandManager, null, ObjectStoreSizeTracker, garnetObjectSerializer);
+        }
+
+        private void CopyDatabases(SingleDatabaseManager src, bool enableAof)
+        {
+            this.DefaultDatabase = new GarnetDatabase(ref src.DefaultDatabase, enableAof);
         }
 
         public override void Dispose()

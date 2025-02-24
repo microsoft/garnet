@@ -34,6 +34,11 @@ namespace Garnet.server
         internal readonly long startupTime;
 
         /// <summary>
+        /// Default database (DB 0)
+        /// </summary>
+        public ref GarnetDatabase DefaultDatabase => ref databaseManager.DefaultDatabase;
+
+        /// <summary>
         /// Store (of DB 0)
         /// </summary>
         public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
@@ -142,11 +147,10 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            DatabaseCreatorDelegate createsDatabaseDelegate,
+            IDatabaseManager databaseManager,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
             SubscribeBroker subscribeBroker,
-            bool createDefaultDatabase = true,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null)
@@ -158,7 +162,7 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
-            this.createDatabasesDelegate = createsDatabaseDelegate;
+            this.databaseManager = databaseManager;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
                 ? new GarnetServerMonitor(this, serverOptions, server,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -229,16 +233,14 @@ namespace Garnet.server
             storeWrapper.version,
             storeWrapper.redisProtocolVersion,
             storeWrapper.server,
-            storeWrapper.createDatabasesDelegate,
+            storeWrapper.databaseManager.Clone(recordToAof),
             storeWrapper.customCommandManager,
             storeWrapper.serverOptions,
             storeWrapper.subscribeBroker,
-            createDefaultDatabase: false,
             storeWrapper.accessControlList,
             null,
             storeWrapper.loggerFactory)
         {
-            this.CopyDatabases(storeWrapper, recordToAof);
         }
 
         /// <summary>
@@ -294,50 +296,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1)
-        {
-            if (!serverOptions.EnableAOF)
-                return -1;
-
-            long replicationOffset = 0;
-            try
-            {
-                // When replaying AOF we do not want to write record again to AOF.
-                // So initialize local AofProcessor with recordToAof: false.
-                var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
-
-                var databasesMapSnapshot = databases.Map;
-
-                var activeDbIdsSize = activeDbIdsLength;
-                var activeDbIdsSnapshot = activeDbIds;
-
-                for (var i = 0; i < activeDbIdsSize; i++)
-                {
-                    var dbId = activeDbIdsSnapshot[i];
-
-                    aofProcessor.Recover(dbId, dbId == 0 ? untilAddress : -1);
-
-                    var lastSave = DateTimeOffset.UtcNow;
-                    databasesMapSnapshot[dbId].LastSaveTime = lastSave;
-
-                    if (dbId == 0)
-                    {
-                        replicationOffset = aofProcessor.ReplicationOffset;
-                        DefaultDatabase.LastSaveTime = lastSave;
-                    }
-                }
-
-                aofProcessor.Dispose();
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Error during recovery of AofProcessor");
-                if (serverOptions.FailOnRecoveryError)
-                    throw;
-            }
-
-            return replicationOffset;
-        }
+        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF();
 
         /// <summary>
         /// Try to swap between two database instances
