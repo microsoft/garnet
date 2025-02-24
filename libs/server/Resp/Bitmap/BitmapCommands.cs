@@ -376,7 +376,8 @@ namespace Garnet.server
             ArgSlice overflowTypeSlice = default;
             var secondaryCommandArgs = new SecondaryCommandList();
 
-            for (var currTokenIdx = 1; currTokenIdx < parseState.Count;)
+            var currTokenIdx = 1;
+            while (true)
             {
                 // Get subcommand
                 var commandSlice = parseState.GetArgSliceByRef(currTokenIdx++);
@@ -479,7 +480,8 @@ namespace Garnet.server
 
             var secondaryCommandArgs = new SecondaryCommandList();
 
-            for (var currTokenIdx = 1; currTokenIdx < parseState.Count;)
+            var currTokenIdx = 1;
+            while (true)
             {
                 // Get subcommand
                 var commandSlice = parseState.GetArgSliceByRef(currTokenIdx++);
