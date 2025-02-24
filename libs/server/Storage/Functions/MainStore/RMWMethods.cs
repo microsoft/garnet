@@ -194,6 +194,13 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     break;
 
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs_RO));
+                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, value.ToPointer(), value.Length);
+                    CopyRespNumber(bitfieldReturnValue_RO, ref output);
+                    break;
+
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
@@ -689,6 +696,22 @@ namespace Garnet.server
                     }
 
                     CopyRespNumber(bitfieldReturnValue, ref output);
+                    break;
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    v = value.ToPointer() + functionsState.etagState.etagSkippedStart;
+
+                    if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs_RO, value.Length - functionsState.etagState.etagSkippedStart))
+                        return false;
+
+                    rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+                    value.UnmarkExtraMetadata();
+                    value.ShrinkSerializedLength(value.Length + value.MetadataSize);
+                    rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+
+                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, v,
+                                                    value.Length - functionsState.etagState.etagSkippedStart);
+                    CopyRespNumber(bitfieldReturnValue_RO, ref output);
                     break;
 
                 case RespCommand.PFADD:
@@ -1220,12 +1243,25 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     Buffer.MemoryCopy(oldValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart, oldValue.Length - functionsState.etagState.etagSkippedStart);
-                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart);
+                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs,
+                                            newValue.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                            newValue.Length - functionsState.etagState.etagSkippedStart);
 
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
                     else
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                    break;
+
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    Buffer.MemoryCopy(oldValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart, oldValue.Length - functionsState.etagState.etagSkippedStart);
+                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO,
+                                            newValue.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                            newValue.Length - functionsState.etagState.etagSkippedStart
+                                            );
+
+                    CopyRespNumber(bitfieldReturnValue_RO, ref output);
                     break;
 
                 case RespCommand.PFADD:

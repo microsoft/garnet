@@ -2508,5 +2508,130 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(-1, pos);
             }
         }
+
+        [Order(40)]
+        [Test]
+        [Category("BITFIELD")]
+        public void BitmapBitFieldInvalidOptionsTest([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "BitmapBitFieldInvalidOptionsTest";
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u64", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i-1", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u8", @"""");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i16", "#");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "32", "1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u32", @"-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            if (testCmd == RespCommand.BITFIELD)
+            {
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "SET", "i32", "0");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR value is not an integer or out of range.",
+                                           ex.Message);
+                }
+
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "OVERFLOW", "NONE");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR Invalid OVERFLOW type specified",
+                                           ex.Message);
+                }
+            }
+            else
+            {
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "SET", "i64", "0");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR syntax error",
+                                           ex.Message);
+                }
+            }
+        }
     }
 }
