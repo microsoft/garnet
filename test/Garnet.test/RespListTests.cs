@@ -1169,6 +1169,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("LMOVE")]
         public void CanDoBasicLMove()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1193,12 +1194,24 @@ namespace Garnet.test
             ClassicAssert.AreEqual(key1Values[0], result);
 
             var members = db.ListRange(key2);
-            ClassicAssert.AreEqual(key1Values.Union(key2Values).ToArray(), members);
+            var keys = key1Values.Union(key2Values).ToArray();
+            ClassicAssert.AreEqual(keys, members);
+
+            result = db.ListMove(key2, key2, ListSide.Right, ListSide.Right);
+            ClassicAssert.AreEqual(key2Values[0], result);
+
+            members = db.ListRange(key2);
+            ClassicAssert.AreEqual(keys, members);
+
+            result = db.ListMove(key2, key2, ListSide.Left, ListSide.Left);
+            ClassicAssert.AreEqual(key1Values[0], result);
+
+            members = db.ListRange(key2);
+            ClassicAssert.AreEqual(keys, members);
 
             var exists = db.KeyExists(key1);
             ClassicAssert.IsFalse(exists);
         }
-
 
         [Test]
         public void CanDoLPopMultipleValues()
