@@ -396,5 +396,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_wrong_number_of_arguments => "ERR wrong number of arguments"u8;
     }
 }

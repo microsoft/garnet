@@ -187,6 +187,7 @@ function load_sandboxed(source)
     -- move into a local to avoid global lookup
     local garnetCallRef = garnet_call
     local pCallRef = pcall;
+    local sha1hexRef = sha1hex;
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -208,6 +209,10 @@ function load_sandboxed(source)
             end
 
             return { err = errOrRes }
+        end,
+
+        sha1hex = function(...)
+            return sha1hexRef(...)
         end
     }
 
@@ -238,6 +243,7 @@ end
         readonly int errNoAuthConstStringRegistryIndex;
         readonly int errUnknownConstStringRegistryIndex;
         readonly int errBadArgConstStringRegistryIndex;
+        readonly int errWrongNumberOfArgumentsConstStringRegistryIndex;
 
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
@@ -353,8 +359,9 @@ end
                 throw new GarnetException($"Could not initialize Lua sandbox state: {errMsg}");
             }
 
-            // Register garnet_call in global namespace
+            // Register functions provided by .NET in global namespace
             state.Register("garnet_call\0"u8, garnetCall);
+            state.Register("sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
 
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
@@ -377,6 +384,7 @@ end
             errNoAuthConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.RESP_ERR_NOAUTH);
             errUnknownConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
             errBadArgConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
+            errWrongNumberOfArgumentsConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_wrong_number_of_arguments);
 
             state.ExpectLuaStackEmpty();
         }
@@ -547,6 +555,34 @@ end
         /// </summary>
         public void Dispose()
         => state.Dispose();
+
+        /// <summary>
+        /// Entry point for redis.sha1hex method from a Lua script.
+        /// </summary>
+        public int SHA1Hex(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var argCount = state.StackTop;
+            if (argCount != 1)
+            {
+                state.PushConstantString(errWrongNumberOfArgumentsConstStringRegistryIndex);
+                return state.RaiseErrorFromStack();
+            }
+
+            if (!state.CheckBuffer(1, out var bytes))
+            {
+                bytes = default;
+            }
+
+            Span<byte> hashBytes = stackalloc byte[SessionScriptCache.SHA1Len / 2];
+            Span<byte> hexRes = stackalloc byte[SessionScriptCache.SHA1Len];
+
+            SessionScriptCache.GetScriptDigest(bytes, hashBytes, hexRes);
+
+            state.PushBuffer(hexRes);
+            return 1;
+        }
 
         /// <summary>
         /// Entry point for redis.call method from a Lua script (non-transactional mode)
@@ -1687,5 +1723,12 @@ end
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Callback must take these parameters")]
         internal static void ForceTimeout(nint luaState, nint debugState)
         => CallbackContext?.UnsafeForceTimeout();
+
+        /// <summary>
+        /// Entry point for calls to redis.sha1hex.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int SHA1Hex(nint luaState)
+        => CallbackContext.SHA1Hex(luaState);
     }
 }

@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -380,6 +381,33 @@ namespace Garnet.test
 
             var resSuccess = (string)db.ScriptEvaluate("return redis.pcall('GET', 'foo')");
             ClassicAssert.AreEqual("bar", resSuccess);
+        }
+
+        [Test]
+        public void RedisSha1Hex()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var resEmpty = (string)db.ScriptEvaluate("return redis.sha1hex('')");
+            ClassicAssert.AreEqual("da39a3ee5e6b4b0d3255bfef95601890afd80709", resEmpty);
+
+            var resStr = (string)db.ScriptEvaluate("return redis.sha1hex('123')");
+            ClassicAssert.AreEqual("40bd001563085fc35165329ea1ff5c5ecbdbbeef", resStr);
+
+            // Redis stringifies numbers before hashing, so same bytes are expected
+            var resInt = (string)db.ScriptEvaluate("return redis.sha1hex(123)");
+            ClassicAssert.AreEqual("40bd001563085fc35165329ea1ff5c5ecbdbbeef", resInt);
+
+            // Redis still succeeds here, but effectively treats non-string, non-number values as empty strings
+            var resTable = (string)db.ScriptEvaluate("return redis.sha1hex({ 1234 })");
+            ClassicAssert.AreEqual("da39a3ee5e6b4b0d3255bfef95601890afd80709", resTable);
+
+            var excEmpty = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex()"));
+            ClassicAssert.IsTrue(excEmpty.Message.StartsWith("ERR wrong number of arguments"));
+
+            var excTwo = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex('a', 'b')"));
+            ClassicAssert.IsTrue(excEmpty.Message.StartsWith("ERR wrong number of arguments"));
         }
 
         [Test]

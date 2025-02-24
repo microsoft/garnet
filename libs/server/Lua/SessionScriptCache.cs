@@ -200,15 +200,19 @@ namespace Garnet.server
         static ReadOnlySpan<byte> HEX_CHARS => "0123456789abcdef"u8;
 
         public void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> into)
+        => GetScriptDigest(source, hash, into);
+
+        public static void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> sha1Bytes, Span<byte> into)
         {
-            Debug.Assert(into.Length >= SHA1Len, "into must be large enough for the hash");
+            Debug.Assert(sha1Bytes.Length >= SHA1Len / 2, "sha1Bytes must be large enough for the hash");
+            Debug.Assert(into.Length >= SHA1Len, "into must be large enough for the hash hex bytes");
 
-            _ = SHA1.HashData(source, new Span<byte>(hash));
+            _ = SHA1.HashData(source, sha1Bytes);
 
-            for (var i = 0; i < hash.Length; i++)
+            for (var i = 0; i < SHA1Len / 2; i++)
             {
-                into[i * 2] = HEX_CHARS[hash[i] >> 4];
-                into[i * 2 + 1] = HEX_CHARS[hash[i] & 0x0F];
+                into[i * 2] = HEX_CHARS[sha1Bytes[i] >> 4];
+                into[i * 2 + 1] = HEX_CHARS[sha1Bytes[i] & 0x0F];
             }
         }
     }
