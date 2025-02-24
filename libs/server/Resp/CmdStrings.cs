@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 
 namespace Garnet.server
 {
@@ -397,5 +398,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
         public static ReadOnlySpan<byte> Lua_ERR_wrong_number_of_arguments => "ERR wrong number of arguments"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_log_requires_two_arguments_or_more => "ERR redis.log() requires two arguments or more."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_First_argument_must_be_a_number_log_level => "ERR First argument must be a number (log level)."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_Invalid_debug_level => "ERR Invalid debug level."u8;
     }
 }

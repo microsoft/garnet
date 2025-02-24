@@ -407,7 +407,29 @@ namespace Garnet.test
             ClassicAssert.IsTrue(excEmpty.Message.StartsWith("ERR wrong number of arguments"));
 
             var excTwo = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.sha1hex('a', 'b')"));
-            ClassicAssert.IsTrue(excEmpty.Message.StartsWith("ERR wrong number of arguments"));
+            ClassicAssert.IsTrue(excTwo.Message.StartsWith("ERR wrong number of arguments"));
+        }
+
+        [Test]
+        public void RedisLog()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var excZero = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log()"));
+            ClassicAssert.IsTrue(excZero.Message.StartsWith("ERR redis.log() requires two arguments or more."));
+
+            var excOne = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG)"));
+            ClassicAssert.IsTrue(excOne.Message.StartsWith("ERR redis.log() requires two arguments or more."));
+
+            var excBadLevelType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log('hello', 'world')"));
+            ClassicAssert.IsTrue(excBadLevelType.Message.StartsWith("ERR First argument must be a number (log level)."));
+
+            var excBadLevelValue = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log(-1, 'world')"));
+            ClassicAssert.IsTrue(excBadLevelValue.Message.StartsWith("ERR Invalid debug level."));
+
+            // More than 1 log line, and non-string values are legal
+            _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123, 456, 789)");
         }
 
         [Test]

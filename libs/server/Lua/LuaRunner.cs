@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -187,7 +189,8 @@ function load_sandboxed(source)
     -- move into a local to avoid global lookup
     local garnetCallRef = garnet_call
     local pCallRef = pcall;
-    local sha1hexRef = sha1hex;
+    local sha1hexRef = garnet_sha1hex;
+    local logRef = garnet_log;
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -213,7 +216,16 @@ function load_sandboxed(source)
 
         sha1hex = function(...)
             return sha1hexRef(...)
-        end
+        end,
+
+        LOG_DEBUG = 0,
+        LOG_VERBOSE = 1,
+        LOG_NOTICE = 2,
+        LOG_WARNING = 3,
+
+        log = function(...)
+            return logRef(...)
+        end,
     }
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
@@ -244,6 +256,9 @@ end
         readonly int errUnknownConstStringRegistryIndex;
         readonly int errBadArgConstStringRegistryIndex;
         readonly int errWrongNumberOfArgumentsConstStringRegistryIndex;
+        readonly int errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex;
+        readonly int errFirstArgumentMustBeANumberConstStringRegistryIndex;
+        readonly int errInvalidDebugLevelConstStringRegistryIndex;
 
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
@@ -361,7 +376,8 @@ end
 
             // Register functions provided by .NET in global namespace
             state.Register("garnet_call\0"u8, garnetCall);
-            state.Register("sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
+            state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
+            state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
 
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
@@ -376,6 +392,8 @@ end
             resetKeysAndArgvRegistryIndex = state.Ref();
 
             // Commonly used strings, register them once so we don't have to copy them over each time we need them
+            //
+            // As a side benefit, we don't have to worry about reserving memory for them either during normal operation
             okConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_OK);
             okLowerConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ok);
             errConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_err);
@@ -385,6 +403,9 @@ end
             errUnknownConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
             errBadArgConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
             errWrongNumberOfArgumentsConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_wrong_number_of_arguments);
+            errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more);
+            errFirstArgumentMustBeANumberConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level);
+            errInvalidDebugLevelConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_debug_level);
 
             state.ExpectLuaStackEmpty();
         }
@@ -582,6 +603,40 @@ end
 
             state.PushBuffer(hexRes);
             return 1;
+        }
+
+        /// <summary>
+        /// Entry point for redis.log(...) from a Lua script.
+        /// </summary>
+        /// <param name="luaStatePtr"></param>
+        /// <returns></returns>
+        public int Log(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var argCount = state.StackTop;
+            if (argCount < 2)
+            {
+                state.PushConstantString(errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex);
+                return state.RaiseErrorFromStack();
+            }
+
+            if (state.Type(1) != LuaType.Number)
+            {
+                state.PushConstantString(errFirstArgumentMustBeANumberConstStringRegistryIndex);
+                return state.RaiseErrorFromStack();
+            }
+
+            var rawLevel = state.CheckNumber(1);
+            if (rawLevel is not 0 or 1 or 2 or 3)
+            {
+                state.PushConstantString(errInvalidDebugLevelConstStringRegistryIndex);
+                return state.RaiseErrorFromStack();
+            }
+
+            // TODO: Should there be an option to actually log the output?
+
+            return 0;
         }
 
         /// <summary>
@@ -1730,5 +1785,12 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int SHA1Hex(nint luaState)
         => CallbackContext.SHA1Hex(luaState);
+
+        /// <summary>
+        /// Entry point for calls to redis.log.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Log(nint luaState)
+        => CallbackContext.Log(luaState);
     }
 }
