@@ -762,17 +762,17 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(13)]
-        public void ClusterMeetHostname()
+        public void ClusterMeetHostname([Values] bool localhost)
         {
             var node_count = 3;
-            context.CreateInstances(node_count, enableAOF: true, useLocalIp: true);
+            context.CreateInstances(node_count, enableAOF: true, useLocalIp: !localhost);
             context.CreateConnection();
 
             for (var i = 0; i < node_count; i++)
                 context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
 
             var config = context.clusterTestUtils.ClusterNodes(0, context.logger);
-            var hostname = config.Nodes.First().Raw.Split(" ")[1].Split(",")[1];
+            var hostname = localhost ? "localhost" : config.Nodes.First().Raw.Split(" ")[1].Split(",")[1];
             ClassicAssert.IsNotNull(hostname);
 
             for (var i = 1; i < node_count; i++)
