@@ -5,6 +5,6 @@ namespace Tsavorite.core
 {
     public interface IStateMachine : IStateMachineTask
     {
-        public SystemState NextState(SystemState currentState, out bool barrier);
+        public SystemState NextState(SystemState currentState);
     }
 }

@@ -77,7 +77,7 @@ namespace Tsavorite.core
             if (!SystemState.Equal(expectedState, systemState))
                 return;
 
-            var nextState = stateMachine.NextState(systemState, out var bumpEpoch);
+            var nextState = stateMachine.NextState(systemState);
 
             stateMachine.GlobalBeforeEnteringState(nextState, this);
 

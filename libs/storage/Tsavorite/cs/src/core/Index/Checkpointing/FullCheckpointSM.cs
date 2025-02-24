@@ -24,9 +24,8 @@ namespace Tsavorite.core
         { }
 
         /// <inheritdoc />
-        public override SystemState NextState(SystemState start, out bool barrier)
+        public override SystemState NextState(SystemState start)
         {
-            barrier = false;
             var result = SystemState.Copy(ref start);
             switch (start.Phase)
             {
@@ -43,7 +42,7 @@ namespace Tsavorite.core
                     result.Phase = Phase.WAIT_FLUSH;
                     break;
                 default:
-                    result = base.NextState(start, out barrier);
+                    result = base.NextState(start);
                     break;
             }
 

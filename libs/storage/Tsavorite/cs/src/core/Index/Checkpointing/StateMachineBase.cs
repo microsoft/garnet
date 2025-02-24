@@ -24,7 +24,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public abstract SystemState NextState(SystemState start, out bool barrier);
+        public abstract SystemState NextState(SystemState start);
 
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(SystemState next, StateMachineDriver stateMachineDriver)

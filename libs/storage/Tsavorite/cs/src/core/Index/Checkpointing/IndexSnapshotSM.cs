@@ -19,9 +19,8 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override SystemState NextState(SystemState start, out bool barrier)
+        public override SystemState NextState(SystemState start)
         {
-            barrier = false;
             var result = SystemState.Copy(ref start);
             switch (start.Phase)
             {

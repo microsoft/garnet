@@ -18,9 +18,8 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override SystemState NextState(SystemState start, out bool barrier)
+        public override SystemState NextState(SystemState start)
         {
-            barrier = false;
             var nextState = SystemState.Copy(ref start);
             switch (start.Phase)
             {
@@ -28,7 +27,6 @@ namespace Tsavorite.core
                     nextState.Phase = Phase.PREPARE;
                     break;
                 case Phase.PREPARE:
-                    barrier = true;
                     nextState.Phase = Phase.IN_PROGRESS;
                     if (toVersion == -1) toVersion = start.Version + 1;
                     nextState.Version = toVersion;
