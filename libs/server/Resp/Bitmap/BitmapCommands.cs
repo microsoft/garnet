@@ -402,22 +402,24 @@ namespace Garnet.server
 
                 // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
                 // Process encoding argument
-                if (!parseState.TryGetBitfieldEncoding(currTokenIdx++, out var encodingSlice))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
                 }
+                var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // Process offset argument
-                if (!parseState.TryGetBitfieldOffset(currTokenIdx++, out var offsetSlice))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
                 }
+                var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // GET Subcommand takes 2 args, encoding and offset
                 if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
@@ -456,7 +458,7 @@ namespace Garnet.server
                 }
             }
 
-            return StringFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD,
+            return StringBitFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD,
                                      secondaryCommandArgs, isOverflowTypeSet, overflowTypeSlice);
         }
 
@@ -494,35 +496,37 @@ namespace Garnet.server
                 // GET Subcommand takes 2 args, encoding and offset
 
                 // Process encoding argument
-                if (!parseState.TryGetBitfieldEncoding(currTokenIdx++, out var encodingSlice))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
                 }
+                var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 // Process offset argument
-                if (!parseState.TryGetBitfieldOffset(currTokenIdx++, out var offsetSlice))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
                 }
+                var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
             }
 
-            return StringFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD_RO, secondaryCommandArgs);
+            return StringBitFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD_RO, secondaryCommandArgs);
         }
 
-        private bool StringFieldAction<TGarnetApi>(ref TGarnetApi storageApi,
-                                                   ref SpanByte sbKey,
-                                                   RespCommand cmd,
-                                                   SecondaryCommandList secondaryCommandArgs,
-                                                   bool isOverflowTypeSet = false,
-                                                   ArgSlice overflowTypeSlice = default)
+        private bool StringBitFieldAction<TGarnetApi>(ref TGarnetApi storageApi,
+                                                      ref SpanByte sbKey,
+                                                      RespCommand cmd,
+                                                      SecondaryCommandList secondaryCommandArgs,
+                                                      bool isOverflowTypeSet = false,
+                                                      ArgSlice overflowTypeSlice = default)
             where TGarnetApi : IGarnetApi
         {
             while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))

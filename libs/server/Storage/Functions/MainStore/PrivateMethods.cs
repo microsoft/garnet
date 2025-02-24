@@ -773,8 +773,16 @@ namespace Garnet.server
             else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INCRBY))
                 cmd = RespCommand.INCRBY;
 
-            var encodingArg = input.parseState.GetString(currTokenIdx++);
-            var offsetArg = input.parseState.GetString(currTokenIdx++);
+            var bitfieldEncodingParsed = input.parseState.TryGetBitfieldEncoding(
+                                                currTokenIdx++, out var bitCount, out var isSigned);
+            Debug.Assert(bitfieldEncodingParsed);
+            var sign = isSigned ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+
+            // Calculate number offset from bitCount if offsetArg starts with #
+            var offsetParsed = input.parseState.TryGetBitfieldOffset(currTokenIdx++, out var offset, out var multiplyOffset);
+            Debug.Assert(offsetParsed);
+            if (multiplyOffset)
+                offset *= bitCount;
 
             long value = default;
             if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
@@ -790,14 +798,9 @@ namespace Garnet.server
                 overflowType = (byte)overflowTypeValue;
             }
 
-            var sign = encodingArg[0] == 'i' ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
             // Number of bits in signed number
-            var bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
             // At most 64 bits can fit into encoding info
             var typeInfo = (byte)(sign | bitCount);
-
-            // Calculate number offset from bitCount if offsetArg starts with #
-            var offset = offsetArg[0] == '#' ? long.Parse(offsetArg.AsSpan(1)) * bitCount : long.Parse(offsetArg);
 
             return new BitFieldCmdArgs(cmd, typeInfo, offset, value, overflowType);
         }

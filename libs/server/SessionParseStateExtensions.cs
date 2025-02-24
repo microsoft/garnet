@@ -144,31 +144,37 @@ namespace Garnet.server
         /// </summary>
         /// <param name="parseState">The parse state</param>
         /// <param name="idx">The argument index</param>
-        /// <param name="encodingSlice">Parsed slice</param>
+        /// <param name="bitCount">parsed bitcount</param>
+        /// <param name="isSigned">bitfield signtype</param>
         /// <returns></returns>
-        internal static unsafe bool TryGetBitfieldEncoding(this SessionParseState parseState, int idx, out ArgSlice encodingSlice)
+        internal static unsafe bool TryGetBitfieldEncoding(this SessionParseState parseState, int idx, out long bitCount, out bool isSigned)
         {
-            if (idx >= parseState.Count)
+            bitCount = default;
+            isSigned = default;
+            var encodingSlice = parseState.GetArgSliceByRef(idx);
+
+            if (encodingSlice.length <= 1)
             {
-                encodingSlice = default;
                 return false;
             }
 
-            encodingSlice = parseState.GetArgSliceByRef(idx);
-
-            if (encodingSlice.length <= 1)
-                return false;
-
             var ptr = encodingSlice.ptr + 1;
+
+            isSigned = *encodingSlice.ptr == 'i';
+
+            if (!isSigned && *encodingSlice.ptr != 'u')
+            {
+                return false;
+            }
 
             return
                 RespReadUtils.TryReadInt64Safe(ref ptr, encodingSlice.ptr + encodingSlice.length,
-                                           out var bitCount, out var bytesRead,
+                                           out bitCount, out var bytesRead,
                                            out _, out _, allowLeadingZeros: false) &&
                 ((int)bytesRead == encodingSlice.length - 1) && (bytesRead > 0L) &&
                 (bitCount > 0) &&
-                ((*encodingSlice.ptr == 'i' && bitCount <= 64) ||
-                 (*encodingSlice.ptr == 'u' && bitCount < 64));
+                ((isSigned && bitCount <= 64) ||
+                 (!isSigned && bitCount < 64));
         }
 
         /// <summary>
@@ -176,20 +182,19 @@ namespace Garnet.server
         /// </summary>
         /// <param name="parseState">The parse state</param>
         /// <param name="idx">The argument index</param>
-        /// <param name="offsetSlice">Parsed slice</param>
+        /// <param name="bitFieldOffset">parsed value</param>
+        /// <param name="multiplyOffset">should value by multiplied by bitcount</param>
         /// <returns></returns>
-        internal static unsafe bool TryGetBitfieldOffset(this SessionParseState parseState, int idx, out ArgSlice offsetSlice)
+        internal static unsafe bool TryGetBitfieldOffset(this SessionParseState parseState, int idx, out long bitFieldOffset, out bool multiplyOffset)
         {
-            if (idx >= parseState.Count)
-            {
-                offsetSlice = default;
-                return false;
-            }
-
-            offsetSlice = parseState.GetArgSliceByRef(idx);
+            bitFieldOffset = default;
+            multiplyOffset = default;
+            var offsetSlice = parseState.GetArgSliceByRef(idx);
 
             if (offsetSlice.Length <= 0)
+            {
                 return false;
+            }
 
             var ptr = offsetSlice.ptr;
             var len = offsetSlice.length;
@@ -199,13 +204,14 @@ namespace Garnet.server
                 if (offsetSlice.length == 1)
                     return false;
 
+                multiplyOffset = true;
                 ptr++;
                 len--;
             }
 
             return
                 RespReadUtils.TryReadInt64Safe(ref ptr, offsetSlice.ptr + offsetSlice.length,
-                                           out var bitFieldOffset, out var bytesRead,
+                                           out bitFieldOffset, out var bytesRead,
                                            out _, out _, allowLeadingZeros: false) &&
                 ((int)bytesRead == len) && (bytesRead > 0L) &&
                 (bitFieldOffset >= 0);
