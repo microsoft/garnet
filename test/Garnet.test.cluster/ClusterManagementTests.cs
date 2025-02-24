@@ -760,5 +760,28 @@ namespace Garnet.test.cluster
                 }
             }
         }
+
+        [Test, Order(13)]
+        public void ClusterMeetHostname()
+        {
+            var node_count = 3;
+            context.CreateInstances(node_count, enableAOF: true, useLocalIp: true);
+            context.CreateConnection();
+
+            for (var i = 0; i < node_count; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
+
+            var config = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            var hostname = config.Nodes.First().Raw.Split(" ")[1].Split(",")[1];
+            ClassicAssert.IsNotNull(hostname);
+
+            for (var i = 1; i < node_count; i++)
+                context.clusterTestUtils.Meet(0, i, hostname, context.logger);
+
+            for (var i = 0; i < node_count; i++)
+                for (var j = 0; j < node_count; j++)
+                    if (i != j)
+                        context.clusterTestUtils.WaitUntilNodeIsKnown(i, j, context.logger);
+        }
     }
 }
