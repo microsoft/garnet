@@ -379,6 +379,9 @@ namespace Garnet.server
             var currTokenIdx = 1;
             while (true)
             {
+                if (currTokenIdx >= parseState.Count)
+                    break;
+
                 // Get subcommand
                 var commandSlice = parseState.GetArgSliceByRef(currTokenIdx++);
                 var command = commandSlice.ReadOnlySpan;
@@ -483,6 +486,9 @@ namespace Garnet.server
             var currTokenIdx = 1;
             while (true)
             {
+                if (currTokenIdx >= parseState.Count)
+                    break;
+
                 // Get subcommand
                 var commandSlice = parseState.GetArgSliceByRef(currTokenIdx++);
                 var command = commandSlice.ReadOnlySpan;
