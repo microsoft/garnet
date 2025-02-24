@@ -227,7 +227,7 @@ namespace Garnet.cluster
                         // Tail address cannot be behind the recovered address since above we checked replicaAofBeginAddress and it appears after RecoveredReplicationOffset
                         // unless we are performing MainMemoryReplication
                         // TODO: shouldn't we use the remote cEntry's tail address here since replica will recover to that?
-                        if (replicaAofTailAddress < checkpointAofBeginAddress && !clusterProvider.serverOptions.MainMemoryReplication)
+                        if (replicaAofTailAddress < checkpointAofBeginAddress && !clusterProvider.serverOptions.FastAofTruncate)
                         {
                             logger?.LogCritical("ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {RecoveredReplicationOffset}", replicaAofTailAddress, checkpointAofBeginAddress);
                             throw new Exception($"ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {checkpointAofBeginAddress}");
@@ -271,7 +271,7 @@ namespace Garnet.cluster
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                    (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
+                    (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
                 if (!possibleAofDataLoss)
                 {
@@ -322,7 +322,7 @@ namespace Garnet.cluster
         {
             // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
             var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
+                (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
             aofSyncTaskInfo = null;
 
@@ -341,7 +341,7 @@ namespace Garnet.cluster
 
                 // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
                 // We do this to avoid waiting indefinitely for a checkpoint that will never be taken
-                if (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint)
+                if (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint)
                 {
                     logger?.LogWarning("MainMemoryReplication: OnDemandCheckpoint is turned off, skipping valid checkpoint acquisition.");
                     break;

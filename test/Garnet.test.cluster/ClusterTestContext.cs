@@ -90,7 +90,7 @@ namespace Garnet.test.cluster
         /// <param name="pageSize"></param>
         /// <param name="segmentSize"></param>
         /// <param name="enableAOF"></param>
-        /// <param name="MainMemoryReplication"></param>
+        /// <param name="FastAofTruncate"></param>
         /// <param name="OnDemandCheckpoint"></param>
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
@@ -120,7 +120,7 @@ namespace Garnet.test.cluster
             string pageSize = default,
             string segmentSize = "1g",
             bool enableAOF = false,
-            bool MainMemoryReplication = false,
+            bool FastAofTruncate = false,
             bool OnDemandCheckpoint = false,
             string AofMemorySize = "64m",
             int CommitFrequencyMs = 0,
@@ -159,7 +159,7 @@ namespace Garnet.test.cluster
                 MemorySize: memorySize,
                 PageSize: pageSize,
                 SegmentSize: segmentSize,
-                MainMemoryReplication: MainMemoryReplication,
+                FastAofTruncate: FastAofTruncate,
                 AofMemorySize: AofMemorySize,
                 CommitFrequencyMs: CommitFrequencyMs,
                 DisableStorageTier: DisableStorageTier,
@@ -195,7 +195,7 @@ namespace Garnet.test.cluster
         /// <param name="PageSize"></param>
         /// <param name="SegmentSize"></param>
         /// <param name="enableAOF"></param>
-        /// <param name="MainMemoryReplication"></param>
+        /// <param name="FastAofTruncate"></param>
         /// <param name="OnDemandCheckpoint"></param>
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
@@ -221,7 +221,7 @@ namespace Garnet.test.cluster
             string PageSize = default,
             string SegmentSize = "1g",
             bool enableAOF = false,
-            bool MainMemoryReplication = false,
+            bool FastAofTruncate = false,
             bool OnDemandCheckpoint = false,
             string AofMemorySize = "64m",
             int CommitFrequencyMs = 0,
@@ -253,7 +253,7 @@ namespace Garnet.test.cluster
                 memorySize: MemorySize,
                 pageSize: PageSize,
                 segmentSize: SegmentSize,
-                mainMemoryReplication: MainMemoryReplication,
+                fastAofTruncate: FastAofTruncate,
                 aofMemorySize: AofMemorySize,
                 commitFrequencyMs: CommitFrequencyMs,
                 disableStorageTier: DisableStorageTier,

@@ -303,7 +303,7 @@ namespace Garnet.cluster
 
                 // Aggressively truncate AOF when MainMemoryReplication flag is set.
                 // Otherwise, we rely on background disk-based checkpoints to truncate the AOF
-                if (!ClusterProvider.serverOptions.MainMemoryReplication)
+                if (!ClusterProvider.serverOptions.FastAofTruncate)
                     _ = ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
 
                 async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)

@@ -40,7 +40,7 @@ namespace Garnet.cluster
                 logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
                 int logPageSize = 1 << logPageSizeBits;
                 logPageSizeMask = logPageSize - 1;
-                if (clusterProvider.serverOptions.MainMemoryReplication)
+                if (clusterProvider.serverOptions.FastAofTruncate)
                     clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
                 TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
             }
@@ -162,7 +162,7 @@ namespace Garnet.cluster
 
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 bool possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                    (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
+                    (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
                 // Fail adding the task if truncation has happened, and we are not in possibleAofDataLoss mode
                 if (startAddress < TruncatedUntil && !possibleAofDataLoss)
@@ -396,7 +396,7 @@ namespace Garnet.cluster
 
             if (TruncatedUntil > 0 && TruncatedUntil < long.MaxValue)
             {
-                if (clusterProvider.serverOptions.MainMemoryReplication)
+                if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
                 }

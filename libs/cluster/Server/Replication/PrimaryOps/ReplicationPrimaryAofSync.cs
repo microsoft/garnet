@@ -74,7 +74,7 @@ namespace Garnet.cluster
             // Check if requested AOF address goes beyond the maximum available AOF address of this primary
             if (startAddress > storeWrapper.appendOnlyFile.TailAddress)
             {
-                if (clusterProvider.serverOptions.MainMemoryReplication)
+                if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     logger?.LogWarning("MainMemoryReplication: Requested address {startAddress} unavailable. Local primary tail address {tailAddress}. Proceeding as best effort.", startAddress, tailAddress);
                 }

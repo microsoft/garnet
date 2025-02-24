@@ -236,7 +236,7 @@ namespace Garnet.cluster
             var aofSyncTask = AofSyncTask;
             try
             {
-                var mmr = clusterProvider.serverOptions.MainMemoryReplication;
+                var mmr = clusterProvider.serverOptions.FastAofTruncate;
                 var aofNull = clusterProvider.serverOptions.UseAofNullDevice;
 
                 var currentAofBeginAddress = fullSync ? checkpointCoveredAofAddress : aofSyncTask.StartAddress;

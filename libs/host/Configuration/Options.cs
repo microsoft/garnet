@@ -405,6 +405,10 @@ namespace Garnet
         public bool? MainMemoryReplication { get; set; }
 
         [OptionValidation]
+        [Option("fast-aof-truncate", Required = false, HelpText = "Use fast-aof-truncate replication model.")]
+        public bool? FastAofTruncate { get; set; }
+
+        [OptionValidation]
         [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
@@ -779,7 +783,7 @@ namespace Garnet
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
-                MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
+                FastAofTruncate = GetFastAofTruncate(logger),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
@@ -829,6 +833,16 @@ namespace Garnet
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
+        }
+
+        public bool GetFastAofTruncate(ILogger logger = null)
+        {
+            if (MainMemoryReplication.GetValueOrDefault())
+            {
+                logger?.LogError("--main-memory-replication is deprecated. Use --fast-aof-truncate instead.");
+                return true;
+            }
+            return FastAofTruncate.GetValueOrDefault();
         }
     }
 
