@@ -373,7 +373,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            
+
             var resErr = (string)db.ScriptEvaluate("local x = redis.pcall('Fizz'); return x.err");
             ClassicAssert.AreEqual("ERR Unknown Redis command called from script", resErr);
 
@@ -430,6 +430,22 @@ namespace Garnet.test
 
             // More than 1 log line, and non-string values are legal
             _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123, 456, 789)");
+
+            var constantsDefined = (int[])db.ScriptEvaluate("return {redis.LOG_DEBUG, redis.LOG_VERBOSE, redis.LOG_NOTICE, redis.LOG_WARNING}");
+            ClassicAssert.IsTrue(constantsDefined.AsSpan().SequenceEqual([0, 1, 2, 3]));
+        }
+
+        [Test]
+        public void RedisSetRepl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var excNotSupported = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.set_repl(redis.REPL_ALL)"));
+            ClassicAssert.IsTrue(excNotSupported.Message.StartsWith("ERR redis.set_repl is not supported in Garnet"));
+
+            var constantsDefined = (int[])db.ScriptEvaluate("return {redis.REPL_ALL, redis.REPL_AOF, redis.REPL_REPLICA, redis.REPL_SLAVE, redis.REPL_NONE}");
+            ClassicAssert.IsTrue(constantsDefined.AsSpan().SequenceEqual([3, 1, 2, 2, 0]));
         }
 
         [Test]

@@ -226,6 +226,17 @@ function load_sandboxed(source)
         log = function(...)
             return logRef(...)
         end,
+
+        REPL_ALL = 3,
+        REPL_AOF = 1,
+        REPL_REPLICA = 2,
+        REPL_SLAVE = 2,
+        REPL_NONE = 0,
+
+        set_repl = function(...)
+            -- this is a giant footgun, straight up not implementing it
+            error('ERR redis.set_repl is not supported in Garnet', 0)
+        end
     }
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
