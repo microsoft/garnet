@@ -155,8 +155,8 @@ namespace Garnet.common
                 foreach (var entry in hostEntry.AddressList)
                 {
                     endpoint = new IPEndPoint(entry, port);
-                    var IsValid = await IsReachable(endpoint);
-                    if (await IsReachable(endpoint))
+                    var IsListening = await IsReachable(endpoint);
+                    if (IsListening)
                         break;
                 }
             }

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -139,10 +140,12 @@ namespace Garnet.test.cluster
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            bool useLocalIp = false)
         {
-            TestUtils.EndPoint = new IPEndPoint(IPAddress.Loopback, 7000);
-            endpoints = TestUtils.GetShardEndPoints(shards, IPAddress.Loopback, 7000);
+            var ipAddress = useLocalIp ? IPAddress.Parse(GetLocalIPAddress()) : IPAddress.Loopback;
+            TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
+            endpoints = TestUtils.GetShardEndPoints(shards, ipAddress, 7000);
 
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
@@ -181,6 +184,19 @@ namespace Garnet.test.cluster
 
             foreach (var node in nodes)
                 node.Start();
+
+            static string GetLocalIPAddress()
+            {
+                var host = Dns.GetHostEntry(Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == AddressFamily.InterNetwork)
+                    {
+                        return ip.ToString();
+                    }
+                }
+                throw new Exception("No network adapters with an IPv4 address in the system!");
+            }
         }
 
         /// <summary>
