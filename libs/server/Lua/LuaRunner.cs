@@ -227,6 +227,8 @@ function load_sandboxed(source)
             return logRef(...)
         end,
 
+        -- TODO: set_resp
+
         REPL_ALL = 3,
         REPL_AOF = 1,
         REPL_REPLICA = 2,
@@ -236,6 +238,20 @@ function load_sandboxed(source)
         set_repl = function(...)
             -- this is a giant footgun, straight up not implementing it
             error('ERR redis.set_repl is not supported in Garnet', 0)
+        end,
+
+        replicate_commands = function(...)
+            return true
+        end,
+
+        breakpoint = function(...)
+            -- this is a whole new dang functionality, not implemented
+            error('ERR redis.breakpoint is not supported in Garnet', 0)
+        end,
+
+        debug = function(...)
+            -- this is a whole new dang functionality, not implemented
+            error('ERR redis.debug is not supported in Garnet', 0)
         end
     }
 

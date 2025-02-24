@@ -449,6 +449,30 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RedisDebugAndBreakpoint()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var excBreakpoint = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.breakpoint()"));
+            ClassicAssert.IsTrue(excBreakpoint.Message.StartsWith("ERR redis.breakpoint is not supported in Garnet"));
+
+            var excDebug = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.debug('hello')"));
+            ClassicAssert.IsTrue(excDebug.Message.StartsWith("ERR redis.debug is not supported in Garnet"));
+        }
+
+        [Test]
+        public void Redis_ReplicateCommands()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // This is deprecated in Redis, and always returns true if called
+            var res = (bool)db.ScriptEvaluate("return redis.replicate_commands()");
+            ClassicAssert.IsTrue(res);
+        }
+
+        [Test]
         public void ComplexLuaTest1()
         {
             var script = """
