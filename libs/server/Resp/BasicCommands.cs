@@ -659,8 +659,8 @@ namespace Garnet.server
 
             if (!getValue && !withEtag)
             {
-                // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
-                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
+                // the following debug assertion is the catch any edge case leading to SETIFMATCH, or SETIFGREATER skipping the above block
+                Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right output variable");
 
                 var status = storageApi.SET_Conditional(ref key, ref input);
 

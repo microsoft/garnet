@@ -663,7 +663,7 @@ namespace Garnet.server
             int desiredLength = 4;
             ReadOnlySpan<byte> etagTruncatedVal;
             // get etag to write, default etag 0 for when no etag
-            long etag = hasEtagInVal ? value.GetEtagInPayload() : EtagConstants.BaseEtag;
+            long etag = hasEtagInVal ? value.GetEtagInPayload() : EtagConstants.NoETag;
             // remove the length of the ETAG
             var etagAccountedValueLength = valueLength - etagSkippedStart;
             if (hasEtagInVal)
