@@ -357,7 +357,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var statusReplyScript = "return redis.error_reply('Failure')";
+            var statusReplyScript = "return redis.error_reply('GET')";
 
             var excReply = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(statusReplyScript));
             ClassicAssert.AreEqual("ERR Failure", excReply.Message);
@@ -365,6 +365,21 @@ namespace Garnet.test
             var directReplyScript = "return { err = 'Failure' }";
             var excDirect = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(directReplyScript));
             ClassicAssert.AreEqual("Failure", excDirect.Message);
+        }
+
+        [Test]
+        public void RedisPCall()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            
+            var resErr = (string)db.ScriptEvaluate("local x = redis.pcall('Fizz'); return x.err");
+            ClassicAssert.AreEqual("ERR Unknown Redis command called from script", resErr);
+
+            _ = db.StringSet("foo", "bar");
+
+            var resSuccess = (string)db.ScriptEvaluate("return redis.pcall('GET', 'foo')");
+            ClassicAssert.AreEqual("bar", resSuccess);
         }
 
         [Test]

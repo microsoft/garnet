@@ -186,6 +186,7 @@ end
 function load_sandboxed(source)
     -- move into a local to avoid global lookup
     local garnetCallRef = garnet_call
+    local pCallRef = pcall;
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -198,6 +199,15 @@ function load_sandboxed(source)
 
         call = function(...)
             return garnetCallRef(...)
+        end,
+
+        pcall = function(...)
+            local success, errOrRes = pCallRef(garnetCallRef, ...)
+            if success then
+                return errOrRes
+            end
+
+            return { err = errOrRes }
         end
     }
 
