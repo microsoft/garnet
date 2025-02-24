@@ -7,7 +7,7 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// These are the pages and freelist indexes of freed pages for the oversize sub-allocator of <see cref="OverflowAllocator"/>; this 
-    /// sub-allocator is used for requests larger than <see cref="FixedSizePages.MaxBlockSize"/>.
+    /// sub-allocator is used for requests larger than <see cref="FixedSizePages.MaxExternalBlockSize"/>.
     /// </summary>
     /// <remarks>
     /// Each allocation is on a separate page of the size requested and a page is freed immediately when its allocation is no longer in use. 
@@ -18,17 +18,17 @@ namespace Tsavorite.core
         internal class OversizePages
         {
             /// <summary>The pages allocated by this allocator.</summary>
-            internal NativePageAllocator PageVector;
+            internal NativePageAllocator PageAllocator;
 
             private const int InvalidSlot = -1;
 
             /// <summary>The list of free oversize slots.</summary>
-            private SimpleConcurrentStack<int> freeList;
+            internal SimpleConcurrentStack<int> freeSlots;
 
             public OversizePages()
             {
-                PageVector = new();
-                freeList = new();
+                PageAllocator = new();
+                freeSlots = new();
             }
 
             /// <summary>Include blockHeader in the allocation size.</summary>
@@ -44,27 +44,29 @@ namespace Tsavorite.core
                 int pageSlot;
                 while (true)
                 { 
-                    if (freeList.TryPop(out pageSlot))
+                    if (freeSlots.TryPop(out pageSlot))
                     { 
                         try
                         {
-                            blockPtr = PageVector.AllocatePage(pageSlot, size);
+                            blockPtr = PageAllocator.AllocatePage(pageSlot, size);
+                            break;
                         }
                         catch
                         {
                             // Return the free slot on OOM
-                            freeList.Push(pageSlot);
+                            freeSlots.Push(pageSlot);
                             throw;
                         }
                     }
 
                     // No free slots, so go through the "extend the page vector" logic to allocate a page of the requested size.
-                    PageOffset localPageOffset = new() { PageAndOffset = PageVector.TailPageOffset.PageAndOffset };
-                    if (PageVector.TryAllocateNewPage(ref localPageOffset, size, out blockPtr, out pageSlot))
+                    PageOffset localPageOffset = new() { PageAndOffset = PageAllocator.TailPageOffset.PageAndOffset };
+                    if (localPageOffset.Offset != NativePageAllocator.OffsetAsLatch 
+                            && PageAllocator.TryAllocateNewPage(ref localPageOffset, size, out blockPtr, out pageSlot))
                         break;
 
                     // Re-get the PageVector's PageAndOffset and retry the loop. This is consistent with the loop control in FixedSizePages.
-                    localPageOffset.PageAndOffset = PageVector.TailPageOffset.PageAndOffset;
+                    localPageOffset.PageAndOffset = PageAllocator.TailPageOffset.PageAndOffset;
                 }
                 return BlockHeader.Initialize((BlockHeader*)blockPtr, size, pageSlot, zeroInit);
             }
@@ -75,8 +77,8 @@ namespace Tsavorite.core
                 // This leaves the allocation in the allocated page array, but pushes it onto the freelist first, so we will null out that slot
                 // in Clear(). To null it in the allocated page array would require taking another latch to ensure stability of the page array.
                 var slot = blockPtr->Slot;
-                freeList.Push(slot);
-                PageVector.FreePage(blockPtr);
+                freeSlots.Push(slot);
+                PageAllocator.FreePage(blockPtr);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -86,7 +88,7 @@ namespace Tsavorite.core
 
                 // For Oversize, this is a reallocation of the single-item page. It throws OOM if unsuccessful.
                 var slot = blockPtr->Slot;
-                var newBlockPtr = PageVector.Realloc(blockPtr, blockSize);
+                var newBlockPtr = PageAllocator.Realloc(blockPtr, blockSize);
                 newBlockPtr->AllocatedSize = blockSize;
                 newBlockPtr->Slot = slot;
                 newPtr = (byte*)(newBlockPtr + 1);
@@ -97,10 +99,10 @@ namespace Tsavorite.core
             internal void Clear()
             {
                 // The PageVector has no concept of the FreeList, so we must set "free" slots to null before claring the PageVector.
-                while (freeList.TryPop(out var slot))
-                    PageVector.Set(slot, null);
-                freeList = new();
-                PageVector.Clear();
+                while (freeSlots.TryPop(out var slot))
+                    PageAllocator.Set(slot, null);
+                freeSlots = new();
+                PageAllocator.Clear();
             }
         }
     }

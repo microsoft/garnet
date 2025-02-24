@@ -16,8 +16,8 @@ namespace Tsavorite.core
     ///     <item>Overflow: [<see cref="IntPtr"/> Length][<see cref="IntPtr"/> to overflow allocation containing data bytes]</item>
     ///     <br>The data bytes are laid out as in the <see cref="BlockHeader"/> description:</br>
     ///     <list type="bullet">
-    ///         <item>[int allocatedSize][int userSize] for fixed-length data (less than or equal to <see cref="FixedSizePages.MaxBlockSize"/>)</item>
-    ///         <item>[int allocatedSize][int nextFreeSlot] for oversize data (greater than <see cref="FixedSizePages.MaxBlockSize"/>)</item>
+    ///         <item>[int allocatedSize][int userSize] for fixed-length data (less than or equal to <see cref="FixedSizePages.MaxExternalBlockSize"/>)</item>
+    ///         <item>[int allocatedSize][int nextFreeSlot] for oversize data (greater than <see cref="FixedSizePages.MaxExternalBlockSize"/>)</item>
     ///     </list>
     /// </list>
     /// The [<see cref="IntPtr"/> size] prefix for Overflow is necessary to ensure proper zero-initialization layout of the record if a checkpoint is happening 

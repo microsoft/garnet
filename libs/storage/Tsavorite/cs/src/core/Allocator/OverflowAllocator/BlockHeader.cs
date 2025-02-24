@@ -18,7 +18,7 @@ namespace Tsavorite.core
             internal const int Size = sizeof(int) * 2;
 
             /// <summary>Full size of this block. For FixedSizePages this is the next-highest power of 2 and keys freelist operations; for OversizePages it is the size of the single allocation per page.</summary>
-            /// <remarks>If this size is &lt;= <see cref="FixedSizePages.MaxBlockSize"/>, this allocation is from the fixed-size region, else it is from the oversize region.</remarks>
+            /// <remarks>If this size is &lt;= <see cref="FixedSizePages.MaxExternalBlockSize"/>, this allocation is from the fixed-size region, else it is from the oversize region.</remarks>
             [FieldOffset(0)]
             internal int AllocatedSize;
 
@@ -51,21 +51,23 @@ namespace Tsavorite.core
             internal static byte* Initialize(BlockHeader* blockPtr, int allocatedSize, int userSizeOrSlot, bool zeroInit)
             {
                 blockPtr->AllocatedSize = allocatedSize;
-                allocatedSize -= sizeof(BlockHeader);
 
                 // Update the union; both elements are int, so just pick one for the lhs
                 blockPtr->UserSize = userSizeOrSlot;
 
                 ++blockPtr;     // Move to the data space
                 if (zeroInit)
-                    NativeMemory.Clear(blockPtr, (nuint)(allocatedSize));
+                    NativeMemory.Clear(blockPtr, (nuint)(allocatedSize - sizeof(BlockHeader)));
                 return (byte*)blockPtr;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal static BlockHeader* FromUserAddress(long address) => ((BlockHeader*)address - 1);
 
-            internal bool IsOversize => AllocatedSize > FixedSizePages.MaxBlockSize;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal static byte* ToUserAddress(BlockHeader* blockHeader) => (byte*)(blockHeader + 1);
+
+            internal bool IsOversize => AllocatedSize > FixedSizePages.MaxExternalBlockSize;
 
             /// <summary>Get the user size of the allocation.</summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

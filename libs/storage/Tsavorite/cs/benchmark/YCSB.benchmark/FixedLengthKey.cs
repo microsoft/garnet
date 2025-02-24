@@ -7,7 +7,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    [StructLayout(LayoutKind.Explicit, Size = 8)]
+    [StructLayout(LayoutKind.Explicit, Size = sizeof(long))]
     public struct FixedLengthKey
     {
         [FieldOffset(0)]
@@ -15,6 +15,7 @@ namespace Tsavorite.benchmark
 
         public override string ToString() => "{ " + value + " }";
 
+        // Only call this for stack-based structs, not the ones in the *_keys vectors
         public unsafe SpanByte AsSpanByte() => new(sizeof(long), (nint)Unsafe.AsPointer(ref this));
 
         public struct Comparer : IKeyComparer

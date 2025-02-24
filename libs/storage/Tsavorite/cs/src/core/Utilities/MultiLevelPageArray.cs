@@ -127,6 +127,14 @@ namespace Tsavorite.core
             }
         }
 
+        public TElement this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Get(index);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => Set(index, value);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TElement Get(int index)
         {
@@ -168,12 +176,15 @@ namespace Tsavorite.core
             if (!IsInitialized)
                 return;
             var lastChapterIndex = tail >> MultiLevelPageArray.ChapterSizeBits;
+            var lastPageIndex = tail & MultiLevelPageArray.PageIndexMask;
             for (int chapter = 0; chapter <= lastChapterIndex; ++chapter)
             {
-                for (int page = 0; page < MultiLevelPageArray.ChapterSize; ++page)
+                var maxPage = chapter < lastChapterIndex ? MultiLevelPageArray.ChapterSize : lastPageIndex;
+                for (int page = 0; page < maxPage; ++page)
                 {
                     // Note: 'action' must check for null/default.
                     action(book[chapter][page]);
+                    book[chapter][page] = default;
                 }
             }
             tail = 0;

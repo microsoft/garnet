@@ -374,5 +374,11 @@ namespace Tsavorite.core
         }
 
         internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
+
+        /// <summary>
+        /// Should only be called in Debug.Assert or other DEBUG-conditional code
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static string GetCurrentMethodName() => new StackTrace().GetFrame(1).GetMethod().Name;
     }
 }

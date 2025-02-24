@@ -82,8 +82,8 @@ namespace Tsavorite.benchmark
             HelpText = "Use Small Memory log in experiment")]
         public bool UseSmallMemoryLog { get; set; }
 
-        [Option("overflow", Required = false, Default = false,
-            HelpText = "Use Small MaxInlineValueSize in SpanByte benchmark to test overflow allocations")]
+        [Option("ov", Required = false, Default = false,
+            HelpText = "Use Small MaxInlineValueSize in SpanByte benchmark to test (o)verflow (v)alue allocations")]
         public bool UseOverflowValues { get; set; }
 
         [Option("hashpack", Required = false, Default = 2.0,

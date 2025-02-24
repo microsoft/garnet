@@ -37,8 +37,7 @@ namespace Tsavorite.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal const int kKeySize = 16;
-        internal const int kValueSize = 100;
+        internal const int kValueSize = 96;     // 100 minus 4-byte length prefix.
 
         internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
@@ -73,7 +72,7 @@ namespace Tsavorite.benchmark
                         [
                             new RevivificationBin()
                             {
-                                RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
+                                RecordSize = RecordInfo.GetLength() + KeySpanByte.kTotalKeySize + kValueSize + 8,    // extra to ensure rounding up of value
                                 NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                                 BestFitScanLimit = RevivificationBin.UseFirstFit
                             }
@@ -173,8 +172,8 @@ namespace Tsavorite.benchmark
 
                         unsafe
                         {
-                            var keyNum = txn_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                            var key = new SpanByte(txn_keys_[idx].length, (IntPtr)(&keyNum));
+                            var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
+                            var key = keyStruct.AsSpanByte();
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
                             {
@@ -264,8 +263,8 @@ namespace Tsavorite.benchmark
 
                     unsafe
                     {
-                        var keyNum = txn_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                        var key = new SpanByte(txn_keys_[idx].length, (IntPtr)(&keyNum));
+                        var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
+                        var key = keyStruct.AsSpanByte();
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
@@ -427,6 +426,10 @@ namespace Tsavorite.benchmark
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
+            // The key vectors are not pinned, so copy to the stack
+            KeySpanByte keyStruct = default;
+            var _key = keyStruct.AsSpanByte();
+
             Span<byte> value = stackalloc byte[kValueSize];
             var _value = SpanByte.FromPinnedSpan(value);
 
@@ -441,19 +444,12 @@ namespace Tsavorite.benchmark
                         if (idx % 256 == 0)
                         {
                             uContext.Refresh();
-
                             if (idx % 65536 == 0)
-                            {
                                 uContext.CompletePending(false);
-                            }
                         }
 
-                        unsafe
-                        {
-                            var keyNum = init_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                            var key = new SpanByte(init_keys_[idx].length, (IntPtr)(&keyNum));
-                            uContext.Upsert(key, _value, Empty.Default);
-                        }
+                        keyStruct = init_keys_[idx];
+                        uContext.Upsert(_key, _value, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -478,6 +474,10 @@ namespace Tsavorite.benchmark
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
+            // The key vectors are not pinned, so copy to the stack
+            KeySpanByte keyStruct = default;
+            var _key = keyStruct.AsSpanByte();
+
             Span<byte> value = stackalloc byte[kValueSize];
             var _value = SpanByte.FromPinnedSpan(value);
 
@@ -490,19 +490,12 @@ namespace Tsavorite.benchmark
                     if (idx % 256 == 0)
                     {
                         bContext.Refresh();
-
                         if (idx % 65536 == 0)
-                        {
                             bContext.CompletePending(false);
-                        }
                     }
 
-                    unsafe
-                    {
-                        var keyNum = init_keys_[idx].value;  // The big vectors are not pinned, so copy to the stack
-                        var key = new SpanByte(init_keys_[idx].length, (IntPtr)(&keyNum));
-                        bContext.Upsert(key, _value, Empty.Default);
-                    }
+                    keyStruct = init_keys_[idx];
+                    bContext.Upsert(keyStruct.AsSpanByte(), _value, Empty.Default);
                 }
             }
 
@@ -522,11 +515,7 @@ namespace Tsavorite.benchmark
 
         internal class KeySetter : IKeySetter<KeySpanByte>
         {
-            public unsafe void Set(KeySpanByte[] vector, long idx, long value)
-            {
-                vector[idx].length = kKeySize - 4;
-                vector[idx].value = value;
-            }
+            public void Set(KeySpanByte[] vector, long idx, long value) => vector[idx].value = value;
         }
 
         #endregion

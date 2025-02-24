@@ -50,7 +50,7 @@ namespace Tsavorite.core
             internal TItem Item;
             internal SimpleFreeStackNode Node;
 
-            public override string ToString() => $"NextSlot {Node.Slot}, Version {Node.Version}, Item {Item}";
+            public override readonly string ToString() => $"[Node {Node}]; Item {Item}";
         }
 
         public const int DefaultInitialCapacity = 1024;
@@ -66,32 +66,38 @@ namespace Tsavorite.core
         /// <summary>
         /// This is the head of the chain of free nodes, which are used to track the free slots in the elementArray.
         /// </summary>
-        internal SimpleFreeStackNode freeList;
+        internal SimpleFreeStackNode freeNodes;
 
         public SimpleConcurrentStack()
         {
             elementArray = new();
             stack = new(SimpleFreeStackNode.Nil, version: 0);
-            freeList = new(SimpleFreeStackNode.Nil, version: 0);
+            freeNodes = new(SimpleFreeStackNode.Nil, version: 0);
         }
 
-        public int Count => elementArray.tail + 1;  // +1 because we start at -1 and increment before pushing
+        /// <summary>
+        /// This is not "Count" because our <see cref="stack"/> and <see cref="freeNodes"/> do not adjust <see cref="elementArray"/>'s Tail.
+        /// So we support just the high-water mark (mostly for test).
+        /// </summary>
+        public int MaxCount => elementArray.tail + 1;  // +1 because we start at -1 and increment before pushing
+
+        public bool IsEmpty => stack.IsNil;
 
         /// <summary>
         /// Public API: Push an item onto the stack.
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Push(TItem elem)
+        public void Push(TItem item)
         {
             if (GetNodeFromFreeList(out SimpleFreeStackNode node))
                 ++node.Version;
             else
                 node = new(elementArray.Allocate(), version: 0);
 
-            var element = elementArray.Get(node.Slot);
-            element.Item = elem;
-            element.Node.Version = node.Version;
+            // This node is going onto the stack so create an ArrayElement with its item set to the passed item and the node's version.
+            // We'll update the element's slot to the stack head inside the retry loop.
+            var element = new ArrayElement { Item = item, Node = new(SimpleFreeStackNode.Nil, node.Version) };
 
             for (; ; _ = Thread.Yield())
             {
@@ -122,11 +128,12 @@ namespace Tsavorite.core
 
                 // For an element in elementArray at slot elementSlot, its node.Slot refers to the next slot in the chain; node.Version is for the current slot,
                 // which is also the version for the node whose .Slot == elementSlot.
-                var element = elementArray.Get(current.Slot);
-                var version = element.Node.IsNil ? 0 : elementArray.Get(element.Node.Slot).Node.Version;
+                var element = elementArray[current.Slot];
+                var nextSlot = element.Node.Slot;
+                var nextVersion = element.Node.IsNil ? 0 : elementArray[nextSlot].Node.Version;
 
-                var head = new SimpleFreeStackNode(element.Node.Slot, version);
-                if (Interlocked.CompareExchange(ref stack.word, head.word, current.word) == current.word)
+                var next = new SimpleFreeStackNode(nextSlot, nextVersion);
+                if (Interlocked.CompareExchange(ref stack.word, next.word, current.word) == current.word)
                 {
                     item = element.Item;
                     AddNodeToFreeList(current);
@@ -135,25 +142,23 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Put a node that was popped from the <see cref="stack"/> onto the <see cref="freeList"/>.</summary>
+        /// <summary>Put a node that was popped from the <see cref="stack"/> onto the <see cref="freeNodes"/>.</summary>
         void AddNodeToFreeList(SimpleFreeStackNode node)
-        { 
+        {
             ++node.Version;
-            var element = elementArray.Get(node.Slot);
 
-            // It is going onto the freeList so clear its item and update its version to the node's version. Its slot is already correct
-            // because it came from the stack.
-            element.Item = default;
-            element.Node.Version = node.Version;
+            // This node is going onto the freeList so create an ArrayElement with its item set to 'default' and the node's version.
+            // We'll update the element's slot to the freeList head inside the retry loop.
+            var element = new ArrayElement { Node = new(SimpleFreeStackNode.Nil, node.Version) };
 
             for (; ; _ = Thread.Yield() )
             {
                 // The element's slot is the 'next' pointer; update it to what is currently in 'head' to maintain the chain.
-                var head = freeList;
+                var head = freeNodes;
                 element.Node.Slot = head.Slot;
                 elementArray.Set(node.Slot, element);
 
-                if (Interlocked.CompareExchange(ref freeList.word, node.word, head.word) == head.word)
+                if (Interlocked.CompareExchange(ref freeNodes.word, node.word, head.word) == head.word)
                     return;
             }
         }
@@ -162,7 +167,7 @@ namespace Tsavorite.core
         {
             for (; ; _ = Thread.Yield())
             {
-                node = freeList;
+                node = freeNodes;
                 if (node.IsNil)
                 {
                     node = default;
@@ -175,7 +180,7 @@ namespace Tsavorite.core
                 var version = element.Node.IsNil ? 0 : elementArray.Get(element.Node.Slot).Node.Version;
 
                 var head = new SimpleFreeStackNode(element.Node.Slot, version);
-                if (Interlocked.CompareExchange(ref freeList.word, head.word, node.word) == node.word)
+                if (Interlocked.CompareExchange(ref freeNodes.word, head.word, node.word) == node.word)
                     return true;
             }
         }
@@ -183,6 +188,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear() => elementArray.Clear();
 
-        public override string ToString() => $"elements {elementArray.Count}, stack {stack}, freeList {freeList}";
+        public override string ToString() => $"elements {elementArray.Count}; [stack {stack}]; [freeList {freeNodes}]";
     }
 }

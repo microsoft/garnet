@@ -263,10 +263,21 @@ namespace Tsavorite.core
             var localValues = Interlocked.Exchange(ref values, null);
             if (localValues != null)
             {
+                base.Dispose();
+                freePagePool.Dispose();
                 foreach (var value in localValues)
                     value.Clear();
-                freePagePool.Dispose();
-                base.Dispose();
+
+                if (pagePointers is not null)
+                {
+                    for (var ii = 0; ii < BufferSize; ++ii)
+                    {
+                        if (pagePointers[ii] != 0)
+                            NativeMemory.AlignedFree((void*)pagePointers[ii]);
+                    }
+                    NativeMemory.AlignedFree((void*)pagePointers);
+                    pagePointers = null;
+                }
             }
         }
 

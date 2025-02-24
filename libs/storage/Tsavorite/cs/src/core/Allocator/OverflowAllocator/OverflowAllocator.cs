@@ -13,7 +13,7 @@ namespace Tsavorite.core
     /// <remarks>This has two regions:
     ///     <list type="bullet">
     ///         <item>Fixed size: these are a set of bins in powers of 2 up to <see cref="FixedSizePages.PageSize"/>. See <see cref="FixedSizePages"/>.</item>
-    ///         <item>Oversize: these are allocations greater than <see cref="FixedSizePages.MaxBlockSize"/>. Each allocation is a separate page. See <see cref="OversizePages"/></item>
+    ///         <item>Oversize: these are allocations greater than <see cref="FixedSizePages.MaxExternalBlockSize"/>. Each allocation is a separate page. See <see cref="OversizePages"/></item>
     ///     </list>
     /// </remarks>
     internal unsafe partial class OverflowAllocator : IDisposable
@@ -27,7 +27,7 @@ namespace Tsavorite.core
         /// <param name="fixedPageSize">The size of a page for fixed-size allocations in this allocator</param>
         internal OverflowAllocator(int fixedPageSize)
         {
-            Debug.Assert(fixedPageSize >= FixedSizePages.MaxBlockSize && Utility.IsPowerOfTwo(fixedPageSize), "PageSize must be > FixedSizeLimit and a power of 2");
+            Debug.Assert(fixedPageSize >= FixedSizePages.MaxExternalBlockSize && Utility.IsPowerOfTwo(fixedPageSize), "PageSize must be > FixedSizeLimit and a power of 2");
             fixedSizePages = new(fixedPageSize);
             oversizePages = new();
         }
@@ -36,7 +36,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(size > 0, "Cannot have negative allocation size");
 
-            if (size <= FixedSizePages.MaxBlockSize)
+            if (size <= FixedSizePages.MaxExternalBlockSize)
                 return fixedSizePages.Allocate(size, zeroInit);
             return oversizePages.Allocate(size, zeroInit);
         }
@@ -49,7 +49,10 @@ namespace Tsavorite.core
         internal void Free(long address)
         {
             var blockPtr = BlockHeader.FromUserAddress(address);
-            if (blockPtr->AllocatedSize <= FixedSizePages.MaxBlockSize)
+
+            // Must use BlockHeader.AllocatedSize here because OversizePages stores the slot in the BlockHeader.UserSize-or-Slot field
+            // and FixedSizePages uses it as a validity indicator.
+            if (blockPtr->AllocatedSize <= FixedSizePages.MaxInternalBlockSize)
                 fixedSizePages.Free(blockPtr);
             else
                 oversizePages.Free(blockPtr);
@@ -59,7 +62,7 @@ namespace Tsavorite.core
         internal bool TryRealloc(long address, int newSize, out byte* newPtr)
         {
             var blockPtr = BlockHeader.FromUserAddress(address);
-            return blockPtr->AllocatedSize <= FixedSizePages.MaxBlockSize
+            return blockPtr->AllocatedSize <= FixedSizePages.MaxExternalBlockSize
                 ? fixedSizePages.TryRealloc(blockPtr, newSize, out newPtr)
                 : oversizePages.TryRealloc(blockPtr, newSize, out newPtr);
         }

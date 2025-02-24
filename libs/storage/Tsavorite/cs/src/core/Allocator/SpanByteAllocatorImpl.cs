@@ -222,10 +222,25 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            base.Dispose();
-            freePagePool.Dispose();
-            foreach (var value in values)
-                value.Dispose();
+            var localValues = Interlocked.Exchange(ref values, null);
+            if (localValues != null)
+            {
+                base.Dispose();
+                freePagePool.Dispose();
+                foreach (var value in localValues)
+                    value.Dispose();
+
+                if (pagePointers is not null)
+                {
+                    for (var ii = 0; ii < BufferSize; ++ii)
+                    {
+                        if (pagePointers[ii] != 0)
+                            NativeMemory.AlignedFree((void*)pagePointers[ii]);
+                    }
+                    NativeMemory.AlignedFree((void*)pagePointers);
+                    pagePointers = null;
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -345,7 +360,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte>> observer)
         {
-            using var iter = new RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering, 
+            using var iter = new RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
                     includeSealedRecords: false, assumeInMemory: true, logger: logger);
             observer?.OnNext(iter);
         }

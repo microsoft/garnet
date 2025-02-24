@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
@@ -20,9 +21,9 @@ namespace Tsavorite.core
             private const int UninitializedPage = -1;
 
             /// <summary><see cref="TailPageOffset"/> offset value to indicate a thread has the "lock" to resize the page array</summary> 
-            internal const int OffsetAsLatch = 1 << LogSettings.kMaxPageSizeBits;
+            internal const int OffsetAsLatch = -1;
 
-            private MultiLevelPageArray<IntPtr> pageArray = new();
+            internal MultiLevelPageArray<IntPtr> pageArray = new();
 
             /// <summary>This increments the Page element when allocating new pages; for simple pointer-advance in <see cref="FixedSizePages"/>, Offset is also advanced.</summary>
             internal PageOffset TailPageOffset;
@@ -42,25 +43,28 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal bool TryAllocateNewPage(ref PageOffset localPageOffset, int size, out BlockHeader* blockPtr, out int pageSlot)
             {
+                Debug.Assert(localPageOffset.Offset != OffsetAsLatch, $"Offset should not be OffsetAsLatch coming in to {GetCurrentMethodName()}");
+
                 // Increment the page index and set the offset to "take the latch". We need this additional latch layer over the pageArray because 
                 // we need FixedSizePages to recognize it during pointer-advance, and spinwait if it sees it.
-                PageOffset newPageOffset = new() { Page = localPageOffset.Page + 1, Offset = OffsetAsLatch };
-                var tempPageAndOffset = new PageOffset { PageAndOffset = Interlocked.CompareExchange(ref TailPageOffset.PageAndOffset, newPageOffset.PageAndOffset, localPageOffset.PageAndOffset) };
+                PageOffset newPageAndOffset = new() { Page = localPageOffset.Page + 1, Offset = OffsetAsLatch };
+                var tempPageAndOffset = new PageOffset { PageAndOffset = Interlocked.CompareExchange(ref TailPageOffset.PageAndOffset, newPageAndOffset.PageAndOffset, localPageOffset.PageAndOffset) };
                 if (tempPageAndOffset.PageAndOffset != localPageOffset.PageAndOffset || tempPageAndOffset.Offset == OffsetAsLatch)
                 {
                     // Someone else incremented the page (or maybe someone else sneaked in with a smaller request and allocated from the end of the page).
-                    // Yield to give them a chance to do the actual page allocation, then return false to caller to retry the outer allocation logic.
+                    // Yield to let them do the actual page allocation, then update caller's localPageOffset and return false to retry the outer allocation logic.
                     _ = Thread.Yield();
+                    localPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
                     blockPtr = default;
                     pageSlot = 0;
                     return false;
                 }
 
-                // First see if we need to grow the pages array.
+                // Try to allocate from the page provider. This will check to see if it needs to grow the pages array.
                 try
                 {
                     var tail = pageArray.Allocate();
-                    Debug.Assert(tail == newPageOffset.Page, "Tail should be the same as the incremented PageAndOffset.Page");
+                    Debug.Assert(tail == newPageAndOffset.Page, $"Tail {tail} should be the same as the incremented newPageAndOffset.Page {newPageAndOffset.Page}");
                     blockPtr = AllocatePage(tail, size);
                     pageSlot = tail;
                 }
@@ -74,9 +78,9 @@ namespace Tsavorite.core
                 }
 
                 // Update the caller's localPageOffset and return.
-                newPageOffset.Offset = 0;   // clear the "latch" and set the offset to the beginning of the page
-                localPageOffset.PageAndOffset = newPageOffset.PageAndOffset;
-                TailPageOffset = newPageOffset;
+                newPageAndOffset.Offset = 0;   // clear the "latch" and set the offset to the beginning of the page
+                localPageOffset.PageAndOffset = newPageAndOffset.PageAndOffset;
+                TailPageOffset = newPageAndOffset;
                 return true;
             }
 
@@ -123,7 +127,7 @@ namespace Tsavorite.core
             {
                 // The TailAndLatch tail is our page, as that is the unit we allocate in.
                 if (pageArray is not null)
-                    pageArray.Clear(intPtr => NativeMemory.AlignedFree((nuint*)intPtr));
+                    pageArray.Clear(intPtr => { if (intPtr != IntPtr.Zero) NativeMemory.AlignedFree((nuint*)intPtr); });
 
                 // Prep for reuse
                 InitTailPageOffset();
