@@ -260,6 +260,15 @@ namespace Garnet.server
 
                         dstListObject = listObject;
                     }
+                    else // sameKey
+                    {
+                        if (sourceDirection == destinationDirection)
+                        {
+                            element = (sourceDirection == OperationDirection.Right) ?
+                                        srcListObject.LnkList.Last.Value : srcListObject.LnkList.First.Value;
+                            return GarnetStatus.OK;
+                        }
+                    }
 
                     // Right pop (removelast) from source
                     if (sourceDirection == OperationDirection.Right)
