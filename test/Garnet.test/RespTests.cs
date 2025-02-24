@@ -3633,6 +3633,8 @@ namespace Garnet.test
             string value = db.StringGet(keyA);
             ClassicAssert.AreEqual(null, value);
 
+            ClassicAssert.AreEqual("OK", db.Execute("SET", keyA, keyA, "KEEPTTL")?.ToString());
+
             value = db.StringGet(keyB);
             ClassicAssert.AreEqual(keyB, value);
         }
