@@ -23,9 +23,10 @@ namespace Tsavorite.core
         readonly LightEpoch epoch;
         readonly ILogger logger;
 
-        public StateMachineDriver(LightEpoch epoch, ILogger logger = null)
+        public StateMachineDriver(LightEpoch epoch, SystemState initialState, ILogger logger = null)
         {
             this.epoch = epoch;
+            this.systemState = initialState;
             this.waitingList = [];
             this.logger = logger;
         }
@@ -85,7 +86,7 @@ namespace Tsavorite.core
             systemState.Word = nextState.Word;
 
             // Release waiters for new phase
-            waitForTransitionOut.Release(int.MaxValue);
+            waitForTransitionOut?.Release(int.MaxValue);
 
             // Write new semaphore
             waitForTransitionOut = new SemaphoreSlim(0);
@@ -155,11 +156,11 @@ namespace Tsavorite.core
         {
             try
             {
-                while (systemState.Phase != Phase.REST)
+                do
                 {
                     GlobalStateMachineStep(systemState);
                     await ProcessWaitingListAsync(token);
-                }
+                } while (systemState.Phase != Phase.REST);
             }
             finally
             {

@@ -29,6 +29,7 @@ namespace Tsavorite.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
+        readonly StateMachineDriver stateMachineDriver;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -160,6 +161,7 @@ namespace Tsavorite.core
             LockTable = new OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator>(this);
             RevivificationManager = new(this, isFixedLenReviv, kvSettings.RevivificationSettings, logSettings);
 
+            stateMachineDriver = new(epoch, SystemState.Make(Phase.REST, 1), kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
             systemState = SystemState.Make(Phase.REST, 1);
 
             if (kvSettings.TryRecoverLatest)
@@ -200,8 +202,12 @@ namespace Tsavorite.core
             bool result;
             if (checkpointType == CheckpointType.FoldOver)
             {
-                var backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
+                var backend = new FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator>(this);
+                var sm = new FullCheckpointSM<TKey, TValue, TStoreFunctions, TAllocator>(this, backend, targetVersion);
+                result = stateMachineDriver.Register(sm);
+
+                //var backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
+                //result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
             }
             else if (checkpointType == CheckpointType.Snapshot)
             {
@@ -448,6 +454,9 @@ namespace Tsavorite.core
 
             token.ThrowIfCancellationRequested();
 
+            await stateMachineDriver.CompleteAsync(token);
+            return;
+            /*
             while (true)
             {
                 var systemState = this.systemState;
@@ -485,6 +494,7 @@ namespace Tsavorite.core
                         await task.ConfigureAwait(false);
                 }
             }
+            */
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
