@@ -503,6 +503,8 @@ namespace Garnet.test
         [Test]
         public void RedisAclCheckCmd()
         {
+            // Note this path is more heavily exercised in ACL tests
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -550,6 +552,31 @@ namespace Garnet.test
 
             var cantRunSubCommand = (bool)denyDB.ScriptEvaluate("return redis.acl_check_cmd('ACL', 'WHOAMI')");
             ClassicAssert.False(cantRunSubCommand);
+        }
+
+        [Test]
+        public void RedisSetResp()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
+            ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
+
+            var tooManyArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
+            ClassicAssert.IsTrue(tooManyArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
+
+            var badArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
+            ClassicAssert.IsTrue(badArg.Message.StartsWith("ERR RESP version must be 2 or 3."));
+
+            var resp2 = db.ScriptEvaluate("redis.setresp(2)");
+            ClassicAssert.IsTrue(resp2.IsNull);
+
+            // TODO: Once RESP3 for scripting is implemented, this goes away
+            _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(3)"));
+
+            var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
+            ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
         }
 
         [Test]

@@ -187,10 +187,11 @@ end
 function load_sandboxed(source)
     -- move into a local to avoid global lookup
     local garnetCallRef = garnet_call
-    local pCallRef = pcall;
-    local sha1hexRef = garnet_sha1hex;
-    local logRef = garnet_log;
-    local aclCheckCmdRef = garnet_acl_check_cmd;
+    local pCallRef = pcall
+    local sha1hexRef = garnet_sha1hex
+    local logRef = garnet_log
+    local aclCheckCmdRef = garnet_acl_check_cmd
+    local setRespRef = garnet_setresp
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -227,8 +228,6 @@ function load_sandboxed(source)
             return logRef(...)
         end,
 
-        -- TODO: set_resp
-
         REPL_ALL = 3,
         REPL_AOF = 1,
         REPL_REPLICA = 2,
@@ -255,7 +254,11 @@ function load_sandboxed(source)
         end,
 
         acl_check_cmd = function(...)
-            return garnet_acl_check_cmd(...)
+            return aclCheckCmdRef(...)
+        end,
+
+        setresp = function(...)
+            setRespRef(...)
         end
     }
 
@@ -291,6 +294,8 @@ end
         readonly int errFirstArgumentMustBeANumberConstStringRegistryIndex;
         readonly int errInvalidDebugLevelConstStringRegistryIndex;
         readonly int errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex;
+        readonly int errRedisSetrespRequiresOneArgumentConstStringRegistryIndex;
+        readonly int errRespVersionMustBe2Or3ConstStringRegistryIndex;
 
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
@@ -411,6 +416,7 @@ end
             state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
             state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
             state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
+            state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
 
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
@@ -440,6 +446,8 @@ end
             errFirstArgumentMustBeANumberConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level);
             errInvalidDebugLevelConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_debug_level);
             errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
+            errRedisSetrespRequiresOneArgumentConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_setresp_requires_one_argument);
+            errRespVersionMustBe2Or3ConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3);
 
             state.ExpectLuaStackEmpty();
         }
@@ -671,6 +679,34 @@ end
             return 0;
         }
 
+        /// <summary>
+        /// Entry point for redis.setresp(...) from a Lua script.
+        /// </summary>
+        public int SetResp(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1)
+            {
+                return LuaStaticError(errRedisSetrespRequiresOneArgumentConstStringRegistryIndex);
+            }
+
+            double num;
+            if (state.Type(1) != LuaType.Number || (num = state.CheckNumber(1)) is not 2 or 3)
+            {
+                return LuaStaticError(errRespVersionMustBe2Or3ConstStringRegistryIndex);
+            }
+
+            // TODO: actually implement RESP 3 support here (requires changes to RunCommon as well)
+            if (num != 2)
+            {
+                state.PushBuffer("ERR Garnet Lua script only supports RESP2"u8);
+                return state.RaiseErrorFromStack();
+            }
+
+            return 0;
+        }
 
         /// <summary>
         /// Entry point for redis.acl_check_cmd(...) from a Lua script.
@@ -682,14 +718,12 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0)
             {
-                state.PushConstantString(pleaseSpecifyRedisCallConstStringRegistryIndex);
-                return state.RaiseErrorFromStack();
+                return LuaStaticError(pleaseSpecifyRedisCallConstStringRegistryIndex);
             }
 
             if (!state.CheckBuffer(1, out var cmdSpan))
             {
-                state.PushConstantString(errBadArgConstStringRegistryIndex);
-                return state.RaiseErrorFromStack();
+                return LuaStaticError(errBadArgConstStringRegistryIndex);
             }
 
             // It's most accurate to use our existing parsing code
@@ -763,7 +797,7 @@ end
                 //   - So any ACL check will fail, because the ACL covers the actual (ie. sub) command
                 //
                 // So what we do is check ALL of the subcommands, and if-and-only-if the current user
-                // can run all of them.
+                // can run all of them do we return true.
                 //
                 // This matches intention behind redis.acl_check_cmd calls, in that a subsequent call
                 // with that parent command will always succeed if we return true here.
@@ -2086,5 +2120,12 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int AclCheckCommand(nint luaState)
         => CallbackContext.AclCheckCommand(luaState);
+
+        /// <summary>
+        /// Entry point for calls to redis.setresp.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int SetResp(nint luaState)
+        => CallbackContext.SetResp(luaState);
     }
 }
