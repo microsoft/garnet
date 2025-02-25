@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Command strings for RESP protocol
     /// </summary>
-    static partial class CmdStrings
+    public static partial class CmdStrings
     {
         /// <summary>
         /// Request strings

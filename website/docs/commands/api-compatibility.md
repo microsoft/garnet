@@ -403,3 +403,4 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [MULTI](transactions.md#multi) | ➕ |  |
 |  | [UNWATCH](transactions.md#unwatch) | ➕ |  |
 |  | [WATCH](transactions.md#watch) | ➕ |  |
+| <span id="json">**JSON Module**</span> | [JSON Module](json.md) | ➕ | Partially Implemented |
