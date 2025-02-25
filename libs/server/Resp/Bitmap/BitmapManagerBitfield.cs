@@ -9,19 +9,19 @@ namespace Garnet.server
     public unsafe partial class BitmapManager
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static RespCommand GetBitFieldSecondaryOp(byte* input) => (*(BitFieldCmdArgs*)(input)).secondaryCommand;
+        private static RespCommand GetBitFieldSecondaryOp(byte* input) => (*(BitFieldCmdArgs*)input).secondaryCommand;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static byte GetBitFieldType(byte* input) => (*(BitFieldCmdArgs*)(input)).typeInfo;
+        private static byte GetBitFieldType(byte* input) => (*(BitFieldCmdArgs*)input).typeInfo;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long GetBitFieldOffset(byte* input) => (*(BitFieldCmdArgs*)(input)).offset;
+        private static long GetBitFieldOffset(byte* input) => (*(BitFieldCmdArgs*)input).offset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long GetBitFieldValue(byte* input) => (*(BitFieldCmdArgs*)(input)).value;
+        private static long GetBitFieldValue(byte* input) => (*(BitFieldCmdArgs*)input).value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static byte GetBitFieldOverflowType(byte* input) => (*(BitFieldCmdArgs*)(input)).overflowType;
+        private static byte GetBitFieldOverflowType(byte* input) => (*(BitFieldCmdArgs*)input).overflowType;
 
         /// <summary>
         /// Check if bitmap is large enough to apply bitfield op.
@@ -45,7 +45,7 @@ namespace Garnet.server
         {
             var offset = args.offset;
             var bitCount = (byte)(args.typeInfo & 0x7F);
-            return LengthInBytes(offset + bitCount);
+            return LengthInBytes(offset + bitCount - 1);
         }
 
         /// <summary>
