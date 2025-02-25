@@ -502,7 +502,7 @@ namespace Resp.benchmark
             }
             if (idx > 0)
             {
-                var result = db.StringGet(getBatch.Take(idx).ToArray());
+                var result = db.StringGet([.. getBatch.Take(idx)]);
                 if (checkResults)
                 {
                     for (int k = 0; k < idx; k++)
@@ -544,7 +544,7 @@ namespace Resp.benchmark
             {
                 for (int b = 0; b < DbSize; b += BatchSize)
                 {
-                    db.StringSet(database.Skip(b).Take(BatchSize).ToArray());
+                    db.StringSet([.. database.Skip(b).Take(BatchSize)]);
                     if (b > 0 && b % 1000000 == 0)
                         Console.WriteLine(b);
                 }

@@ -62,7 +62,7 @@ namespace ClusterStress
                 if (!opts.SkipLoad)
                     bench.LoadData(keyLen: opts.KeyLength, valueLen: opts.ValueLength, BatchSize: opts.BatchSize.First());
 
-                int[] threadBench = opts.NumThreads.ToArray();
+                int[] threadBench = [.. opts.NumThreads];
                 int keyLen = opts.KeyLength;
                 int valueLen = opts.ValueLength;
                 foreach (int BatchSize in opts.BatchSize)

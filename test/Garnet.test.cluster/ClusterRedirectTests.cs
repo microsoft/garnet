@@ -643,7 +643,7 @@ ClusterRedirectTests.TestFlags testFlags)
             context.CreateInstances(Shards, cleanClusterConfig: true);
             context.CreateConnection();
 
-            var connections = ClusterTestUtils.CreateLightRequestConnections(Enumerable.Range(Port, Shards).ToArray());
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             //1. Regular operation redirect responses
@@ -708,7 +708,7 @@ ClusterRedirectTests.TestFlags testFlags)
             context.CreateInstances(Shards, cleanClusterConfig: true);
             context.CreateConnection();
 
-            var connections = ClusterTestUtils.CreateLightRequestConnections(Enumerable.Range(Port, Shards).ToArray());
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             //1. test regular operation redirection

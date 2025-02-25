@@ -505,7 +505,7 @@ namespace Garnet.test
             var result = db.StringSet(input, When.NotExists);
             ClassicAssert.IsTrue(result);
 
-            var value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var value = db.StringGet([.. input.Select(e => e.Key)]);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
@@ -1460,8 +1460,7 @@ namespace Garnet.test
         private string GetRandomString(int len)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string(Enumerable.Repeat(chars, len)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
+            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[r.Next(s.Length)])]);
         }
 
         [Test]
