@@ -22,8 +22,8 @@ namespace Garnet.server
         // for compatibility
         internal const int SHA1Len = 40;
         readonly RespServerSession processor;
-        readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly StoreWrapper storeWrapper;
+        readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly ILogger logger;
         readonly Dictionary<ScriptHashKey, LuaRunner> scriptCache = [];
         readonly byte[] hash = new byte[SHA1Len / 2];
@@ -137,7 +137,7 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))

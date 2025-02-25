@@ -259,7 +259,10 @@ function load_sandboxed(source)
 
         setresp = function(...)
             setRespRef(...)
-        end
+        end,
+
+        REDIS_VERSION = garnet_REDIS_VERSION,
+        REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
     }
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
@@ -335,6 +338,7 @@ end
             bool txnMode = false,
             RespServerSession respServerSession = null,
             ScratchBufferNetworkSender scratchBufferNetworkSender = null,
+            string redisVersion = "0.0.0.0",
             ILogger logger = null
         )
         {
@@ -418,6 +422,19 @@ end
             state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
             state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
 
+            var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
+            state.PushBuffer(redisVersionBytes);
+            state.SetGlobal("garnet_REDIS_VERSION\0"u8);
+
+            var redisVersionParsed = Version.Parse(redisVersion);
+            var redisVersionNum =
+                ((byte)0x00 << 24) |
+                ((byte)redisVersionParsed.Major << 16) |
+                ((byte)redisVersionParsed.Minor << 8) |
+                ((byte)redisVersionParsed.Build << 0);
+            state.PushInteger(redisVersionNum);
+            state.SetGlobal("garnet_REDIS_VERSION_NUM\0"u8);
+
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
 
@@ -455,8 +472,8 @@ end
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
+        public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 

@@ -6,10 +6,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -577,6 +579,28 @@ namespace Garnet.test
 
             var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
             ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
+        }
+
+        [Test]
+        public void RedisVersion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expectedVersion = Version.Parse(GarnetServer.RedisProtocolVersion);
+
+            var asStr = (string)db.ScriptEvaluate("return redis.REDIS_VERSION");
+            var asNum = (int)db.ScriptEvaluate("return redis.REDIS_VERSION_NUM");
+
+            ClassicAssert.AreEqual(GarnetServer.RedisProtocolVersion, asStr);
+
+            var expectedNum =
+                ((byte)0 << 24) |
+                ((byte)expectedVersion.Major << 16) |
+                ((byte)expectedVersion.Minor << 8) |
+                ((byte)expectedVersion.Build << 0);
+
+            ClassicAssert.AreEqual(expectedNum, asNum);
         }
 
         [Test]

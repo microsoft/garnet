@@ -415,6 +415,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// This should be used for all SetGlobals into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        internal void SetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
+        {
+            AssertLuaStackNotEmpty();
+
+            NativeMethods.SetGlobal(state, nullTerminatedGlobalName);
+
+            UpdateStackTop(-1);
+        }
+
+        /// <summary>
         /// This should be used for all LoadBuffers into Lua.
         /// 
         /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
@@ -614,6 +628,15 @@ namespace Garnet.server
         private readonly void AssertLuaStackNotFull(int probe = 1)
         {
             Debug.Assert((StackTop + probe) <= curStackSize, "Lua stack should have been grown before pushing");
+        }
+
+        /// <summary>
+        /// Check that there's space to push some number of elements.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private readonly void AssertLuaStackNotEmpty()
+        {
+            Debug.Assert(StackTop > 0, "Lua stack should not be empty when called");
         }
     }
 
