@@ -4,8 +4,8 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,6 +29,7 @@ namespace Garnet.test
         private readonly string limitBytes;
         private readonly string limitTimeout;
 
+        private string aclFile;
         protected GarnetServer server;
 
         public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
@@ -45,7 +46,23 @@ namespace Garnet.test
 
             TimeSpan? timeout = string.IsNullOrEmpty(limitTimeout) ? null : TimeSpan.ParseExact(limitTimeout, "c", CultureInfo.InvariantCulture);
 
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableLua: true, luaMemoryMode: allocMode, luaMemoryLimit: limitBytes, luaTimeout: timeout);
+            aclFile = Path.GetTempFileName();
+            File.WriteAllLines(
+                aclFile,
+                ["user default on nopass +@all",
+                 "user deny on nopass +@all -get -acl"]
+            );
+
+            server =
+                TestUtils.CreateGarnetServer(
+                    TestUtils.MethodTestDir,
+                    enableLua: true,
+                    luaMemoryMode: allocMode,
+                    luaMemoryLimit: limitBytes,
+                    luaTimeout: timeout,
+                    useAcl: true,
+                    aclFile: aclFile
+                );
             server.Start();
         }
 
@@ -54,6 +71,17 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            try
+            {
+                if (aclFile != null)
+                {
+                    File.Delete(aclFile);
+                }
+            }
+            catch
+            {
+                // Best effort
+            }
         }
 
         [Test]
@@ -361,7 +389,7 @@ namespace Garnet.test
             var statusReplyScript = "return redis.error_reply('GET')";
 
             var excReply = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(statusReplyScript));
-            ClassicAssert.AreEqual("ERR Failure", excReply.Message);
+            ClassicAssert.AreEqual("ERR GET", excReply.Message);
 
             var directReplyScript = "return { err = 'Failure' }";
             var excDirect = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(directReplyScript));
@@ -449,6 +477,17 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RedisReplicateCommands()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // This is deprecated in Redis, and always returns true if called
+            var res = (bool)db.ScriptEvaluate("return redis.replicate_commands()");
+            ClassicAssert.IsTrue(res);
+        }
+
+        [Test]
         public void RedisDebugAndBreakpoint()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -462,14 +501,55 @@ namespace Garnet.test
         }
 
         [Test]
-        public void Redis_ReplicateCommands()
+        public void RedisAclCheckCmd()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // This is deprecated in Redis, and always returns true if called
-            var res = (bool)db.ScriptEvaluate("return redis.replicate_commands()");
-            ClassicAssert.IsTrue(res);
+            using var denyRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "deny"));
+            var denyDB = denyRedis.GetDatabase(0);
+
+            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
+            ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
+
+            var invalidCmdArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
+            ClassicAssert.IsTrue(invalidCmdArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
+
+            var invalidCmd = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
+            ClassicAssert.IsTrue(invalidCmd.Message.StartsWith("ERR Invalid command passed to redis.acl_check_cmd()"));
+
+            var invalidArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
+            ClassicAssert.IsTrue(invalidArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
+
+            var canRun = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('GET')");
+            ClassicAssert.IsTrue(canRun);
+
+            var canRunWithArg = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('GET', 'foo')");
+            ClassicAssert.IsTrue(canRunWithArg);
+
+            var canRunWithTooManyArgs = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('GET', 'foo', 'bar', 'fizz', 'buzz')");
+            ClassicAssert.IsTrue(canRunWithTooManyArgs);
+
+            var cantRunNoArg = (bool)denyDB.ScriptEvaluate("return redis.acl_check_cmd('GET')");
+            ClassicAssert.IsFalse(cantRunNoArg);
+
+            var cantRunWithArg = (bool)denyDB.ScriptEvaluate("return redis.acl_check_cmd('GET', 'foo')");
+            ClassicAssert.IsFalse(cantRunWithArg);
+
+            var cantRunWithTooManyArgs = (bool)denyDB.ScriptEvaluate("return redis.acl_check_cmd('GET', 'foo', 'bar')");
+            ClassicAssert.IsFalse(cantRunWithTooManyArgs);
+
+            var canRunParentCommand = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('ACL')");
+            ClassicAssert.True(canRunParentCommand);
+
+            var canRunSubCommand = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('ACL', 'WHOAMI')");
+            ClassicAssert.True(canRunSubCommand);
+
+            var cantRunParentCommand = (bool)denyDB.ScriptEvaluate("return redis.acl_check_cmd('ACL')");
+            ClassicAssert.False(cantRunParentCommand);
+
+            var cantRunSubCommand = (bool)denyDB.ScriptEvaluate("return redis.acl_check_cmd('ACL', 'WHOAMI')");
+            ClassicAssert.False(cantRunSubCommand);
         }
 
         [Test]

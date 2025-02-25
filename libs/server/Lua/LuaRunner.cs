@@ -2,10 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
+using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -191,6 +190,7 @@ function load_sandboxed(source)
     local pCallRef = pcall;
     local sha1hexRef = garnet_sha1hex;
     local logRef = garnet_log;
+    local aclCheckCmdRef = garnet_acl_check_cmd;
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -252,6 +252,10 @@ function load_sandboxed(source)
         debug = function(...)
             -- this is a whole new dang functionality, not implemented
             error('ERR redis.debug is not supported in Garnet', 0)
+        end,
+
+        acl_check_cmd = function(...)
+            return garnet_acl_check_cmd(...)
         end
     }
 
@@ -286,6 +290,7 @@ end
         readonly int errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex;
         readonly int errFirstArgumentMustBeANumberConstStringRegistryIndex;
         readonly int errInvalidDebugLevelConstStringRegistryIndex;
+        readonly int errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex;
 
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
@@ -405,6 +410,7 @@ end
             state.Register("garnet_call\0"u8, garnetCall);
             state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
             state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
+            state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
 
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
@@ -433,6 +439,7 @@ end
             errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more);
             errFirstArgumentMustBeANumberConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level);
             errInvalidDebugLevelConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_debug_level);
+            errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
 
             state.ExpectLuaStackEmpty();
         }
@@ -635,8 +642,6 @@ end
         /// <summary>
         /// Entry point for redis.log(...) from a Lua script.
         /// </summary>
-        /// <param name="luaStatePtr"></param>
-        /// <returns></returns>
         public int Log(nint luaStatePtr)
         {
             state.CallFromLuaEntered(luaStatePtr);
@@ -664,6 +669,261 @@ end
             // TODO: Should there be an option to actually log the output?
 
             return 0;
+        }
+
+
+        /// <summary>
+        /// Entry point for redis.acl_check_cmd(...) from a Lua script.
+        /// </summary>
+        public int AclCheckCommand(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount == 0)
+            {
+                state.PushConstantString(pleaseSpecifyRedisCallConstStringRegistryIndex);
+                return state.RaiseErrorFromStack();
+            }
+
+            if (!state.CheckBuffer(1, out var cmdSpan))
+            {
+                state.PushConstantString(errBadArgConstStringRegistryIndex);
+                return state.RaiseErrorFromStack();
+            }
+
+            // It's most accurate to use our existing parsing code
+            // But it requires correct argument counts, and redis.acl_check_cmd doesn't.
+            //
+            // So we need to determine the expected minimum and maximum counts and truncate or add
+            // any arguments
+
+            var cmdStr = Encoding.UTF8.GetString(cmdSpan);
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmdStr, out var info, externalOnly: false, includeSubCommands: true))
+            {
+                return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+            }
+
+            var providedRespArgCount = luaArgCount - 1;
+
+            var isBitOpParent = info.Command == RespCommand.BITOP && providedRespArgCount == 0;
+            var hasSubCommands = (info.SubCommands?.Length ?? 0) > 0;
+            var providesSubCommand = hasSubCommands && providedRespArgCount >= 1;
+
+            bool success;
+            if (isBitOpParent)
+            {
+                // BITOP is _weird_
+
+                // Going to push AND, OR, etc. onto the stack, so reserve a slot
+                state.ForceMinimumStackCapacity(1);
+
+                success = true;
+                foreach (var subCommand in RespCommand.BITOP.ExpandForACLs())
+                {
+                    switch (subCommand)
+                    {
+                        case RespCommand.BITOP_AND: state.PushBuffer("AND"u8); break;
+                        case RespCommand.BITOP_OR: state.PushBuffer("OR"u8); break;
+                        case RespCommand.BITOP_XOR: state.PushBuffer("XOR"u8); break;
+                        case RespCommand.BITOP_NOT: state.PushBuffer("NOT"u8); break;
+
+                        default: throw new InvalidOperationException($"Unexpected BITOP sub command: {subCommand}");
+                    }
+
+
+                    var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, info, cmdSpan, luaArgCount: 2);
+
+                    // Remove the BITOP sub command
+                    state.Pop(1);
+
+                    if (badArg)
+                    {
+                        return LuaStaticError(errBadArgConstStringRegistryIndex);
+                    }
+
+                    if (parsedCmd == RespCommand.INVALID)
+                    {
+                        return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                    }
+
+                    if (!respServerSession.CheckACLPermissions(parsedCmd))
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+
+            }
+            else if (hasSubCommands && !providesSubCommand)
+            {
+                // Complicated case here:
+                //   - Caller has provided a command which has subcommands...
+                //   - But they haven't provided the subcommand!
+                //   - So any ACL check will fail, because the ACL covers the actual (ie. sub) command
+                //
+                // So what we do is check ALL of the subcommands, and if-and-only-if the current user
+                // can run all of them.
+                //
+                // This matches intention behind redis.acl_check_cmd calls, in that a subsequent call
+                // with that parent command will always succeed if we return true here.
+
+                // Going to push the subcommand text onto the stack, so reserve some space
+                state.ForceMinimumStackCapacity(1);
+
+                success = true;
+
+                byte[] subCommandScratchArr = null;
+                Span<byte> subCommandScratch = stackalloc byte[64];
+                try
+                {
+                    foreach (var subCommand in info.SubCommands)
+                    {
+                        var subCommandStr = subCommand.Name.AsSpan()[(subCommand.Name.IndexOf('|') + 1)..];
+
+                        if (subCommandScratch.Length < subCommandStr.Length)
+                        {
+                            if (subCommandScratchArr != null)
+                            {
+                                ArrayPool<byte>.Shared.Return(subCommandScratchArr);
+                            }
+
+                            subCommandScratchArr = ArrayPool<byte>.Shared.Rent(subCommandStr.Length);
+                            subCommandScratch = subCommandScratchArr;
+                        }
+
+                        if (!Encoding.UTF8.TryGetBytes(subCommandStr, subCommandScratch, out var written))
+                        {
+                            // If len(chars) != len(bytes) we're going to fail (no commands are non-ASCII)
+                            // so just bail
+
+                            success = false;
+                            break;
+                        }
+
+                        var subCommandBuf = subCommandScratch[..written];
+
+                        state.PushBuffer(subCommandBuf);
+                        var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, subCommand, cmdSpan, luaArgCount: 2);
+
+                        // Remove the extra sub-command
+                        state.Pop(1);
+
+                        if (badArg)
+                        {
+                            return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        }
+
+                        if (parsedCmd == RespCommand.INVALID)
+                        {
+                            return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                        }
+
+                        if (!respServerSession.CheckACLPermissions(parsedCmd))
+                        {
+                            success = false;
+                            break;
+                        }
+                    }
+                }
+                finally
+                {
+                    if (subCommandScratchArr != null)
+                    {
+                        ArrayPool<byte>.Shared.Return(subCommandScratchArr);
+                    }
+                }
+
+                // We're done with these, so free up the space
+                state.Pop(luaArgCount);
+
+                state.PushBoolean(success);
+            }
+            else
+            {
+                var (parsedCommand, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, info, cmdSpan, luaArgCount);
+
+                if (badArg)
+                {
+                    return LuaStaticError(errBadArgConstStringRegistryIndex);
+                }
+
+                if (parsedCommand == RespCommand.INVALID)
+                {
+                    return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                }
+
+                success = respServerSession.CheckACLPermissions(parsedCommand);
+            }
+
+            // We're done with these, so free up the space
+            state.Pop(luaArgCount);
+
+            state.PushBoolean(success);
+            return 1;
+
+            // Prepare a dummy RESP command with the given command and the current args on the Lua stack
+            // and have the RespServerSession parse it
+            static (RespCommand Parsed, bool BadArg) PrepareAndCheckRespRequest(
+                ref LuaStateWrapper state,
+                RespServerSession respServerSession,
+                ScratchBufferManager scratchBufferManager,
+                RespCommandsInfo cmdInfo,
+                ReadOnlySpan<byte> cmdSpan,
+                int luaArgCount
+            )
+            {
+                var providedRespArgCount = luaArgCount - 1;
+
+                // Figure out what the RESP command array should look like
+                var minRespArgCount = Math.Abs(cmdInfo.Arity) - 1;
+                var maxRespArgCount = cmdInfo.Arity < 0 ? int.MaxValue : (cmdInfo.Arity - 1);
+                var actualRespArgCount = Math.Min(Math.Max(providedRespArgCount, minRespArgCount), maxRespArgCount);
+
+                // RESP format the args so we can parse the command (and sub-command, and maybe keys down the line?)
+
+                scratchBufferManager.Reset();
+                scratchBufferManager.StartCommand(cmdSpan, actualRespArgCount);
+
+                for (var i = 0; i < actualRespArgCount; i++)
+                {
+                    if (i < providedRespArgCount)
+                    {
+                        // Fill in the args we actually have
+                        var stackIx = 2 + i;
+
+                        var argType = state.Type(stackIx);
+                        if (argType == LuaType.Nil)
+                        {
+                            scratchBufferManager.WriteNullArgument();
+                        }
+                        else if (argType is LuaType.String or LuaType.Number)
+                        {
+                            // KnownStringToBuffer will coerce a number into a string
+                            //
+                            // Redis nominally converts numbers to integers, but in this case just ToStrings things
+                            state.KnownStringToBuffer(stackIx, out var span);
+
+                            // Span remains pinned so long as we don't pop the stack
+                            scratchBufferManager.WriteArgument(span);
+                        }
+                        else
+                        {
+                            return (RespCommand.INVALID, true);
+                        }
+                    }
+                    else
+                    {
+                        // For args we don't have, shove in an empty string
+                        scratchBufferManager.WriteArgument(default);
+                    }
+                }
+
+                var request = scratchBufferManager.ViewFullArgSlice();
+                var parsedCommand = respServerSession.ParseRespCommandBuffer(request.ReadOnlySpan);
+
+                return (parsedCommand, false);
+            }
         }
 
         /// <summary>
@@ -1819,5 +2079,12 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Log(nint luaState)
         => CallbackContext.Log(luaState);
+
+        /// <summary>
+        /// Entry point for calls to redis.acl_check_cmd.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int AclCheckCommand(nint luaState)
+        => CallbackContext.AclCheckCommand(luaState);
     }
 }

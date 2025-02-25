@@ -401,5 +401,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> Lua_ERR_redis_log_requires_two_arguments_or_more => "ERR redis.log() requires two arguments or more."u8;
         public static ReadOnlySpan<byte> Lua_ERR_First_argument_must_be_a_number_log_level => "ERR First argument must be a number (log level)."u8;
         public static ReadOnlySpan<byte> Lua_ERR_Invalid_debug_level => "ERR Invalid debug level."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd => "ERR Invalid command passed to redis.acl_check_cmd()"u8;
     }
 }
