@@ -80,44 +80,6 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// The FoldOver task simply sets the read only offset to the current end of the log, so a captured version
-    /// is immutable and will eventually be flushed to disk.
-    /// </summary>
-    internal sealed class FoldOverTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-    {
-        /// <inheritdoc />
-        public void GlobalBeforeEnteringState(
-            SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
-        {
-            if (next.Phase == Phase.REST)
-                // Before leaving the checkpoint, make sure all previous versions are read-only.
-                store.hlogBase.ShiftReadOnlyToTail(out _, out _);
-        }
-
-        /// <inheritdoc />
-        public void GlobalAfterEnteringState(
-            SystemState next,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
-        { }
-
-        /// <inheritdoc />
-        public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-            SystemState current,
-            SystemState prev,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
-            List<ValueTask> valueTasks,
-            CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl
-        {
-        }
-    }
-
-    /// <summary>
     /// A VersionChangeStateMachine orchestrates to capture a version, but does not flush to disk.
     /// </summary>
     internal class VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : SynchronizationStateMachineBase<TKey, TValue, TStoreFunctions, TAllocator>
