@@ -951,11 +951,12 @@ namespace Garnet.test
             return result;
         }
 
-        internal static Process StartProcess(Dictionary<string, string> env,
+        internal static Process StartProcess(Type t,
+                                             Dictionary<string, string> env,
                                              out ConfigurationOptions opts,
                                              int port = 7000)
         {
-            var a = Assembly.GetAssembly(typeof(server.Program));
+            var a = Assembly.GetAssembly(t);
             var name = a.Location;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {

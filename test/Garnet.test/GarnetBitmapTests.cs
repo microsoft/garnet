@@ -290,7 +290,7 @@ namespace Garnet.test
                     env.Add("DOTNET_EnableHWIntrinsic", "0");
                 }
 
-                using var p = TestUtils.StartProcess(env, out configOptions);
+                using var p = TestUtils.StartProcess(typeof(server.Program), env, out configOptions);
 
                 SimpleBitCountTest();
 
