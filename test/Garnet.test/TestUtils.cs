@@ -969,9 +969,11 @@ namespace Garnet.test
 
             opts = GetConfig([new IPEndPoint(IPAddress.Loopback, port)]);
 
-            var psi = new ProcessStartInfo(name, ["--port", port.ToString(), "--bind", "127.0.0.1"]);
+            var psi = new ProcessStartInfo(name);
+            psi.Environment.Add("GARNET_TEST_PORT", port.ToString());
             foreach (var e in env)
                 psi.Environment.Add(e.Key, e.Value);
+
             var p = Process.Start(psi);
             ClassicAssert.NotNull(p);
 

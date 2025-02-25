@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 
 namespace Garnet.test.server
 {
@@ -16,7 +18,15 @@ namespace Garnet.test.server
         {
             try
             {
-                using var server = new GarnetServer(args);
+                var port = int.Parse(Environment.GetEnvironmentVariable("GARNET_TEST_PORT"));
+
+                using var server = new GarnetServer(new GarnetServerOptions()
+                {
+                    DisableObjects = true,
+                    DisablePubSub = true,
+                    EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+                    EnableDebugCommand = ConnectionProtectionOption.Local
+                });
 
                 // Start the server
                 server.Start();

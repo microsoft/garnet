@@ -260,9 +260,9 @@ namespace Garnet.test
 
         [Test, Order(6)]
         [Category("BITCOUNT")]
-        [TestCase(0, Description = "Hardware accelerated")]
-        [TestCase(1, Description = "Avx2 disabled")]
-        [TestCase(2, Description = "Software fallback")]
+        [TestCase(0, TestName = "BitmapSimpleBitCountTest(Hardware accelerated)")]
+        [TestCase(1, TestName = "BitmapSimpleBitCountTest(Avx2 disabled)")]
+        [TestCase(2, TestName = "BitmapSimpleBitCountTest(Software fallback)")]
         public void BitmapSimpleBitCountTest(int acceleration)
         {
             var configOptions = TestUtils.GetConfig();
