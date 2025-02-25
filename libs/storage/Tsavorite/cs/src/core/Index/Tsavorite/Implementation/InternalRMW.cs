@@ -92,7 +92,7 @@ namespace Tsavorite.core
                         case LatchDestination.Retry:
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
-                            if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                            if (stackCtx.recSrc.HasInMemorySrc)
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                             goto CreateNewRecord;
