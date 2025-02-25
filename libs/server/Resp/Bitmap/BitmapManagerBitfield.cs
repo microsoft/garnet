@@ -101,9 +101,9 @@ namespace Garnet.server
             var byteIndexStart = Index(offset);
             var byteIndexEnd = Index(offset + bitCount) + 1;
             var buf = stackalloc byte[8];
-            buf[0] = buf[1] = buf[2] = buf[3] = buf[4] = buf[5] = buf[6] = buf[7] = 0;
+            *(ulong*)buf = 0;
 
-            //Simple case value is beyond current length
+            // Simple case value is beyond current length
             if (byteIndexStart >= valLen) return 0;
 
             var vend = value + valLen;
@@ -120,22 +120,22 @@ namespace Garnet.server
             if (curr < cend) buf[0] = *curr++;
             var returnValue = *(long*)buf;
 
-            //prune leading bits
+            // Prune leading bits
             var _left = (int)(offset - (byteIndexStart << 3));
-            returnValue = returnValue << _left;
+            returnValue <<= _left;
 
-            //extract an additional byte if 64 bit buffer needs more bytes
-            //append the byte to the end of long value
-            //after that need to shift by _right because total size will be 64 bit and we need bitCount amount
+            // Extract an additional byte if 64 bit buffer needs more bytes
+            // Append the byte to the end of long value
+            // After that need to shift by _right because total size will be 64 bit and we need bitCount amount
             if ((64 - _left) < bitCount)
             {
-                //extract number of bits skipped because of offset and position them at the tail of the partially constructed 64-bit value
+                // Extract number of bits skipped because of offset and position them at the tail of the partially constructed 64-bit value
                 var _lsb = (byte)(curr < vend ? (*curr) >> (8 - _left) : 0);
-                returnValue |= (long)_lsb;
+                returnValue |= _lsb;
             }
 
-            //shift 64 bit value to construct the given number based of bitCount
-            var _right = (64 - bitCount);
+            // Shift 64 bit value to construct the given number based of bitCount
+            var _right = 64 - bitCount;
             returnValue = (typeInfo & (byte)BitFieldSign.SIGNED) > 0 ?
                 returnValue >> _right :
                 (long)(((ulong)returnValue) >> _right);
@@ -157,19 +157,19 @@ namespace Garnet.server
         /// <exception cref="GarnetException"></exception>
         private static (long, bool) SetBitfieldValue(byte* value, long valLen, long offset, byte bitCount, byte typeInfo, long newValue, byte overflowType)
         {
-            int byteIndexStart = Index(offset);
-            int byteIndexEnd = Index(offset + bitCount) + 1;
-            byte* buf = stackalloc byte[8];
-            buf[0] = buf[1] = buf[2] = buf[3] = buf[4] = buf[5] = buf[6] = buf[7] = 0;
+            var byteIndexStart = Index(offset);
+            var byteIndexEnd = Index(offset + bitCount) + 1;
+            var buf = stackalloc byte[8];
+            *(ulong*)buf = 0;
 
-            //Simple case value is beyond current length
+            // Simple case value is beyond current length
             if (byteIndexStart >= valLen)
                 throw new GarnetException("Setting bitfield failed: Size of bitmap smaller than offset provided.");
 
             #region getValue
-            byte* vend = (value + valLen);
-            byte* curr = (value + byteIndexStart);
-            byte* cend = (value + byteIndexEnd) < vend ? (value + byteIndexEnd) : vend;
+            var vend = value + valLen;
+            var curr = value + byteIndexStart;
+            var cend = value + byteIndexEnd < vend ? (value + byteIndexEnd) : vend;
 
             if (curr < cend) buf[7] = *curr++;
             if (curr < cend) buf[6] = *curr++;
@@ -179,25 +179,25 @@ namespace Garnet.server
             if (curr < cend) buf[2] = *curr++;
             if (curr < cend) buf[1] = *curr++;
             if (curr < cend) buf[0] = *curr++;
-            long oldValue = (*(long*)buf);
+            var oldValue = *(long*)buf;
 
-            //prune leading bits
-            int _left = (int)(offset - (byteIndexStart << 3));
-            oldValue = oldValue << _left;
+            // Prune leading bits
+            var _left = (int)(offset - (byteIndexStart << 3));
+            oldValue <<= _left;
 
-            int bitOffset = 64 - _left;
-            //extract an additional byte if 64 bit buffer needs more bytes
-            //append the byte to the end of long value
-            //after that need to shift by _right because total size will be 64 bit and we need bitCount amount
+            var bitOffset = 64 - _left;
+            // Extract an additional byte if 64 bit buffer needs more bytes
+            // Append the byte to the end of long value
+            // After that need to shift by _right because total size will be 64 bit and we need bitCount amount
             if (bitCount > bitOffset)
             {
-                byte _lsb = (byte)(curr < vend ? (*curr) >> (8 - _left) : 0);
-                oldValue |= (long)_lsb;
+                var _lsb = (byte)(curr < vend ? (*curr) >> (8 - _left) : 0);
+                oldValue |= _lsb;
             }
 
-            //shift with typeInfo in mind
-            bool signed = (typeInfo & (byte)BitFieldSign.SIGNED) > 0;
-            int _right = (64 - bitCount);
+            // Shift with typeInfo in mind
+            var signed = (typeInfo & (byte)BitFieldSign.SIGNED) > 0;
+            var _right = 64 - bitCount;
             oldValue = signed ?
                 oldValue >> _right :
                 (long)(((ulong)oldValue) >> _right);
@@ -211,31 +211,31 @@ namespace Garnet.server
             #endregion
 
             #region setValue            
-            ulong tmp = (ulong)newValue & ((bitCount == 64) ? ulong.MaxValue : ((1UL << bitCount) - 1));
+            var tmp = (ulong)newValue & ((bitCount == 64) ? ulong.MaxValue : ((1UL << bitCount) - 1));
 
-            //Assume value fits at offset + 64 bit
-            int pbits = bitCount;// prefix bits;
-            int sbits = 0;//suffix bits
+            // Assume value fits at offset + 64 bit
+            var pbits = (int)bitCount;// prefix bits;
+            var sbits = 0;// Suffix bits
 
             if (bitCount > bitOffset)
             {
-                sbits = bitCount - bitOffset;//how many bits need to go to 9-th byte
-                ulong smask = (1UL << sbits) - 1;//mask to extract bits for 9-th byte
-                int _sbits = 8 - sbits;//how many bits to keep from 9-th byte
-                byte _msb = (byte)((tmp & smask) << _sbits);//extract suffix bits and position left at 9-th byte
-                byte _b9 = (byte)(*curr & ((1 << _sbits) - 1));//extract least significant bits from 9-th byte
-                *curr = (byte)(_msb | _b9);//combine bits from newValue and least significant bits of 9-th byte and store at 9-th byte
+                sbits = bitCount - bitOffset;// How many bits need to go to 9-th byte
+                var smask = (1UL << sbits) - 1;// Mask to extract bits for 9-th byte
+                var _sbits = 8 - sbits;// How many bits to keep from 9-th byte
+                var _msb = (byte)((tmp & smask) << _sbits);// Extract suffix bits and position left at 9-th byte
+                var _b9 = (byte)(*curr & ((1 << _sbits) - 1));// Extract least significant bits from 9-th byte
+                *curr = (byte)(_msb | _b9);// Combine bits from newValue and least significant bits of 9-th byte and store at 9-th byte
 
-                pbits = bitCount - sbits;//remaining bits to store between byteIndexStart and byteIndexEnd
-                tmp = tmp & ~smask;//clear bits stored at 9-th byte
+                pbits = bitCount - sbits;// Remaining bits to store between byteIndexStart and byteIndexEnd
+                tmp &= ~smask;// Clear bits stored at 9-th byte
             }
 
-            int _shf = bitOffset - bitCount;//position of least significant bit for the remaining portion of the new value 
-            ulong mask = bitCount == 64 ? ulong.MaxValue : ((1UL << pbits) - 1);//mask for the remaining portion of the new value
-            if (_shf < 0)//remaining bits are position too far on the left
+            var _shf = bitOffset - bitCount;// Position of least significant bit for the remaining portion of the new value 
+            var mask = bitCount == 64 ? ulong.MaxValue : ((1UL << pbits) - 1);//mask for the remaining portion of the new value
+            if (_shf < 0)// Remaining bits are position too far on the left
             {
-                //shift remaining bits right
-                tmp = tmp >> (-_shf);
+                // Shift remaining bits right
+                tmp >>= -_shf;
                 // shift mask left based on number of bits stored at 9-th byte and then shift right to position mask
                 mask = ~((mask << sbits) >> (-_shf));
             }
@@ -245,9 +245,9 @@ namespace Garnet.server
                 mask = ~(mask << _shf);
             }
 
-            ulong oldV = (*(ulong*)buf);
+            var oldV = *(ulong*)buf;
             tmp = (oldV & mask) | tmp;
-            curr = (value + byteIndexStart);
+            curr = value + byteIndexStart;
             if (curr < cend) *curr++ = (byte)((tmp >> 56) & 0xFF);
             if (curr < cend) *curr++ = (byte)((tmp >> 48) & 0xFF);
             if (curr < cend) *curr++ = (byte)((tmp >> 40) & 0xFF);
@@ -275,19 +275,19 @@ namespace Garnet.server
         /// <exception cref="GarnetException"></exception>
         private static (long, bool) IncrByBitfieldValue(byte* value, long valLen, long offset, byte bitCount, byte typeInfo, long incrValue, byte overflowType)
         {
-            int byteIndexStart = Index(offset);
-            int byteIndexEnd = Index(offset + bitCount) + 1;
-            byte* buf = stackalloc byte[8];
-            buf[0] = buf[1] = buf[2] = buf[3] = buf[4] = buf[5] = buf[6] = buf[7] = 0;
+            var byteIndexStart = Index(offset);
+            var byteIndexEnd = Index(offset + bitCount) + 1;
+            var buf = stackalloc byte[8];
+            *(ulong*)buf = 0;
 
             //Simple case value is beyond current length
             if (byteIndexStart >= valLen)
                 throw new GarnetException("Setting bitfield failed: Size of bitmap smaller than offset provided.");
 
             #region getValue
-            byte* vend = (value + valLen);
-            byte* curr = (value + byteIndexStart);
-            byte* cend = (value + byteIndexEnd) < vend ? (value + byteIndexEnd) : vend;
+            var vend = (value + valLen);
+            var curr = (value + byteIndexStart);
+            var cend = (value + byteIndexEnd) < vend ? (value + byteIndexEnd) : vend;
 
             if (curr < cend) buf[7] = *curr++;
             if (curr < cend) buf[6] = *curr++;
@@ -297,71 +297,71 @@ namespace Garnet.server
             if (curr < cend) buf[2] = *curr++;
             if (curr < cend) buf[1] = *curr++;
             if (curr < cend) buf[0] = *curr++;
-            long oldValue = (*(long*)buf);
+            var oldValue = *(long*)buf;
 
-            //prune leading bits
-            int _left = (int)(offset - (byteIndexStart << 3));
-            oldValue = oldValue << _left;
+            // Prune leading bits
+            var _left = (int)(offset - (byteIndexStart << 3));
+            oldValue <<= _left;
 
-            int bitOffset = 64 - _left;
-            //extract an additional byte if 64 bit buffer needs more bytes
-            //append the byte to the end of long value
-            //after that need to shift by _right because total size will be 64 bit and we need bitCount amount
+            var bitOffset = 64 - _left;
+            // Extract an additional byte if 64 bit buffer needs more bytes
+            // Append the byte to the end of long value
+            // After that need to shift by _right because total size will be 64 bit and we need bitCount amount
             if (bitCount > bitOffset)
             {
-                byte _lsb = (byte)(curr < vend ? (*curr) >> (8 - _left) : 0);
+                var _lsb = (byte)(curr < vend ? (*curr) >> (8 - _left) : 0);
                 oldValue |= (long)_lsb;
             }
 
-            //shift with typeInfo in mind
-            bool signed = (typeInfo & (byte)BitFieldSign.SIGNED) > 0;
-            int _right = (64 - bitCount);
+            // Shift with typeInfo in mind
+            var signed = (typeInfo & (byte)BitFieldSign.SIGNED) > 0;
+            var _right = (64 - bitCount);
             oldValue = signed ?
                 oldValue >> _right :
                 (long)(((ulong)oldValue) >> _right);
             #endregion
 
             #region incrByValue
-            bool overflow = CheckBitfieldOverflow(oldValue, incrValue, out long newValue, bitCount, overflowType, signed);
+            var overflow = CheckBitfieldOverflow(oldValue, incrValue, out long newValue, bitCount, overflowType, signed);
             #endregion
 
             #region setValue
-            ulong tmp = (ulong)newValue & ((bitCount == 64) ? ulong.MaxValue : ((1UL << bitCount) - 1));
-            //Assume value fits at offset + 64 bit
-            int pbits = bitCount;// prefix bits;
-            int sbits = 0;//suffix bits
+            var tmp = (ulong)newValue & ((bitCount == 64) ? ulong.MaxValue : ((1UL << bitCount) - 1));
+            // Assume value fits at offset + 64 bit
+            var pbits = (int)bitCount;// Prefix bits;
+            var sbits = 0;// Suffix bits
 
             if (bitCount > bitOffset)
             {
-                sbits = bitCount - bitOffset;//how many bits need to go to 9-th byte
-                ulong smask = (1UL << sbits) - 1;//mask to extract bits for 9-th byte
-                int _sbits = 8 - sbits;//how many bits to keep from 9-th byte
-                byte _msb = (byte)((tmp & smask) << _sbits);//extract suffix bits and position left at 9-th byte
-                byte _b9 = (byte)(*curr & ((1 << _sbits) - 1));//extract least significant bits from 9-th byte
-                *curr = (byte)(_msb | _b9);//combine bits from newValue and least significant bits of 9-th byte and store at 9-th byte
+                sbits = bitCount - bitOffset;// How many bits need to go to 9-th byte
+                var smask = (1UL << sbits) - 1;// Mask to extract bits for 9-th byte
+                var _sbits = 8 - sbits;// How many bits to keep from 9-th byte
+                var _msb = (byte)((tmp & smask) << _sbits);// Extract suffix bits and position left at 9-th byte
+                var _b9 = (byte)(*curr & ((1 << _sbits) - 1));// Extract least significant bits from 9-th byte
+                *curr = (byte)(_msb | _b9);// Combine bits from newValue and least significant bits of 9-th byte and store at 9-th byte
 
-                pbits = bitCount - sbits;//remaining bits to store between byteIndexStart and byteIndexEnd
-                tmp = tmp & ~smask;//clear bits stored at 9-th byte
+                pbits = bitCount - sbits;// Remaining bits to store between byteIndexStart and byteIndexEnd
+                tmp &= ~smask;// Clear bits stored at 9-th byte
             }
 
-            int _shf = bitOffset - bitCount;//position of least significant bit for the remaining portion of the new value 
-            ulong mask = bitCount == 64 ? ulong.MaxValue : ((1UL << pbits) - 1);//mask for the remaining portion of the new value
-            if (_shf < 0)//remaining bits are position too far on the left
+            var _shf = bitOffset - bitCount;// Position of least significant bit for the remaining portion of the new value 
+            var mask = bitCount == 64 ? ulong.MaxValue : ((1UL << pbits) - 1);// Mask for the remaining portion of the new value
+            if (_shf < 0)// Remaining bits are position too far on the left
             {
-                //shift remaining bits right
-                tmp = tmp >> (-_shf);
-                // shift mask left based on number of bits stored at 9-th byte and then shift right to position mask
+                // Shift remaining bits right
+                tmp >>= -_shf;
+                // Shift mask left based on number of bits stored at 9-th byte and then shift right to position mask
                 mask = ~((mask << sbits) >> (-_shf));
             }
             else
             {
-                tmp = tmp << _shf;
+                tmp <<= _shf;
                 mask = ~(mask << _shf);
             }
 
-            ulong oldV = (*(ulong*)buf);
+            var oldV = *(ulong*)buf;
             tmp = (oldV & mask) | tmp;
-            curr = (value + byteIndexStart);
+            curr = value + byteIndexStart;
             if (curr < cend) *curr++ = (byte)((tmp >> 56) & 0xFF);
             if (curr < cend) *curr++ = (byte)((tmp >> 48) & 0xFF);
             if (curr < cend) *curr++ = (byte)((tmp >> 40) & 0xFF);
@@ -503,17 +503,13 @@ namespace Garnet.server
         {
             var bitCount = (byte)(args.typeInfo & 0x7F);
 
-            switch (args.secondaryCommand)
+            return args.secondaryCommand switch
             {
-                case RespCommand.SET:
-                    return SetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);
-                case RespCommand.INCRBY:
-                    return IncrByBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);
-                case RespCommand.GET:
-                    return (GetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo), false);
-                default:
-                    throw new GarnetException("BITFIELD secondary op not supported");
-            }
+                RespCommand.SET => SetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType),
+                RespCommand.INCRBY => IncrByBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType),
+                RespCommand.GET => (GetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo), false),
+                _ => throw new GarnetException("BITFIELD secondary op not supported"),
+            };
         }
     }
 }
