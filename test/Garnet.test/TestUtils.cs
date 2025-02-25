@@ -951,8 +951,8 @@ namespace Garnet.test
             return result;
         }
 
-        internal static Process StartProcess(Dictionary<string, string> env, 
-                                             out ConfigurationOptions opts, 
+        internal static Process StartProcess(Dictionary<string, string> env,
+                                             out ConfigurationOptions opts,
                                              int port = 7000)
         {
             var a = Assembly.GetAssembly(typeof(server.Program));
