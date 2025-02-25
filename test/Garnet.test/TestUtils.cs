@@ -10,8 +10,6 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -949,35 +947,6 @@ namespace Garnet.test
                 }
             }
             return result;
-        }
-
-        internal static Process StartProcess(Type t,
-                                             Dictionary<string, string> env,
-                                             out ConfigurationOptions opts,
-                                             int port = 7000)
-        {
-            var a = Assembly.GetAssembly(t);
-            var name = a.Location;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                name = name.Replace(".dll", ".exe");
-            }
-            else
-            {
-                name = name.Replace(".dll", "");
-            }
-
-            opts = GetConfig([new IPEndPoint(IPAddress.Loopback, port)]);
-
-            var psi = new ProcessStartInfo(name);
-            psi.Environment.Add("GARNET_TEST_PORT", port.ToString());
-            foreach (var e in env)
-                psi.Environment.Add(e.Key, e.Value);
-
-            var p = Process.Start(psi);
-            ClassicAssert.NotNull(p);
-
-            return p;
         }
     }
 }

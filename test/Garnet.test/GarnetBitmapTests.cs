@@ -290,12 +290,9 @@ namespace Garnet.test
                     env.Add("DOTNET_EnableHWIntrinsic", "0");
                 }
 
-                using var p = TestUtils.StartProcess(typeof(server.Program), env, out configOptions);
+                using var p = new TestProcess(env, out configOptions);
 
                 SimpleBitCountTest();
-
-                try { p.Kill(); }
-                catch { }
             }
 
             void SimpleBitCountTest()
@@ -316,6 +313,19 @@ namespace Garnet.test
 
                 var count = db.StringBitCount(key);
                 ClassicAssert.AreEqual(expectedCount, count);
+
+                if (acceleration > 0)
+                {
+                    try
+                    {
+                        // More reliable than QUIT. We want to be sure the process is down.
+                        _ = db.Execute("DEBUG", ["PANIC"]);
+                    }
+                    catch
+                    {
+                        // Exception is normal here.
+                    }
+                }
             }
         }
 
