@@ -48,10 +48,10 @@ In addition, newly configured replicas, added to the cluster, could face longer 
 The cluster operator can choose between various replication options to achieve a trade-off between performance and durability.
 A summary of these options is shown below:
 
-- Main Memory Replication (MMR)
+- Fast AOF Truncation (FAT)
 	This option forces the primary to aggressively truncate the AOF so it does not spill into disk. It can be used in combination with aof-memory option which determines the maximum AOF memory buffer size.
-	When a replica attaches to a primary with MMR turned on, the AOF is not guaranteed to be truncated which may result in writes being lost.
-	To overcome this issue MMR should be used with ODC.
+	When a replica attaches to a primary with FAT turned on, the AOF is not guaranteed to be truncated which may result in writes being lost.
+	To overcome this issue FAT should be used with ODC.
 - On Demand Checkpoint (ODC)
 	This option forces the primary to take a checkpoint if no checkpoint is available when replica tries to attach and recover. If a checkpoint becomes or was availalbe and the CCRO has not been truncated, then
 	the primary will lock it to prevent truncation while a replica is recovering. In this case, they AOF log could spill to disk as the AOF in memory buffer becomes full.
