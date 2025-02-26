@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <remarks>This has two regions:
     ///     <list type="bullet">
-    ///         <item>Fixed size: these are a set of bins in powers of 2 up to <see cref="FixedSizePages.PageSize"/>. See <see cref="FixedSizePages"/>.</item>
+    ///         <item>Fixed size: these are a set of bins in powers of 2 up to <see cref="FixedSizePages.MaxInternalBlockSize"/>. See <see cref="FixedSizePages"/>.</item>
     ///         <item>Oversize: these are allocations greater than <see cref="FixedSizePages.MaxExternalBlockSize"/>. Each allocation is a separate page. See <see cref="OversizePages"/></item>
     ///     </list>
     /// </remarks>

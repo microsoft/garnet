@@ -1,7 +1,7 @@
 ---
-id: locking
-sidebar_label: Locking
-title: Locking
+id: object-allocator
+sidebar_label: ObjectAllocator
+title: ObjectAllocator
 ---
 
 # Locking

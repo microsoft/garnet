@@ -129,16 +129,6 @@ FreeList revivification functions as follows:
         - Clearing the extra value length and filler and calls `DisposeForRevivification` as described in [Maintaining Extra Value Length](#maintaining-extra-value-length).
         - Unsealing the record; epoch management guarantees nobody is still executing who saw this record before it went into the free record pool.
 
-### Concurrency Control Considerations for FreeList Revivification
-FreeList Revivification requires `ConcurrencyControlMode` not be `ConcurrencyControlMode.None`; otherwise the tag chain can be unstable, with the first record in the tag chain potentially removed and reused by revivification while a thread is tracing back from it:
-    - Thread1: Get the first record address from the `HashBucketEntry`
-    - Thread2: Delete and elide the first record, putting it on the revivification FreeList
-    - Thread3: Revivify that record with a different key, setting its .PreviousAddress 
-    - Thread1: Follows the *former* .PreviousAddress and is now on an entirely different tag chain.
-This is *only* possible for the first record in the tag chain (the tail-most record, in the `HashBucketEntry`); we do not elide records in the middle of the tag chain.
-
-For `ConcurrencyControlMode.LockTable`, because the only current LockTable implementation is via the `HashBucket`s and locking at the `HashBucket` level is higher than the tag chain, we get a stable tag chain *almost* for free. The cost is that the `HashBucket` must be locked *before* calling TracebackForKeyMatch.
-
 ### `FreeRecordPool` Design
 The FreeList hierarchy consists of:
 - The `FreeRecordPool`, which maintains the bins, deciding which bin should be used for Enqueue and Dequeue.

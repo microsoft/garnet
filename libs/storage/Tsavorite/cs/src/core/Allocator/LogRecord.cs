@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Net;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.OverflowAllocator;
 using static Tsavorite.core.Utility;
@@ -70,7 +69,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][SpanByte key][Value][ETag?][Expiration?][FillerLen?]
+    ///     <item>[RecordInfo][SpanByte key][Value (SpanByte or ObjectId)][ETag?][Expiration?][FillerLen?][Filler bytes]
     ///         <br>Where Value Span is one of:</br>
     ///         <list type="bullet">
     ///             <item>ObjectId: If this is a object record, this is the ID into the <see cref="ObjectIdMap"/></item>
