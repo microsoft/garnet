@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Garnet.common;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -57,6 +58,8 @@ namespace Garnet.test
             var dummy = new char[1];
             _ = p.StandardOutput.ReadBlock(dummy, 0, 1);
 
+            // Give it a bit more time
+            Thread.Sleep(100);
             lightClientRequest = new LightClientRequest(endPoint, 0);
 
             stopWatch = Stopwatch.StartNew();
