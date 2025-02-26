@@ -31,6 +31,7 @@ namespace Garnet.server
         readonly LuaMemoryManagementMode memoryManagementMode;
         readonly int? memoryLimitBytes;
         readonly LuaTimeoutManager timeoutManager;
+        readonly LuaLoggingMode logMode;
 
         LuaRunner timeoutRunningScript;
         LuaTimeoutManager.Registration timeoutRegistration;
@@ -56,6 +57,7 @@ namespace Garnet.server
             // There's some parsing involved in these, so save them off per-session
             memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
             memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
+            logMode = storeWrapper.serverOptions.LuaOptions.LogMode;
         }
 
         public void Dispose()
@@ -137,7 +139,7 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))
@@ -212,7 +214,7 @@ namespace Garnet.server
             for (var i = 0; i < SHA1Len / 2; i++)
             {
                 into[i * 2] = HEX_CHARS[sha1Bytes[i] >> 4];
-                into[i * 2 + 1] = HEX_CHARS[sha1Bytes[i] & 0x0F];
+                into[(i * 2) + 1] = HEX_CHARS[sha1Bytes[i] & 0x0F];
             }
         }
     }
