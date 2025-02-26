@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -62,7 +65,60 @@ namespace Garnet.server
         /// <returns>True if database was retrieved or added successfully</returns>
         public bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db);
 
+        /// <summary>
+        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
+        /// </summary>
+        /// <param name="dbId">ID of database to lock</param>
+        /// <returns>True if lock acquired</returns>
+        public bool TryPauseCheckpoints(int dbId);
+
+        /// <summary>
+        /// Release checkpoint task lock
+        /// </summary>
+        /// <param name="dbId">ID of database to unlock</param>
+        public void ResumeCheckpoints(int dbId);
+
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+
+        /// <summary>
+        /// Take checkpoint of all active databases
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default);
+
+        /// <summary>
+        /// Take checkpoint of specified database ID
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="dbId">ID of database to checkpoint</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, int dbId, StoreType storeType = StoreType.All,
+            ILogger logger = null, CancellationToken token = default);
+
+        /// <summary>
+        /// Take a checkpoint if no checkpoint was taken after the provided time offset
+        /// </summary>
+        /// <param name="entryTime">Time offset</param>
+        /// <param name="dbId">ID of database to checkpoint (default: DB 0)</param>
+        /// <returns>Task</returns>
+        public Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
+
+        /// <summary>
+        /// Take a checkpoint of all active databases whose AOF size has reached a specified limit
+        /// </summary>
+        /// <param name="aofSizeLimit">AOF size limit</param>
+        /// <param name="token">Cancellation token</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        public Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit, CancellationToken token = default,
+            ILogger logger = null);
 
         /// <summary>
         /// Recover AOF
@@ -110,12 +166,20 @@ namespace Garnet.server
         public void FlushAllDatabases(bool unsafeTruncateLog);
 
         /// <summary>
+        /// Try to swap between two database instances
+        /// </summary>
+        /// <param name="dbId1">First database ID</param>
+        /// <param name="dbId2">Second database ID</param>
+        /// <returns>True if swap successful</returns>
+        public bool TrySwapDatabases(int dbId1, int dbId2);
+
+        /// <summary>
         /// Create a shallow copy of the IDatabaseManager instance and copy databases to the new instance
         /// </summary>
         /// <param name="enableAof">True if AOF should be enabled in the clone</param>
         /// <returns></returns>
         public IDatabaseManager Clone(bool enableAof);
 
-        internal FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0);
+        internal FunctionsState CreateFunctionsState(int dbId = 0);
     }
 }

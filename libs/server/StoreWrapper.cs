@@ -132,7 +132,6 @@ namespace Garnet.server
         internal readonly string runId;
 
         readonly CancellationTokenSource ctsCommit;
-        SingleWriterMultiReaderLock checkpointTaskLock;
 
         // True if this server supports more than one logical database
         readonly bool allowMultiDb;
@@ -147,7 +146,7 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            IDatabaseManager databaseManager,
+            DatabaseCreatorDelegate createDatabaseDelegate,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
             SubscribeBroker subscribeBroker,
@@ -162,7 +161,9 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
-            this.databaseManager = databaseManager;
+            this.databaseManager = serverOptions.EnableCluster || serverOptions.MaxDatabases == 1
+                ? new SingleDatabaseManager(createDatabaseDelegate, this)
+                : new MultiDatabaseManager(createDatabaseDelegate, this);
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
                 ? new GarnetServerMonitor(this, serverOptions, server,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -233,7 +234,7 @@ namespace Garnet.server
             storeWrapper.version,
             storeWrapper.redisProtocolVersion,
             storeWrapper.server,
-            storeWrapper.databaseManager.Clone(recordToAof),
+            null,
             storeWrapper.customCommandManager,
             storeWrapper.serverOptions,
             storeWrapper.subscribeBroker,
@@ -241,6 +242,7 @@ namespace Garnet.server
             null,
             storeWrapper.loggerFactory)
         {
+            this.databaseManager = storeWrapper.databaseManager.Clone(recordToAof);
         }
 
         /// <summary>
@@ -286,12 +288,21 @@ namespace Garnet.server
             {
                 if (serverOptions.Recover)
                 {
-                    databaseManager.RecoverCheckpoint();
-                    databaseManager.RecoverAOF();
+                    RecoverCheckpoint();
+                    RecoverAOF();
                     ReplayAOF();
                 }
             }
         }
+
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
+            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
+
+        /// <summary>
+        /// Recover AOF
+        /// </summary>
+        public void RecoverAOF() => databaseManager.RecoverAOF();
 
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
@@ -299,99 +310,38 @@ namespace Garnet.server
         public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF();
 
         /// <summary>
+        /// Append a checkpoint commit to the AOF
+        /// </summary>
+        /// <param name="isMainStore"></param>
+        /// <param name="version"></param>
+        /// <param name="dbId"></param>
+        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0) =>
+            this.databaseManager.EnqueueCommit(isMainStore, version, dbId);
+
+        /// <summary>
+        /// Reset
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        public void Reset(int dbId = 0) => databaseManager.Reset(dbId);
+
+        /// <summary>
         /// Try to swap between two database instances
         /// </summary>
         /// <param name="dbId1">First database ID</param>
         /// <param name="dbId2">Second database ID</param>
         /// <returns>True if swap successful</returns>
-        public bool TrySwapDatabases(int dbId1, int dbId2)
-        {
-            if (!allowMultiDb) return false;
-
-            if (!this.TryGetOrAddDatabase(dbId1, out var db1) ||
-                !this.TryGetOrAddDatabase(dbId2, out var db2))
-                return false;
-
-            databasesLock.WriteLock();
-            try
-            {
-                var databaseMapSnapshot = this.databases.Map;
-                databaseMapSnapshot[dbId2] = db1;
-                databaseMapSnapshot[dbId1] = db2;
-            }
-            finally
-            {
-                databasesLock.WriteUnlock();
-            }
-
-            return true;
-        }
+        public bool TrySwapDatabases(int dbId1, int dbId2) => this.databaseManager.TrySwapDatabases(dbId1, dbId2);
 
         async Task AutoCheckpointBasedOnAofSizeLimit(long aofSizeLimit, CancellationToken token = default, ILogger logger = null)
         {
             try
             {
-                int[] dbIdsToCheckpoint = null;
-
                 while (true)
                 {
                     await Task.Delay(1000, token);
                     if (token.IsCancellationRequested) break;
 
-                    var aofSizeAtLimit = -1L;
-                    var activeDbIdsSize = activeDbIdsLength;
-
-                    if (!allowMultiDb || activeDbIdsSize == 1)
-                    {
-                        var dbAofSize = appendOnlyFile.TailAddress - appendOnlyFile.BeginAddress;
-                        if (dbAofSize > aofSizeLimit)
-                            aofSizeAtLimit = dbAofSize;
-
-                        if (aofSizeAtLimit != -1)
-                        {
-                            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                            await CheckpointTask(StoreType.All, logger: logger, token: token);
-                        }
-
-                        return;
-                    }
-
-                    var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-                    if (!lockAcquired) continue;
-
-                    try
-                    {
-                        var databasesMapSnapshot = databases.Map;
-                        var activeDbIdsSnapshot = activeDbIds;
-
-                        if (dbIdsToCheckpoint == null || dbIdsToCheckpoint.Length < activeDbIdsSize)
-                            dbIdsToCheckpoint = new int[activeDbIdsSize];
-
-                        var dbIdsIdx = 0;
-                        for (var i = 0; i < activeDbIdsSize; i++)
-                        {
-                            var dbId = activeDbIdsSnapshot[i];
-                            var db = databasesMapSnapshot[dbId];
-                            Debug.Assert(!db.IsDefault());
-
-                            var dbAofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
-                            if (dbAofSize > aofSizeLimit)
-                            {
-                                dbIdsToCheckpoint[dbIdsIdx++] = dbId;
-                                break;
-                            }
-                        }
-
-                        if (dbIdsIdx > 0)
-                        {
-                            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", aofSizeAtLimit, aofSizeLimit);
-                            CheckpointDatabases(StoreType.All, ref dbIdsToCheckpoint, ref checkpointTasks, logger: logger, token: token);
-                        }
-                    }
-                    finally
-                    {
-                        databasesLock.ReadUnlock();
-                    }
+                    await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
                 }
             }
             catch (Exception ex)
@@ -559,127 +509,6 @@ namespace Garnet.server
                 ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
                 storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
                 scratchBufferManager.Reset();
-            }
-        }
-
-        void DoCompaction(ref GarnetDatabase db)
-        {
-            // Periodic compaction -> no need to compact before checkpointing
-            if (serverOptions.CompactionFrequencySecs > 0) return;
-
-            DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
-        }
-
-        void DoCompaction(ref GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
-        {
-            if (compactionType == LogCompactionType.None) return;
-
-            var mainStoreLog = db.MainStore.Log;
-
-            long mainStoreMaxLogSize = (1L << serverOptions.SegmentSizeBits()) * mainStoreMaxSegments;
-
-            if (mainStoreLog.ReadOnlyAddress - mainStoreLog.BeginAddress > mainStoreMaxLogSize)
-            {
-                long readOnlyAddress = mainStoreLog.ReadOnlyAddress;
-                long compactLength = (1L << serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
-                long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
-
-                switch (compactionType)
-                {
-                    case LogCompactionType.Shift:
-                        mainStoreLog.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
-                        break;
-
-                    case LogCompactionType.Scan:
-                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof(ref db);
-                            mainStoreLog.Truncate();
-                        }
-                        break;
-
-                    case LogCompactionType.Lookup:
-                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof(ref db);
-                            mainStoreLog.Truncate();
-                        }
-                        break;
-
-                    default:
-                        break;
-                }
-
-                logger?.LogInformation("End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
-            }
-
-            if (db.ObjectStore == null) return;
-
-            var objectStoreLog = db.ObjectStore.Log;
-
-            long objectStoreMaxLogSize = (1L << serverOptions.ObjectStoreSegmentSizeBits()) * objectStoreMaxSegments;
-
-            if (objectStoreLog.ReadOnlyAddress - objectStoreLog.BeginAddress > objectStoreMaxLogSize)
-            {
-                long readOnlyAddress = objectStoreLog.ReadOnlyAddress;
-                long compactLength = (1L << serverOptions.ObjectStoreSegmentSizeBits()) * (objectStoreMaxSegments - numSegmentsToCompact);
-                long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, objectStoreLog.BeginAddress, readOnlyAddress, objectStoreLog.TailAddress);
-
-                switch (compactionType)
-                {
-                    case LogCompactionType.Shift:
-                        objectStoreLog.ShiftBeginAddress(untilAddress, compactionForceDelete);
-                        break;
-
-                    case LogCompactionType.Scan:
-                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof(ref db);
-                            objectStoreLog.Truncate();
-                        }
-                        break;
-
-                    case LogCompactionType.Lookup:
-                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof(ref db);
-                            objectStoreLog.Truncate();
-                        }
-                        break;
-
-                    default:
-                        break;
-                }
-
-                logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
-            }
-        }
-
-        void CompactionCommitAof(ref GarnetDatabase db)
-        {
-            // If we are the primary, we commit the AOF.
-            // If we are the replica, we commit the AOF only if fast commit is disabled
-            // because we do not want to clobber AOF addresses.
-            // TODO: replica should instead wait until the next AOF commit is done via primary
-            if (serverOptions.EnableAOF)
-            {
-                if (serverOptions.EnableCluster && clusterProvider.IsReplica())
-                {
-                    if (!serverOptions.EnableFastCommit)
-                        db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-                }
-                else
-                {
-                    db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-                }
             }
         }
 
@@ -975,9 +804,6 @@ namespace Garnet.server
             if (disposed) return;
             disposed = true;
 
-            // Wait for checkpoints to complete and disable checkpointing
-            checkpointTaskLock.WriteLock();
-
             itemBroker?.Dispose();
             monitor?.Dispose();
             ctsCommit?.Cancel();
@@ -987,53 +813,19 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpoint tasks
+        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
         /// </summary>
-        /// <returns></returns>
-        public bool TryPauseCheckpoints()
-            => checkpointTaskLock.TryWriteLock();
-
-        /// <summary>
-        /// Continuously try to take a lock for checkpointing until acquired or token was cancelled
-        /// </summary>
-        /// <param name="token">Cancellation token</param>
+        /// <param name="dbId">ID of database to lock</param>
         /// <returns>True if lock acquired</returns>
-        public async Task<bool> TryPauseCheckpointsContinuousAsync(CancellationToken token = default)
-        {
-            var checkpointsPaused = TryPauseCheckpoints();
-
-            while (!checkpointsPaused && !token.IsCancellationRequested && !disposed)
-            {
-                await Task.Yield();
-                checkpointsPaused = TryPauseCheckpoints();
-            }
-
-            return checkpointsPaused;
-        }
+        public bool TryPauseCheckpoints(int dbId = 0)
+            => databaseManager.TryPauseCheckpoints(dbId);
 
         /// <summary>
         /// Release checkpoint task lock
         /// </summary>
-        public void ResumeCheckpoints()
-            => checkpointTaskLock.WriteUnlock();
-
-        /// <summary>
-        /// Continuously try to take a database read lock that ensures no db swap operations occur
-        /// </summary>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>True if lock acquired</returns>
-        public async Task<bool> TryGetDatabasesReadLockAsync(CancellationToken token = default)
-        {
-            var lockAcquired = databasesLock.TryReadLock();
-
-            while (!lockAcquired && !token.IsCancellationRequested && !disposed)
-            {
-                await Task.Yield();
-                lockAcquired = databasesLock.TryReadLock();
-            }
-
-            return lockAcquired;
-        }
+        /// <param name="dbId">ID of database to unlock</param>
+        public void ResumeCheckpoints(int dbId = 0)
+            => databaseManager.ResumeCheckpoints(dbId);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -1041,258 +833,8 @@ namespace Garnet.server
         /// <param name="entryTime"></param>
         /// <param name="dbId"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
-        {
-            // Take lock to ensure no other task will be taking a checkpoint
-            var checkpointsPaused = TryPauseCheckpoints();
-
-            // If an external task has taken a checkpoint beyond the provided entryTime return
-            if (!checkpointsPaused || databases.Map[dbId].LastSaveTime > entryTime)
-            {
-                if (checkpointsPaused)
-                    ResumeCheckpoints();
-                return;
-            }
-
-            // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-            await CheckpointTask(StoreType.All, dbId, checkpointsPaused: true, logger: logger);
-        }
-
-        /// <summary>
-        /// Take checkpoint of all active databases
-        /// </summary>
-        /// <param name="background"></param>
-        /// <param name="storeType"></param>
-        /// <param name="dbId"></param>
-        /// <param name="logger"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, int dbId = -1, ILogger logger = null, CancellationToken token = default)
-        {
-            var activeDbIdsSize = activeDbIdsLength;
-
-            if (!allowMultiDb || activeDbIdsSize == 1 || dbId != -1)
-            {
-                if (dbId == -1) dbId = 0;
-                var checkpointTask = Task.Run(async () => await CheckpointTask(storeType, dbId, logger: logger, token: token), token);
-                if (background)
-                    return true;
-
-                checkpointTask.Wait(token);
-                return true;
-            }
-
-            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-            if (!lockAcquired) return false;
-
-            try
-            {
-                var activeDbIdsSnapshot = activeDbIds;
-
-                var tasks = new Task[activeDbIdsSize];
-                return CheckpointDatabases(storeType, ref activeDbIdsSnapshot, ref tasks, logger: logger, token: token);
-            }
-            finally
-            {
-                databasesLock.ReadUnlock();
-            }
-        }
-
-        /// <summary>
-        /// Asynchronously checkpoint a single database
-        /// </summary>
-        /// <param name="storeType">Store type to checkpoint</param>
-        /// <param name="dbId">ID of database to checkpoint (default: DB 0)</param>
-        /// <param name="checkpointsPaused">True if lock previously acquired</param>
-        /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>Task</returns>
-        private async Task CheckpointTask(StoreType storeType, int dbId = 0, bool checkpointsPaused = false, ILogger logger = null, CancellationToken token = default)
-        {
-            try
-            {
-                if (!checkpointsPaused)
-                {
-                    // Take lock to ensure no other task will be taking a checkpoint
-                    checkpointsPaused = await TryPauseCheckpointsContinuousAsync(token);
-
-                    if (!checkpointsPaused) return;
-                }
-
-                await CheckpointDatabaseTask(dbId, storeType, logger);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Checkpointing threw exception");
-            }
-            finally
-            {
-                if (checkpointsPaused)
-                    ResumeCheckpoints();
-            }
-        }
-
-        /// <summary>
-        /// Asynchronously checkpoint multiple databases and wait for all to complete
-        /// </summary>
-        /// <param name="storeType">Store type to checkpoint</param>
-        /// <param name="dbIds">IDs of active databases to checkpoint</param>
-        /// <param name="tasks">Optional tasks to use for asynchronous execution (must be the same size as dbIds)</param>
-        /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>False if checkpointing already in progress</returns>
-        private bool CheckpointDatabases(StoreType storeType, ref int[] dbIds, ref Task[] tasks, ILogger logger = null, CancellationToken token = default)
-        {
-            try
-            {
-                Debug.Assert(tasks != null);
-
-                // Prevent parallel checkpoint
-                if (!TryPauseCheckpoints()) return false;
-
-                var currIdx = 0;
-                if (dbIds == null)
-                {
-                    var activeDbIdsSize = activeDbIdsLength;
-                    var activeDbIdsSnapshot = activeDbIds;
-                    while (currIdx < activeDbIdsSize)
-                    {
-                        var dbId = activeDbIdsSnapshot[currIdx];
-                        tasks[currIdx] = CheckpointDatabaseTask(dbId, storeType, logger);
-                        currIdx++;
-                    }
-                }
-                else
-                {
-                    while (currIdx < dbIds.Length && (currIdx == 0 || dbIds[currIdx] != 0))
-                    {
-                        tasks[currIdx] = CheckpointDatabaseTask(dbIds[currIdx], storeType, logger);
-                        currIdx++;
-                    }
-                }
-
-                for (var i = 0; i < currIdx; i++)
-                    tasks[i].Wait(token);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Checkpointing threw exception");
-            }
-            finally
-            {
-                ResumeCheckpoints();
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Asynchronously checkpoint a single database
-        /// </summary>
-        /// <param name="dbId">ID of database to checkpoint</param>
-        /// <param name="storeType">Store type to checkpoint</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>Task</returns>
-        private async Task CheckpointDatabaseTask(int dbId, StoreType storeType, ILogger logger)
-        {
-            var databasesMapSnapshot = databases.Map;
-            var db = databasesMapSnapshot[dbId];
-            if (db.IsDefault()) return;
-
-            DoCompaction(ref db);
-            var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
-            var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
-
-            var full = db.LastSaveStoreTailAddress == 0 ||
-                       lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval ||
-                       (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
-                                                   lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval));
-
-            var tryIncremental = serverOptions.EnableIncrementalSnapshots;
-            if (db.MainStore.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                tryIncremental = false;
-            if (db.ObjectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                tryIncremental = false;
-
-            var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-            await InitiateCheckpoint(dbId, db, full, checkpointType, tryIncremental, storeType, logger);
-            if (full)
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                    db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
-                if (storeType is StoreType.Object or StoreType.All)
-                    db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
-            }
-
-            var lastSave = DateTimeOffset.UtcNow;
-            if (dbId == 0)
-                DefaultDatabase.LastSaveTime = lastSave;
-            db.LastSaveTime = lastSave;
-            databasesMapSnapshot[dbId] = db;
-        }
-
-        private async Task InitiateCheckpoint(GarnetDatabase db, bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
-        {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}, dbId = {dbId}", full, checkpointType, tryIncremental, storeType, db.Id);
-
-            long CheckpointCoveredAofAddress = 0;
-            if (db.AppendOnlyFile != null)
-            {
-                if (serverOptions.EnableCluster)
-                    clusterProvider.OnCheckpointInitiated(out CheckpointCoveredAofAddress);
-                else
-                    CheckpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
-
-                if (CheckpointCoveredAofAddress > 0)
-                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit)", CheckpointCoveredAofAddress);
-            }
-
-            (bool success, Guid token) storeCheckpointResult = default;
-            (bool success, Guid token) objectStoreCheckpointResult = default;
-            if (full)
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                    storeCheckpointResult = await db.MainStore.TakeFullCheckpointAsync(checkpointType);
-
-                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                    objectStoreCheckpointResult = await db.ObjectStore.TakeFullCheckpointAsync(checkpointType);
-            }
-            else
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                    storeCheckpointResult = await db.MainStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-
-                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                    objectStoreCheckpointResult = await db.ObjectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-            }
-
-            // If cluster is enabled the replication manager is responsible for truncating AOF
-            if (serverOptions.EnableCluster && serverOptions.EnableAOF)
-            {
-                clusterProvider.SafeTruncateAOF(storeType, full, CheckpointCoveredAofAddress, storeCheckpointResult.token, objectStoreCheckpointResult.token);
-            }
-            else
-            {
-                db.AppendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
-                db.AppendOnlyFile?.Commit();
-            }
-
-            if (db.ObjectStore != null)
-            {
-                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
-                // We can now safely remove these serialized versions as they are no longer needed.
-                using (var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress, db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
-                {
-                    while (iter1.GetNext(out _, out _, out var value))
-                    {
-                        if (value != null)
-                            ((GarnetObjectBase)value).serialized = null;
-                    }
-                }
-            }
-
-            logger?.LogInformation("Completed checkpoint");
-        }
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0) =>
+            await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId);
 
         public bool HasKeysInSlots(List<int> slots)
         {
@@ -1314,7 +856,7 @@ namespace Garnet.server
 
                 if (!hasKeyInSlots && objectStore != null)
                 {
-                    var functionsState = databaseManager.CreateFunctionsState(customCommandManager, GarnetObjectSerializer);
+                    var functionsState = databaseManager.CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
                     var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
                     var iter = objectStoreSession.Iterate();

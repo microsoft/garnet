@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -71,9 +72,20 @@ namespace Garnet.server
         /// </summary>
         public DateTimeOffset LastSaveTime;
 
+        /// <summary>
+        /// True if database's main store index has maxed-out
+        /// </summary>
         public bool MainStoreIndexMaxedOut;
-        
+
+        /// <summary>
+        /// True if database's object store index has maxed-out
+        /// </summary>
         public bool ObjectStoreIndexMaxedOut;
+
+        /// <summary>
+        /// Reader-Writer lock for database checkpointing
+        /// </summary>
+        public SingleWriterMultiReaderLock CheckpointingLock;
 
         bool disposed = false;
 
@@ -128,6 +140,9 @@ namespace Garnet.server
                 while (!ObjectStoreSizeTracker.Stopped)
                     Thread.Yield();
             }
+
+            // Wait for checkpoints to complete and disable checkpointing
+            CheckpointingLock.CloseLock();
 
             disposed = true;
         }

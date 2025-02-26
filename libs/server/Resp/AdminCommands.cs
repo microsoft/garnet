@@ -878,7 +878,7 @@ namespace Garnet.server
                 }
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
+            if (!storeWrapper.databaseManager.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
@@ -932,7 +932,7 @@ namespace Garnet.server
                 }
             }
 
-            storeWrapper.TryGetDatabase(dbId, out var db);
+            storeWrapper.databaseManager.TryGetDatabase(dbId, out var db);
 
             var seconds = db.LastSaveTime.ToUnixTimeSeconds();
             while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
@@ -989,7 +989,7 @@ namespace Garnet.server
                 }
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, dbId: dbId, logger: logger);
+            var success = storeWrapper.databaseManager.TakeCheckpoint(true, dbId: dbId, logger: logger);
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))

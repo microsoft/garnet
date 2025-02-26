@@ -2,7 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -48,7 +49,37 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db);
 
-        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+        /// <inheritdoc/>
+        public abstract bool TryPauseCheckpoints(int dbId);
+
+        /// <summary>
+        /// Continuously try to take a lock for checkpointing until acquired or token was cancelled
+        /// </summary>
+        /// <param name="dbId">ID of database to lock</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>True if lock acquired</returns>
+        public abstract Task<bool> TryPauseCheckpointsContinuousAsync(int dbId, CancellationToken token = default);
+
+        /// <inheritdoc/>
+        public abstract void ResumeCheckpoints(int dbId);
+
+        /// <inheritdoc/>
+        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
+            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+
+        /// <inheritdoc/>
+        public abstract bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
+            CancellationToken token = default);
+
+        /// <inheritdoc/>
+        public abstract bool TakeCheckpoint(bool background, int dbId, StoreType storeType = StoreType.All, ILogger logger = null,
+            CancellationToken token = default);
+
+        /// <inheritdoc/>
+        public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
+
+        public abstract Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit,
+            CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
         public abstract void RecoverAOF();
@@ -71,7 +102,16 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract void FlushAllDatabases(bool unsafeTruncateLog);
 
-        public abstract FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0);
+        /// <inheritdoc/>
+        public abstract bool TrySwapDatabases(int dbId1, int dbId2);
+
+        public abstract FunctionsState CreateFunctionsState(int dbId = 0);
+
+        /// <inheritdoc/>
+        public abstract void Dispose();
+
+        /// <inheritdoc/>
+        public abstract IDatabaseManager Clone(bool enableAof);
 
         /// <summary>
         /// Delegate for creating a new logical database
@@ -90,11 +130,11 @@ namespace Garnet.server
 
         protected bool Disposed;
 
-        protected DatabaseManagerBase(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, ILoggerFactory loggerFactory = null)
+        protected DatabaseManagerBase(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper)
         {
             this.CreateDatabaseDelegate = createDatabaseDelegate;
             this.StoreWrapper = storeWrapper;
-            this.LoggerFactory = loggerFactory;
+            this.LoggerFactory = storeWrapper.loggerFactory;
         }
 
         protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
@@ -110,6 +150,123 @@ namespace Garnet.server
                 db.LastSaveTime = DateTimeOffset.UtcNow;
             }
         }
+
+        protected async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
+            bool tryIncremental,
+            StoreType storeType, ILogger logger = null)
+        {
+            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}, dbId = {dbId}", full, checkpointType, tryIncremental, storeType, db.Id);
+
+            long checkpointCoveredAofAddress = 0;
+            if (db.AppendOnlyFile != null)
+            {
+                if (StoreWrapper.serverOptions.EnableCluster)
+                    StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
+                else
+                    checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
+
+                if (checkpointCoveredAofAddress > 0)
+                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit)", checkpointCoveredAofAddress);
+            }
+
+            (bool success, Guid token) storeCheckpointResult = default;
+            (bool success, Guid token) objectStoreCheckpointResult = default;
+            if (full)
+            {
+                if (storeType is StoreType.Main or StoreType.All)
+                    storeCheckpointResult = await db.MainStore.TakeFullCheckpointAsync(checkpointType);
+
+                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                    objectStoreCheckpointResult = await db.ObjectStore.TakeFullCheckpointAsync(checkpointType);
+            }
+            else
+            {
+                if (storeType is StoreType.Main or StoreType.All)
+                    storeCheckpointResult = await db.MainStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+
+                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                    objectStoreCheckpointResult = await db.ObjectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+            }
+
+            // If cluster is enabled the replication manager is responsible for truncating AOF
+            if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
+            {
+                StoreWrapper.clusterProvider.SafeTruncateAOF(storeType, full, checkpointCoveredAofAddress,
+                    storeCheckpointResult.token, objectStoreCheckpointResult.token);
+            }
+            else
+            {
+                db.AppendOnlyFile?.TruncateUntil(checkpointCoveredAofAddress);
+                db.AppendOnlyFile?.Commit();
+            }
+
+            if (db.ObjectStore != null)
+            {
+                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
+                // We can now safely remove these serialized versions as they are no longer needed.
+                using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
+                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true);
+                while (iter1.GetNext(out _, out _, out var value))
+                {
+                    if (value != null)
+                        ((GarnetObjectBase)value).serialized = null;
+                }
+            }
+
+            logger?.LogInformation("Completed checkpoint");
+        }
+
+        protected abstract ref GarnetDatabase GetDatabaseByRef(int dbId);
+
+        /// <summary>
+        /// Asynchronously checkpoint a single database
+        /// </summary>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="db">Database to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task</returns>
+        protected async Task TakeCheckpointAsync(GarnetDatabase db, StoreType storeType, ILogger logger = null, CancellationToken token = default)
+        {
+            try
+            {
+                DoCompaction(ref db);
+                var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
+                var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
+
+                var full = db.LastSaveStoreTailAddress == 0 ||
+                           lastSaveStoreTailAddress - db.LastSaveStoreTailAddress >= StoreWrapper.serverOptions.FullCheckpointLogInterval ||
+                           (db.ObjectStore != null && (db.LastSaveObjectStoreTailAddress == 0 ||
+                                                       lastSaveObjectStoreTailAddress - db.LastSaveObjectStoreTailAddress >= StoreWrapper.serverOptions.FullCheckpointLogInterval));
+
+                var tryIncremental = StoreWrapper.serverOptions.EnableIncrementalSnapshots;
+                if (db.MainStore.IncrementalSnapshotTailAddress >= StoreWrapper.serverOptions.IncrementalSnapshotLogSizeLimit)
+                    tryIncremental = false;
+                if (db.ObjectStore?.IncrementalSnapshotTailAddress >= StoreWrapper.serverOptions.IncrementalSnapshotLogSizeLimit)
+                    tryIncremental = false;
+
+                var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
+                await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, storeType, logger);
+
+                if (full)
+                {
+                    if (storeType is StoreType.Main or StoreType.All)
+                        db.LastSaveStoreTailAddress = lastSaveStoreTailAddress;
+                    if (storeType is StoreType.Object or StoreType.All)
+                        db.LastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Checkpointing threw exception");
+            }
+        }
+
+        protected bool TryPauseCheckpoints(ref GarnetDatabase db)
+            => db.CheckpointingLock.TryWriteLock();
+
+        protected void ResumeCheckpoints(ref GarnetDatabase db)
+            => db.CheckpointingLock.WriteUnlock();
 
         protected void RecoverDatabaseAOF(ref GarnetDatabase db)
         {
@@ -177,8 +334,125 @@ namespace Garnet.server
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
-        public abstract void Dispose();
+        private void DoCompaction(ref GarnetDatabase db)
+        {
+            // Periodic compaction -> no need to compact before checkpointing
+            if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
-        public abstract IDatabaseManager Clone(bool enableAof);
+            DoCompaction(ref db, StoreWrapper.serverOptions.CompactionMaxSegments,
+                StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
+                StoreWrapper.serverOptions.CompactionType, StoreWrapper.serverOptions.CompactionForceDelete);
+        }
+
+        private void DoCompaction(ref GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
+        {
+            if (compactionType == LogCompactionType.None) return;
+
+            var mainStoreLog = db.MainStore.Log;
+
+            var mainStoreMaxLogSize = (1L << StoreWrapper.serverOptions.SegmentSizeBits()) * mainStoreMaxSegments;
+
+            if (mainStoreLog.ReadOnlyAddress - mainStoreLog.BeginAddress > mainStoreMaxLogSize)
+            {
+                var readOnlyAddress = mainStoreLog.ReadOnlyAddress;
+                var compactLength = (1L << StoreWrapper.serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
+                var untilAddress = readOnlyAddress - compactLength;
+                Logger?.LogInformation(
+                    $"Begin main store compact until {untilAddress}, Begin = {mainStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {mainStoreLog.TailAddress}");
+
+                switch (compactionType)
+                {
+                    case LogCompactionType.Shift:
+                        mainStoreLog.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
+                        break;
+
+                    case LogCompactionType.Scan:
+                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof(ref db);
+                            mainStoreLog.Truncate();
+                        }
+                        break;
+
+                    case LogCompactionType.Lookup:
+                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof(ref db);
+                            mainStoreLog.Truncate();
+                        }
+                        break;
+                }
+
+                Logger?.LogInformation(
+                    $"End main store compact until {untilAddress}, Begin = {mainStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {mainStoreLog.TailAddress}");
+            }
+
+            if (db.ObjectStore == null) return;
+
+            var objectStoreLog = db.ObjectStore.Log;
+
+            var objectStoreMaxLogSize = (1L << StoreWrapper.serverOptions.ObjectStoreSegmentSizeBits()) * objectStoreMaxSegments;
+
+            if (objectStoreLog.ReadOnlyAddress - objectStoreLog.BeginAddress > objectStoreMaxLogSize)
+            {
+                var readOnlyAddress = objectStoreLog.ReadOnlyAddress;
+                var compactLength = (1L << StoreWrapper.serverOptions.ObjectStoreSegmentSizeBits()) * (objectStoreMaxSegments - numSegmentsToCompact);
+                var untilAddress = readOnlyAddress - compactLength;
+                Logger?.LogInformation(
+                    $"Begin object store compact until {untilAddress}, Begin = {objectStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {objectStoreLog.TailAddress}");
+
+                switch (compactionType)
+                {
+                    case LogCompactionType.Shift:
+                        objectStoreLog.ShiftBeginAddress(untilAddress, compactionForceDelete);
+                        break;
+
+                    case LogCompactionType.Scan:
+                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof(ref db);
+                            objectStoreLog.Truncate();
+                        }
+                        break;
+
+                    case LogCompactionType.Lookup:
+                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof(ref db);
+                            objectStoreLog.Truncate();
+                        }
+                        break;
+                }
+
+                Logger?.LogInformation(
+                    $"End object store compact until {untilAddress}, Begin = {mainStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {mainStoreLog.TailAddress}");
+            }
+        }
+
+        private void CompactionCommitAof(ref GarnetDatabase db)
+        {
+            // If we are the primary, we commit the AOF.
+            // If we are the replica, we commit the AOF only if fast commit is disabled
+            // because we do not want to clobber AOF addresses.
+            // TODO: replica should instead wait until the next AOF commit is done via primary
+            if (StoreWrapper.serverOptions.EnableAOF)
+            {
+                if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
+                {
+                    if (!StoreWrapper.serverOptions.EnableFastCommit)
+                        db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+            }
+        }
     }
 }

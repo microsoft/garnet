@@ -48,13 +48,7 @@ namespace Garnet.server
         /// Optionally truncate log on disk. This is a destructive operation. Instead take a checkpoint if you are using checkpointing, as
         /// that will safely truncate the log on disk after the checkpoint.
         /// </summary>
-        public void FlushDB(int dbId = 0, bool unsafeTruncateLog = false)
-        {
-            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
-            if (!dbFound) return;
-
-            db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-        }
+        public void FlushDB(int dbId = 0, bool unsafeTruncateLog = false) =>
+            storeWrapper.databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
     }
 }

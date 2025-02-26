@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -17,10 +19,10 @@ namespace Garnet.server
 
         GarnetDatabase defaultDatabase;
 
-        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, ILoggerFactory loggerFactory = null, bool createDefaultDatabase = true) : 
+        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) : 
             base(createsDatabaseDelegate, storeWrapper)
         {
-            this.Logger = loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
+            this.Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
 
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
@@ -29,7 +31,7 @@ namespace Garnet.server
             }
         }
 
-        public SingleDatabaseManager(SingleDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate, src.StoreWrapper, src.LoggerFactory)
+        public SingleDatabaseManager(SingleDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate, src.StoreWrapper, createDefaultDatabase: false)
         {
             this.CopyDatabases(src, enableAof);
         }
@@ -87,6 +89,119 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public override bool TryPauseCheckpoints(int dbId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            return TryPauseCheckpoints(ref DefaultDatabase);
+        }
+
+        /// <inheritdoc/>
+        public override async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
+            CancellationToken token = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            var checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
+
+            while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
+            {
+                await Task.Yield();
+                checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
+            }
+
+            return checkpointsPaused;
+        }
+
+        /// <inheritdoc/>
+        public override void ResumeCheckpoints(int dbId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            ResumeCheckpoints(ref DefaultDatabase);
+        }
+
+        /// <inheritdoc/>
+        public override bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
+            CancellationToken token = default)
+        {
+            if (!TryPauseCheckpointsContinuousAsync(DefaultDatabase.Id, token: token).GetAwaiter().GetResult())
+                return false;
+
+            var checkpointTask = TakeCheckpointAsync(DefaultDatabase, storeType, logger: logger, token: token).ContinueWith(
+                _ =>
+                {
+                    DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                    ResumeCheckpoints(DefaultDatabase.Id);
+                }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
+
+            if (background)
+                return true;
+
+            checkpointTask.GetResult();
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool TakeCheckpoint(bool background, int dbId, StoreType storeType = StoreType.All,
+            ILogger logger = null,
+            CancellationToken token = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            return TakeCheckpoint(background, storeType, logger, token);
+        }
+
+        /// <inheritdoc/>
+        public override async Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            // Take lock to ensure no other task will be taking a checkpoint
+            var checkpointsPaused = TryPauseCheckpoints(dbId);
+
+            try
+            {
+                // If an external task has taken a checkpoint beyond the provided entryTime return
+                if (!checkpointsPaused || DefaultDatabase.LastSaveTime > entryTime)
+                    return;
+                    
+                // Necessary to take a checkpoint because the latest checkpoint is before entryTime
+                await TakeCheckpointAsync(DefaultDatabase, StoreType.All, logger: Logger);
+
+                DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+            }
+            finally
+            {
+                ResumeCheckpoints(dbId);
+            }
+        }
+
+        /// <inheritdoc/>
+        public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit,
+            CancellationToken token = default, ILogger logger = null)
+        {
+            var aofSize = AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
+            if (aofSize <= aofSizeLimit) return;
+
+            if (!TryPauseCheckpointsContinuousAsync(DefaultDatabase.Id, token: token).GetAwaiter().GetResult())
+                return;
+
+            logger?.LogInformation($"Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}");
+
+            try
+            {
+                await TakeCheckpointAsync(DefaultDatabase, StoreType.All, logger: logger, token: token);
+
+                DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+            }
+            finally
+            {
+                ResumeCheckpoints(DefaultDatabase.Id);
+            }
+        }
+
+        /// <inheritdoc/>
         public override void RecoverAOF() => RecoverDatabaseAOF(ref DefaultDatabase);
 
         /// <inheritdoc/>
@@ -134,6 +249,7 @@ namespace Garnet.server
             return true;
         }
 
+        /// <inheritdoc/>
         public override void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
@@ -141,16 +257,29 @@ namespace Garnet.server
             FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
         }
 
+        /// <inheritdoc/>
         public override void FlushAllDatabases(bool unsafeTruncateLog) =>
             FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
 
+        /// <inheritdoc/>
+        public override bool TrySwapDatabases(int dbId1, int dbId2) => false;
+
+        /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
 
-        public override FunctionsState CreateFunctionsState(CustomCommandManager customCommandManager, GarnetObjectSerializer garnetObjectSerializer, int dbId = 0)
+        public override FunctionsState CreateFunctionsState(int dbId = 0)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return new(AppendOnlyFile, VersionMap, customCommandManager, null, ObjectStoreSizeTracker, garnetObjectSerializer);
+            return new(AppendOnlyFile, VersionMap, StoreWrapper.customCommandManager, null, ObjectStoreSizeTracker,
+                StoreWrapper.GarnetObjectSerializer);
+        }
+
+        protected override ref GarnetDatabase GetDatabaseByRef(int dbId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            return ref DefaultDatabase;
         }
 
         private void CopyDatabases(SingleDatabaseManager src, bool enableAof)
