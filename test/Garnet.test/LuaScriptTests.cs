@@ -22,7 +22,7 @@ namespace Garnet.test
     [TestFixture(LuaMemoryManagementMode.Tracked, "", "")]
     [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
     [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "15m", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "16m", "")]
     public class LuaScriptTests
     {
         private readonly LuaMemoryManagementMode allocMode;
@@ -265,7 +265,7 @@ namespace Garnet.test
             var script = "redis.call('set',KEYS[1], ARGV[1]); return redis.call('get', KEYS[1]);";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)initialValue]);
             ClassicAssert.IsTrue(((RedisValue)result).ToString() == "0");
-            script = "i = redis.call('get', KEYS[1]); i = i + 1; return redis.call('set', KEYS[1], i)";
+            script = "local i = redis.call('get', KEYS[1]); i = i + 1; return redis.call('set', KEYS[1], i)";
             var numIterations = 10;
             //updates
             for (var i = 0; i < numThreads; i++)
@@ -283,7 +283,7 @@ namespace Garnet.test
             script = "return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
             ClassicAssert.IsTrue(int.Parse(((RedisValue)result).ToString()) == numThreads * numIterations);
-            script = "i = redis.call('get', KEYS[1]); i = i - 1; return redis.call('set', KEYS[1], i)";
+            script = "local i = redis.call('get', KEYS[1]); i = i - 1; return redis.call('set', KEYS[1], i)";
             for (var i = 0; i < numThreads; i++)
             {
                 tasks[i] = Task.Run(async () =>

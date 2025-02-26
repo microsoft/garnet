@@ -153,8 +153,10 @@ sandbox_env = {
     pcall = pcall;
     rawequal = rawequal;
     rawget = rawget;
+    -- rawset is proxied to implement readonly tables
     select = select;
     -- explicitly not allowing setfenv
+    -- setmetatable is proxied to implement readonly tables
     string = string;
     table = table;
     tonumber = tonumber;
@@ -168,7 +170,6 @@ sandbox_env = {
 }
 -- no reference to outermost set of globals (_G) should survive sandboxing
 sandbox_env._G = sandbox_env
-
 -- lock down a table, recursively doing the same to all table members
 local rawGetRef = rawget
 local readonly_metatable = {
@@ -179,7 +180,6 @@ local readonly_metatable = {
         error('Attempt to modify a readonly table', 0)
     end
 }
-
 function recursively_readonly_table(table)
     if table.__readonly then
         return table
