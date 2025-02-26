@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using Tsavorite.test.Revivification;
 using static Tsavorite.core.Utility;
+using static Tsavorite.test.SpanByteIterationTests;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.spanbyte
@@ -43,6 +43,7 @@ namespace Tsavorite.test.spanbyte
         private IDevice log;
         const int TotalRecords = 2000;
         const int PageSizeBits = 15;
+        const int ComparerModulo = 100;
 
         [SetUp]
         public void Setup()
@@ -52,7 +53,7 @@ namespace Tsavorite.test.spanbyte
             {
                 if (arg is HashModulo mod && mod == HashModulo.Hundred)
                 {
-                    comparer = new SpanByteComparerModulo(100);
+                    comparer = new SpanByteComparerModulo(ComparerModulo);
                     continue;
                 }
             }
@@ -443,6 +444,40 @@ namespace Tsavorite.test.spanbyte
                 ClassicAssert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
                 ClassicAssert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
             }
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(IteratorCategory)]
+        [Category(SmokeTestCategory)]
+        public void SpanByteIterationPendingCollisionTest([Values(HashModulo.Hundred)] HashModulo hashMod)
+        {
+            using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+            IterationCollisionTestFunctions scanIteratorFunctions = new();
+
+            const int totalRecords = 2000;
+            var start = store.Log.TailAddress;
+
+            // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
+            Span<long> keySpan = stackalloc long[1], valueSpan = stackalloc long[1];
+            SpanByte key = keySpan.AsSpanByte(), value = valueSpan.AsSpanByte();
+
+            // Initial population
+            for (int ii = 0; ii < totalRecords; ii++)
+            {
+                keySpan[0] = valueSpan[0] = ii;
+                _ = bContext.Upsert(ref key, ref value);
+            }
+
+            // Evict so we can test the pending scan push
+            store.Log.FlushAndEvict(wait: true);
+
+            long cursor = 0;
+            // Currently this returns false because there are some still-pending records when ScanLookup's GetNext loop ends (2000 is not an even multiple
+            // of 256, which is the CompletePending block size). If this returns true, it means the CompletePending block fired on the last valid record.
+            ClassicAssert.IsFalse(session.ScanCursor(ref cursor, totalRecords, scanIteratorFunctions), $"ScanCursor returned true even though all {scanIteratorFunctions.keys.Count} records were returned");
+            ClassicAssert.AreEqual(totalRecords, scanIteratorFunctions.keys.Count);
         }
     }
 }
