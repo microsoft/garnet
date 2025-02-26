@@ -37,8 +37,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\host\bin\Release\net8.0\*.dll" Pack="true" PackagePath="lib\net8.0" />
-    <Content Include="..\host\bin\Release\net8.0\*.xml" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\*.dll" Exclude="..\host\bin\Release\net8.0\Garnet.host.dll" Pack="true" PackagePath="lib\net8.0" />
+    <Content Include="..\host\bin\Release\net8.0\*.xml" Exclude="..\host\bin\Release\net8.0\Garnet.host.xml" Pack="true" PackagePath="lib\net8.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
     <None Include="..\..\README.md" Pack="true" PackagePath="/"/>

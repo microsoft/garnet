@@ -73,7 +73,7 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETBIT:
-                    var bOffset = input.parseState.GetLong(0);
+                    var bOffset = input.arg1;
                     return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -175,7 +175,7 @@ namespace Garnet.server
 
                         return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.SETBIT:
-                        var bOffset = input.parseState.GetLong(0);
+                        var bOffset = input.arg1;
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -203,6 +203,7 @@ namespace Garnet.server
                         return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.PERSIST:
                         return sizeof(int) + t.LengthWithoutMetadata;
+                    case RespCommand.SETIFGREATER:
                     case RespCommand.SETIFMATCH:
                         var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                         int metadataSize = input.arg1 == 0 ? t.MetadataSize : sizeof(long);

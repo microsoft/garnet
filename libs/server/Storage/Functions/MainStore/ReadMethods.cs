@@ -148,7 +148,7 @@ namespace Garnet.server
             // Any value without an etag is treated the same as a value with an etag
             long etagToMatchAgainst = input.parseState.GetLong(0);
 
-            long existingEtag = readInfo.RecordInfo.ETag ? value.GetEtagInPayload() : EtagConstants.BaseEtag;
+            long existingEtag = readInfo.RecordInfo.ETag ? value.GetEtagInPayload() : EtagConstants.NoETag;
 
             if (existingEtag == etagToMatchAgainst)
             {
