@@ -23,7 +23,7 @@ namespace Tsavorite.core
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
         private ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> currentSyncStateMachine;
-        private List<IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator>> callbacks = new();
+        //private List<IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator>> callbacks = new();
         internal long lastVersion;
 
         /// <summary>
@@ -61,15 +61,6 @@ namespace Tsavorite.core
         /// Current version number of the store
         /// </summary>
         public long CurrentVersion => systemState.Version;
-
-        /// <summary>
-        /// Registers the given callback to be invoked for every state machine transition. Not safe to call with
-        /// concurrent Tsavorite operations. Note that registered callbacks execute as part of the critical
-        /// section of Tsavorite's state transitions. Excessive synchronization or expensive computation in the callback
-        /// may slow or halt state machine execution. For advanced users only. 
-        /// </summary>
-        /// <param name="callback"> callback to register </param>
-        public void UnsafeRegisterCallback(IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator> callback) => callbacks.Add(callback);
 
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
@@ -128,8 +119,8 @@ namespace Tsavorite.core
             // Execute custom task logic
             currentSyncStateMachine.GlobalBeforeEnteringState(nextState, this);
             // Execute any additional callbacks in critical section
-            foreach (var callback in callbacks)
-                callback.BeforeEnteringState(nextState, this);
+            //foreach (var callback in callbacks)
+            //    callback.BeforeEnteringState(nextState, this);
 
             var success = MakeTransition(intermediate, nextState);
             // Guaranteed to succeed, because other threads will always block while the system is in intermediate.

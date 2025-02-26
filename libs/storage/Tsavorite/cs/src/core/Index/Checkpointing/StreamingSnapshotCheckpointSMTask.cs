@@ -40,7 +40,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.nextVersion = targetVersion == -1 ? next.Version + 1 : targetVersion;
                     store._lastSnapshotCheckpoint.Dispose();
-                    _ = Task.Run(store.StreamingSnapshotScanPhase1);
+                    store.StreamingSnapshotScanPhase1();
                     break;
                 case Phase.PREPARE:
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
@@ -48,9 +48,8 @@ namespace Tsavorite.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    store._hybridLogCheckpoint.flushedSemaphore = new SemaphoreSlim(0);
                     var finalLogicalAddress = store.hlogBase.GetTailAddress();
-                    Task.Run(() => store.StreamingSnapshotScanPhase2(finalLogicalAddress));
+                    store.StreamingSnapshotScanPhase2(finalLogicalAddress);
                     break;
                 default:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);

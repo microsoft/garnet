@@ -29,7 +29,7 @@ namespace Tsavorite.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
-        readonly StateMachineDriver stateMachineDriver;
+        internal readonly StateMachineDriver stateMachineDriver;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -578,37 +578,15 @@ namespace Tsavorite.core
         /// <summary>
         /// Grow the hash index by a factor of two. Caller should take a full checkpoint after growth, for persistence.
         /// </summary>
-        /// <returns>Whether the grow completed</returns>
-        public bool GrowIndex()
+        /// <returns>Whether the grow completed successfully</returns>
+        public async Task<bool> GrowIndexAsync()
         {
             if (epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
-            if (!StartStateMachine(new IndexResizeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>()))
-                return false;
-
-            epoch.Resume();
-
-            try
-            {
-                while (true)
-                {
-                    var _systemState = SystemState.Copy(ref systemState);
-                    if (_systemState.Phase == Phase.PREPARE_GROW)
-                        ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, default);
-                    else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
-                        SplitBuckets(0);
-                    else if (_systemState.Phase == Phase.REST)
-                        break;
-                    epoch.ProtectAndDrain();
-                    _ = Thread.Yield();
-                }
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
-            return true;
+            var indexResizeTask = new IndexResizeSMTask<TKey, TValue, TStoreFunctions, TAllocator>(this);
+            var indexResizeSM = new IndexResizeSM(-1, indexResizeTask);
+            return await stateMachineDriver.RunAsync(indexResizeSM);
         }
 
         /// <summary>

@@ -446,7 +446,7 @@ namespace Tsavorite.test.statemachine
         public void StateMachineCallbackTest1()
         {
             var callback = new TestCallback();
-            store.UnsafeRegisterCallback(callback);
+            store.stateMachineDriver.UnsafeRegisterCallback(callback);
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
@@ -618,11 +618,11 @@ namespace Tsavorite.test.statemachine
         }
     }
 
-    public class TestCallback : IStateMachineCallback<AdId, NumClicks, StructStoreFunctions, StructAllocator>
+    public class TestCallback : IStateMachineCallback
     {
         private readonly HashSet<SystemState> invokedStates = [];
 
-        public void BeforeEnteringState(SystemState next, TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> tsavorite)
+        public void BeforeEnteringState(SystemState next)
         {
             ClassicAssert.IsFalse(invokedStates.Contains(next));
             _ = invokedStates.Add(next);

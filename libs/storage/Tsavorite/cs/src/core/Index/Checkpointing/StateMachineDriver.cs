@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -19,7 +20,7 @@ namespace Tsavorite.core
         SemaphoreSlim waitForTransitionIn;
         // All threads have exited the given state
         SemaphoreSlim waitForTransitionOut;
-
+        List<IStateMachineCallback> callbacks;
         readonly LightEpoch epoch;
         readonly ILogger logger;
 
@@ -45,6 +46,18 @@ namespace Tsavorite.core
             stateMachineCompleted = new SemaphoreSlim(0);
             _ = Task.Run(async () => await RunStateMachine(token));
             return true;
+        }
+
+        /// <summary>
+        /// Registers the given callback to be invoked for every state machine transition. Not safe to call with
+        /// concurrent Tsavorite operations. Excessive synchronization or expensive computation in the callback 
+        /// may slow or halt state machine execution. For advanced users only.
+        /// </summary>
+        /// <param name="callback"> callback to register </param>
+        public void UnsafeRegisterCallback(IStateMachineCallback callback)
+        {
+            callbacks ??= new();
+            callbacks.Add(callback);
         }
 
         public async Task<bool> RunAsync(IStateMachine stateMachine, CancellationToken token = default)
@@ -81,6 +94,13 @@ namespace Tsavorite.core
             var nextState = stateMachine.NextState(systemState);
 
             stateMachine.GlobalBeforeEnteringState(nextState, this);
+
+            // Execute any additional registered callbacks
+            if (callbacks != null)
+            {
+                foreach (var callback in callbacks)
+                    callback.BeforeEnteringState(nextState);
+            }
 
             // Write new phase
             systemState.Word = nextState.Word;
@@ -161,6 +181,11 @@ namespace Tsavorite.core
                     GlobalStateMachineStep(systemState);
                     await ProcessWaitingListAsync(token);
                 } while (systemState.Phase != Phase.REST);
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Exception in state machine");
+                throw;
             }
             finally
             {
