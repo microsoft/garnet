@@ -358,7 +358,7 @@ namespace Garnet
         {
             if (opts.EnableAOF)
             {
-                if (opts.MainMemoryReplication && opts.CommitFrequencyMs != -1)
+                if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                     throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
 
                 opts.GetAofSettings(out var aofSettings);
