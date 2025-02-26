@@ -20,11 +20,13 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         readonly long targetVersion;
+        readonly Guid guid;
 
-        public StreamingSnapshotCheckpointSMTask(long targetVersion, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        public StreamingSnapshotCheckpointSMTask(long targetVersion, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
             : base(store)
         {
             this.targetVersion = targetVersion;
+            this.guid = guid;
         }
 
         /// <inheritdoc />
@@ -34,7 +36,7 @@ namespace Tsavorite.core
             {
                 case Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    store._hybridLogCheckpointToken = Guid.NewGuid();
+                    store._hybridLogCheckpointToken = guid;
                     store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.nextVersion = targetVersion == -1 ? next.Version + 1 : targetVersion;
                     store._lastSnapshotCheckpoint.Dispose();

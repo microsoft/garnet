@@ -6,15 +6,13 @@ namespace Tsavorite.core
     /// <summary>
     /// This state machine performs an index checkpoint
     /// </summary>
-    internal sealed class IndexSnapshotSM<TKey, TValue, TStoreFunctions, TAllocator> : StateMachineBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class IndexCheckpointSM : StateMachineBase
     {
         /// <summary>
         /// Create a new IndexSnapshotStateMachine
         /// </summary>
-        public IndexSnapshotSM(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
-            : base(-1, new IndexSnapshotSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store))
+        public IndexCheckpointSM(long targetVersion = -1, params IStateMachineTask[] tasks)
+            : base(targetVersion, tasks)
         {
         }
 

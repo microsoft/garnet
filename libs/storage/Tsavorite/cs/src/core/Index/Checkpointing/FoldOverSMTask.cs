@@ -32,8 +32,17 @@ namespace Tsavorite.core
 
             if (next.Phase != Phase.WAIT_FLUSH) return;
 
-            _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
-            store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
+            try
+            {
+                store.epoch.Resume();
+                _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
+                stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
+                store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
+            }
+            finally
+            {
+                store.epoch.Suspend();
+            }
         }
     }
 }

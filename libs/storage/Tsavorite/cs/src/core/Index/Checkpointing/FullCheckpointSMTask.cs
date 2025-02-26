@@ -14,10 +14,11 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
-
-        public FullCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        readonly Guid guid;
+        public FullCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
+            this.guid = guid;
         }
 
         /// <inheritdoc />
@@ -26,12 +27,8 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREP_INDEX_CHECKPOINT:
-                    Debug.Assert(store._indexCheckpoint.IsDefault() &&
-                                 store._hybridLogCheckpoint.IsDefault());
-                    var fullCheckpointToken = Guid.NewGuid();
-                    store._indexCheckpointToken = fullCheckpointToken;
-                    store._hybridLogCheckpointToken = fullCheckpointToken;
-                    store.InitializeIndexCheckpoint(store._indexCheckpointToken);
+                    Debug.Assert(store._hybridLogCheckpoint.IsDefault());
+                    store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:

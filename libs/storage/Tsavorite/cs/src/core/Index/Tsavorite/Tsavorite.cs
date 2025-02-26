@@ -198,35 +198,21 @@ namespace Tsavorite.core
         /// </returns>
         public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
+            IStateMachine stateMachine;
             token = default;
-            bool result;
-            if (checkpointType == CheckpointType.FoldOver)
-            {
-                var backend = new FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator>(this);
-                var sm = new FullCheckpointSM<TKey, TValue, TStoreFunctions, TAllocator>(this, backend, targetVersion);
-                result = stateMachineDriver.Register(sm);
 
-                //var backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
-                //result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.Snapshot)
-            {
-                var backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.StreamingSnapshot)
+            if (checkpointType == CheckpointType.StreamingSnapshot)
             {
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
+                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
             }
             else
-                throw new TsavoriteException("Unsupported full checkpoint type");
-
-            if (result)
-                token = _hybridLogCheckpointToken;
-            return result;
+            {
+                stateMachine = Checkpoint.Full(this, checkpointType, targetVersion, out token);
+            }
+            return stateMachineDriver.Register(stateMachine);
         }
 
         /// <summary>
@@ -456,45 +442,6 @@ namespace Tsavorite.core
 
             await stateMachineDriver.CompleteAsync(token);
             return;
-            /*
-            while (true)
-            {
-                var systemState = this.systemState;
-                if (systemState.Phase == Phase.REST || systemState.Phase == Phase.PREPARE_GROW ||
-                    systemState.Phase == Phase.IN_PROGRESS_GROW)
-                    return;
-
-                List<ValueTask> valueTasks = new();
-
-                try
-                {
-                    epoch.Resume();
-                    ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, valueTasks, token);
-                }
-                catch (Exception)
-                {
-                    _indexCheckpoint.Reset();
-                    _hybridLogCheckpoint.Dispose();
-                    throw;
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
-
-                if (valueTasks.Count == 0)
-                {
-                    // Note: The state machine will not advance as long as there are active locking sessions.
-                    continue; // we need to re-check loop, so we return only when we are at REST
-                }
-
-                foreach (var task in valueTasks)
-                {
-                    if (!task.IsCompleted)
-                        await task.ConfigureAwait(false);
-                }
-            }
-            */
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

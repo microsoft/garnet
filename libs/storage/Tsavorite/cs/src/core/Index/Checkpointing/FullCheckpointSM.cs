@@ -6,21 +6,16 @@ namespace Tsavorite.core
     /// <summary>
     /// The state machine orchestrates a full checkpoint
     /// </summary>
-    internal sealed class FullCheckpointSM<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSM
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class FullCheckpointSM : HybridLogCheckpointSM
     {
         /// <summary>
-        /// Construct a new FullCheckpointStateMachine to use the given checkpoint backend (either fold-over or snapshot),
+        /// Construct a new FullCheckpointStateMachine to use the given set of checkpoint tasks,
         /// drawing boundary at targetVersion.
         /// </summary>
-        /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public FullCheckpointSM(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, IStateMachineTask checkpointBackend, long targetVersion = -1) : base(
-            targetVersion,
-            new FullCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store),
-            new IndexSnapshotSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store),
-            checkpointBackend)
+        /// <param name="tasks">Tasks</param>
+        public FullCheckpointSM(long targetVersion = -1, params IStateMachineTask[] tasks)
+            : base(targetVersion, tasks)
         { }
 
         /// <inheritdoc />
