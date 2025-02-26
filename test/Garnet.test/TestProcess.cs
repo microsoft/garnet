@@ -53,11 +53,11 @@ namespace Garnet.test
             p = Process.Start(psi);
             ClassicAssert.NotNull(p);
 
-            lightClientRequest = new LightClientRequest(endPoint, 0);
-
             // Block until the startup message to ensure process is up.
             var dummy = new char[1];
             _ = p.StandardOutput.ReadBlock(dummy, 0, 1);
+
+            lightClientRequest = new LightClientRequest(endPoint, 0);
 
             stopWatch = Stopwatch.StartNew();
         }
