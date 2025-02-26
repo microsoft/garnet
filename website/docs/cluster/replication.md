@@ -226,6 +226,25 @@ replica_announced:1
 192.168.1.26:7001>
 ```
 
+# Diskless Replication
 
+When AOF gets truncated, full synchronization requires taking a checkpoint and sending that checkpoint over to the attaching replica.
+This operation can be expensive because it involves multiple I/O operations at the primary and replica.
+For this reason, we added a variant of full synchronization called diskless replication.
+This is implemented using a streaming checkpoint that allows clients to continue issuing read and writes at the primary while attaching replicas synchronize.
+To enable diskless replication the server needs to be started with the following flags
 
+--repl-diskless-sync=true
+This is used to enable diskless replication
+
+--repl-diskless-sync-delay=\<seconds\>.
+This is used to determine how many seconds to wait before starting the full sync, in order to give the opportunity to multiple replicas to attach and receive the streaming checkpoint.
+
+There is no additional requirements to that of using the aforementioned flags in order to leverage diskless replication.
+The APIs for mapping replicas remains the same (i.e. CLUSTER REPLICATE, REPLICAOF etc.).
+
+Note that streaming replication does not take a checkpoint thus the AOF is not automatically truncated (unless FAT flag is sued) every time a full sync is performed.
+This happens to ensure durability in the event of a failure which will not be possible if the AOF gets truncated without a persitent checkpoint.
+However, the store version gets incremented to ensure consistency accross different instances that may be fully synced at different times.
+Users can still utilize SAVE/BGSAVE commands to take a manual checkpoint which safely truncates the AOF.
 
