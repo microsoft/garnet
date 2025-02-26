@@ -230,9 +230,7 @@ function load_sandboxed(source)
             return { err = 'ERR ' .. text }
         end,
 
-        call = function(...)
-            return garnetCallRef(...)
-        end,
+        call = garnetCallRef,
 
         pcall = function(...)
             local success, errOrRes = pCallRef(garnetCallRef, ...)
@@ -243,18 +241,14 @@ function load_sandboxed(source)
             return { err = errOrRes }
         end,
 
-        sha1hex = function(...)
-            return sha1hexRef(...)
-        end,
+        sha1hex = sha1hexRef,
 
         LOG_DEBUG = 0,
         LOG_VERBOSE = 1,
         LOG_NOTICE = 2,
         LOG_WARNING = 3,
 
-        log = function(...)
-            return logRef(...)
-        end,
+        log = logRef,
 
         REPL_ALL = 3,
         REPL_AOF = 1,
@@ -272,22 +266,17 @@ function load_sandboxed(source)
         end,
 
         breakpoint = function(...)
-            -- this is a whole new dang functionality, not implemented
+            -- this is giant and weird, not implementing
             error('ERR redis.breakpoint is not supported in Garnet', 0)
         end,
 
         debug = function(...)
-            -- this is a whole new dang functionality, not implemented
+            -- this is giant and weird, not implementing
             error('ERR redis.debug is not supported in Garnet', 0)
         end,
 
-        acl_check_cmd = function(...)
-            return aclCheckCmdRef(...)
-        end,
-
-        setresp = function(...)
-            setRespRef(...)
-        end,
+        acl_check_cmd = aclCheckCmdRef,
+        setresp = setRespRef,
 
         REDIS_VERSION = garnet_REDIS_VERSION,
         REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
