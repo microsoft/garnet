@@ -199,7 +199,6 @@ namespace Tsavorite.core
         public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
-            token = default;
 
             if (checkpointType == CheckpointType.StreamingSnapshot)
             {
@@ -294,35 +293,33 @@ namespace Tsavorite.core
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
-            token = default;
-            bool result;
-            if (checkpointType == CheckpointType.FoldOver)
-            {
-                var backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.Snapshot)
-            {
-                ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> backend;
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress && !hlog.HasObjectLog)
-                    backend = new IncrementalSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
-                else
-                    backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.StreamingSnapshot)
+            IStateMachine stateMachine;
+
+            if (checkpointType == CheckpointType.StreamingSnapshot)
             {
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion));
+                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
             }
             else
-                throw new TsavoriteException("Unsupported hybrid log checkpoint type");
-
-            if (result)
-                token = _hybridLogCheckpointToken;
-            return result;
+            {
+                token = _lastSnapshotCheckpoint.info.guid;
+                var incremental = tryIncremental
+                    && checkpointType == CheckpointType.Snapshot
+                    && token != default
+                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
+                    && !hlog.HasObjectLog;
+                if (incremental)
+                {
+                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, targetVersion, token);
+                }
+                else
+                {
+                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, targetVersion, out token);
+                }
+            }
+            return stateMachineDriver.Register(stateMachine);
         }
 
         /// <summary>

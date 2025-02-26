@@ -17,12 +17,12 @@ namespace Tsavorite.core
 
             if (checkpointType == CheckpointType.FoldOver)
             {
-                var backend = new FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store);
+                var backend = new FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
                 return new FullCheckpointSM(targetVersion, indexCheckpointTask, fullCheckpointTask, backend);
             }
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                var backend = new SnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store);
+                var backend = new SnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
                 return new FullCheckpointSM(targetVersion, indexCheckpointTask, fullCheckpointTask, backend);
             }
             else
@@ -47,6 +47,36 @@ namespace Tsavorite.core
             guid = Guid.NewGuid();
             var indexCheckpointTask = new IndexCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
             return new IndexCheckpointSM(targetVersion, indexCheckpointTask);
+        }
+
+        public static IStateMachine HybridLogOnly<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, CheckpointType checkpointType, long targetVersion, out Guid guid)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        {
+            guid = Guid.NewGuid();
+
+            if (checkpointType == CheckpointType.FoldOver)
+            {
+                var backend = new FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
+                return new HybridLogCheckpointSM(targetVersion, backend);
+            }
+            else if (checkpointType == CheckpointType.Snapshot)
+            {
+                var backend = new SnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
+                return new HybridLogCheckpointSM(targetVersion, backend);
+            }
+            else
+            {
+                throw new TsavoriteException("Invalid checkpoint type");
+            }
+        }
+
+        public static IStateMachine IncrementalHybridLogOnly<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long targetVersion, Guid guid)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        {
+            var backend = new IncrementalSnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
+            return new HybridLogCheckpointSM(targetVersion, backend);
         }
     }
 }

@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -12,8 +14,8 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        public SnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
-            : base(store)
+        public SnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+            : base(store, guid)
         {
         }
 
@@ -63,6 +65,8 @@ namespace Tsavorite.core
                         store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out store._hybridLogCheckpoint.flushedSemaphore,
                         store.ThrottleCheckpointFlushDelayMs);
+                    if (store._hybridLogCheckpoint.flushedSemaphore != null)
+                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk

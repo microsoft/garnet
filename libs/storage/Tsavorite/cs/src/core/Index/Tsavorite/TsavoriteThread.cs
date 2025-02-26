@@ -19,13 +19,17 @@ namespace Tsavorite.core
             epoch.ProtectAndDrain();
 
             // We check if we are in normal mode
-            var newPhaseInfo = SystemState.Copy(ref systemState);
+            var newPhaseInfo = stateMachineDriver.SystemState;
             if (sessionFunctions.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && sessionFunctions.Ctx.version == newPhaseInfo.Version)
                 return;
 
             while (true)
             {
-                ThreadStateMachineStep(sessionFunctions.Ctx, sessionFunctions, default);
+                newPhaseInfo = stateMachineDriver.SystemState;
+                sessionFunctions.Ctx.phase = newPhaseInfo.Phase;
+                sessionFunctions.Ctx.version = newPhaseInfo.Version;
+
+                // ThreadStateMachineStep(sessionFunctions.Ctx, sessionFunctions, default);
 
                 // In prepare phases, after draining out ongoing multi-key ops, we may spin and get threads to
                 // reach the next version before proceeding

@@ -23,7 +23,7 @@ namespace Tsavorite.core
         readonly Guid guid;
 
         public StreamingSnapshotCheckpointSMTask(long targetVersion, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
-            : base(store)
+            : base(store, guid)
         {
             this.targetVersion = targetVersion;
             this.guid = guid;

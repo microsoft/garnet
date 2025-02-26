@@ -24,6 +24,8 @@ namespace Tsavorite.core
         readonly LightEpoch epoch;
         readonly ILogger logger;
 
+        public SystemState SystemState => SystemState.Copy(ref systemState);
+
         public StateMachineDriver(LightEpoch epoch, SystemState initialState, ILogger logger = null)
         {
             this.epoch = epoch;

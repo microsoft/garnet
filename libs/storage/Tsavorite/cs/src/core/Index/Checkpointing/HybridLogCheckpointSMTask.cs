@@ -17,10 +17,12 @@ namespace Tsavorite.core
     {
         protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
         long lastVersion;
+        readonly Guid guid;
 
-        public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
+            this.guid = guid;
         }
 
         /// <inheritdoc />
@@ -32,7 +34,7 @@ namespace Tsavorite.core
                     lastVersion = store.systemState.Version;
                     if (store._hybridLogCheckpoint.IsDefault())
                     {
-                        store._hybridLogCheckpointToken = Guid.NewGuid();
+                        store._hybridLogCheckpointToken = guid;
                         store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     }
                     store._hybridLogCheckpoint.info.version = next.Version;

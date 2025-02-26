@@ -40,7 +40,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get the current state machine state of the system
         /// </summary>
-        public SystemState SystemState => systemState;
+        public SystemState SystemState => stateMachineDriver.SystemState;
 
         /// <summary>
         /// Version number of the last checkpointed state
@@ -53,14 +53,9 @@ namespace Tsavorite.core
         public long IncrementalSnapshotTailAddress => _lastSnapshotCheckpoint.deltaLog?.TailAddress ?? 0;
 
         /// <summary>
-        /// Recovered version number (1 if started from clean slate)
-        /// </summary>
-        public long RecoveredVersion => systemState.Version;
-
-        /// <summary>
         /// Current version number of the store
         /// </summary>
-        public long CurrentVersion => systemState.Version;
+        public long CurrentVersion => stateMachineDriver.SystemState.Version;
 
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.

@@ -552,7 +552,8 @@ namespace Tsavorite.core
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return store.SystemState.Phase == Phase.PREPARE || store.SystemState.Phase == Phase.PREPARE_GROW;
+            var storeState = store.stateMachineDriver.SystemState;
+            return storeState.Phase == Phase.PREPARE || storeState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations
