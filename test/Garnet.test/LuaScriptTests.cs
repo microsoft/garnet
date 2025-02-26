@@ -51,8 +51,10 @@ namespace Garnet.test
             aclFile = Path.GetTempFileName();
             File.WriteAllLines(
                 aclFile,
-                ["user default on nopass +@all",
-                 "user deny on nopass +@all -get -acl"]
+                [
+                    "user default on nopass +@all",
+                    "user deny on nopass +@all -get -acl"
+                ]
             );
 
             server =
