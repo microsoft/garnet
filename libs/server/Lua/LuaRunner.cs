@@ -135,7 +135,6 @@ import = function () end
 KEYS = {}
 ARGV = {}
 sandbox_env = {
-    _G = _G;
     _VERSION = _VERSION;
 
     assert = assert;
@@ -154,11 +153,9 @@ sandbox_env = {
     pcall = pcall;
     rawequal = rawequal;
     rawget = rawget;
-    rawset = rawset;
     select = select;
     -- explicitly not allowing setfenv
     string = string;
-    setmetatable = setmetatable;
     table = table;
     tonumber = tonumber;
     tostring = tostring;
@@ -169,6 +166,35 @@ sandbox_env = {
     KEYS = KEYS;
     ARGV = ARGV;
 }
+-- no reference to outermost set of globals (_G) should survive sandboxing
+sandbox_env._G = sandbox_env
+
+-- lock down a table, recursively doing the same to all table members
+local rawGetRef = rawget
+local readonly_metatable = {
+    __index = function(onTable, key)
+        return rawGetRef(onTable, key)
+    end,
+    __newindex = function(onTable, key, value)
+        error('Attempt to modify a readonly table', 0)
+    end
+}
+
+function recursively_readonly_table(table)
+    if table.__readonly then
+        return table
+    end
+
+    table.__readonly = true
+
+    for key, value in pairs(table) do
+        if type(value) == 'table' then
+            recursively_readonly_table(value)
+        end
+    end
+
+    setmetatable(table, readonly_metatable)
+end
 -- do resets in the Lua side to minimize pinvokes
 function reset_keys_and_argv(fromKey, fromArgv)
     local keyRef = KEYS
@@ -192,6 +218,8 @@ function load_sandboxed(source)
     local logRef = garnet_log
     local aclCheckCmdRef = garnet_acl_check_cmd
     local setRespRef = garnet_setresp
+    local setMetatableRef = setmetatable
+    local rawsetRaw = rawset
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -264,6 +292,29 @@ function load_sandboxed(source)
         REDIS_VERSION = garnet_REDIS_VERSION,
         REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
     }
+
+    -- prevent modification to metatables for readonly tables
+    -- Redis accomplishes this by patching Lua, we'd rather ship
+    -- vanilla Lua and do it in code
+    sandbox_env.setmetatable = function(table, metatable)
+        if table and table.__readonly then
+            error('Attempt to modify a readonly table', 0)
+        end
+
+        return setMetatableRef(table, metatable)
+    end
+
+    -- prevent bypassing metatables to update readonly tables
+    -- as above, Redis prevents this with a patch to Lua
+    sandbox_env.rawset = function(table, key, value)
+        if table and table.__readonly then
+            error('Attempt to modify a readonly table', 0)
+        end
+
+        return rawsetRef(table, key, value)
+    end
+
+    recursively_readonly_table(sandbox_env)
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
 
@@ -387,7 +438,7 @@ end
             var loadRes = state.LoadBuffer(LoaderBlockBytes.Span);
             if (loadRes != LuaStatus.OK)
             {
-                throw new GarnetException("Could load loader into Lua");
+                throw new GarnetException("Couldn't load loader into Lua");
             }
 
             var sandboxRes = state.PCall(0, -1);

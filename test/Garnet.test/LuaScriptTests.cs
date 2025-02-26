@@ -6,12 +6,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -86,6 +84,35 @@ namespace Garnet.test
             {
                 // Best effort
             }
+        }
+
+        [Test]
+        public void GlobalsForbidden()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var globalFuncExc =
+                ClassicAssert.Throws<RedisServerException>(
+                    () =>
+                    {
+                        _ = db.ScriptEvaluate(
+                            @"function globalFunc()
+                                return 1
+                              end"
+                        );
+                    }
+                );
+            ClassicAssert.IsTrue(globalFuncExc.Message.Contains("Attempt to modify a readonly table"));
+
+            var globalVar = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("global_var = 'hello'"));
+            ClassicAssert.IsTrue(globalVar.Message.Contains("Attempt to modify a readonly table"));
+
+            var metatableUpdateOnGlobals = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("setmetatable(_G, nil)"));
+            ClassicAssert.IsTrue(metatableUpdateOnGlobals.Message.Contains("Attempt to modify a readonly table"));
+
+            var rawSetG = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("rawset(_G, 'hello', 'world')"));
+            ClassicAssert.IsTrue(globalVar.Message.Contains("Attempt to modify a readonly table"));
         }
 
         [Test]
