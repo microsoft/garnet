@@ -13,6 +13,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using CommandLine;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
@@ -631,19 +632,9 @@ namespace Garnet
             }
             else
             {
-                IPAddress address;
-                if (string.IsNullOrEmpty(Address))
-                {
-                    address = IPAddress.Any;
-                }
-                else
-                {
-                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
-                        address = IPAddress.Loopback;
-                    else
-                        address = IPAddress.Parse(Address);
-                }
-                endpoint = new IPEndPoint(address, Port);
+                endpoint = Format.TryCreateEndpoint(Address, Port, tryConnect: false).Result;
+                if (endpoint == null)
+                    throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
             }
 
             // Unix file permission octal to UnixFileMode

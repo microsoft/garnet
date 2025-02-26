@@ -161,7 +161,7 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    var endpoint = await Format.TryParseEndpoint(address, port, logger);
+                    var endpoint = await Format.TryCreateEndpoint(address, port, tryConnect: true, logger: logger);
                     if (endpoint == null)
                     {
                         logger?.LogError("Could not parse endpoint {address} {port}", address, port);

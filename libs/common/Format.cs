@@ -3,8 +3,6 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
@@ -33,119 +31,82 @@ namespace Garnet.common
 #pragma warning disable format
     public static class Format
     {
-        /// <summary>
-        /// Parse Endpoint in the form address:port
-        /// </summary>
-        /// <param name="addressWithPort"></param>
-        /// <param name="endpoint"></param>
-        /// <returns></returns>
-        /// <exception cref="PlatformNotSupportedException"></exception>
-#nullable enable
-        public static bool TryParseEndPoint(string addressWithPort, [NotNullWhen(true)] out EndPoint? endpoint)
-#nullable disable
+        public static async Task<EndPoint> TryCreateEndpoint(string addressOrHostname, int port, bool tryConnect = false, ILogger logger = null)
         {
-            string addressPart;
-#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
-            string portPart = null;
-#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
-            if (addressWithPort.IsNullOrEmpty())
-            {
-#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
-                endpoint = null;
-#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
-                return false;
-            }
+            IPEndPoint endpoint = null;
+            if (string.IsNullOrEmpty(addressOrHostname) || string.IsNullOrWhiteSpace(addressOrHostname))
+                return new IPEndPoint(IPAddress.Any, port);
 
-            if (addressWithPort[0] == '!')
+            if (IPAddress.TryParse(addressOrHostname, out var ipAddress))
+                return new IPEndPoint(ipAddress, port);
+
+            // Sanity check, there should be at least one ip address available
+            try
             {
-                if (addressWithPort.Length == 1)
+                var ipAddresses = Dns.GetHostAddresses(addressOrHostname);
+                if (ipAddresses.Length == 0)
                 {
-                    endpoint = null;
-                    return false;
+                    logger?.LogError("No IP address found for hostname:{hostname}", addressOrHostname);
+                    return null;
                 }
 
-#if UNIX_SOCKET
-                endpoint = new UnixDomainSocketEndPoint(addressWithPort.Substring(1));
-                return true;
-#else
-                throw new PlatformNotSupportedException("Unix domain sockets require .NET Core 3 or above");
-#endif
-            }
-            var lastColonIndex = addressWithPort.LastIndexOf(':');
-            if (lastColonIndex > 0)
-            {
-                // IPv4 with port or IPv6
-                var closingIndex = addressWithPort.LastIndexOf(']');
-                if (closingIndex > 0)
+
+                if (tryConnect)
                 {
-                    // IPv6 with brackets
-                    addressPart = addressWithPort.Substring(1, closingIndex - 1);
-                    if (closingIndex < lastColonIndex)
+                    foreach (var entry in ipAddresses)
                     {
-                        // IPv6 with port [::1]:80
-                        portPart = addressWithPort.Substring(lastColonIndex + 1);
+                        endpoint = new IPEndPoint(entry, port);
+                        var IsListening = await IsReachable(endpoint);
+                        if (IsListening) break;
                     }
                 }
                 else
                 {
-                    // IPv6 without port or IPv4
-                    var firstColonIndex = addressWithPort.IndexOf(':');
-                    if (firstColonIndex != lastColonIndex)
-                    {
-                        // IPv6 ::1
-                        addressPart = addressWithPort;
-                    }
-                    else
-                    {
-                        // IPv4 with port 127.0.0.1:123
-                        addressPart = addressWithPort.Substring(0, firstColonIndex);
-                        portPart = addressWithPort.Substring(firstColonIndex + 1);
-                    }
-                }
-            }
-            else
-            {
-                // IPv4 without port
-                addressPart = addressWithPort;
-            }
+                    var machineHostname = GetHostName();
 
-            int? port = 0;
-            if (portPart != null)
-            {
-                if (TryParseInt32(portPart, out var portVal))
-                {
-                    port = portVal;
-                }
-                else
-                {
-                    // Invalid port, return
-                    endpoint = null;
-                    return false;
-                }
-            }
+                    // Hostname does match the one acquired from machine name
+                    if (!addressOrHostname.Equals(machineHostname, StringComparison.OrdinalIgnoreCase))
+                        throw new GarnetException($"Provided hostname does not much acquired machine name {addressOrHostname} {machineHostname}!");
 
-            if (IPAddress.TryParse(addressPart, out IPAddress address))
-            {
-                endpoint = new IPEndPoint(address, port ?? 0);
-                return true;
+                    // Listen to any address since we were given a valid hostname
+                    return new IPEndPoint(IPAddress.Any, port);
+                }
+                logger?.LogError("No reachable IP address found for hostname:{hostname}", addressOrHostname);
             }
-            else
+            catch (Exception ex)
             {
-                IPHostEntry host = Dns.GetHostEntryAsync(addressPart).Result;
-                var ip = host.AddressList.First(x => x.AddressFamily == AddressFamily.InterNetwork);
-                endpoint = new IPEndPoint(ip, port ?? 0);
-                return true;
+                logger?.LogError(ex, "Error while trying to resolve hostname:{hostname}", addressOrHostname);
+            }            
+
+            return endpoint;
+
+            async Task<bool> IsReachable(IPEndPoint endpoint)
+            {
+                using (var tcpClient = new TcpClient())
+                {
+                    try
+                    {
+                        await tcpClient.ConnectAsync(endpoint.Address, endpoint.Port);
+                        logger?.LogTrace("Reachable {ip} {port}", endpoint.Address, endpoint.Port);
+                        return true;
+                    }
+                    catch
+                    {
+                        logger?.LogTrace("Unreachable {ip} {port}", endpoint.Address, endpoint.Port);
+                        return false;
+                    }
+                }
             }
         }
 
         /// <summary>
-        /// Try to parse endpoint from address and port
+        /// Try to
         /// </summary>
         /// <param name="address"></param>
         /// <param name="port"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public static async Task<IPEndPoint> TryParseEndpoint(string address, int port, ILogger logger = null)
+        public static async Task<IPEndPoint> TryValidateAndConnectAddress2(string address, int port, ILogger logger = null)
         {
             IPEndPoint endpoint = null;
             if (!IPAddress.TryParse(address, out var ipAddress))
@@ -156,8 +117,7 @@ namespace Garnet.common
                 {
                     endpoint = new IPEndPoint(entry, port);
                     var IsListening = await IsReachable(endpoint);
-                    if (IsListening)
-                        break;
+                    if (IsListening) break;
                 }
             }
             else
@@ -188,27 +148,55 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// TryParseInt32
+        /// Parse address (hostname) and port to endpoint
         /// </summary>
-        /// <param name="s"></param>
-        /// <param name="value"></param>
+        /// <param name="address"></param>
+        /// <param name="port"></param>
+        /// <param name="endpoint"></param>
         /// <returns></returns>
-        public static bool TryParseInt32(string s, out int value) =>
-            int.TryParse(s, NumberStyles.Integer, NumberFormatInfo.InvariantInfo, out value);
+        public static bool TryValidateAddress(string address, int port, out EndPoint endpoint)
+        {
+            endpoint = null;
+
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                endpoint = new IPEndPoint(IPAddress.Any, port);
+                return true;
+            }
+
+            if (IPAddress.TryParse(address, out var ipAddress))
+            {
+                endpoint = new IPEndPoint(ipAddress, port);
+                return true;
+            }
+
+            var machineHostname = GetHostName();
+
+            // Hostname does match then one acquired from machine name
+            if (!address.Equals(machineHostname, StringComparison.OrdinalIgnoreCase))                
+                return false;
+
+            // Sanity check, there should be at least one ip address available
+            var ipAddresses = Dns.GetHostAddresses(address);
+            if (ipAddresses.Length == 0)
+                return false;
+
+            // Listen to any since we were given a valid hostname
+            endpoint = new IPEndPoint(IPAddress.Any, port);
+            return true;
+        }
 
         /// <summary>
         /// Resolve host from Ip
         /// </summary>
         /// <param name="logger"></param>
         /// <returns></returns>
-#nullable enable
-        public static string GetHostName(ILogger? logger = null)
-#nullable disable
+        public static string GetHostName(ILogger logger = null)
         {
             try
             {
-                var serverName = Environment.MachineName; //host name sans domain
-                var fqhn = Dns.GetHostEntry(serverName).HostName; //fully qualified hostname
+                var serverName = Environment.MachineName; // host name sans domain
+                var fqhn = Dns.GetHostEntry(serverName).HostName; // fully qualified hostname
                 return fqhn;
             }
             catch (SocketException ex)

@@ -6,12 +6,11 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
+using Garnet.common;
 
 namespace Garnet
 {
@@ -355,11 +354,11 @@ namespace Garnet
             if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddress))
                 return initValidationResult;
 
-            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || IPAddress.TryParse(ipAddress, out _))
+            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || Format.TryCreateEndpoint(ipAddress, 0, tryConnect: false).Result != null)
                 return ValidationResult.Success;
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
-            var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost'. Actual value: {ipAddress}";
+            var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {ipAddress}";
             return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
     }
