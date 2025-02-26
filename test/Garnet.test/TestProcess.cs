@@ -36,11 +36,10 @@ namespace Garnet.test
             var endPoint = new IPEndPoint(IPAddress.Loopback, port);
             opts = TestUtils.GetConfig([endPoint]);
 
-            var psi = new ProcessStartInfo(name, ["--bind", "127.0.0.1",
-                                                  "--port", port.ToString(),
-                                                  "--enable-debug-command", "local",
-                                                  // For faster startup
-                                                  "--no-pubsub", "--no-obj"])
+            var psi = new ProcessStartInfo(name,
+["--bind", "127.0.0.1", "--port", port.ToString(), "--enable-debug-command", "local",
+// For faster startup
+"--no-pubsub", "--no-obj"])
             {
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
