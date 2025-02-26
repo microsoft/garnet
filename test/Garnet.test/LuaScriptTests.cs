@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
@@ -29,8 +30,9 @@ namespace Garnet.test
         private readonly string limitBytes;
         private readonly string limitTimeout;
 
+        private StringWriter loggerOutput;
         private string aclFile;
-        protected GarnetServer server;
+        private GarnetServer server;
 
         public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
@@ -55,6 +57,7 @@ namespace Garnet.test
                 ]
             );
 
+            loggerOutput = new();
             server =
                 TestUtils.CreateGarnetServer(
                     TestUtils.MethodTestDir,
@@ -63,7 +66,8 @@ namespace Garnet.test
                     luaMemoryLimit: limitBytes,
                     luaTimeout: timeout,
                     useAcl: true,
-                    aclFile: aclFile
+                    aclFile: aclFile,
+                    logTo: loggerOutput
                 );
             server.Start();
         }
@@ -487,6 +491,23 @@ namespace Garnet.test
             var excBadLevelValue = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.log(-1, 'world')"));
             ClassicAssert.IsTrue(excBadLevelValue.Message.StartsWith("ERR Invalid debug level."));
 
+            // Test logs at each level
+            var debugStr = $"Should be {Guid.NewGuid()} debug";
+            var verboseStr = $"Should be {Guid.NewGuid()} verbose";
+            var noticeStr = $"Should be {Guid.NewGuid()} notice";
+            var warningStr = $"Should be {Guid.NewGuid()} warning";
+            _ = db.ScriptEvaluate($"redis.log(redis.LOG_DEBUG, '{debugStr}')");
+            _ = db.ScriptEvaluate($"redis.log(redis.LOG_VERBOSE, '{verboseStr}')");
+            _ = db.ScriptEvaluate($"redis.log(redis.LOG_NOTICE, '{noticeStr}')");
+            _ = db.ScriptEvaluate($"redis.log(redis.LOG_WARNING, '{warningStr}')");
+
+            var logLines = loggerOutput.ToString();
+
+            ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(dbug\)] \|.*\| <.*> .* \^.*{Regex.Escape(debugStr)}\^"));
+            ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(info\)] \|.*\| <.*> .* \^.*{Regex.Escape(verboseStr)}\^"));
+            ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(warn\)] \|.*\| <.*> .* \^.*{Regex.Escape(noticeStr)}\^"));
+            ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(errr\)] \|.*\| <.*> .* \^.*{Regex.Escape(warningStr)}\^"));
+
             // More than 1 log line, and non-string values are legal
             _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123, 456, 789)");
 
@@ -624,7 +645,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(GarnetServer.RedisProtocolVersion, asStr);
 
             var expectedNum =
-                ((byte)0 << 24) |
                 ((byte)expectedVersion.Major << 16) |
                 ((byte)expectedVersion.Minor << 8) |
                 ((byte)expectedVersion.Build << 0);
@@ -1014,9 +1034,9 @@ return redis.status_reply("OK")
                 {
                     if (i != 1)
                     {
-                        tableDepth.Append(", ");
+                        _ = tableDepth.Append(", ");
                     }
-                    tableDepth.Append("{ " + i + " }");
+                    _ = tableDepth.Append("{ " + i + " }");
                 }
 
                 var script = "return { " + tableDepth.ToString() + " }";

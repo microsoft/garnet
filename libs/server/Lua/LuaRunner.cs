@@ -350,7 +350,9 @@ end
         readonly int errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex;
         readonly int errRedisSetrespRequiresOneArgumentConstStringRegistryIndex;
         readonly int errRespVersionMustBe2Or3ConstStringRegistryIndex;
+        readonly int errLoggingDisabledConstStringRegistryIndex;
 
+        readonly LuaLoggingMode logMode;
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
@@ -385,6 +387,7 @@ end
         public unsafe LuaRunner(
             LuaMemoryManagementMode memMode,
             int? memLimitBytes,
+            LuaLoggingMode logMode,
             ReadOnlyMemory<byte> source,
             bool txnMode = false,
             RespServerSession respServerSession = null,
@@ -397,6 +400,7 @@ end
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
+            this.logMode = logMode;
             this.logger = logger;
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
@@ -479,7 +483,6 @@ end
 
             var redisVersionParsed = Version.Parse(redisVersion);
             var redisVersionNum =
-                ((byte)0x00 << 24) |
                 ((byte)redisVersionParsed.Major << 16) |
                 ((byte)redisVersionParsed.Minor << 8) |
                 ((byte)redisVersionParsed.Build << 0);
@@ -516,6 +519,7 @@ end
             errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
             errRedisSetrespRequiresOneArgumentConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_setresp_requires_one_argument);
             errRespVersionMustBe2Or3ConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3);
+            errLoggingDisabledConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_log_disabled);
 
             state.ExpectLuaStackEmpty();
         }
@@ -524,7 +528,7 @@ end
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 
@@ -725,24 +729,82 @@ end
             var argCount = state.StackTop;
             if (argCount < 2)
             {
-                state.PushConstantString(errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex);
-                return state.RaiseErrorFromStack();
+                return LuaStaticError(errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex);
             }
 
             if (state.Type(1) != LuaType.Number)
             {
-                state.PushConstantString(errFirstArgumentMustBeANumberConstStringRegistryIndex);
-                return state.RaiseErrorFromStack();
+                return LuaStaticError(errFirstArgumentMustBeANumberConstStringRegistryIndex);
             }
 
             var rawLevel = state.CheckNumber(1);
-            if (rawLevel is not 0 or 1 or 2 or 3)
+            if (rawLevel is not (0 or 1 or 2 or 3))
             {
-                state.PushConstantString(errInvalidDebugLevelConstStringRegistryIndex);
-                return state.RaiseErrorFromStack();
+                return LuaStaticError(errInvalidDebugLevelConstStringRegistryIndex);
             }
 
-            // TODO: Should there be an option to actually log the output?
+            if (logMode == LuaLoggingMode.Disable)
+            {
+                return LuaStaticError(errLoggingDisabledConstStringRegistryIndex);
+            }
+
+            // When shipped as a service, allowing arbitrary writes to logs is dangerous
+            // so we support disabling it (while not breaking existing scripts)
+            if (logMode == LuaLoggingMode.Silent)
+            {
+                return 0;
+            }
+
+            // Even if enabled, if no logger was provided we can just bail
+            if (logger == null)
+            {
+                return 0;
+            }
+
+            // Construct and log the equivalent message
+            string logMessage;
+            if (argCount == 2)
+            {
+                if (state.CheckBuffer(2, out var buff))
+                {
+                    logMessage = Encoding.UTF8.GetString(buff);
+                }
+                else
+                {
+                    logMessage = "";
+                }
+            }
+            else
+            {
+                var sb = new StringBuilder();
+
+                for (var argIx = 2; argIx <= argCount; argIx++)
+                {
+                    if (state.CheckBuffer(argIx, out var buff))
+                    {
+                        if (sb.Length != 0)
+                        {
+                            _ = sb.Append(' ');
+                        }
+
+                        _ = sb.Append(Encoding.UTF8.GetString(buff));
+                    }
+                }
+
+                logMessage = sb.ToString();
+            }
+
+            var logLevel =
+                rawLevel switch
+                {
+                    0 => LogLevel.Debug,
+                    1 => LogLevel.Information,
+                    2 => LogLevel.Warning,
+                    // We validated this above, so really it's just 3 but the switch needs to be exhaustive
+                    _ => LogLevel.Error,
+                };
+
+            logger.Log(logLevel, "redis.log: {message}", logMessage.ToString());
 
             return 0;
         }
