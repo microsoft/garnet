@@ -11,6 +11,7 @@ using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet
 {
@@ -21,6 +22,11 @@ namespace Garnet
     [AttributeUsage(AttributeTargets.Property)]
     internal class OptionValidationAttribute : ValidationAttribute
     {
+        /// <summary>
+        /// Logger to use for validation
+        /// </summary>
+        public ILogger Logger { get; set; }
+
         /// <summary>
         /// Determines if current property is required to have a value
         /// </summary>
@@ -354,7 +360,9 @@ namespace Garnet
             if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddress))
                 return initValidationResult;
 
-            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || Format.TryCreateEndpoint(ipAddress, 0, useForBind: false).Result != null)
+            var logger = ((Options)validationContext.ObjectInstance).runtimeLogger;
+            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) ||
+                Format.TryCreateEndpoint(ipAddress, 0, useForBind: false, logger: logger).Result != null)
                 return ValidationResult.Success;
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;

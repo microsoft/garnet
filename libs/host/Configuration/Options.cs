@@ -574,18 +574,27 @@ namespace Garnet
         public IList<string> UnparsedArguments { get; set; }
 
         /// <summary>
+        /// Logger instance used for runtime option validation
+        /// </summary>
+        public ILogger runtimeLogger { get; set; }
+
+        /// <summary>
         /// Check the validity of all options with an explicit ValidationAttribute
         /// </summary>
         /// <param name="invalidOptions">List of invalid options</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if all property values are valid</returns>
-        public bool IsValid(out List<string> invalidOptions, ILogger logger)
+        public bool IsValid(out List<string> invalidOptions, ILogger logger = null)
         {
-            invalidOptions = new List<string>();
-            bool isValid = true;
+            invalidOptions = [];
+            var isValid = true;
 
-            foreach (PropertyInfo prop in typeof(Options).GetProperties())
+            this.runtimeLogger = logger;
+            foreach (var prop in typeof(Options).GetProperties())
             {
+                if (prop.Name.Equals("runtimeLogger"))
+                    continue;
+
                 // Ignore if property is not decorated with the OptionsAttribute or the ValidationAttribute
                 var validationAttr = prop.GetCustomAttributes(typeof(ValidationAttribute)).FirstOrDefault();
                 if (!Attribute.IsDefined(prop, typeof(OptionAttribute)) || validationAttr == null)

@@ -58,7 +58,6 @@ namespace Garnet.common
                     return null;
                 }
 
-
                 if (useForBind)
                 {
                     foreach (var entry in ipAddresses)
@@ -74,10 +73,15 @@ namespace Garnet.common
 
                     // Hostname does match the one acquired from machine name
                     if (!addressOrHostname.Equals(machineHostname, StringComparison.OrdinalIgnoreCase))
-                        throw new GarnetException($"Provided hostname does not much acquired machine name {addressOrHostname} {machineHostname}!");
+                    {
+                        logger?.LogError("Provided hostname does not much acquired machine name {addressOrHostname} {machineHostname}!", addressOrHostname, machineHostname);
+                        return null;
+                    }
 
-                    if(ipAddresses.Length > 1)
-                        throw new GarnetException("Error hostname resolved to multiple endpoints.");
+                    if (ipAddresses.Length > 1) {
+                        logger?.LogError("Error hostname resolved to multiple endpoints. Garnet does not support multiple endpoints!");
+                        return null;
+                    }
 
                     return new IPEndPoint(ipAddresses[0], port);
                 }
@@ -86,7 +90,7 @@ namespace Garnet.common
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error while trying to resolve hostname:{hostname}", addressOrHostname);
-            }            
+            }
 
             return endpoint;
 
