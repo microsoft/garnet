@@ -64,11 +64,6 @@ namespace Garnet.server
         public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
 
         /// <summary>
-        /// Version map (of DB 0)
-        /// </summary>
-        internal WatchVersionMap versionMap => databaseManager.VersionMap;
-
-        /// <summary>
         /// Server options
         /// </summary>
         public readonly GarnetServerOptions serverOptions;
@@ -133,11 +128,8 @@ namespace Garnet.server
 
         readonly CancellationTokenSource ctsCommit;
 
-        // True if this server supports more than one logical database
-        readonly bool allowMultiDb;
-
         // True if StoreWrapper instance is disposed
-        bool disposed = false;
+        bool disposed;
 
         /// <summary>
         /// Constructor
@@ -176,7 +168,6 @@ namespace Garnet.server
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
             // If cluster mode is off and more than one database allowed multi-db mode is turned on
-            this.allowMultiDb = !this.serverOptions.EnableCluster && this.serverOptions.MaxDatabases > 1;
 
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
@@ -197,7 +188,7 @@ namespace Garnet.server
                                                                   typeof(AclAuthenticationSettings)))
                 {
                     // Create a new access control list and register it with the authentication settings
-                    AclAuthenticationSettings aclAuthenticationSettings =
+                    var aclAuthenticationSettings =
                         (AclAuthenticationSettings)this.serverOptions.AuthSettings;
 
                     if (!string.IsNullOrEmpty(aclAuthenticationSettings.AclConfigurationFile))
@@ -295,6 +286,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Recover checkpoint
+        /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
             bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
             => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
@@ -365,16 +359,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        var activeDbIdsSize = this.activeDbIdsLength;
-
-                        if (!allowMultiDb || activeDbIdsSize == 1)
-                        {
-                            await appendOnlyFile.CommitAsync(null, token);
-                        }
-                        else
-                        {
-                            MultiDatabaseCommit(ref aofTasks, token);
-                        }
+                        await databaseManager.CommitToAofAsync(token, logger);
 
                         await Task.Delay(commitFrequencyMs, token);
                     }
@@ -386,42 +371,6 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Perform AOF commits on all active databases
-        /// </summary>
-        /// <param name="tasks">Optional reference to pre-allocated array of tasks to use</param>
-        /// <param name="token">Cancellation token</param>
-        /// <param name="spinWait">True if should wait until all tasks complete</param>
-        void MultiDatabaseCommit(ref Task[] tasks, CancellationToken token, bool spinWait = true)
-        {
-            var databasesMapSnapshot = databases.Map;
-
-            var activeDbIdsSize = activeDbIdsLength;
-            var activeDbIdsSnapshot = activeDbIds;
-
-            tasks ??= new Task[activeDbIdsSize];
-
-            // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-            if (!lockAcquired) return;
-
-            for (var i = 0; i < activeDbIdsSize; i++)
-            {
-                var dbId = activeDbIdsSnapshot[i];
-                var db = databasesMapSnapshot[dbId];
-                Debug.Assert(!db.IsDefault());
-
-                tasks[i] = db.AppendOnlyFile.CommitAsync(null, token).AsTask();
-            }
-
-            var completion = Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock(), token);
-
-            if (!spinWait)
-                return;
-
-            completion.Wait(token);
-        }
-
         async Task CompactionTask(int compactionFrequencySecs, CancellationToken token = default)
         {
             Debug.Assert(compactionFrequencySecs > 0);
@@ -431,29 +380,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-                    if (!lockAcquired) continue;
-
-                    try
-                    {
-                        var databasesMapSnapshot = databases.Map;
-
-                        var activeDbIdsSize = activeDbIdsLength;
-                        var activeDbIdsSnapshot = activeDbIds;
-
-                        for (var i = 0; i < activeDbIdsSize; i++)
-                        {
-                            var dbId = activeDbIdsSnapshot[i];
-                            var db = databasesMapSnapshot[dbId];
-                            Debug.Assert(!db.IsDefault());
-
-                            DoCompaction(ref db, serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
-                        }
-                    }
-                    finally
-                    {
-                        databasesLock.ReadUnlock();
-                    }
+                    databaseManager.DoCompaction(token);
 
                     if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
@@ -520,49 +447,17 @@ namespace Garnet.server
         {
             if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
 
-            var activeDbIdsSize = this.activeDbIdsLength;
-            if (!allowMultiDb || activeDbIdsSize == 1)
-            {
-                appendOnlyFile.Commit(spinWait);
-                return;
-            }
+            var task = databaseManager.CommitToAofAsync();
+            if (!spinWait) return;
 
-            Task[] tasks = null;
-            MultiDatabaseCommit(ref tasks, CancellationToken.None, spinWait);
+            task.GetAwaiter().GetResult();
         }
 
         /// <summary>
         /// Wait for commits from all active databases
         /// </summary>
-        /// </summary>
-        internal void WaitForCommit()
-        {
-            if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
-
-            var activeDbIdsSize = this.activeDbIdsLength;
-            if (!allowMultiDb || activeDbIdsSize == 1)
-            {
-                appendOnlyFile.WaitForCommit();
-                return;
-            }
-
-            // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = TryGetDatabasesReadLockAsync().Result;
-            if (!lockAcquired) return;
-
-            var databasesMapSnapshot = databases.Map;
-            var activeDbIdsSnapshot = activeDbIds;
-
-            var tasks = new Task[activeDbIdsSize];
-            for (var i = 0; i < activeDbIdsSize; i++)
-            {
-                var dbId = activeDbIdsSnapshot[i];
-                var db = databasesMapSnapshot[dbId];
-                tasks[i] = db.AppendOnlyFile.WaitForCommitAsync().AsTask();
-            }
-
-            Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock()).Wait();
-        }
+        internal void WaitForCommit() =>
+            WaitForCommitAsync().GetAwaiter().GetResult();
 
         /// <summary>
         /// Asynchronously wait for commits from all active databases
@@ -573,29 +468,7 @@ namespace Garnet.server
         {
             if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
 
-            var activeDbIdsSize = this.activeDbIdsLength;
-            if (!allowMultiDb || activeDbIdsSize == 1)
-            {
-                await appendOnlyFile.WaitForCommitAsync(token: token);
-                return;
-            }
-
-            // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-            if (!lockAcquired) return;
-
-            var databasesMapSnapshot = databases.Map;
-            var activeDbIdsSnapshot = activeDbIds;
-
-            var tasks = new Task[activeDbIdsSize];
-            for (var i = 0; i < activeDbIdsSize; i++)
-            {
-                var dbId = activeDbIdsSnapshot[i];
-                var db = databasesMapSnapshot[dbId];
-                tasks[i] = db.AppendOnlyFile.WaitForCommitAsync(token: token).AsTask();
-            }
-
-            await Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock(), token);
+            await databaseManager.WaitForCommitToAofAsync(token);
         }
 
         /// <summary>
@@ -609,31 +482,13 @@ namespace Garnet.server
         {
             if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
 
-            var activeDbIdsSize = this.activeDbIdsLength;
-            if (!allowMultiDb || activeDbIdsSize == 1 || dbId != -1)
+            if (dbId == -1)
             {
-                if (dbId == -1) dbId = 0;
-                var dbFound = TryGetDatabase(dbId, out var db);
-                Debug.Assert(dbFound);
-                await db.AppendOnlyFile.CommitAsync(token: token);
+                await databaseManager.CommitToAofAsync(token, logger);
                 return;
             }
 
-            var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-            if (!lockAcquired) return;
-
-            var databasesMapSnapshot = databases.Map;
-            var activeDbIdsSnapshot = activeDbIds;
-
-            var tasks = new Task[activeDbIdsSize];
-            for (var i = 0; i < activeDbIdsSize; i++)
-            {
-                dbId = activeDbIdsSnapshot[i];
-                var db = databasesMapSnapshot[dbId];
-                tasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask();
-            }
-
-            await Task.WhenAll(tasks).ContinueWith(_ => databasesLock.ReadUnlock(), token);
+            await databaseManager.CommitToAofAsync(dbId, token);
         }
 
         internal void Start()
@@ -643,8 +498,8 @@ namespace Garnet.server
 
             if (serverOptions.AofSizeLimit.Length > 0)
             {
-                var AofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                Task.Run(async () => await AutoCheckpointBasedOnAofSizeLimit(AofSizeLimitBytes, ctsCommit.Token, logger));
+                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
+                Task.Run(async () => await AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, ctsCommit.Token, logger));
             }
 
             if (serverOptions.CommitFrequencyMs > 0 && appendOnlyFile != null)
@@ -667,22 +522,7 @@ namespace Garnet.server
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
 
-            objectStoreSizeTracker?.Start(ctsCommit.Token);
-
-            var activeDbIdsSize = activeDbIdsLength;
-
-            if (allowMultiDb && activeDbIdsSize > 1)
-            {
-                var databasesMapSnapshot = databases.Map;
-                var activeDbIdsSnapshot = activeDbIds;
-
-                for (var i = 1; i < activeDbIdsSize; i++)
-                {
-                    var dbId = activeDbIdsSnapshot[i];
-                    var db = databasesMapSnapshot[dbId];
-                    db.ObjectStoreSizeTracker?.Start(ctsCommit.Token);
-                }
-            }
+            databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
         }
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
@@ -695,105 +535,17 @@ namespace Garnet.server
 
                 while (!allIndexesMaxedOut)
                 {
-                    allIndexesMaxedOut = true;
-
                     if (token.IsCancellationRequested) break;
 
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
-                    var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
-                    if (!lockAcquired) return;
-
-                    try
-                    {
-                        var activeDbIdsSize = activeDbIdsLength;
-                        var activeDbIdsSnapshot = activeDbIds;
-
-                        var databasesMapSnapshot = databases.Map;
-
-                        for (var i = 0; i < activeDbIdsSize; i++)
-                        {
-                            var dbId = activeDbIdsSnapshot[i];
-                            var db = databasesMapSnapshot[dbId];
-                            var dbUpdated = false;
-
-                            if (!db.MainStoreIndexMaxedOut)
-                            {
-                                var dbMainStore = databasesMapSnapshot[dbId].MainStore;
-                                if (GrowIndexIfNeeded(StoreType.Main,
-                                        serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                                        () => dbMainStore.IndexSize, () => dbMainStore.GrowIndex()))
-                                {
-                                    db.MainStoreIndexMaxedOut = true;
-                                    dbUpdated = true;
-                                }
-                                else
-                                {
-                                    allIndexesMaxedOut = false;
-                                }
-                            }
-
-                            if (!db.ObjectStoreIndexMaxedOut)
-                            {
-                                var dbObjectStore = databasesMapSnapshot[dbId].ObjectStore;
-                                if (GrowIndexIfNeeded(StoreType.Object,
-                                        serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
-                                        dbObjectStore.OverflowBucketAllocations,
-                                        () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndex()))
-                                {
-                                    db.ObjectStoreIndexMaxedOut = true;
-                                    dbUpdated = true;
-                                }
-                                else
-                                {
-                                    allIndexesMaxedOut = false;
-                                }
-                            }
-
-                            if (dbUpdated)
-                            {
-                                databasesMapSnapshot[dbId] = db;
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        databasesLock.ReadUnlock();
-                    }
+                    allIndexesMaxedOut = databaseManager.GrowIndexesIfNeeded(token);
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
-        }
-
-        /// <summary>
-        /// Grows index if current size is smaller than max size.
-        /// Decision is based on whether overflow bucket allocation is more than a threshold which indicates a contention
-        /// in the index leading many allocations to the same bucket.
-        /// </summary>
-        /// <param name="storeType"></param>
-        /// <param name="indexMaxSize"></param>
-        /// <param name="overflowCount"></param>
-        /// <param name="indexSizeRetriever"></param>
-        /// <param name="growAction"></param>
-        /// <returns>True if index has reached its max size</returns>
-        private bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
-        {
-            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}", storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
-
-            if (indexSizeRetriever() < indexMaxSize &&
-                overflowCount > (indexSizeRetriever() * serverOptions.IndexResizeThreshold / 100))
-            {
-                logger?.LogInformation($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...", storeType, overflowCount, serverOptions.IndexResizeThreshold);
-                growAction();
-            }
-
-            if (indexSizeRetriever() < indexMaxSize) return false;
-
-            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: index size {{indexSizeRetriever}} reached index max size {{indexMaxSize}}", storeType, indexSizeRetriever(), indexMaxSize);
-            return true;
         }
 
         /// <summary>

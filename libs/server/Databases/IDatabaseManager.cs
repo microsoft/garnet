@@ -121,6 +121,31 @@ namespace Garnet.server
             ILogger logger = null);
 
         /// <summary>
+        /// Commit to AOF for all active databases
+        /// </summary>
+        /// <param name="token">Cancellation token</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        public Task CommitToAofAsync(CancellationToken token = default, ILogger logger = null);
+
+        /// <summary>
+        /// Commit to AOF for specified database
+        /// </summary>
+        /// <param name="dbId">ID of database to commit</param>
+        /// <param name="token">Cancellation token</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        public Task CommitToAofAsync(int dbId, CancellationToken token = default, ILogger logger = null);
+
+        /// <summary>
+        /// Wait for commit to AOF for all active databases
+        /// </summary>
+        /// <param name="token">Cancellation token</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        public Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null);
+
+        /// <summary>
         /// Recover AOF
         /// </summary>
         public void RecoverAOF();
@@ -129,6 +154,22 @@ namespace Garnet.server
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
         public long ReplayAOF(long untilAddress = -1);
+
+        /// <summary>
+        /// Do compaction
+        /// </summary>
+        public void DoCompaction(CancellationToken token = default);
+
+        /// <summary>
+        /// Grows indexes of both main store and object store for all active databases if current size is too small
+        /// </summary>
+        /// <returns>True if indexes are maxed out</returns>
+        public bool GrowIndexesIfNeeded(CancellationToken token = default);
+
+        /// <summary>
+        /// Start object size trackers for all active databases
+        /// </summary>
+        public void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <summary>
         /// Reset

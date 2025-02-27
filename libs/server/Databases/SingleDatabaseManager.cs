@@ -22,7 +22,7 @@ namespace Garnet.server
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) : 
             base(createsDatabaseDelegate, storeWrapper)
         {
-            this.Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
+            Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
 
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
@@ -33,7 +33,7 @@ namespace Garnet.server
 
         public SingleDatabaseManager(SingleDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate, src.StoreWrapper, createDefaultDatabase: false)
         {
-            this.CopyDatabases(src, enableAof);
+            CopyDatabases(src, enableAof);
         }
 
         /// <inheritdoc/>
@@ -77,11 +77,15 @@ namespace Garnet.server
             catch (TsavoriteNoHybridLogException ex)
             {
                 // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                Logger?.LogInformation(ex, $"No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}");
+                Logger?.LogInformation(ex,
+                    "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
+                    storeVersion, objectStoreVersion);
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex, $"Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}");
+                Logger?.LogInformation(ex,
+                    "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
+                    storeVersion, objectStoreVersion);
                 
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
@@ -187,7 +191,8 @@ namespace Garnet.server
             if (!TryPauseCheckpointsContinuousAsync(DefaultDatabase.Id, token: token).GetAwaiter().GetResult())
                 return;
 
-            logger?.LogInformation($"Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}");
+            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
+                aofSize, aofSizeLimit);
 
             try
             {
@@ -199,6 +204,25 @@ namespace Garnet.server
             {
                 ResumeCheckpoints(DefaultDatabase.Id);
             }
+        }
+
+        /// <inheritdoc/>
+        public override async Task CommitToAofAsync(CancellationToken token = default, ILogger logger = null)
+        {
+            await AppendOnlyFile.CommitAsync(token: token);
+        }
+
+        /// <inheritdoc/>
+        public override async Task CommitToAofAsync(int dbId, CancellationToken token = default, ILogger logger = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            await CommitToAofAsync(token, logger);
+        }
+
+        public override async Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null)
+        {
+            await AppendOnlyFile.WaitForCommitAsync(token: token);
         }
 
         /// <inheritdoc/>
@@ -223,7 +247,17 @@ namespace Garnet.server
                 aofProcessor.Dispose();
             }
         }
-        
+
+        /// <inheritdoc/>
+        public override void DoCompaction(CancellationToken token = default) => DoCompaction(ref DefaultDatabase);
+
+        public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
+            GrowIndexesIfNeeded(ref DefaultDatabase);
+
+        /// <inheritdoc/>
+        public override void StartObjectSizeTrackers(CancellationToken token = default) =>
+            ObjectStoreSizeTracker?.Start(token);
+
         /// <inheritdoc/>
         public override void Reset(int dbId = 0)
         {
@@ -275,16 +309,9 @@ namespace Garnet.server
                 StoreWrapper.GarnetObjectSerializer);
         }
 
-        protected override ref GarnetDatabase GetDatabaseByRef(int dbId)
-        {
-            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-
-            return ref DefaultDatabase;
-        }
-
         private void CopyDatabases(SingleDatabaseManager src, bool enableAof)
         {
-            this.DefaultDatabase = new GarnetDatabase(ref src.DefaultDatabase, enableAof);
+            DefaultDatabase = new GarnetDatabase(ref src.DefaultDatabase, enableAof);
         }
 
         public override void Dispose()

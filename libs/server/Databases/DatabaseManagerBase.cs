@@ -78,14 +78,33 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
 
+        /// <inheritdoc/>
         public abstract Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit,
             CancellationToken token = default, ILogger logger = null);
+
+        /// <inheritdoc/>
+        public abstract Task CommitToAofAsync(CancellationToken token = default, ILogger logger = null);
+
+        /// <inheritdoc/>
+        public abstract Task CommitToAofAsync(int dbId, CancellationToken token = default, ILogger logger = null);
+
+        /// <inheritdoc/>
+        public abstract Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
         public abstract void RecoverAOF();
 
         /// <inheritdoc/>
         public abstract long ReplayAOF(long untilAddress = -1);
+
+        /// <inheritdoc/>
+        public abstract void DoCompaction(CancellationToken token = default);
+
+        /// <inheritdoc/>
+        public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
+
+        /// <inheritdoc/>
+        public abstract void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract void Reset(int dbId = 0);
@@ -216,8 +235,6 @@ namespace Garnet.server
             logger?.LogInformation("Completed checkpoint");
         }
 
-        protected abstract ref GarnetDatabase GetDatabaseByRef(int dbId);
-
         /// <summary>
         /// Asynchronously checkpoint a single database
         /// </summary>
@@ -273,7 +290,8 @@ namespace Garnet.server
             if (db.AppendOnlyFile == null) return;
 
             db.AppendOnlyFile.Recover();
-            Logger?.LogInformation($"Recovered AOF: begin address = {db.AppendOnlyFile.BeginAddress}, tail address = {db.AppendOnlyFile.TailAddress}");
+            Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}",
+                db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
         }
 
         protected long ReplayDatabaseAOF(AofProcessor aofProcessor, ref GarnetDatabase db, long untilAddress = -1)
@@ -334,7 +352,7 @@ namespace Garnet.server
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
-        private void DoCompaction(ref GarnetDatabase db)
+        protected void DoCompaction(ref GarnetDatabase db)
         {
             // Periodic compaction -> no need to compact before checkpointing
             if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
@@ -358,7 +376,8 @@ namespace Garnet.server
                 var compactLength = (1L << StoreWrapper.serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
                 var untilAddress = readOnlyAddress - compactLength;
                 Logger?.LogInformation(
-                    $"Begin main store compact until {untilAddress}, Begin = {mainStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {mainStoreLog.TailAddress}");
+                    "Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",
+                    untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
 
                 switch (compactionType)
                 {
@@ -386,7 +405,8 @@ namespace Garnet.server
                 }
 
                 Logger?.LogInformation(
-                    $"End main store compact until {untilAddress}, Begin = {mainStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {mainStoreLog.TailAddress}");
+                    "End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",
+                    untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
             }
 
             if (db.ObjectStore == null) return;
@@ -401,7 +421,8 @@ namespace Garnet.server
                 var compactLength = (1L << StoreWrapper.serverOptions.ObjectStoreSegmentSizeBits()) * (objectStoreMaxSegments - numSegmentsToCompact);
                 var untilAddress = readOnlyAddress - compactLength;
                 Logger?.LogInformation(
-                    $"Begin object store compact until {untilAddress}, Begin = {objectStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {objectStoreLog.TailAddress}");
+                    "Begin object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",
+                    untilAddress, objectStoreLog.BeginAddress, readOnlyAddress, objectStoreLog.TailAddress);
 
                 switch (compactionType)
                 {
@@ -431,7 +452,8 @@ namespace Garnet.server
                 }
 
                 Logger?.LogInformation(
-                    $"End object store compact until {untilAddress}, Begin = {mainStoreLog.BeginAddress}, ReadOnly = {readOnlyAddress}, Tail = {mainStoreLog.TailAddress}");
+                    "End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",
+                    untilAddress, mainStoreLog.BeginAddress, readOnlyAddress, mainStoreLog.TailAddress);
             }
         }
 
@@ -453,6 +475,78 @@ namespace Garnet.server
                     db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
+        }
+
+        protected bool GrowIndexesIfNeeded(ref GarnetDatabase db)
+        {
+            var indexesMaxedOut = true;
+
+            if (!DefaultDatabase.MainStoreIndexMaxedOut)
+            {
+                var dbMainStore = DefaultDatabase.MainStore;
+                if (GrowIndexIfNeeded(StoreType.Main,
+                        StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
+                        () => dbMainStore.IndexSize, () => dbMainStore.GrowIndex()))
+                {
+                    db.MainStoreIndexMaxedOut = true;
+                }
+                else
+                {
+                    indexesMaxedOut = false;
+                }
+            }
+
+            if (!db.ObjectStoreIndexMaxedOut)
+            {
+                var dbObjectStore = db.ObjectStore;
+                if (GrowIndexIfNeeded(StoreType.Object,
+                        StoreWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
+                        dbObjectStore.OverflowBucketAllocations,
+                        () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndex()))
+                {
+                    db.ObjectStoreIndexMaxedOut = true;
+                }
+                else
+                {
+                    indexesMaxedOut = false;
+                }
+            }
+
+            return indexesMaxedOut;
+        }
+
+        /// <summary>
+        /// Grows index if current size is smaller than max size.
+        /// Decision is based on whether overflow bucket allocation is more than a threshold which indicates a contention
+        /// in the index leading many allocations to the same bucket.
+        /// </summary>
+        /// <param name="storeType"></param>
+        /// <param name="indexMaxSize"></param>
+        /// <param name="overflowCount"></param>
+        /// <param name="indexSizeRetriever"></param>
+        /// <param name="growAction"></param>
+        /// <returns>True if index has reached its max size</returns>
+        protected bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        {
+            Logger?.LogDebug(
+                $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
+                storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
+
+            if (indexSizeRetriever() < indexMaxSize &&
+                overflowCount > (indexSizeRetriever() * StoreWrapper.serverOptions.IndexResizeThreshold / 100))
+            {
+                Logger?.LogInformation(
+                    $"IndexAutoGrowTask[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
+                    storeType, overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
+                growAction();
+            }
+
+            if (indexSizeRetriever() < indexMaxSize) return false;
+
+            Logger?.LogDebug(
+                $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
+                storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
+            return true;
         }
     }
 }
