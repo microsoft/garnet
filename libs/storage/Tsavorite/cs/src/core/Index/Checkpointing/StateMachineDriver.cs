@@ -34,6 +34,11 @@ namespace Tsavorite.core
             this.logger = logger;
         }
 
+        public void SetSystemState(SystemState state)
+        {
+            systemState = SystemState.Copy(ref state);
+        }
+
         internal void AddToWaitingList(SemaphoreSlim waiter)
         {
             waitingList.Add(waiter);

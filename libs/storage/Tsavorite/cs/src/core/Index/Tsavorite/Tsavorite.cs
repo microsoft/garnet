@@ -162,7 +162,6 @@ namespace Tsavorite.core
             RevivificationManager = new(this, isFixedLenReviv, kvSettings.RevivificationSettings, logSettings);
 
             stateMachineDriver = new(epoch, SystemState.Make(Phase.REST, 1), kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
-            systemState = SystemState.Make(Phase.REST, 1);
 
             if (kvSettings.TryRecoverLatest)
             {

@@ -29,7 +29,6 @@ namespace Tsavorite.core
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
-            public ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> threadStateMachine;
 
             internal RevivificationStats RevivificationStats = new();
 

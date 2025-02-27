@@ -31,7 +31,7 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    lastVersion = store.systemState.Version;
+                    lastVersion = next.Version;
                     if (store._hybridLogCheckpoint.IsDefault())
                     {
                         store._hybridLogCheckpointToken = guid;

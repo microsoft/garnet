@@ -84,7 +84,6 @@ namespace Tsavorite.core
         {
             dst.phase = src.phase;
             dst.version = src.version;
-            dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
             dst.sessionName = src.sessionName;
         }
@@ -107,7 +106,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool InRestPhase() => systemState.Phase == Phase.REST;
+        internal bool InRestPhase() => stateMachineDriver.SystemState.Phase == Phase.REST;
 
         #region Complete Pending Requests
         internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
