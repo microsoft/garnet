@@ -4,10 +4,12 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using Azure;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -25,6 +27,11 @@ namespace Garnet.server
         /// </summary>
         private unsafe interface IResponseAdapter
         {
+            /// <summary>
+            /// What version of the RESP protocol to write responses out as.
+            /// </summary>
+            byte RespProtocolVersion { get; }
+
             /// <summary>
             /// Equivalent to the ref curr we pass into <see cref="RespWriteUtils"/> methods.
             /// </summary>
@@ -63,6 +70,10 @@ namespace Garnet.server
             => session.dend;
 
             /// <inheritdoc />
+            public byte RespProtocolVersion
+            => session.respProtocolVersion;
+
+            /// <inheritdoc />
             public void SendAndReset()
             => session.SendAndReset();
         }
@@ -95,6 +106,9 @@ namespace Garnet.server
 
             /// <inheritdoc />
             public unsafe byte* BufferEnd { get; private set; }
+
+            /// <inheritdoc />
+            public byte RespProtocolVersion { get; } = 2;
 
             /// <summary>
             /// Gets a span that covers the responses as written so far.
@@ -340,6 +354,9 @@ end
         readonly int errRedisSetrespRequiresOneArgumentConstStringRegistryIndex;
         readonly int errRespVersionMustBe2Or3ConstStringRegistryIndex;
         readonly int errLoggingDisabledConstStringRegistryIndex;
+        readonly int doubleConstStringRegistryIndex;
+        readonly int mapConstStringRegistryIndex;
+        readonly int setConstStringRegistryIndex;
 
         readonly LuaLoggingMode logMode;
         readonly ReadOnlyMemory<byte> source;
@@ -509,6 +526,9 @@ end
             errRedisSetrespRequiresOneArgumentConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_setresp_requires_one_argument);
             errRespVersionMustBe2Or3ConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3);
             errLoggingDisabledConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_log_disabled);
+            doubleConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_double);
+            mapConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_map);
+            setConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_set);
 
             state.ExpectLuaStackEmpty();
         }
@@ -812,17 +832,12 @@ end
             }
 
             double num;
-            if (state.Type(1) != LuaType.Number || (num = state.CheckNumber(1)) is not 2 or 3)
+            if (state.Type(1) != LuaType.Number || (num = state.CheckNumber(1)) is not (2 or 3))
             {
                 return LuaStaticError(errRespVersionMustBe2Or3ConstStringRegistryIndex);
             }
 
-            // TODO: actually implement RESP 3 support here (requires changes to RunCommon as well)
-            if (num != 2)
-            {
-                state.PushBuffer("ERR Garnet Lua script only supports RESP2"u8);
-                return state.RaiseErrorFromStack();
-            }
+            respServerSession.respProtocolVersion = (byte)num;
 
             return 0;
         }
@@ -1232,7 +1247,9 @@ end
                 _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
 
                 var response = scratchBufferNetworkSender.GetResponse();
-                var result = ProcessResponse(response.ptr, response.length);
+
+                var result = ProcessRespResponse(respServerSession.respProtocolVersion, response.ptr, response.length);
+
                 scratchBufferNetworkSender.Reset();
 
                 return result;
@@ -1261,45 +1278,64 @@ end
         }
 
         /// <summary>
-        /// Process a RESP-formatted response from the RespServerSession.
+        /// Process a RESP(2|3)-formatted response.
         /// 
-        /// Pushes result onto state stack and returns 1, or raises an error and never returns.
+        /// Pushes result onto Lua stack and returns 1, or raises an error and never returns.
         /// </summary>
-        private unsafe int ProcessResponse(byte* ptr, int length)
+        private unsafe int ProcessRespResponse(byte respProtocolVersion, byte* respPtr, int respLen)
         {
-            const int NeededStackSize = 3;
+            var respEnd = respPtr + respLen;
 
-            state.ForceMinimumStackCapacity(NeededStackSize);
+            var ret = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
 
-            switch (*ptr)
+            if (respPtr != respEnd)
             {
-                case (byte)'+':
-                    ptr++;
-                    length--;
-                    if (RespReadUtils.TryReadAsSpan(out var resultSpan, ref ptr, ptr + length))
+                throw new InvalidOperationException("RESP3 Response not fully consumed, this should never happen");
+            }
+
+            return ret;
+        }
+
+        private unsafe int ProcessSingleResp3Term(byte respProtocolVersion, ref byte* respPtr, byte* respEnd)
+        {
+            var indicator = (char)*respPtr;
+
+            var curTop = state.StackTop;
+
+            switch (indicator)
+            {
+                // Simple reply (Common)
+                case '+':
+                    respPtr++;
+                    if (RespReadUtils.TryReadAsSpan(out var resultSpan, ref respPtr, respEnd))
                     {
+                        state.ForceMinimumStackCapacity(3);
+
                         // Construct a table = { 'ok': value }
                         state.CreateTable(0, 1);
                         state.PushConstantString(okLowerConstStringRegistryIndex);
                         state.PushBuffer(resultSpan);
-                        state.RawSet(1);
+                        state.RawSet(curTop + 1);
 
                         return 1;
                     }
                     goto default;
 
-                case (byte)':':
-                    if (RespReadUtils.TryReadInt64(out var number, ref ptr, ptr + length))
+                // Integer (Common)
+                case ':':
+                    if (RespReadUtils.TryReadInt64(out var number, ref respPtr, respEnd))
                     {
+                        state.ForceMinimumStackCapacity(1);
+
                         state.PushInteger(number);
                         return 1;
                     }
                     goto default;
 
-                case (byte)'-':
-                    ptr++;
-                    length--;
-                    if (RespReadUtils.TryReadAsSpan(out var errSpan, ref ptr, ptr + length))
+                // Error (Common)
+                case '-':
+                    respPtr++;
+                    if (RespReadUtils.TryReadAsSpan(out var errSpan, ref respPtr, respEnd))
                     {
                         if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
                         {
@@ -1307,73 +1343,65 @@ end
                             return LuaStaticError(errUnknownConstStringRegistryIndex);
                         }
 
+                        state.ForceMinimumStackCapacity(1);
+
                         state.PushBuffer(errSpan);
                         return state.RaiseErrorFromStack();
 
                     }
                     goto default;
 
-                case (byte)'$':
-                    if (length >= 5 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
+                // Bulk string or null bulk string (Common)
+                case '$':
+                    var remainingLength = respEnd - respPtr;
+
+                    if (remainingLength >= 5 && new ReadOnlySpan<byte>(respPtr + 1, 4).SequenceEqual("-1\r\n"u8))
                     {
+                        state.ForceMinimumStackCapacity(1);
+
                         // Bulk null strings are mapped to FALSE
                         // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                         state.PushBoolean(false);
 
+                        respPtr += 5;
+
                         return 1;
                     }
-                    else if (RespReadUtils.TryReadSpanWithLengthHeader(out var bulkSpan, ref ptr, ptr + length))
+                    else if (RespReadUtils.TryReadSpanWithLengthHeader(out var bulkSpan, ref respPtr, respEnd))
                     {
+                        state.ForceMinimumStackCapacity(1);
+
                         state.PushBuffer(bulkSpan);
 
                         return 1;
                     }
                     goto default;
 
-                case (byte)'*':
-                    if (RespReadUtils.TryReadSignedArrayLength(out var itemCount, ref ptr, ptr + length))
+                // Array (Common)
+                case '*':
+                    if (RespReadUtils.TryReadSignedArrayLength(out var arrayItemCount, ref respPtr, respEnd))
                     {
-                        if (itemCount == -1)
+                        if (arrayItemCount == -1)
                         {
                             // Null multi-bulk -> maps to false
+                            state.ForceMinimumStackCapacity(1);
+
                             state.PushBoolean(false);
                         }
                         else
                         {
                             // Create the new table
-                            state.CreateTable(itemCount, 0);
+                            state.ForceMinimumStackCapacity(1);
 
-                            for (var itemIx = 0; itemIx < itemCount; itemIx++)
+                            state.CreateTable(arrayItemCount, 0);
+
+                            for (var itemIx = 0; itemIx < arrayItemCount; itemIx++)
                             {
-                                if (*ptr == '$')
-                                {
-                                    // Bulk String
-                                    if (length >= 4 && new ReadOnlySpan<byte>(ptr + 1, 4).SequenceEqual("-1\r\n"u8))
-                                    {
-                                        // Null strings are mapped to false
-                                        // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
-                                        state.PushBoolean(false);
-                                    }
-                                    else if (RespReadUtils.TryReadSpanWithLengthHeader(out var strSpan, ref ptr, ptr + length))
-                                    {
-                                        state.PushBuffer(strSpan);
-                                    }
-                                    else
-                                    {
-                                        // Error, drop the table we allocated
-                                        state.Pop(1);
-                                        goto default;
-                                    }
-                                }
-                                else
-                                {
-                                    // In practice, we ONLY ever return bulk strings
-                                    // So just... not implementing the rest for now
-                                    throw new NotImplementedException($"Unexpected sigil: {(char)*ptr}");
-                                }
+                                // Pushes the item to the top of the stack
+                                _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
 
-                                // Stack now has table and value at itemIx on it
-                                state.RawSetInteger(1, itemIx + 1);
+                                // Store the item into the table
+                                state.RawSetInteger(curTop + 1, itemIx + 1);
                             }
                         }
 
@@ -1381,8 +1409,269 @@ end
                     }
                     goto default;
 
+                // Map (RESP3 only)
+                case '%':
+                    if (respProtocolVersion != 3)
+                    {
+                        goto default;
+                    }
+
+                    if (RespReadUtils.TryReadSignedMapLength(out var mapPairCount, ref respPtr, respEnd) && mapPairCount >= 0)
+                    {
+                        state.ForceMinimumStackCapacity(3);
+
+                        // Response is a two level table, where { map = { ... } }
+                        state.CreateTable(1, 0);
+                        state.PushBuffer("map"u8);
+                        state.CreateTable(mapPairCount, 0);
+
+                        for (var pair = 0; pair < mapPairCount; pair++)
+                        {
+                            // Read key
+                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+
+                            // Read value
+                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+
+                            // Set t[k] = v
+                            state.RawSet(curTop + 3);
+                        }
+
+                        // Store the sub-table into the parent table
+                        state.RawSet(curTop + 1);
+
+                        return 1;
+                    }
+                    goto default;
+
+                // Null (RESP3 only)
+                case '_':
+                    {
+                        if (respProtocolVersion != 3)
+                        {
+                            goto default;
+                        }
+
+                        var remaining = respEnd - respPtr;
+                        if (remaining >= 3 && *(ushort*)(respPtr + 1) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                        {
+                            respPtr += 3;
+
+                            state.ForceMinimumStackCapacity(1);
+                            state.PushNil();
+
+                            return 1;
+                        }
+                    }
+                    goto default;
+
+                // Set (RESP3 only)
+                case '~':
+                    if (respProtocolVersion != 3)
+                    {
+                        goto default;
+                    }
+
+                    if (RespReadUtils.TryReadSignedSetLength(out var setItemCount, ref respPtr, respEnd) && setItemCount >= 0)
+                    {
+                        state.ForceMinimumStackCapacity(4);
+
+                        // Response is a two level table, where { set = { ... } }
+                        state.CreateTable(1, 0);
+                        state.PushBuffer("set"u8);
+                        state.CreateTable(setItemCount, 0);
+
+                        for (var pair = 0; pair < setItemCount; pair++)
+                        {
+                            // Read value, which we use as a key
+                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+
+                            // Unconditionally the value under the key is true
+                            state.PushBoolean(true);
+
+                            // Set t[value] = true
+                            state.RawSet(curTop + 3);
+                        }
+
+                        // Store the sub-table into the parent table
+                        state.RawSet(curTop + 1);
+
+                        return 1;
+                    }
+                    goto default;
+
+                // Boolean (RESP3 only)
+                case '#':
+                    if (respProtocolVersion != 3)
+                    {
+                        goto default;
+                    }
+
+                    if ((respEnd - respPtr) >= 4)
+                    {
+                        state.ForceMinimumStackCapacity(1);
+
+                        var asInt = *(int*)respPtr;
+                        respPtr += 4;
+
+                        if (asInt == MemoryMarshal.Read<uint>("#t\r\n"u8))
+                        {
+                            state.PushBoolean(true);
+                            return 1;
+                        }
+                        else if (asInt == MemoryMarshal.Read<uint>("#f\r\n"u8))
+                        {
+                            state.PushBoolean(false);
+                            return 1;
+                        }
+
+                        // Undo advance in (unlikely) error state
+                        respPtr -= 4;
+                    }
+                    goto default;
+
+                // Double (RESP3 only)
+                case ',':
+                    {
+                        if (respProtocolVersion != 3)
+                        {
+                            goto default;
+                        }
+
+                        var fullRemainingSpan = new ReadOnlySpan<byte>(respPtr, (int)(respEnd - respPtr));
+                        var endOfDoubleIx = fullRemainingSpan.IndexOf("\r\n"u8);
+                        if (endOfDoubleIx != -1)
+                        {
+                            // ,<some data>\r\n
+                            var doubleSpan = fullRemainingSpan[..(endOfDoubleIx + 2)];
+
+                            double parsed;
+                            if (doubleSpan.Length >= 4 && *(int*)respPtr == MemoryMarshal.Read<int>(",inf"u8))
+                            {
+                                parsed = double.PositiveInfinity;
+                                respPtr += doubleSpan.Length;
+                            }
+                            else if (doubleSpan.Length >= 4 && *(int*)respPtr == MemoryMarshal.Read<int>(",nan"u8))
+                            {
+                                parsed = double.NaN;
+                                respPtr += doubleSpan.Length;
+                            }
+                            else if (doubleSpan.Length >= 5 && *(int*)(respPtr + 1) == MemoryMarshal.Read<int>("-inf"u8))
+                            {
+                                parsed = double.NegativeInfinity;
+                                respPtr += doubleSpan.Length;
+                            }
+                            else if (doubleSpan.Length >= 5 && *(int*)(respPtr + 1) == MemoryMarshal.Read<int>("-nan"u8))
+                            {
+                                // No distinction between positive and negative NaNs, by design
+                                parsed = double.NaN;
+                                respPtr += doubleSpan.Length;
+                            }
+                            else if (doubleSpan.Length >= 4 && double.TryParse(doubleSpan[1..^2], provider: CultureInfo.InvariantCulture, out parsed))
+                            {
+                                respPtr += doubleSpan.Length;
+                            }
+                            else
+                            {
+                                goto default;
+                            }
+
+                            state.ForceMinimumStackCapacity(3);
+
+                            // Create table like { double = <parsed> }
+                            state.CreateTable(1, 0);
+                            state.PushBuffer("double"u8);
+                            state.PushNumber(parsed);
+
+                            state.RawSet(curTop + 1);
+
+                            return 1;
+                        }
+                    }
+                    goto default;
+
+                // Big number (RESP3 only)
+                case '(':
+                    {
+                        if (respProtocolVersion != 3)
+                        {
+                            goto default;
+                        }
+
+                        var fullRemainingSpan = new ReadOnlySpan<byte>(respPtr, (int)(respEnd - respPtr));
+                        var endOfBigNum = fullRemainingSpan.IndexOf("\r\n"u8);
+                        if (endOfBigNum != -1)
+                        {
+                            var bigNumSpan = fullRemainingSpan[..(endOfBigNum + 2)];
+                            if (bigNumSpan.Length >= 4)
+                            {
+                                var bigNumBuf = bigNumSpan[1..^2];
+                                if (bigNumBuf.ContainsAnyExceptInRange((byte)'0', (byte)'9'))
+                                {
+                                    goto default;
+                                }
+
+                                respPtr += bigNumSpan.Length;
+
+                                state.ForceMinimumStackCapacity(3);
+
+                                // Create table like { big_number = <bigNumBuf> }
+                                state.CreateTable(1, 0);
+                                state.PushBuffer("big_number"u8);
+                                state.PushBuffer(bigNumSpan);
+
+                                state.RawSet(curTop + 1);
+
+                                return 1;
+                            }
+                        }
+                    }
+                    goto default;
+
+                // Verbatim strings (RESP3 only)
+                case '=':
+                    if (respProtocolVersion != 3)
+                    {
+                        goto default;
+                    }
+
+                    if (RespReadUtils.TryReadVerbatimStringLength(out var verbatimStringLength, ref respPtr, respEnd) && verbatimStringLength >= 0)
+                    {
+                        var remainingLen = respEnd - respPtr;
+                        if (remainingLen >= verbatimStringLength + 2)
+                        {
+                            var format = new ReadOnlySpan<byte>(respPtr, 3);
+                            var data = new ReadOnlySpan<byte>(respPtr + 4, verbatimStringLength - 4);
+
+                            respPtr += verbatimStringLength;
+                            if (*(ushort*)respPtr != MemoryMarshal.Read<ushort>("\r\n"u8))
+                            {
+                                respPtr -= verbatimStringLength;
+                                goto default;
+                            }
+
+                            respPtr += 2;
+
+                            // create table like { format = <format>, string = {data} }
+                            state.ForceMinimumStackCapacity(3);
+                            state.CreateTable(2, 0);
+
+                            state.PushBuffer("format"u8);
+                            state.PushBuffer(format);
+                            state.RawSet(curTop + 1);
+
+                            state.PushBuffer("string"u8);
+                            state.PushBuffer(data);
+                            state.RawSet(curTop + 1);
+
+                            return 1;
+                        }
+                    }
+                    goto default;
+
+
                 default:
-                    throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(ptr, length)).Replace("\n", "|").Replace("\r", "") + "]");
+                    throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(respPtr, (int)(respEnd - respPtr))).Replace("\n", "|").Replace("\r", "") + "]");
             }
         }
 
@@ -1789,12 +2078,12 @@ end
         {
             const int NeededStackSize = 2;
 
-            // TODO: mapping is dependent on Resp2 vs Resp3 settings
-            //       and that's not implemented at all
-
             try
             {
                 state.ForceMinimumStackCapacity(NeededStackSize);
+
+                // Every invocation starts in RESP2
+                respServerSession.respProtocolVersion = 2;
 
                 _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, functionRegistryIndex);
 
@@ -1802,76 +2091,7 @@ end
                 if (callRes == LuaStatus.OK)
                 {
                     // The actual call worked, handle the response
-
-                    if (state.StackTop == 0)
-                    {
-                        WriteNull(this, ref resp);
-                        return;
-                    }
-
-                    var retType = state.Type(1);
-                    var isNullish = retType is LuaType.Nil or LuaType.UserData or LuaType.Function or LuaType.Thread or LuaType.UserData;
-
-                    if (isNullish)
-                    {
-                        WriteNull(this, ref resp);
-                        return;
-                    }
-                    else if (retType == LuaType.Number)
-                    {
-                        WriteNumber(this, ref resp);
-                        return;
-                    }
-                    else if (retType == LuaType.String)
-                    {
-                        WriteString(this, ref resp);
-                        return;
-                    }
-                    else if (retType == LuaType.Boolean)
-                    {
-                        WriteBoolean(this, ref resp);
-                        return;
-                    }
-                    else if (retType == LuaType.Table)
-                    {
-                        // Redis does not respect metatables, so RAW access is ok here
-
-                        // If the key "ok" is in there, we need to short circuit
-                        state.PushConstantString(okLowerConstStringRegistryIndex);
-                        var okType = state.RawGet(null, 1);
-                        if (okType == LuaType.String)
-                        {
-                            WriteString(this, ref resp);
-
-                            // Remove table from stack
-                            state.Pop(1);
-
-                            return;
-                        }
-
-                        // Remove whatever we read from the table under the "ok" key
-                        state.Pop(1);
-
-                        // If the key "err" is in there, we need to short circuit 
-                        state.PushConstantString(errConstStringRegistryIndex);
-
-                        var errType = state.RawGet(null, 1);
-                        if (errType == LuaType.String)
-                        {
-                            WriteError(this, ref resp);
-
-                            // Remove table from stack
-                            state.Pop(1);
-
-                            return;
-                        }
-
-                        // Remove whatever we read from the table under the "err" key
-                        state.Pop(1);
-
-                        // Map this table to an array
-                        WriteArray(this, ref resp);
-                    }
+                    WriteResponse(ref resp);
                 }
                 else
                 {
@@ -1931,22 +2151,256 @@ end
             {
                 state.ExpectLuaStackEmpty();
             }
+        }
 
-            // Write a null RESP value, remove the top value on the stack if there is one
-            static void WriteNull(LuaRunner runner, ref TResponse resp)
+        /// <summary>
+        /// Convert value on top of stack (if any) into a RESP# reply
+        /// and write it out to <paramref name="resp" />.
+        /// </summary>
+        private void WriteResponse<TResponse>(ref TResponse resp)
+            where TResponse : struct, IResponseAdapter
+        {
+            if (state.StackTop == 0)
+            {
+                if (resp.RespProtocolVersion == 3)
+                {
+                    WriteResp3Null(this, pop: false, ref resp);
+                }
+                else
+                {
+                    WriteResp2Null(this, pop: false, ref resp);
+                }
+
+                return;
+            }
+
+            WriteSingleItem(this, ref resp);
+
+            static void WriteSingleItem(LuaRunner runner, ref TResponse resp)
+            {
+                var curTop = runner.state.StackTop;
+                var retType = runner.state.Type(curTop);
+                var isNullish = retType is LuaType.Nil or LuaType.UserData or LuaType.Function or LuaType.Thread or LuaType.UserData;
+
+                if (isNullish)
+                {
+                    if (resp.RespProtocolVersion == 3)
+                    {
+                        WriteResp3Null(runner, pop: true, ref resp);
+                    }
+                    else
+                    {
+                        WriteResp2Null(runner, pop: true, ref resp);
+                    }
+
+                    return;
+                }
+                else if (retType == LuaType.Number)
+                {
+                    WriteNumber(runner, ref resp);
+                    return;
+                }
+                else if (retType == LuaType.String)
+                {
+                    WriteString(runner, ref resp);
+                    return;
+                }
+                else if (retType == LuaType.Boolean)
+                {
+                    if (runner.respServerSession.respProtocolVersion == 3 && resp.RespProtocolVersion == 2)
+                    {
+                        // This is not in spec, but is how Redis actually behaves
+                        var toPush = runner.state.ToBoolean(curTop) ? 1 : 0;
+                        runner.state.Pop(1);
+                        runner.state.PushInteger(toPush);
+
+                        WriteNumber(runner, ref resp);
+                        return;
+                    }
+                    else if (runner.respServerSession.respProtocolVersion == 2 && resp.RespProtocolVersion == 3)
+                    {
+                        // Likewise, this is how Redis actuallys behaves
+                        if (runner.state.ToBoolean(curTop))
+                        {
+                            runner.state.Pop(1);
+                            runner.state.PushInteger(1);
+
+                            WriteNumber(runner, ref resp);
+                            return;
+                        }
+                        else
+                        {
+                            WriteResp3Null(runner, pop: true, ref resp);
+                            return;
+                        }
+                    }
+                    else if (runner.respServerSession.respProtocolVersion == 3)
+                    {
+                        // RESP3 has a proper boolean type
+                        WriteResp3Boolean(runner, ref resp);
+                        return;
+                    }
+                    else
+                    {
+                        // RESP2 booleans are weird
+                        // false = null (the bulk nil)
+                        // true = 1 (the integer)
+
+                        if (runner.state.ToBoolean(curTop))
+                        {
+                            runner.state.Pop(1);
+                            runner.state.PushInteger(1);
+
+                            WriteNumber(runner, ref resp);
+                            return;
+                        }
+                        else
+                        {
+                            WriteResp2Null(runner, pop: true, ref resp);
+                            return;
+                        }
+                    }
+                }
+                else if (retType == LuaType.Table)
+                {
+                    // Redis does not respect metatables, so RAW access is ok here
+
+                    // Need space for the lookup keys ("ok", "err", etc.) and their values
+                    runner.state.ForceMinimumStackCapacity(1);
+
+                    runner.state.PushConstantString(runner.doubleConstStringRegistryIndex);
+                    var doubleType = runner.state.RawGet(null, curTop);
+                    if (doubleType == LuaType.Number)
+                    {
+                        if (resp.RespProtocolVersion == 3)
+                        {
+                            WriteDouble(runner, ref resp);
+                        }
+                        else
+                        {
+                            // Force double to string for RESP2
+                            _ = runner.state.CheckBuffer(curTop + 1, out _);
+                            WriteString(runner, ref resp);
+                        }
+
+                        // Remove table from stack
+                        runner.state.Pop(1);
+
+                        return;
+                    }
+
+                    // Remove whatever we read from the table under the "double" key
+                    runner.state.Pop(1);
+
+                    runner.state.PushConstantString(runner.mapConstStringRegistryIndex);
+                    var mapType = runner.state.RawGet(null, curTop);
+                    if (mapType == LuaType.Table)
+                    {
+                        if (resp.RespProtocolVersion == 3)
+                        {
+                            WriteMap(runner, ref resp);
+                        }
+                        else
+                        {
+                            WriteMapToArray(runner, ref resp);
+                        }
+
+                        // remove table from stack
+                        runner.state.Pop(1);
+
+                        return;
+                    }
+
+                    // Remove whatever we read from the table under the "map" key
+                    runner.state.Pop(1);
+
+                    runner.state.PushConstantString(runner.setConstStringRegistryIndex);
+                    var setType = runner.state.RawGet(null, curTop);
+                    if (setType == LuaType.Table)
+                    {
+                        if (resp.RespProtocolVersion == 3)
+                        {
+                            WriteSet(runner, ref resp);
+                        }
+                        else
+                        {
+                            WriteSetToArray(runner, ref resp);
+                        }
+
+                        // remove table from stack
+                        runner.state.Pop(1);
+
+                        return;
+                    }
+
+                    // Remove whatever we read from the table under the "set" key
+                    runner.state.Pop(1);
+
+                    // If the key "ok" is in there, we need to short circuit
+                    runner.state.PushConstantString(runner.okLowerConstStringRegistryIndex);
+                    var okType = runner.state.RawGet(null, curTop);
+                    if (okType == LuaType.String)
+                    {
+                        WriteString(runner, ref resp);
+
+                        // Remove table from stack
+                        runner.state.Pop(1);
+
+                        return;
+                    }
+
+                    // Remove whatever we read from the table under the "ok" key
+                    runner.state.Pop(1);
+
+                    // If the key "err" is in there, we need to short circuit 
+                    runner.state.PushConstantString(runner.errConstStringRegistryIndex);
+
+                    var errType = runner.state.RawGet(null, curTop);
+                    if (errType == LuaType.String)
+                    {
+                        WriteError(runner, ref resp);
+
+                        // Remove table from stack
+                        runner.state.Pop(1);
+
+                        return;
+                    }
+
+                    // Remove whatever we read from the table under the "err" key
+                    runner.state.Pop(1);
+
+                    // Map this table to an array
+                    WriteArray(runner, ref resp);
+                    return;
+                }
+            }
+
+            // Write out $-1\r\n (the RESP2 null) and (optionally) pop the null value off the stack
+            static unsafe void WriteResp2Null(LuaRunner runner, bool pop, ref TResponse resp)
             {
                 while (!RespWriteUtils.TryWriteNull(ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
-                // The stack _could_ be empty if we're writing a null, so check before popping
-                if (runner.state.StackTop != 0)
+                if (pop)
+                {
+                    runner.state.Pop(1);
+                }
+            }
+
+            // Write out _\r\n (the RESP3 null) and (optionally) pop the null value off the stack
+            static unsafe void WriteResp3Null(LuaRunner runner, bool pop, ref TResponse resp)
+            {
+                while (!RespWriteUtils.TryWriteResp3Null(ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                if (pop)
                 {
                     runner.state.Pop(1);
                 }
             }
 
             // Writes the number on the top of the stack, removes it from the stack
-            static void WriteNumber(LuaRunner runner, ref TResponse resp)
+            static unsafe void WriteNumber(LuaRunner runner, ref TResponse resp)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Number, "Number was not on top of stack");
 
@@ -1962,7 +2416,7 @@ end
             }
 
             // Writes the string on the top of the stack, removes it from the stack
-            static void WriteString(LuaRunner runner, ref TResponse resp)
+            static unsafe void WriteString(LuaRunner runner, ref TResponse resp)
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var buf);
 
@@ -1973,29 +2427,244 @@ end
             }
 
             // Writes the boolean on the top of the stack, removes it from the stack
-            static void WriteBoolean(LuaRunner runner, ref TResponse resp)
+            static unsafe void WriteResp3Boolean(LuaRunner runner, ref TResponse resp)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Boolean, "Boolean was not on top of stack");
 
-                // Redis maps Lua false to null, and Lua true to 1  this is strange, but documented
-                //
-                // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
+                // In RESP3 there is a dedicated boolean type
                 if (runner.state.ToBoolean(runner.state.StackTop))
                 {
-                    while (!RespWriteUtils.TryWriteInt32(1, ref resp.BufferCur, resp.BufferEnd))
+                    while (!RespWriteUtils.TryWriteTrue(ref resp.BufferCur, resp.BufferEnd))
                         resp.SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteNull(ref resp.BufferCur, resp.BufferEnd))
+                    while (!RespWriteUtils.TryWriteFalse(ref resp.BufferCur, resp.BufferEnd))
                         resp.SendAndReset();
                 }
 
                 runner.state.Pop(1);
             }
 
+            // Writes the number on the top of the stack as a double, removes it from the stack
+            static unsafe void WriteDouble(LuaRunner runner, ref TResponse resp)
+            {
+                Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Number, "Number was not on top of stack");
+
+                var num = runner.state.CheckNumber(runner.state.StackTop);
+                while (!RespWriteUtils.TryWriteDoubleNumeric(num, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                runner.state.Pop(1);
+            }
+
+            // Write a table on the top of the stack as a map, removes it from the stack
+            static unsafe void WriteMap(LuaRunner runner, ref TResponse resp)
+            {
+                // 2 for the returned key and value from Next, 1 for the temp copy of the returned key
+                const int AdditonalNeededStackSize = 3;
+
+                Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
+
+                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+
+                var mapSize = 0;
+
+                var tableIx = runner.state.StackTop;
+
+                // Push nil key as "first key"
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Now we have value at top of stack, and key one below it
+
+                    mapSize++;
+
+                    // Remove value, we don't need it
+                    runner.state.Pop(1);
+                }
+
+                // Write the map header
+                while (!RespWriteUtils.TryWriteMapLength(mapSize, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // Write the values out by traversing the table again
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Copy key to top of stack
+                    runner.state.PushValue(tableIx + 1);
+
+                    // Write (and remove) key out
+                    WriteSingleItem(runner, ref resp);
+
+                    // Write (and remove) value out
+                    WriteSingleItem(runner, ref resp);
+
+                    // Now we have the original key value on the stack
+                }
+
+                // Remove the table
+                runner.state.Pop(1);
+            }
+
+            // Convert a table to an array, where each key-value pair is converted to 2 entries
+            static unsafe void WriteMapToArray(LuaRunner runner, ref TResponse resp)
+            {
+                // 2 for the returned key and value from Next, 1 for the temp copy of the returned key
+                const int AdditonalNeededStackSize = 3;
+
+                Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
+
+                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+
+                var mapSize = 0;
+
+                var tableIx = runner.state.StackTop;
+
+                // Push nil key as "first key"
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Now we have value at top of stack, and key one below it
+
+                    mapSize++;
+
+                    // Remove value, we don't need it
+                    runner.state.Pop(1);
+                }
+
+                var arraySize = mapSize * 2;
+
+                // Write the array header
+                while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // Write the values out by traversing the table again
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Copy key to top of stack
+                    runner.state.PushValue(tableIx + 1);
+
+                    // Write (and remove) key out
+                    WriteSingleItem(runner, ref resp);
+
+                    // Write (and remove) value out
+                    WriteSingleItem(runner, ref resp);
+
+                    // Now we have the original key value on the stack
+                }
+
+                // Remove the table
+                runner.state.Pop(1);
+            }
+
+            // Write a table on the top of the stack as a set, removes it from the stack
+            static unsafe void WriteSet(LuaRunner runner, ref TResponse resp)
+            {
+                // 2 for the returned key and value from Next
+                const int AdditonalNeededStackSize = 2;
+
+                Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
+
+                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+
+                var setSize = 0;
+
+                var tableIx = runner.state.StackTop;
+
+                // Push nil key as "first key"
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Now we have value at top of stack, and key one below it
+
+                    setSize++;
+
+                    // Remove value, we don't need it
+                    runner.state.Pop(1);
+                }
+
+                // Write the set header
+                while (!RespWriteUtils.TryWriteSetLength(setSize, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // Write the values out by traversing the table again
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Remove the value, it's ignored
+                    runner.state.Pop(1);
+
+                    // Make a copy of the key
+                    runner.state.PushValue(tableIx + 1);
+
+                    // Write (and remove) key copy out
+                    WriteSingleItem(runner, ref resp);
+
+                    // Now we have the original key value on the stack
+                }
+
+                // Remove the table
+                runner.state.Pop(1);
+            }
+
+            // Write a table on the top of the stack as an array that contains only the keys of the
+            // table, then remove the table from the stack
+            static unsafe void WriteSetToArray(LuaRunner runner, ref TResponse resp)
+            {
+                // 2 for the returned key and value from Next
+                const int AdditonalNeededStackSize = 2;
+
+                Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
+
+                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+
+                var setSize = 0;
+
+                var tableIx = runner.state.StackTop;
+
+                // Push nil key as "first key"
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Now we have value at top of stack, and key one below it
+
+                    setSize++;
+
+                    // Remove value, we don't need it
+                    runner.state.Pop(1);
+                }
+
+                var arraySize = setSize;
+
+                // Write the array header
+                while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // Write the values out by traversing the table again
+                runner.state.PushNil();
+                while (runner.state.Next(tableIx) != 0)
+                {
+                    // Remove the value, it's ignored
+                    runner.state.Pop(1);
+
+                    // Make a copy of the key
+                    runner.state.PushValue(tableIx + 1);
+
+                    // Write (and remove) key copy out
+                    WriteSingleItem(runner, ref resp);
+
+                    // Now we have the original key value on the stack
+                }
+
+                // Remove the table
+                runner.state.Pop(1);
+            }
+
             // Writes the string on the top of the stack out as an error, removes the string from the stack
-            static void WriteError(LuaRunner runner, ref TResponse resp)
+            static unsafe void WriteError(LuaRunner runner, ref TResponse resp)
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var errBuff);
 
@@ -2005,21 +2674,24 @@ end
                 runner.state.Pop(1);
             }
 
-            static void WriteArray(LuaRunner runner, ref TResponse resp)
+            // Writes the table on the top of the stack out as an array, removed table from the stack
+            static unsafe void WriteArray(LuaRunner runner, ref TResponse resp)
             {
                 // Redis does not respect metatables, so RAW access is ok here
 
-                // 1 for the table, 1 for the pending value
-                const int AdditonalNeededStackSize = 2;
+                // 1 for the pending value
+                const int AdditonalNeededStackSize = 1;
 
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
+
+                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
 
                 // Lua # operator - this MAY stop at nils, but isn't guaranteed to
                 // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
                 var maxLen = runner.state.RawLen(runner.state.StackTop);
 
                 // Find the TRUE length by scanning for nils
-                var trueLen = 0;
+                int trueLen;
                 for (trueLen = 0; trueLen < maxLen; trueLen++)
                 {
                     var type = runner.state.RawGetInteger(null, runner.state.StackTop, trueLen + 1);
@@ -2037,32 +2709,13 @@ end
                 for (var i = 1; i <= trueLen; i++)
                 {
                     // Push item at index i onto the stack
-                    var type = runner.state.RawGetInteger(null, runner.state.StackTop, i);
+                    _ = runner.state.RawGetInteger(null, runner.state.StackTop, i);
 
-                    switch (type)
-                    {
-                        case LuaType.String:
-                            WriteString(runner, ref resp);
-                            break;
-                        case LuaType.Number:
-                            WriteNumber(runner, ref resp);
-                            break;
-                        case LuaType.Boolean:
-                            WriteBoolean(runner, ref resp);
-                            break;
-                        case LuaType.Table:
-                            // For tables, we need to recurse - which means we need to check stack sizes again
-                            runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
-                            WriteArray(runner, ref resp);
-                            break;
-
-                        // All other Lua types map to nulls
-                        default:
-                            WriteNull(runner, ref resp);
-                            break;
-                    }
+                    // Write the item out, removing it from teh stack
+                    WriteSingleItem(runner, ref resp);
                 }
 
+                // Remove the table
                 runner.state.Pop(1);
             }
         }

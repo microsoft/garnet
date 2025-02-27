@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -10,6 +11,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -26,6 +28,28 @@ namespace Garnet.test
     [TestFixture(LuaMemoryManagementMode.Managed, "16m", "")]
     public class LuaScriptTests
     {
+        /// <summary>
+        /// Writes it's parameter directly into the response stream, followed by a \r\n.
+        /// 
+        /// Used for testing RESP3 mapping.
+        /// </summary>
+        private sealed class RawEcho : CustomProcedure
+        {
+            /// <inheritdoc/>
+            public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+            {
+                ref var arg = ref procInput.parseState.GetArgSliceByRef(0);
+
+                var mem = MemoryPool.Rent(arg.Length + 2);
+                arg.ReadOnlySpan.CopyTo(mem.Memory.Span);
+                mem.Memory.Span[arg.Length] = (byte)'\r';
+                mem.Memory.Span[arg.Length + 1] = (byte)'\n';
+
+                output = new(mem, arg.Length + 2);
+                return true;
+            }
+        }
+
         private readonly LuaMemoryManagementMode allocMode;
         private readonly string limitBytes;
         private readonly string limitTimeout;
@@ -69,6 +93,13 @@ namespace Garnet.test
                     aclFile: aclFile,
                     logTo: loggerOutput
                 );
+
+            _ = server.Register.NewProcedure(
+                "RECHO",
+                static () => new RawEcho(),
+                commandInfo: new() { Arity = 2, FirstKey = 0, LastKey = 0 }
+            );
+
             server.Start();
         }
 
@@ -624,8 +655,8 @@ namespace Garnet.test
             var resp2 = db.ScriptEvaluate("redis.setresp(2)");
             ClassicAssert.IsTrue(resp2.IsNull);
 
-            // TODO: Once RESP3 for scripting is implemented, this goes away
-            _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(3)"));
+            var resp3 = db.ScriptEvaluate("redis.setresp(3)");
+            ClassicAssert.IsTrue(resp3.IsNull);
 
             var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
             ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
@@ -761,7 +792,7 @@ return redis.status_reply("OK")
                 ClassicAssert.AreEqual(2, response1.Length);
                 foreach (var item in response1)
                 {
-                    ClassicAssert.AreEqual(null, item);
+                    ClassicAssert.Null(item);
                 }
             }
         }
@@ -1219,8 +1250,9 @@ return retArray";
             ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
         }
 
-        [Test]
-        public void LuaToResp2Conversions()
+        [TestCase(2)]
+        [TestCase(3)]
+        public void LuaToResp2Conversions(int redisSetRespVersion)
         {
             // Per: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
             //
@@ -1238,40 +1270,236 @@ return retArray";
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
             var db = redis.GetDatabase();
 
-            var numberRes = db.ScriptEvaluate("return 1");
+            var numberRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); return 1");
             ClassicAssert.AreEqual(ResultType.Integer, numberRes.Resp2Type);
 
-            var stringRes = db.ScriptEvaluate("return 'hello'");
+            var stringRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion});return 'hello'");
             ClassicAssert.AreEqual(ResultType.BulkString, stringRes.Resp2Type);
 
-            var tableRes = db.ScriptEvaluate("return { 0, 1, 2 }");
+            var tableRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion});return {{ 0, 1, 2 }}");
             ClassicAssert.AreEqual(ResultType.Array, tableRes.Resp2Type);
             ClassicAssert.AreEqual(3, ((int[])tableRes).Length);
 
-            var falseRes = db.ScriptEvaluate("return false");
-            ClassicAssert.AreEqual(ResultType.BulkString, falseRes.Resp2Type);
-            ClassicAssert.True(falseRes.IsNull);
+            // False is _weird_ and Redis does actually change this, even if it seems like it shouldn't
+            var falseRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); return false");
+            if (redisSetRespVersion == 3)
+            {
+                ClassicAssert.AreEqual(ResultType.Integer, falseRes.Resp2Type);
+                ClassicAssert.AreEqual(0, (int)falseRes);
+            }
+            else
+            {
+                ClassicAssert.AreEqual(ResultType.BulkString, falseRes.Resp2Type);
+                ClassicAssert.Null((string)falseRes);
+            }
 
-            var trueRes = db.ScriptEvaluate("return true");
+            var trueRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); return true");
             ClassicAssert.AreEqual(ResultType.Integer, trueRes.Resp2Type);
             ClassicAssert.AreEqual(1, (int)trueRes);
 
-            var floatRes = db.ScriptEvaluate("return 3.7");
+            var floatRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); return 3.7");
             ClassicAssert.AreEqual(ResultType.Integer, floatRes.Resp2Type);
             ClassicAssert.AreEqual(3, (int)floatRes);
 
-            var tableNilRes = db.ScriptEvaluate("return { 0, 1, nil, 2 }");
+            var tableNilRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); return {{ 0, 1, nil, 2 }}");
             ClassicAssert.AreEqual(ResultType.Array, tableNilRes.Resp2Type);
             ClassicAssert.AreEqual(2, ((int[])tableNilRes).Length);
 
-            var tableStringRes = db.ScriptEvaluate("local x = { 0, 1 }; x['y'] = 'hello'; return x");
+            var tableStringRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); local x = {{ 0, 1 }}; x['y'] = 'hello'; return x");
             ClassicAssert.AreEqual(ResultType.Array, tableStringRes.Resp2Type);
             ClassicAssert.AreEqual(2, ((int[])tableStringRes).Length);
 
-            var nilRes = db.ScriptEvaluate("return nil");
+            var nilRes = db.ScriptEvaluate($"redis.setresp({redisSetRespVersion}); return nil");
             ClassicAssert.AreEqual(ResultType.BulkString, nilRes.Resp2Type);
             ClassicAssert.True(nilRes.IsNull);
         }
+
+        [Test]
+        public void LuaToResp3Conversions()
+        {
+            // Per: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp3-type-conversion
+            //
+            // Number -> Integer
+            // String -> Bulk String
+            // Table -> Array
+            // False -> Boolean
+            // True -> Boolean
+            // Float -> Integer
+            // Table with nil key -> Array (truncated at first nil)
+            // Table with string keys -> Array (string keys excluded)
+            // Nil -> Null
+            // { map = { ... } } -> Map
+            // { set = { ... } } -> Set
+            // { double = "..." } -> Double
+
+            // In theory, connection protocol and script protocol are independent
+            // This is what the docs imply
+            // In practice, Redis does actually change behavior due to combinations of those
+            //
+            // So these tests are verifying that we match Redis's actual behavior
+            using var redis3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var db3 = redis3.GetDatabase();
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db2 = redis2.GetDatabase();
+
+            // Connection RESP3, Script RESP3
+            {
+                var numberRes = db3.ScriptEvaluate($"redis.setresp(3); return 1");
+                ClassicAssert.AreEqual(ResultType.Integer, numberRes.Resp3Type);
+
+                var stringRes = db3.ScriptEvaluate($"redis.setresp(3); return 'hello'");
+                ClassicAssert.AreEqual(ResultType.BulkString, stringRes.Resp3Type);
+
+                var tableRes = db3.ScriptEvaluate($"redis.setresp(3); return {{ 0, 1, 2 }}");
+                ClassicAssert.AreEqual(ResultType.Array, tableRes.Resp3Type);
+                ClassicAssert.AreEqual(3, ((int[])tableRes).Length);
+
+                var falseRes = db3.ScriptEvaluate($"redis.setresp(3); return false");
+                ClassicAssert.AreEqual(ResultType.Boolean, falseRes.Resp3Type);
+                ClassicAssert.False((bool)falseRes);
+
+                var trueRes = db3.ScriptEvaluate($"redis.setresp(3); return true");
+                ClassicAssert.AreEqual(ResultType.Boolean, trueRes.Resp3Type);
+                ClassicAssert.True((bool)trueRes);
+
+                var floatRes = db3.ScriptEvaluate($"redis.setresp(3); return 3.7");
+                ClassicAssert.AreEqual(ResultType.Integer, floatRes.Resp3Type);
+                ClassicAssert.AreEqual(3, (int)floatRes);
+
+                var tableNilRes = db3.ScriptEvaluate($"redis.setresp(3); return {{ 0, 1, nil, 2 }}");
+                ClassicAssert.AreEqual(ResultType.Array, tableNilRes.Resp3Type);
+                ClassicAssert.AreEqual(2, ((int[])tableNilRes).Length);
+
+                var tableStringRes = db3.ScriptEvaluate($"redis.setresp(3); local x = {{ 0, 1 }}; x['y'] = 'hello'; return x");
+                ClassicAssert.AreEqual(ResultType.Array, tableStringRes.Resp3Type);
+                ClassicAssert.AreEqual(2, ((int[])tableStringRes).Length);
+
+                var nilRes = db3.ScriptEvaluate($"redis.setresp(3); return nil");
+                ClassicAssert.AreEqual(ResultType.Null, nilRes.Resp3Type);
+                ClassicAssert.True(nilRes.IsNull);
+
+                var mapRes = db3.ScriptEvaluate($"redis.setresp(3); return {{ map = {{ hello = 'world' }} }}");
+                ClassicAssert.AreEqual(ResultType.Map, mapRes.Resp3Type);
+                ClassicAssert.AreEqual("world", (string)mapRes.ToDictionary()["hello"]);
+
+                var setRes = db3.ScriptEvaluate($"redis.setresp(3); return {{ set = {{ hello = true }} }}");
+                ClassicAssert.AreEqual(ResultType.Set, setRes.Resp3Type);
+                ClassicAssert.AreEqual(1, ((string[])setRes).Length);
+                ClassicAssert.True(((string[])setRes).Contains("hello"));
+
+                var doubleRes = db3.ScriptEvaluate($"redis.setresp(3); return {{ double = 1.23 }}");
+                ClassicAssert.AreEqual(ResultType.Double, doubleRes.Resp3Type);
+                ClassicAssert.AreEqual(1.23, (double)doubleRes);
+            }
+
+            // Connection RESP2, Script RESP3
+            {
+                var numberRes = db2.ScriptEvaluate($"redis.setresp(3); return 1");
+                ClassicAssert.AreEqual(ResultType.Integer, numberRes.Resp3Type);
+
+                var stringRes = db2.ScriptEvaluate($"redis.setresp(3);return 'hello'");
+                ClassicAssert.AreEqual(ResultType.BulkString, stringRes.Resp3Type);
+
+                var tableRes = db2.ScriptEvaluate($"redis.setresp(3);return {{ 0, 1, 2 }}");
+                ClassicAssert.AreEqual(ResultType.Array, tableRes.Resp3Type);
+                ClassicAssert.AreEqual(3, ((int[])tableRes).Length);
+
+                // SPEC BREAK!
+                var falseRes = db2.ScriptEvaluate($"redis.setresp(3); return false");
+                ClassicAssert.AreEqual(ResultType.Integer, falseRes.Resp3Type);
+                ClassicAssert.False((bool)falseRes);
+
+                // SPEC BREAK!
+                var trueRes = db2.ScriptEvaluate($"redis.setresp(3); return true");
+                ClassicAssert.AreEqual(ResultType.Integer, trueRes.Resp3Type);
+                ClassicAssert.True((bool)trueRes);
+
+                var floatRes = db2.ScriptEvaluate($"redis.setresp(3); return 3.7");
+                ClassicAssert.AreEqual(ResultType.Integer, floatRes.Resp3Type);
+                ClassicAssert.AreEqual(3, (int)floatRes);
+
+                var tableNilRes = db2.ScriptEvaluate($"redis.setresp(3); return {{ 0, 1, nil, 2 }}");
+                ClassicAssert.AreEqual(ResultType.Array, tableNilRes.Resp3Type);
+                ClassicAssert.AreEqual(2, ((int[])tableNilRes).Length);
+
+                var tableStringRes = db2.ScriptEvaluate($"redis.setresp(3); local x = {{ 0, 1 }}; x['y'] = 'hello'; return x");
+                ClassicAssert.AreEqual(ResultType.Array, tableStringRes.Resp3Type);
+                ClassicAssert.AreEqual(2, ((int[])tableStringRes).Length);
+
+                var nilRes = db2.ScriptEvaluate($"redis.setresp(3); return nil");
+                ClassicAssert.AreEqual(ResultType.Null, nilRes.Resp3Type);
+                ClassicAssert.True(nilRes.IsNull);
+
+                var mapRes = db2.ScriptEvaluate($"redis.setresp(3); return {{ map = {{ hello = 'world' }} }}");
+                ClassicAssert.AreEqual(ResultType.Array, mapRes.Resp3Type);
+                ClassicAssert.True(((string[])mapRes).SequenceEqual(["hello", "world"]));
+
+                var setRes = db2.ScriptEvaluate($"redis.setresp(3); return {{ set = {{ hello = true }} }}");
+                ClassicAssert.AreEqual(ResultType.Array, setRes.Resp3Type);
+                ClassicAssert.AreEqual(1, ((string[])setRes).Length);
+                ClassicAssert.True(((string[])setRes).Contains("hello"));
+
+                // SPEC BREAK!
+                var doubleRes = db2.ScriptEvaluate($"redis.setresp(3); return {{ double = 1.23 }}");
+                ClassicAssert.AreEqual(ResultType.BulkString, doubleRes.Resp3Type);
+                ClassicAssert.AreEqual("1.23", (string)doubleRes);
+            }
+
+            // Connection RESP3, Script RESP2
+            {
+                var numberRes = db3.ScriptEvaluate($"redis.setresp(2); return 1");
+                ClassicAssert.AreEqual(ResultType.Integer, numberRes.Resp3Type);
+
+                var stringRes = db3.ScriptEvaluate($"redis.setresp(2);return 'hello'");
+                ClassicAssert.AreEqual(ResultType.BulkString, stringRes.Resp3Type);
+
+                var tableRes = db3.ScriptEvaluate($"redis.setresp(2);return {{ 0, 1, 2 }}");
+                ClassicAssert.AreEqual(ResultType.Array, tableRes.Resp3Type);
+                ClassicAssert.AreEqual(3, ((int[])tableRes).Length);
+
+                // SPEC BREAK!
+                var falseRes = db3.ScriptEvaluate($"redis.setresp(2); return false");
+                ClassicAssert.AreEqual(ResultType.Null, falseRes.Resp3Type);
+                ClassicAssert.False((bool)falseRes);
+
+                // SPEC BREAK!
+                var trueRes = db3.ScriptEvaluate($"redis.setresp(2); return true");
+                ClassicAssert.AreEqual(ResultType.Integer, trueRes.Resp3Type);
+                ClassicAssert.True((bool)trueRes);
+
+                var floatRes = db3.ScriptEvaluate($"redis.setresp(2); return 3.7");
+                ClassicAssert.AreEqual(ResultType.Integer, floatRes.Resp3Type);
+                ClassicAssert.AreEqual(3, (int)floatRes);
+
+                var tableNilRes = db3.ScriptEvaluate($"redis.setresp(2); return {{ 0, 1, nil, 2 }}");
+                ClassicAssert.AreEqual(ResultType.Array, tableNilRes.Resp3Type);
+                ClassicAssert.AreEqual(2, ((int[])tableNilRes).Length);
+
+                var tableStringRes = db3.ScriptEvaluate($"redis.setresp(2); local x = {{ 0, 1 }}; x['y'] = 'hello'; return x");
+                ClassicAssert.AreEqual(ResultType.Array, tableStringRes.Resp3Type);
+                ClassicAssert.AreEqual(2, ((int[])tableStringRes).Length);
+
+                var nilRes = db3.ScriptEvaluate($"redis.setresp(2); return nil");
+                ClassicAssert.AreEqual(ResultType.Null, nilRes.Resp3Type);
+                ClassicAssert.True(nilRes.IsNull);
+
+                var mapRes = db3.ScriptEvaluate($"redis.setresp(2); return {{ map = {{ hello = 'world' }} }}");
+                ClassicAssert.AreEqual(ResultType.Map, mapRes.Resp3Type);
+                ClassicAssert.AreEqual("world", (string)mapRes.ToDictionary()["hello"]);
+
+                var setRes = db2.ScriptEvaluate($"redis.setresp(2); return {{ set = {{ hello = true }} }}");
+                ClassicAssert.AreEqual(ResultType.Array, setRes.Resp3Type);
+                ClassicAssert.AreEqual(1, ((string[])setRes).Length);
+                ClassicAssert.True(((string[])setRes).Contains("hello"));
+
+                // SPEC BREAK!
+                var doubleRes = db2.ScriptEvaluate($"redis.setresp(2); return {{ double = 1.23 }}");
+                ClassicAssert.AreEqual(ResultType.BulkString, doubleRes.Resp3Type);
+                ClassicAssert.AreEqual("1.23", (string)doubleRes);
+            }
+        }
+
+        // TODO: Every single command that's response changes between RESP2 and RESP3 needs to be covered
 
         [Test]
         public void Resp2ToLuaConversions()
@@ -1305,7 +1533,8 @@ return retArray";
             ClassicAssert.AreEqual("table", simpleStringRes[0]);
             ClassicAssert.AreEqual("PONG", simpleStringRes[1]);
 
-            // TODO: ERR reply - requires redis.pcall
+            var errExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return { err = 'ERR mapped to ERR response' }"));
+            ClassicAssert.AreEqual("ERR mapped to ERR response", errExc.Message);
 
             var nullBulkRes = (string[])db.ScriptEvaluate("local res = redis.call('GET', KEYS[1]); return { type(res), tostring(res) };", [(RedisKey)"not-set-ever"]);
             ClassicAssert.AreEqual(2, nullBulkRes.Length);
@@ -1372,6 +1601,101 @@ return count";
             // We can still run the script without issue (with non-crashing args) afterwards
             var res = db.ScriptEvaluate(loadedScriptTimeout, new { Ctrl = "Safe" });
             ClassicAssert.AreEqual(0, (int)res);
+        }
+
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void Resp3ToLuaConversions(RedisProtocol connectionProtocol)
+        {
+            // Using redis.setresp(2|3) controls how results from the script are
+            // converted to RESP and how results from redis.call(...) are converted
+            // to Lua types.
+
+            // Connection level protocol SHOULD NOT impact how the session behaves before calls to redis.setresp(...)
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: connectionProtocol));
+            var db = redis.GetDatabase();
+
+            // Resp3 MAP -> Lua
+            {
+                _ = db.KeyDelete("hgetall_testkey");
+                _ = db.HashSet("hgetall_testkey", "foo", "bar");
+
+                var resp2SetToLua = (string)db.ScriptEvaluate($"return type(redis.call('HGETALL', 'hgetall_testkey').map)");
+                var resp3SetToLua = (string)db.ScriptEvaluate($"redis.setresp(3) return type(redis.call('HGETALL', 'hgetall_testkey').map)");
+                ClassicAssert.AreEqual("nil", resp2SetToLua);
+                ClassicAssert.AreEqual("table", resp3SetToLua);
+            }
+
+            // Resp3 SET -> Lua
+            {
+                _ = db.KeyDelete("sdiff_testkey1");
+                _ = db.KeyDelete("sdiff_testkey2");
+                _ = db.SetAdd("sdiff_testkey1", "foo");
+                _ = db.SetAdd("sdiff_testkey2", "bar");
+
+                // Resp2 sets are arrays
+                var resp2SetToLua = (string)db.ScriptEvaluate($"return type(redis.call('SDIFF', 'sdiff_testkey1', 'sdiff_testkey2').set)");
+                var resp3SetToLua = (string)db.ScriptEvaluate($"redis.setresp(3) return type(redis.call('SDIFF', 'sdiff_testkey1', 'sdiff_testkey2').set)");
+                ClassicAssert.AreEqual("nil", resp2SetToLua);
+                ClassicAssert.AreEqual("table", resp3SetToLua);
+            }
+
+            // Resp3 NULL -> Lua
+            {
+                _ = db.KeyDelete("hget_testkey");
+
+                // Resp2 nulls are the Nil bulk string
+                var resp2NilToLua = (string)db.ScriptEvaluate($"return type(redis.call('HGET', 'hget_testkey', 'foo'))");
+                var resp3NilToLua = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('HGET', 'hget_testkey', 'foo'))");
+                ClassicAssert.AreEqual("boolean", resp2NilToLua);
+                ClassicAssert.AreEqual("nil", resp3NilToLua);
+            }
+
+            // Resp3 false -> Lua
+            {
+                // Resp2 bools are ints
+                var resp2FalseToLua = (string)db.ScriptEvaluate($"return type(redis.call('RECHO', ':0'))");
+                var resp3FalseToLua = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '#f'))");
+                ClassicAssert.AreEqual("number", resp2FalseToLua);
+                ClassicAssert.AreEqual("boolean", resp3FalseToLua);
+            }
+
+            // Resp3 true -> Lua
+            {
+                // Resp2 bools are ints
+                var resp2TrueToLua = (string)db.ScriptEvaluate($"return type(redis.call('RECHO', ':1'))");
+                var resp3TrueToLua = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '#t'))");
+                ClassicAssert.AreEqual("number", resp2TrueToLua);
+                ClassicAssert.AreEqual("boolean", resp3TrueToLua);
+            }
+
+            // Resp3 double -> Lua
+            {
+                _ = db.KeyDelete("zscore_testkey");
+                _ = db.SortedSetAdd("zscore_testkey", "foo", 1.23);
+
+                // Resp2 doubles are just strings, so .double should be nil
+                var resp2DoubleToLua = (string)db.ScriptEvaluate($"return type(redis.call('ZSCORE', 'zscore_testkey', 'foo').double)");
+                var resp3DoubleToLua = (string)db.ScriptEvaluate($"redis.setresp(3) return type(redis.call('ZSCORE', 'zscore_testkey', 'foo').double)");
+                ClassicAssert.AreEqual("nil", resp2DoubleToLua);
+                ClassicAssert.AreEqual("number", resp3DoubleToLua);
+            }
+
+            // Resp3 big number -> Lua
+            {
+                // No Resp2 equivalent
+                var resp3BigNumToLua = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '(123').big_number)");
+                ClassicAssert.AreEqual("string", resp3BigNumToLua);
+            }
+
+            // Resp3 Verbatim string -> Lua
+            {
+                // No Resp2 equivalent
+                var resp3VerbatimStrToLua1 = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '=12\\r\\nfoo:fizzbuzz').format)");
+                var resp3VerbatimStrToLua2 = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '=12\\r\\nfoo:fizzbuzz').string)");
+                ClassicAssert.AreEqual("string", resp3VerbatimStrToLua1);
+                ClassicAssert.AreEqual("string", resp3VerbatimStrToLua2);
+            }
         }
 
         [Test]

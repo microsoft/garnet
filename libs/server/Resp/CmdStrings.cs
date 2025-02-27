@@ -167,6 +167,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
         public static ReadOnlySpan<byte> matches => "matches"u8;
         public static ReadOnlySpan<byte> len => "len"u8;
+        public static ReadOnlySpan<byte> RESP3_NULL_REPLY => "_\r\n"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
@@ -407,5 +408,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> Lua_ERR_redis_setresp_requires_one_argument => "ERR redis.setresp() requires one argument."u8;
         public static ReadOnlySpan<byte> Lua_ERR_RESP_version_must_be_2_or_3 => "ERR RESP version must be 2 or 3."u8;
         public static ReadOnlySpan<byte> Lua_ERR_redis_log_disabled => "ERR redis.log(...) disabled in Garnet config"u8;
+        public static ReadOnlySpan<byte> Lua_double => "double"u8;
+        public static ReadOnlySpan<byte> Lua_map => "map"u8;
+        public static ReadOnlySpan<byte> Lua_set => "set"u8;
     }
 }
