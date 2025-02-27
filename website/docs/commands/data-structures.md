@@ -1611,6 +1611,113 @@ The command can accept a variable number of arguments so it always returns an ar
 
 ---
 
+### GEORADIUS
+
+#### Syntax
+
+```bash
+GEORADIUS_RO key longitude latitude radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+  [STORE key | STOREDIST key]
+```
+
+Return the members of a sorted set populated with geospatial information using GEOADD, which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
+
+The common use case for this command is to retrieve geospatial items near a specified point not farther than a given amount of meters (or other units). This allows, for example, to suggest mobile users of an application nearby places.
+
+The radius is specified in one of the following units:
+
+    m for meters.
+    km for kilometers.
+    mi for miles.
+    ft for feet.
+
+The command optionally returns additional information using the following options:
+
+    WITHDIST: Also return the distance of the returned items from the specified center. The distance is returned in the same unit as the unit specified as the radius argument of the command.
+    WITHCOORD: Also return the longitude,latitude coordinates of the matching items.
+    WITHHASH: Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
+
+The command default is to return unsorted items. Two different sorting methods can be invoked using the following two options:
+
+    ASC: Sort returned items from the nearest to the farthest, relative to the center.
+    DESC: Sort returned items from the farthest to the nearest, relative to the center.
+
+By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT <count> option. 
+
+By default the command returns the items to the client. It is possible to store the results with one of these options:
+
+    STORE: Store the items in a sorted set populated with their geospatial information.
+    STOREDIST: Store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius.
+
+---
+
+### GEORADIUS_RO
+
+#### Syntax
+
+```bash
+GEORADIUS_RO key longitude latitude radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+```
+
+Return the members of a sorted set populated with geospatial information using GEOADD, which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
+
+The common use case for this command is to retrieve geospatial items near a specified point not farther than a given amount of meters (or other units). This allows, for example, to suggest mobile users of an application nearby places.
+
+The radius is specified in one of the following units:
+
+    m for meters.
+    km for kilometers.
+    mi for miles.
+    ft for feet.
+
+The command optionally returns additional information using the following options:
+
+    WITHDIST: Also return the distance of the returned items from the specified center. The distance is returned in the same unit as the unit specified as the radius argument of the command.
+    WITHCOORD: Also return the longitude,latitude coordinates of the matching items.
+    WITHHASH: Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
+
+The command default is to return unsorted items. Two different sorting methods can be invoked using the following two options:
+
+    ASC: Sort returned items from the nearest to the farthest, relative to the center.
+    DESC: Sort returned items from the farthest to the nearest, relative to the center.
+
+By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT <count> option. When ANY is provided the command will return as soon as enough matches are found, so the results may not be the ones closest to the specified point, but on the other hand, the effort invested by the server is significantly lower. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
+
+---
+
+### GEORADIUSBYMEMBER
+
+#### Syntax
+
+```bash
+GEORADIUSBYMEMBER_RO key member radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+  [STORE key | STOREDIST key]
+```
+
+This command is exactly like [GEORADIUS](#georadius) with the sole difference that instead of taking, as the center of the area to query, a longitude and latitude value, it takes the name of a member already existing inside the geospatial index represented by the sorted set.
+
+The position of the specified member is used as the center of the query.
+
+---
+
+### GEORADIUSBYMEMBER_RO
+
+#### Syntax
+
+```bash
+GEORADIUSBYMEMBER_RO key member radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+```
+
+This command is exactly like [GEORADIUS_RO](#georadius_ro) with the sole difference that instead of taking, as the center of the area to query, a longitude and latitude value, it takes the name of a member already existing inside the geospatial index represented by the sorted set.
+
+The position of the specified member is used as the center of the query.
+
+---
+
 ### GEOSEARCH
 
 #### Syntax

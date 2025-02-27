@@ -155,10 +155,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GEODIST](data-structures.md#geodist) | ➕ |  |
 |  | [GEOHASH](data-structures.md#geohash) | ➕ |  |
 |  | [GEOPOS](data-structures.md#geopos) | ➕ |  |
-|  | GEORADIUS | ➖ | (Deprecated) |
-|  | GEORADIUS_RO | ➖ | (Deprecated) |
-|  | GEORADIUSBYMEMBER | ➖ | (Deprecated) |
-|  | GEORADIUSBYMEMBER_RO | ➖ | (Deprecated) |
+|  | [GEORADIUS](data-structures.md#georadius) | ➕ | (Deprecated) Partially Implemented |
+|  | [GEORADIUS_RO](data-structures.md#georadius_ro) | ➕ | (Deprecated) |
+|  | [GEORADIUSBYMEMBER](data-structures.md#georadiusbymember) | ➕ | (Deprecated) Partially Implemented |
+|  | [GEORADIUSBYMEMBER_RO](data-structures.md#georadiusbymember_ro) | ➕ | (Deprecated) |
 |  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
 |  | [GEOSEARCHSTORE](data-structures.md#geosearchstore) | ➕ | Partially Implemented |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
