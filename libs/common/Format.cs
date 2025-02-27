@@ -31,7 +31,15 @@ namespace Garnet.common
 #pragma warning disable format
     public static class Format
     {
-        public static async Task<EndPoint> TryCreateEndpoint(string addressOrHostname, int port, bool tryConnect = false, ILogger logger = null)
+        /// <summary>
+        /// Try to create an endpoint from address and port
+        /// </summary>
+        /// <param name="addressOrHostname">This could be an address or a hostname that the method tries to resolve</param>
+        /// <param name="port"></param>
+        /// <param name="useForBind">Binding does not poll connection because is supposed to be called from the server side</param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
+        public static async Task<EndPoint> TryCreateEndpoint(string addressOrHostname, int port, bool useForBind = false, ILogger logger = null)
         {
             IPEndPoint endpoint = null;
             if (string.IsNullOrEmpty(addressOrHostname) || string.IsNullOrWhiteSpace(addressOrHostname))
@@ -51,7 +59,7 @@ namespace Garnet.common
                 }
 
 
-                if (tryConnect)
+                if (useForBind)
                 {
                     foreach (var entry in ipAddresses)
                     {
@@ -68,8 +76,10 @@ namespace Garnet.common
                     if (!addressOrHostname.Equals(machineHostname, StringComparison.OrdinalIgnoreCase))
                         throw new GarnetException($"Provided hostname does not much acquired machine name {addressOrHostname} {machineHostname}!");
 
-                    // Listen to any address since we were given a valid hostname
-                    return new IPEndPoint(IPAddress.Any, port);
+                    if(ipAddresses.Length > 1)
+                        throw new GarnetException("Error hostname resolved to multiple endpoints.");
+
+                    return new IPEndPoint(ipAddresses[0], port);
                 }
                 logger?.LogError("No reachable IP address found for hostname:{hostname}", addressOrHostname);
             }

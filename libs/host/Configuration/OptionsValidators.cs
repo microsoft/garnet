@@ -354,7 +354,7 @@ namespace Garnet
             if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddress))
                 return initValidationResult;
 
-            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || Format.TryCreateEndpoint(ipAddress, 0, tryConnect: false).Result != null)
+            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || Format.TryCreateEndpoint(ipAddress, 0, useForBind: false).Result != null)
                 return ValidationResult.Success;
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;

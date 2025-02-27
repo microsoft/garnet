@@ -632,7 +632,7 @@ namespace Garnet
             }
             else
             {
-                endpoint = Format.TryCreateEndpoint(Address, Port, tryConnect: false).Result;
+                endpoint = Format.TryCreateEndpoint(Address, Port, useForBind: false).Result;
                 if (endpoint == null)
                     throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
             }
