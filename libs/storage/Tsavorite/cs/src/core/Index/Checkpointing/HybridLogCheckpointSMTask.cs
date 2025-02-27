@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -72,31 +71,6 @@ namespace Tsavorite.core
             {
                 store._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
                 Array.Copy(seg, store._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-            }
-
-            // Temporarily block new sessions from starting, which may add an entry to the table and resize the
-            // dictionary. There should be minimal contention here.
-            lock (store._activeSessions)
-            {
-                List<int> toDelete = null;
-
-                // write dormant sessions to checkpoint
-                foreach (var kvp in store._activeSessions)
-                {
-                    kvp.Value.session.AtomicSwitch(next.Version - 1);
-                    if (!kvp.Value.isActive)
-                    {
-                        toDelete ??= new();
-                        toDelete.Add(kvp.Key);
-                    }
-                }
-
-                // delete any sessions that ended during checkpoint cycle
-                if (toDelete != null)
-                {
-                    foreach (var key in toDelete)
-                        _ = store._activeSessions.Remove(key);
-                }
             }
         }
 

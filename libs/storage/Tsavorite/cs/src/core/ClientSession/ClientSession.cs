@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using static System.Collections.Specialized.BitVector32;
 
 namespace Tsavorite.core
 {
@@ -133,7 +134,9 @@ namespace Tsavorite.core
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
-            store.DisposeClientSession(ID, ctx.phase);
+
+            if (store.RevivificationManager.IsEnabled)
+                MergeRevivificationStatsTo(ref store.RevivificationManager.stats, reset: true);
         }
 
         /// <summary>
@@ -388,7 +391,7 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+            if (!ctx.pendingReads.IsEmpty)
                 throw new TsavoriteException("Make sure all async operations issued on this session are awaited and completed first");
 
             // Complete all pending sync operations on session
@@ -534,11 +537,6 @@ namespace Tsavorite.core
         {
             Debug.Assert(store.epoch.ThisInstanceProtected());
             store.epoch.Suspend();
-        }
-
-        void IClientSession.AtomicSwitch(long version)
-        {
-            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, version);
         }
 
         /// <inheritdoc/>

@@ -14,23 +14,32 @@ namespace Tsavorite.core
     {
         internal sealed class TsavoriteExecutionContext<TInput, TOutput, TContext>
         {
-            internal int sessionID;
-            internal string sessionName;
+            internal readonly int sessionID;
+            internal readonly string sessionName;
 
             // Control automatic Read copy operations. These flags override flags specified at the TsavoriteKV level, but may be overridden on the individual Read() operations
             internal ReadCopyOptions ReadCopyOptions;
 
             internal long version;
             public Phase phase;
-
-            public bool[] markers;
             public long totalPending;
-            public Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
-            public AsyncCountDown pendingReads;
-            public AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
+            public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
+            public readonly AsyncCountDown pendingReads;
+            public readonly AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
 
             internal RevivificationStats RevivificationStats = new();
+
+            public TsavoriteExecutionContext(int sessionID, string sessionName)
+            {
+                phase = Phase.REST;
+                version = 1;
+                this.sessionID = sessionID;
+                this.sessionName = sessionName;
+                readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
+                ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
+                pendingReads = new AsyncCountDown();
+            }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
@@ -84,8 +93,6 @@ namespace Tsavorite.core
             }
 
             public bool InNewVersion => phase < Phase.REST;
-
-            public TsavoriteExecutionContext<TInput, TOutput, TContext> prevCtx;
         }
     }
 }

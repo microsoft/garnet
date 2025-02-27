@@ -61,33 +61,6 @@ namespace Tsavorite.core
             }
         }
 
-        internal static void InitContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, int sessionID, string sessionName)
-        {
-            ctx.phase = Phase.REST;
-            // The system version starts at 1. Because we do not know what the current state machine state is,
-            // we need to play it safe and initialize context behind the system state. Otherwise the session may
-            // never "catch up" with the rest of the system when stepping through the state machine as it is ahead.
-            ctx.version = 1;
-            ctx.markers = new bool[8];
-            ctx.sessionID = sessionID;
-            ctx.sessionName = sessionName;
-
-            if (ctx.readyResponses is null)
-            {
-                ctx.readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
-                ctx.ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
-                ctx.pendingReads = new AsyncCountDown();
-            }
-        }
-
-        internal static void CopyContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> src, TsavoriteExecutionContext<TInput, TOutput, TContext> dst)
-        {
-            dst.phase = src.phase;
-            dst.version = src.version;
-            dst.markers = src.markers;
-            dst.sessionName = src.sessionName;
-        }
-
         internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false,
                                                                                      CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs = null)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>

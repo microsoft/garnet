@@ -1174,19 +1174,6 @@ namespace Tsavorite.core
                 result.Free();
             }
         }
-
-        internal static bool AtomicSwitch<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> fromCtx, TsavoriteExecutionContext<TInput, TOutput, TContext> toCtx, long version)
-        {
-            lock (toCtx)
-            {
-                if (toCtx.version < version)
-                {
-                    CopyContext(fromCtx, toCtx);
-                    return true;
-                }
-            }
-            return false;
-        }
     }
 
     public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
