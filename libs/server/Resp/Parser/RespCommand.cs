@@ -31,6 +31,8 @@ namespace Garnet.server
         GEODIST,
         GEOHASH,
         GEOPOS,
+        GEORADIUS_RO,
+        GEORADIUSBYMEMBER_RO,
         GEOSEARCH,
         GET,
         GETBIT,
@@ -116,6 +118,8 @@ namespace Garnet.server
         FLUSHALL,
         FLUSHDB,
         GEOADD,
+        GEORADIUS,
+        GEORADIUSBYMEMBER,
         GEOSEARCHSTORE,
         GETDEL,
         GETEX,
@@ -1474,6 +1478,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.HEXPIREAT;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEORADIU"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("US\r\n"u8))
+                                {
+                                    return RespCommand.GEORADIUS;
+                                }
                                 break;
                             case 10:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SSUBSCRI"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1618,6 +1626,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.HPEXPIRETIME;
                                 }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEORAD"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("IUS_RO\r\n"u8))
+                                {
+                                    return RespCommand.GEORADIUS_RO;
+                                }
                                 break;
 
                             case 13:
@@ -1661,6 +1673,12 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYSCO"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("RE\r\n"u8))
                                 {
                                     return RespCommand.ZREVRANGEBYSCORE;
+                                }
+                                break;
+                            case 17:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nGEORADI"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("USBYMEMB"u8) && *(uint*)(ptr + 20) == MemoryMarshal.Read<uint>("ER\r\n"u8))
+                                {
+                                    return RespCommand.GEORADIUSBYMEMBER;
                                 }
                                 break;
                         }
@@ -1755,6 +1773,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ECHO))
             {
                 return RespCommand.ECHO;
+            }
+            else if (command.SequenceEqual(CmdStrings.GEORADIUSBYMEMBER_RO))
+            {
+                return RespCommand.GEORADIUSBYMEMBER_RO;
             }
             else if (command.SequenceEqual(CmdStrings.REPLICAOF))
             {

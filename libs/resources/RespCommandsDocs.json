@@ -2448,6 +2448,528 @@
     ]
   },
   {
+    "Command": "GEORADIUS",
+    "Name": "GEORADIUS",
+    "Summary": "Query a sorted set representing a geospatial index to fetch members matching a given maximum distance from a point",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GEOSEARCH\u0060 and \u0060GEOSEARCHSTORE\u0060 with the \u0060BYRADIUS\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LONGITUDE",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LATITUDE",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "RADIUS",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "UNIT",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "M",
+            "Type": "PureToken",
+            "Token": "M"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KM",
+            "Type": "PureToken",
+            "Token": "KM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FT",
+            "Type": "PureToken",
+            "Token": "FT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MI",
+            "Type": "PureToken",
+            "Token": "MI"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHCOORD",
+        "Type": "PureToken",
+        "Token": "WITHCOORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHDIST",
+        "Type": "PureToken",
+        "Token": "WITHDIST",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHHASH",
+        "Type": "PureToken",
+        "Token": "WITHHASH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "Token": "STORE",
+        "ArgumentFlags": "Optional",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "Token": "STOREDIST",
+        "ArgumentFlags": "Optional",
+        "KeySpecIndex": 2
+      }
+    ]
+  },
+  {
+    "Command": "GEORADIUS_RO",
+    "Name": "GEORADIUS_RO",
+    "Summary": "A read-only variant for GEORADIUS",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GEOSEARCH\u0060 with the \u0060BYRADIUS\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LONGITUDE",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LATITUDE",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "RADIUS",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "UNIT",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "M",
+            "Type": "PureToken",
+            "Token": "M"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KM",
+            "Type": "PureToken",
+            "Token": "KM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FT",
+            "Type": "PureToken",
+            "Token": "FT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MI",
+            "Type": "PureToken",
+            "Token": "MI"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHCOORD",
+        "Type": "PureToken",
+        "Token": "WITHCOORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHDIST",
+        "Type": "PureToken",
+        "Token": "WITHDIST",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHHASH",
+        "Type": "PureToken",
+        "Token": "WITHHASH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "GEORADIUSBYMEMBER",
+    "Name": "GEORADIUSBYMEMBER",
+    "Summary": "Query a sorted set representing a geospatial index to fetch members matching a given maximum distance from a member",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GEOSEARCH\u0060 and \u0060GEOSEARCHSTORE\u0060 with the \u0060BYRADIUS\u0060 and \u0060FROMMEMBER\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "RADIUS",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "UNIT",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "M",
+            "Type": "PureToken",
+            "Token": "M"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KM",
+            "Type": "PureToken",
+            "Token": "KM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FT",
+            "Type": "PureToken",
+            "Token": "FT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MI",
+            "Type": "PureToken",
+            "Token": "MI"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHCOORD",
+        "Type": "PureToken",
+        "Token": "WITHCOORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHDIST",
+        "Type": "PureToken",
+        "Token": "WITHDIST",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHHASH",
+        "Type": "PureToken",
+        "Token": "WITHHASH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "Token": "STORE",
+        "ArgumentFlags": "Optional",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "Token": "STOREDIST",
+        "ArgumentFlags": "Optional",
+        "KeySpecIndex": 2
+      }
+    ]
+  },
+  {
+    "Command": "GEORADIUSBYMEMBER_RO",
+    "Name": "GEORADIUSBYMEMBER_RO",
+    "Summary": "A read-only variant for GEORADIUSBYMEMBER",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GEOSEARCH\u0060 with the \u0060BYRADIUS\u0060 and \u0060FROMMEMBER\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "RADIUS",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "UNIT",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "M",
+            "Type": "PureToken",
+            "Token": "M"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KM",
+            "Type": "PureToken",
+            "Token": "KM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FT",
+            "Type": "PureToken",
+            "Token": "FT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MI",
+            "Type": "PureToken",
+            "Token": "MI"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHCOORD",
+        "Type": "PureToken",
+        "Token": "WITHCOORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHDIST",
+        "Type": "PureToken",
+        "Token": "WITHDIST",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHHASH",
+        "Type": "PureToken",
+        "Token": "WITHHASH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "GEOSEARCH",
     "Name": "GEOSEARCH",
     "Summary": "Queries a geospatial index for members inside an area of a box or a circle.",
