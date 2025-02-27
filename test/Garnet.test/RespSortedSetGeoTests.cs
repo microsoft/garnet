@@ -14,6 +14,7 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     [TestFixture]
+    [Category("GEOTESTS")]
     public class RespSortedSetGeoTests
     {
         GarnetServer server;
@@ -235,7 +236,7 @@ namespace Garnet.test
             var key = new RedisKey("Sicily");
             db.GeoAdd(key, 13.361389, 38.115556, new RedisValue("Palermo"), CommandFlags.None);
             var box = new GeoSearchBox(500, 500, GeoUnit.Kilometers);
-            Assert.Throws<RedisServerException>(() => db.GeoSearch(key, 73.9262, 40.8296, box, count: 2));
+            Assert.Throws<RedisServerException>(() => db.GeoSearch(key, 73.9262, 40.8296, box, count: 2, options: GeoRadiusOptions.WithGeoHash));
         }
 
         [Test]
@@ -270,6 +271,8 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoDistance(keys[0], values[0][1], values[0][1]));
             // GEOPOS
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoPosition(keys[0], values[0]));
+            // GEORADIUS
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoRadius(keys[0], values[0][1], 800, GeoUnit.Kilometers));
             // GEOSEARCH
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoSearch(keys[0], values[0][1], new GeoSearchBox(800, 800, GeoUnit.Kilometers)));
         }
@@ -282,7 +285,7 @@ namespace Garnet.test
             var entries = new GeoEntry[cities.GetLength(0)];
             var key = new RedisKey("cities");
             var destinationKey = new RedisKey("newCities");
-            for (int j = 0; j < cities.GetLength(0); j++)
+            for (var j = 0; j < cities.GetLength(0); j++)
             {
                 entries[j] = new GeoEntry(
                     double.Parse(cities[j, 0], CultureInfo.InvariantCulture),
@@ -291,7 +294,8 @@ namespace Garnet.test
             }
             var response = db.GeoAdd(key, entries, CommandFlags.None);
 
-            var res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.None);
+            var res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers),
+                                   order: Order.Ascending, options: GeoRadiusOptions.None);
             ClassicAssert.AreEqual(3, res.Length);
             ClassicAssert.AreEqual("Washington", (string)res[0].Member);
             ClassicAssert.AreEqual(res[0].Distance, null);
@@ -303,7 +307,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(res[2].Distance, null);
             ClassicAssert.AreEqual(res[2].Position, null);
 
-            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.WithDistance);
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers),
+                               order: Order.Ascending,
+                               options: GeoRadiusOptions.WithDistance);
             ClassicAssert.AreEqual(3, res.Length);
             ClassicAssert.AreEqual("Washington", (string)res[0].Member);
             Assert.That(res[0].Distance, Is.EqualTo(0).Within(1.0 / Math.Pow(10, 6)));
@@ -315,7 +321,9 @@ namespace Garnet.test
             Assert.That(res[2].Distance, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
             ClassicAssert.AreEqual(res[2].Position, null);
 
-            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.WithCoordinates);
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers),
+                               order: Order.Ascending,
+                               options: GeoRadiusOptions.WithCoordinates);
             ClassicAssert.AreEqual(3, res.Length);
             ClassicAssert.AreEqual("Washington", (string)res[0].Member);
             ClassicAssert.AreEqual(res[0].Distance, null);
@@ -330,7 +338,9 @@ namespace Garnet.test
             Assert.That(res[2].Position.Value.Longitude, Is.EqualTo(-74.00594205).Within(1.0 / Math.Pow(10, 6)));
             Assert.That(res[2].Position.Value.Latitude, Is.EqualTo(40.71278259).Within(1.0 / Math.Pow(10, 6)));
 
-            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers),
+                               order: Order.Ascending,
+                               options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
             ClassicAssert.AreEqual(3, res.Length);
             ClassicAssert.AreEqual("Washington", (string)res[0].Member);
             Assert.That(res[0].Distance, Is.EqualTo(0).Within(1.0 / Math.Pow(10, 6)));
@@ -344,6 +354,31 @@ namespace Garnet.test
             Assert.That(res[2].Distance, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
             Assert.That(res[2].Position.Value.Longitude, Is.EqualTo(-74.00594205).Within(1.0 / Math.Pow(10, 6)));
             Assert.That(res[2].Position.Value.Latitude, Is.EqualTo(40.71278259).Within(1.0 / Math.Pow(10, 6)));
+
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchCircle(530, GeoUnit.Kilometers),
+                               order: Order.Descending,
+                               options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
+            ClassicAssert.AreEqual(4, res.Length);
+            ClassicAssert.AreEqual("Columbus", (string)res[0].Member);
+            Assert.That(res[0].Distance, Is.EqualTo(525.298997019908).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Longitude, Is.EqualTo(-82.99879419999999).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Latitude, Is.EqualTo(39.9611766).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("New York", (string)res[1].Member);
+            Assert.That(res[1].Distance, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[1].Position.Value.Longitude, Is.EqualTo(-74.00594205).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[1].Position.Value.Latitude, Is.EqualTo(40.71278259).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("Philadelphia", (string)res[2].Member);
+            Assert.That(res[2].Distance, Is.EqualTo(198.424300439725).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[2].Position.Value.Longitude, Is.EqualTo(-75.1652196).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[2].Position.Value.Latitude, Is.EqualTo(39.95258287).Within(1.0 / Math.Pow(10, 6)));
+            ClassicAssert.AreEqual("Washington", (string)res[3].Member);
+            Assert.That(res[3].Distance, Is.EqualTo(0).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[3].Position.Value.Longitude, Is.EqualTo(-77.03687042).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[3].Position.Value.Latitude, Is.EqualTo(38.9071919).Within(1.0 / Math.Pow(10, 6)));
+
+            res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchCircle(530, GeoUnit.Kilometers),
+                               options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
+            ClassicAssert.AreEqual(4, res.Length);
         }
 
         [Test]
@@ -410,8 +445,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var entries = new GeoEntry[cities.GetLength(0)];
-            for (int j = 0; j < cities.GetLength(0); j++)
+
+            string lat = "0", lon = "0";
+            for (var j = 0; j < cities.GetLength(0); j++)
             {
+                if (string.Compare(cities[j, 2], "Washington",
+                                   CultureInfo.InvariantCulture, CompareOptions.IgnoreCase) == 0)
+                {
+                    lon = cities[j, 0].TrimEnd();
+                    lat = cities[j, 1].TrimEnd();
+                }
+
                 entries[j] = new GeoEntry(
                     double.Parse(cities[j, 0], CultureInfo.InvariantCulture),
                     double.Parse(cities[j, 1], CultureInfo.InvariantCulture),
@@ -423,13 +467,35 @@ namespace Garnet.test
             //TODO: Assert values for latitude and longitude
             //TODO: Review precision to use for all framework versions
             using var lightClientRequest = TestUtils.CreateRequest();
-            var responseBuf = lightClientRequest.SendCommands("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km WITHCOORD WITHDIST", "PING");
+            var responseBuf = lightClientRequest.SendCommands("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km WITHCOORD WITHDIST ASC", "PING");
             var expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(responseBuf, 0, expectedResponse.Length);
             ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
 
             //Send command in chunks
-            responseBuf = lightClientRequest.SendCommandChunks("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km COUNT 3 ANY WITHCOORD WITHDIST", bytesSent, 16);
+            responseBuf = lightClientRequest.SendCommandChunks("GEOSEARCH cities FROMMEMBER Washington BYBOX 800 800 km COUNT 3 ANY WITHCOORD WITHDIST ASC", bytesSent, 16);
+            expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(responseBuf, 0, expectedResponse.Length);
+            ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
+
+            using var lightClientRequest2 = TestUtils.CreateRequest();
+            responseBuf = lightClientRequest2.SendCommands("GEOSEARCH cities FROMMEMBER Washington BYRADIUS 500 km WITHCOORD WITHDIST ASC", "PING");
+            expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(responseBuf, 0, expectedResponse.Length);
+            ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
+
+            responseBuf = lightClientRequest2.SendCommandChunks($"GEOSEARCH cities FROMLONLAT {lon} {lat} BYRADIUS 500 km COUNT 3 ANY WITHCOORD WITHDIST ASC", bytesSent, 16);
+            expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(responseBuf, 0, expectedResponse.Length);
+            ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
+
+            using var lightClientRequest3 = TestUtils.CreateRequest();
+            responseBuf = lightClientRequest3.SendCommands("GEORADIUSBYMEMBER_RO cities Washington 500 km WITHCOORD WITHDIST ASC", "PING");
+            expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(responseBuf, 0, expectedResponse.Length);
+            ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
+
+            responseBuf = lightClientRequest3.SendCommandChunks($"GEORADIUS_RO cities FROMLONLAT {lon} {lat} 500 km COUNT 3 ANY WITHCOORD WITHDIST ASC", bytesSent, 16);
             expectedResponse = "*3\r\n*3\r\n$10\r\nWashington\r\n$1\r\n0\r\n*2\r\n$17\r\n-77.0368704199791\r\n$17\r\n38.90719190239906\r\n*3\r\n$12\r\nPhiladelphia\r\n$17\r\n198.4242996738795\r\n*2\r\n$18\r\n-75.16521960496902\r\n$18\r\n39.952582865953445\r\n*3\r\n$8\r\nNew York\r\n$18\r\n327.67645879712575\r\n*2\r\n$17\r\n-74.0059420466423\r\n$18\r\n40.712782591581345\r\n+PONG\r\n";
             actualValue = Encoding.ASCII.GetString(responseBuf, 0, expectedResponse.Length);
             ClassicAssert.IsTrue(actualValue.IndexOf("Washington") != -1);
@@ -606,6 +672,37 @@ namespace Garnet.test
             response = lightClientRequest.SendCommandChunks("GEOADD Sicily 13.361389 38.115556", bytesSent);
             expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "GEOADD")}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void InvalidGeoSearches()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand("GEOADD Sicily NX 13.361389 38.115556 Palermo 15.087269 37.502669 Catania");
+            var expectedResponse = ":2\r\n";
+            var actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 FROMMEMBER a BYRADIUS 0 km");
+            expectedResponse = "-ERR syntax error\r\n";
+            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 BYRADIUS 100 km BYBOX 400 400 km");
+            expectedResponse = "-ERR syntax error\r\n";
+            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 BYBOX 400 400 km COUNT 0 ANY");
+            expectedResponse = "-ERR value is out of range, must be positive.\r\n";
+            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYRADIUS 0 m");
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
         #endregion
     }

@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -28,21 +29,98 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Type of GeoSearch
+        /// </summary>
+        internal enum GeoSearchType
+        {
+            /// <summary>
+            /// No defined order.
+            /// </summary>
+            Undefined,
+
+            /// <summary>
+            /// Search inside circular area
+            /// </summary>
+            ByRadius,
+
+            /// <summary>
+            /// Search inside an axis-aligned rectangle
+            /// </summary>
+            ByBox,
+        }
+
+        /// <summary>
+        /// The direction in which to sequence elements.
+        /// </summary>
+        internal enum GeoOrder
+        {
+            /// <summary>
+            /// No defined order.
+            /// </summary>
+            None,
+
+            /// <summary>
+            /// Order from low values to high values.
+            /// </summary>
+            Ascending,
+
+            /// <summary>
+            /// Order from high values to low values.
+            /// </summary>
+            Descending,
+        }
+
+        internal enum GeoOriginType
+        {
+            /// <summary>
+            /// Not defined.
+            /// </summary>
+            Undefined,
+
+            /// <summary>
+            /// From explicit lon lat coordinates.
+            /// </summary>
+            FromLonLat,
+
+            /// <summary>
+            /// From member key
+            /// </summary>
+            FromMember
+        }
+
+        /// <summary>
         /// Small struct to store options for GEOSEARCH command
         /// </summary>
-        private struct GeoSearchOptions
+        private ref struct GeoSearchOptions
         {
-            public bool FromMember { get; set; }
-            public bool FromLonLat { get; set; }
-            public bool ByRadius { get; set; }
-            public bool ByBox { get; set; }
-            public bool SortDescending { get; set; }
-            public bool WithCount { get; set; }
-            public int WithCountValue { get; set; }
-            public bool WithCountAny { get; set; }
-            public bool WithCoord { get; set; }
-            public bool WithDist { get; set; }
-            public bool WithHash { get; set; }
+            internal GeoSearchType searchType;
+            internal ReadOnlySpan<byte> unit;
+            internal double radius;
+            internal double boxWidth;
+            internal double boxHeight
+            {
+                get
+                {
+                    return radius;
+                }
+                set
+                {
+                    radius = value;
+                }
+            }
+
+            internal int countValue;
+
+            internal GeoOriginType origin;
+
+            internal byte[] fromMember;
+            internal double lon, lat;
+
+            internal bool withCoord;
+            internal bool withHash;
+            //internal bool withCountAny;
+            internal bool withDist;
+            internal GeoOrder sort;
         }
 
         private void GeoAdd(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -284,6 +362,10 @@ namespace Garnet.server
 
         private void GeoSearch(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            var cmtOpt = (SortedSetGeoOpts)input.arg2;
+            var byRadiusCmd = (cmtOpt & SortedSetGeoOpts.ByRadius) != 0;
+            var readOnlyCmd = (cmtOpt & SortedSetGeoOpts.ReadOnly) != 0;
+
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -294,16 +376,56 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var opts = new GeoSearchOptions();
-                byte[] fromMember = null;
-                var byBoxUnits = "M"u8;
-                double width = 0, height = 0;
-                var countValue = 0;
+                var opts = new GeoSearchOptions()
+                {
+                    unit = "M"u8
+                };
 
                 ReadOnlySpan<byte> errorMessage = default;
                 var argNumError = false;
-
                 var currTokenIdx = 0;
+
+                if (byRadiusCmd)
+                {
+                    // Read coordinates, note we already checked the number of arguments earlier.
+                    if ((cmtOpt & SortedSetGeoOpts.ByMember) != 0)
+                    {
+                        // From Member
+                        opts.fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                        opts.origin = GeoOriginType.FromMember;
+                    }
+                    else
+                    {
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out var lon) ||
+                            !input.parseState.TryGetDouble(currTokenIdx++, out var lat) ||
+                            (Math.Abs(lon) > 180) || (Math.Abs(lat) > 90))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+
+                            while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            return;
+                        }
+
+                        opts.origin = GeoOriginType.FromLonLat;
+                        opts.lon = lon;
+                        opts.lat = lat;
+                    }
+
+                    // Radius
+                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var Radius) || (Radius < 0))
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+
+                        while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return;
+                    }
+
+                    opts.searchType = GeoSearchType.ByRadius;
+                    opts.radius = Radius;
+                    opts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                }
 
                 // Read the options
                 while (currTokenIdx < input.parseState.Count)
@@ -311,7 +433,137 @@ namespace Garnet.server
                     // Read token
                     var tokenBytes = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
-                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
+                    if (!byRadiusCmd)
+                    {
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
+                        {
+                            if (opts.origin != GeoOriginType.Undefined)
+                            {
+                                errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                                break;
+                            }
+
+                            if (input.parseState.Count - currTokenIdx == 0)
+                            {
+                                argNumError = true;
+                                break;
+                            }
+
+                            opts.fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                            opts.origin = GeoOriginType.FromMember;
+                            continue;
+                        }
+
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
+                        {
+                            if (opts.origin != GeoOriginType.Undefined)
+                            {
+                                errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                                break;
+                            }
+
+                            if (input.parseState.Count - currTokenIdx < 2)
+                            {
+                                argNumError = true;
+                                break;
+                            }
+
+                            // Read coordinates
+                            if (!input.parseState.TryGetDouble(currTokenIdx++, out var lon) ||
+                                !input.parseState.TryGetDouble(currTokenIdx++, out var lat) ||
+                                (Math.Abs(lon) > 180) || (Math.Abs(lat) > 90))
+                            {
+                                errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                                break;
+                            }
+
+                            opts.origin = GeoOriginType.FromLonLat;
+                            opts.lon = lon;
+                            opts.lat = lat;
+                            continue;
+                        }
+
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYRADIUS"u8))
+                        {
+                            if (opts.searchType != GeoSearchType.Undefined)
+                            {
+                                errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                                break;
+                            }
+
+                            if (input.parseState.Count - currTokenIdx < 2)
+                            {
+                                argNumError = true;
+                                break;
+                            }
+
+                            // Read radius and units
+                            if (!input.parseState.TryGetDouble(currTokenIdx++, out opts.radius))
+                            {
+                                errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                                break;
+                            }
+
+                            if (opts.radius < 0)
+                            {
+                                errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE;
+                                break;
+                            }
+
+                            opts.searchType = GeoSearchType.ByRadius;
+                            opts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                            continue;
+                        }
+
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYBOX"u8))
+                        {
+                            if (opts.searchType != GeoSearchType.Undefined)
+                            {
+                                errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                                break;
+                            }
+
+                            if (input.parseState.Count - currTokenIdx < 3)
+                            {
+                                argNumError = true;
+                                break;
+                            }
+
+                            // Read width, height
+                            if (!input.parseState.TryGetDouble(currTokenIdx++, out opts.boxWidth) ||
+                                !input.parseState.TryGetDouble(currTokenIdx++, out var height))
+                            {
+                                errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                                break;
+                            }
+                            opts.boxHeight = height;
+
+                            if (opts.boxWidth < 0 || opts.boxHeight < 0)
+                            {
+                                errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE;
+                                break;
+                            }
+
+                            // Read units
+                            opts.searchType = GeoSearchType.ByBox;
+                            opts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                            continue;
+                        }
+                    }
+
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ASC"u8))
+                    {
+                        opts.sort = GeoOrder.Ascending;
+                        continue;
+                    }
+
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("DESC"u8))
+                    {
+                        opts.sort = GeoOrder.Descending;
+                        continue;
+                    }
+
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                     {
                         if (input.parseState.Count - currTokenIdx == 0)
                         {
@@ -319,97 +571,63 @@ namespace Garnet.server
                             break;
                         }
 
-                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
-                        opts.FromMember = true;
-                    }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx < 2)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        // Read coordinates
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out _) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out _))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                            break;
-                        }
-
-                        opts.FromLonLat = true;
-                    }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYRADIUS"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx < 2)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        // Read radius and units
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out _))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                            break;
-                        }
-
-                        opts.ByRadius = true;
-                    }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYBOX"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx < 3)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        // Read width, height
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out width) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out height))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                            break;
-                        }
-
-                        // Read units
-                        byBoxUnits = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-
-                        opts.ByBox = true;
-                    }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ASC"u8)) opts.SortDescending = false;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("DESC"u8)) opts.SortDescending = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx == 0)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        if (!input.parseState.TryGetInt(currTokenIdx++, out countValue))
+                        if (!input.parseState.TryGetInt(currTokenIdx++, out var countValue))
                         {
                             errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                             break;
                         }
 
-                        opts.WithCount = true;
+                        if (countValue <= 0)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE;
+                            break;
+                        }
+
+                        opts.countValue = countValue;
+                        continue;
                     }
-                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
-                    else if ((input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) ||
-                             (input.header.SortedSetOp == SortedSetOperation.GEOSEARCHSTORE && tokenBytes.EqualsUpperCaseSpanIgnoringCase("STOREDIST"u8))) opts.WithDist = true;
-                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
-                    else
+
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8))
                     {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
-                        break;
+                        opts.withCoord = true;
+                        continue;
                     }
+
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8))
+                    {
+                        //geoSearchOpt.withCountAny = true;
+                        continue;
+                    }
+
+                    // When GEORADIUS STORE support is added we'll need to account for it.
+                    // For now we'll act as if all radius commands are readonly.
+                    if (readOnlyCmd || byRadiusCmd)
+                    {
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHDIST))
+                        {
+                            opts.withDist = true;
+                            continue;
+                        }
+
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHHASH))
+                        {
+                            opts.withHash = true;
+                            continue;
+                        }
+                    }
+                    // GEOSEARCHSTORE
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                    {
+                        opts.withDist = true;
+                        continue;
+                    }
+
+                    errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                    break;
                 }
 
                 // Check that we have the mandatory options
-                if (errorMessage.IsEmpty && !((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
+                if (errorMessage.IsEmpty && ((opts.origin == 0) || (opts.searchType == 0)))
                     argNumError = true;
 
                 // Check if we have a wrong number of arguments
@@ -427,120 +645,138 @@ namespace Garnet.server
                     return;
                 }
 
+                #region act
                 // Not supported options in Garnet: WITHHASH
-                if (opts.WithHash)
+                if (opts.withHash)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
 
-                // Get the results
+                // FROMLONLAT
+                bool hasLonLat = opts.origin == GeoOriginType.FromLonLat;
                 // FROMMEMBER
-                if (opts.FromMember && sortedSetDict.TryGetValue(fromMember, out var centerPointScore))
+                if (opts.origin == GeoOriginType.FromMember && sortedSetDict.TryGetValue(opts.fromMember, out var centerPointScore))
                 {
-                    var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
+                    (opts.lat, opts.lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
+                    hasLonLat = true;
+                }
 
-                    if (opts.ByRadius)
+                // Get the results
+                if (hasLonLat)
+                {
+                    var responseData = new List<GeoSearchData>();
+                    foreach (var point in sortedSet)
                     {
-                        // Not supported in Garnet: ByRadius
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
+                        var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
+                        double distance = 0;
+
+                        if (opts.searchType == GeoSearchType.ByBox)
+                        {
+                            if (!server.GeoHash.GetDistanceWhenInRectangle(
+                                 server.GeoHash.ConvertValueToMeters(opts.boxWidth, opts.unit),
+                                 server.GeoHash.ConvertValueToMeters(opts.boxHeight, opts.unit),
+                                 opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
+                            {
+                                continue;
+                            }
+                        }
+                        else /* byRadius == true */
+                        {
+                            if (!server.GeoHash.GetDistanceWhenInCircle(
+                                 server.GeoHash.ConvertValueToMeters(opts.radius, opts.unit),
+                                 opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
+                            {
+                                continue;
+                            }
+                        }
+
+                        // The item is inside the shape
+                        responseData.Add(new GeoSearchData()
+                        {
+                            Member = point.Element,
+                            Distance = distance,
+                            GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
+                            Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
+                        });
+
+                        if (responseData.Count == opts.countValue)
+                            break;
+                    }
+
+                    if (responseData.Count == 0)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        var responseData = new List<GeoSearchData>();
-                        foreach (var point in sortedSet)
+                        var innerArrayLength = 1;
+                        if (opts.withDist)
                         {
-                            var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Item1);
-                            double distance = 0;
-                            if (opts.ByBox)
-                            {
-                                if (server.GeoHash.GetDistanceWhenInRectangle(server.GeoHash.ConvertValueToMeters(width, byBoxUnits), server.GeoHash.ConvertValueToMeters(height, byBoxUnits), lat, lon, coorInItem.Item1, coorInItem.Item2, ref distance))
-                                {
-                                    // The item is inside the shape
-                                    responseData.Add(new GeoSearchData()
-                                    {
-                                        Member = point.Item2,
-                                        Distance = distance,
-                                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Item1),
-                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Item1)
-                                    });
-
-                                    if (opts.WithCount && responseData.Count == countValue)
-                                        break;
-                                }
-                            }
+                            innerArrayLength++;
+                        }
+                        if (opts.withHash)
+                        {
+                            innerArrayLength++;
+                        }
+                        if (opts.withCoord)
+                        {
+                            innerArrayLength++;
                         }
 
-                        if (responseData.Count == 0)
+                        // Write results 
+                        while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        var q = responseData.AsQueryable();
+                        if (opts.sort == GeoOrder.Ascending)
+                            q = q.OrderBy(i => i.Distance);
+                        else if (opts.sort == GeoOrder.Descending)
+                            q = q.OrderByDescending(i => i.Distance);
+
+                        foreach (var item in q)
                         {
-                            while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            var innerArrayLength = 1;
-                            if (opts.WithDist)
+                            if (innerArrayLength > 1)
                             {
-                                innerArrayLength++;
-                            }
-                            if (opts.WithHash)
-                            {
-                                innerArrayLength++;
-                            }
-                            if (opts.WithCoord)
-                            {
-                                innerArrayLength++;
+                                while (!RespWriteUtils.TryWriteArrayLength(innerArrayLength, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
 
-                            // Write results 
-                            while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
+                            while (!RespWriteUtils.TryWriteBulkString(item.Member, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            foreach (var item in responseData)
+                            if (opts.withDist)
                             {
-                                if (innerArrayLength > 1)
+                                var distanceValue = opts.searchType switch
                                 {
-                                    while (!RespWriteUtils.TryWriteArrayLength(innerArrayLength, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
+                                    GeoSearchType.ByBox => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
 
-                                while (!RespWriteUtils.TryWriteBulkString(item.Member, ref curr, end))
+                                    // byRadius
+                                    _ => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
+                                };
+
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+
+                            if (opts.withCoord)
+                            {
+                                // Write array of 2 values
+                                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                                if (opts.WithDist)
-                                {
-                                    var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
-                                                        : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-
-                                if (opts.WithCoord)
-                                {
-                                    // Write array of 2 values
-                                    while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
                     }
                 }
-
-                // Not supported options in Garnet: FROMLONLAT BYBOX BYRADIUS 
-                if (opts.FromLonLat)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
+                #endregion
             }
             finally
             {

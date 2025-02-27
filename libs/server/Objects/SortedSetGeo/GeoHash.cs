@@ -264,6 +264,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Find if a point is in the circle.
+        /// </summary>
+        public static bool GetDistanceWhenInCircle(double radius, double latCenterPoint, double lonCenterPoint, double lat2, double lon2, ref double distance)
+        {
+            distance = Distance(latCenterPoint, lonCenterPoint, lat2, lon2);
+            if (distance > radius)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Find if a point is in the axis-aligned rectangle.
         /// when the distance between the searched point and the center point is less than or equal to 
         /// height/2 or width/2,
