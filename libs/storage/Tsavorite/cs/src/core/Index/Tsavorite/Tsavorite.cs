@@ -251,9 +251,8 @@ namespace Tsavorite.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token)
         {
-            var result = StartStateMachine(new IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator>());
-            token = _indexCheckpointToken;
-            return result;
+            var stateMachine = Checkpoint.IndexOnly(this, -1, out token);
+            return stateMachineDriver.Register(stateMachine);
         }
 
         /// <summary>
