@@ -27,7 +27,6 @@ namespace Tsavorite.core
             public readonly AsyncCountDown pendingReads;
             public readonly AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
-
             internal RevivificationStats RevivificationStats = new();
 
             public TsavoriteExecutionContext(int sessionID, string sessionName)
