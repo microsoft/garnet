@@ -434,8 +434,16 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
-
-            await stateMachineDriver.CompleteAsync(token);
+            try
+            {
+                await stateMachineDriver.CompleteAsync(token);
+            }
+            catch
+            {
+                _indexCheckpoint.Reset();
+                _hybridLogCheckpoint.Dispose();
+                throw;
+            }
             return;
         }
 

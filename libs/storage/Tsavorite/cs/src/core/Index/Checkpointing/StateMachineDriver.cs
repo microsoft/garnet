@@ -15,7 +15,7 @@ namespace Tsavorite.core
         SystemState systemState;
         IStateMachine stateMachine;
         readonly List<SemaphoreSlim> waitingList;
-        SemaphoreSlim stateMachineCompleted;
+        TaskCompletionSource<bool> stateMachineCompleted;
         // All threads have entered the given state
         SemaphoreSlim waitForTransitionIn;
         // All threads have exited the given state
@@ -50,8 +50,8 @@ namespace Tsavorite.core
             {
                 return false;
             }
-            stateMachineCompleted = new SemaphoreSlim(0);
-            _ = Task.Run(async () => await RunStateMachine(token));
+            stateMachineCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = Task.Run(async () => await RunStateMachine(token).ConfigureAwait(false));
             return true;
         }
 
@@ -73,18 +73,20 @@ namespace Tsavorite.core
             {
                 return false;
             }
-            stateMachineCompleted = new SemaphoreSlim(0);
-            await RunStateMachine(token);
+            stateMachineCompleted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await RunStateMachine(token).ConfigureAwait(false);
             return true;
         }
 
-        public async Task CompleteAsync(CancellationToken token = default)
+        public async Task<bool> CompleteAsync(CancellationToken token = default)
         {
             var _stateMachineCompleted = stateMachineCompleted;
             if (_stateMachineCompleted != null)
             {
-                await _stateMachineCompleted.WaitAsync(token);
+                using var reg = token.Register(() => _stateMachineCompleted.TrySetCanceled());
+                return await _stateMachineCompleted.Task.WithCancellationAsync(token).ConfigureAwait(false);
             }
+            return false;
         }
 
         /// <summary>
@@ -181,6 +183,7 @@ namespace Tsavorite.core
 
         async Task RunStateMachine(CancellationToken token = default)
         {
+            Exception ex = null;
             try
             {
                 do
@@ -192,6 +195,7 @@ namespace Tsavorite.core
             catch (Exception e)
             {
                 logger?.LogError(e, "Exception in state machine");
+                ex = e;
                 throw;
             }
             finally
@@ -199,7 +203,14 @@ namespace Tsavorite.core
                 var _stateMachineCompleted = stateMachineCompleted;
                 stateMachineCompleted = null;
                 _ = Interlocked.Exchange(ref stateMachine, null);
-                _stateMachineCompleted.Release(int.MaxValue);
+                if (ex != null)
+                {
+                    _stateMachineCompleted.TrySetException(ex);
+                }
+                else
+                {
+                    _stateMachineCompleted.TrySetResult(true);
+                }
             }
         }
     }

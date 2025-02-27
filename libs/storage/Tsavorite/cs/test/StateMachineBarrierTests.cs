@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -142,6 +143,10 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
+
+            // Wait for PREPARE phase
+            while (!SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState))
+                Thread.Yield();
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
