@@ -2083,7 +2083,10 @@ end
                 state.ForceMinimumStackCapacity(NeededStackSize);
 
                 // Every invocation starts in RESP2
-                respServerSession.respProtocolVersion = 2;
+                if (respServerSession != null)
+                {
+                    respServerSession.respProtocolVersion = 2;
+                }
 
                 _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, functionRegistryIndex);
 
@@ -2207,7 +2210,7 @@ end
                 }
                 else if (retType == LuaType.Boolean)
                 {
-                    if (runner.respServerSession.respProtocolVersion == 3 && resp.RespProtocolVersion == 2)
+                    if (runner.respServerSession?.respProtocolVersion == 3 && resp.RespProtocolVersion == 2)
                     {
                         // This is not in spec, but is how Redis actually behaves
                         var toPush = runner.state.ToBoolean(curTop) ? 1 : 0;
@@ -2217,7 +2220,7 @@ end
                         WriteNumber(runner, ref resp);
                         return;
                     }
-                    else if (runner.respServerSession.respProtocolVersion == 2 && resp.RespProtocolVersion == 3)
+                    else if (runner.respServerSession?.respProtocolVersion == 2 && resp.RespProtocolVersion == 3)
                     {
                         // Likewise, this is how Redis actuallys behaves
                         if (runner.state.ToBoolean(curTop))
@@ -2234,7 +2237,7 @@ end
                             return;
                         }
                     }
-                    else if (runner.respServerSession.respProtocolVersion == 3)
+                    else if (runner.respServerSession?.respProtocolVersion == 3)
                     {
                         // RESP3 has a proper boolean type
                         WriteResp3Boolean(runner, ref resp);
