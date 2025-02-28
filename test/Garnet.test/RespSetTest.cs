@@ -782,17 +782,17 @@ namespace Garnet.test
         public void CanAddAndListMembersLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("SADD myset \"Hello\"");
+            var response = lightClientRequest.SendCommand(@"SADD myset \""Hello\""");
             var expectedResponse = ":1\r\n";
             var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, strResponse);
 
-            response = lightClientRequest.SendCommand("SADD myset \"World\"");
+            response = lightClientRequest.SendCommand(@"SADD myset \""World\""");
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, strResponse);
 
             expectedResponse = ":0\r\n";
-            response = lightClientRequest.SendCommand("SADD myset \"World\"");
+            response = lightClientRequest.SendCommand(@"SADD myset \""World\""");
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, strResponse);
 
@@ -1345,7 +1345,7 @@ namespace Garnet.test
         [TestCase("key")]
         public void CanDoSdiffStoreLC(string key)
         {
-            var lightClientRequest = TestUtils.CreateRequest();
+            var lightClientRequest = TestUtils.CreateRequest(extraWhiteSpaceIsEmptyParameter: true);
             _ = lightClientRequest.SendCommand("SADD key1 a b c d");
             _ = lightClientRequest.SendCommand("SADD key2 c");
             _ = lightClientRequest.SendCommand("SADD key3 a c e");

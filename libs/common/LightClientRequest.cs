@@ -21,6 +21,7 @@ namespace Garnet.common
         readonly LightClient client;
         byte[] responseBuffer;
         int bytesReceived = 0;
+        bool extraWhiteSpaceIsEmptyParameter = false;
 
         /// <summary>
         /// How to count the response length
@@ -29,10 +30,15 @@ namespace Garnet.common
 
         public EndPoint EndPoint { get; set; }
 
-        public LightClientRequest(EndPoint endpoint, int optType, LightClient.OnResponseDelegateUnsafe onReceive = null, SslClientAuthenticationOptions sslOptions = null, CountResponseType countResponseType = CountResponseType.Tokens)
+        public LightClientRequest(EndPoint endpoint, int optType,
+                                  LightClient.OnResponseDelegateUnsafe onReceive = null,
+                                  SslClientAuthenticationOptions sslOptions = null,
+                                  CountResponseType countResponseType = CountResponseType.Tokens,
+                                  bool extraWhiteSpaceIsEmptyParameter = false)
         {
             this.countResponseType = countResponseType;
-            client = new LightClient(endpoint, optType, onReceive == null ? LightReceive : onReceive, sslOptions: sslOptions);
+            this.extraWhiteSpaceIsEmptyParameter = extraWhiteSpaceIsEmptyParameter;
+            client = new LightClient(endpoint, optType, onReceive ?? LightReceive, sslOptions: sslOptions);
             client.Connect();
             EndPoint = endpoint;
         }
@@ -172,17 +178,108 @@ namespace Garnet.common
         /// <summary>
         /// Formats the command for RESP
         /// </summary>
-        private static byte[] BuildRequest(string cmd)
+        private byte[] BuildRequest(string cmd)
         {
-            var tokens = cmd.Split(' ');
-            string msg = "*" + tokens.Length + "\r\n";
+            StringBuilder sb = new(cmd.Length * 2);
+            var tokenStart = 0;
+            var count = 0;
+            var prevSp = true;
+            var quoteMode = false;
+            var escapedChar = false;
+            var hadEscapedChar = 0;
 
-            for (int i = 0; i < tokens.Length; i++)
+            void AppendTo(int to)
             {
-                msg += "$" + tokens[i].Length + "\r\n" + tokens[i] + "\r\n";
+                count++;
+                sb = sb.Append('$');
+                if (hadEscapedChar == 0)
+                {
+                    sb = sb.Append(to - tokenStart);
+                    sb = sb.Append("\r\n");
+                    sb = sb.Append(cmd[tokenStart..to]);
+                }
+                else
+                {
+                    sb = sb.Append(to - tokenStart - hadEscapedChar);
+                    sb = sb.Append("\r\n");
+                    sb = sb.Append(cmd[tokenStart..to].Replace("\\", ""));
+                    hadEscapedChar = 0;
+                }
+                sb = sb.Append("\r\n");
             }
 
-            return Encoding.ASCII.GetBytes(msg);
+            for (var i = 0; i < cmd.Length; ++i)
+            {
+                if (escapedChar)
+                {
+                    escapedChar = false;
+                    continue;
+                }
+
+                if (cmd[i] == ' ')
+                {
+                    if (quoteMode)
+                    {
+                        continue;
+                    }
+
+                    if (prevSp)
+                    {
+                        if (extraWhiteSpaceIsEmptyParameter && cmd[i - 1] == ' ')
+                        {
+                            AppendTo(tokenStart);
+                        }
+
+                        tokenStart++;
+                        continue;
+                    }
+
+                    prevSp = true;
+                    AppendTo(i);
+                    tokenStart = i + 1;
+                    continue;
+                }
+
+                if (cmd[i] == '"')
+                {
+                    if (quoteMode)
+                    {
+                        quoteMode = false;
+                        AppendTo(i);
+                        tokenStart = i + 1;
+                    }
+                    else
+                    {
+                        quoteMode = true;
+                        tokenStart++;
+                    }
+
+                    prevSp = true;
+                    continue;
+                }
+
+                prevSp = false;
+
+                if (cmd[i] == '\\')
+                {
+                    escapedChar = true;
+                    hadEscapedChar++;
+                }
+            }
+
+            if (tokenStart < cmd.Length)
+            {
+                AppendTo(cmd.Length);
+            }
+            else if (extraWhiteSpaceIsEmptyParameter && prevSp
+                  && tokenStart == cmd.Length && cmd[cmd.Length - 1] == ' ')
+            {
+                AppendTo(tokenStart);
+            }
+
+            sb = sb.Insert(0, '*' + count.ToString() + "\r\n");
+
+            return Encoding.ASCII.GetBytes(sb.ToString());
         }
     }
 }

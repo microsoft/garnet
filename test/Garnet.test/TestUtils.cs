@@ -746,7 +746,10 @@ namespace Garnet.test
             return new GarnetClientSession(EndPoint, new(), tlsOptions: sslOptions);
         }
 
-        public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)
+        public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null,
+                                                       bool useTLS = false,
+                                                       CountResponseType countResponseType = CountResponseType.Tokens,
+                                                       bool extraWhiteSpaceIsEmptyParameter = false)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -759,7 +762,10 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new LightClientRequest(EndPoint, 0, onReceive, sslOptions, countResponseType);
+
+            return new LightClientRequest(EndPoint, 0, onReceive,
+                                          sslOptions, countResponseType,
+                                          extraWhiteSpaceIsEmptyParameter);
         }
 
         public static string GetHostName(ILogger logger = null)
