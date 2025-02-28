@@ -165,6 +165,13 @@ namespace Garnet.test.cluster
         readonly int otherIndex = 2;
         readonly int iterations = 3;
 
+        private void AssertSlotsNotAssigned(int requestNodeIndex)
+        {
+            var config = context.clusterTestUtils.ClusterNodes(requestNodeIndex);
+            for (var i = 0; i < 16384; i++)
+                ClassicAssert.IsNull(config.GetBySlot(i));
+        }
+
         /// <summary>
         /// Issue SetSlot commands to configure slot for migration
         /// </summary>
@@ -234,6 +241,127 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetIndex, sourceIndex, logger: context.logger);
         }
 
+        List<string> clusterDownTestList = [
+                "GET",
+                "SET",
+                "GETSET",
+                "SETNX",
+                "SUBSTR",
+                "MGET",
+                "MSET",
+                "GETEX",
+                "PFADD",
+                "PFCOUNT",
+                "PFMERGE",
+                "SETBIT",
+                "GETBIT",
+                "BITCOUNT",
+                "BITPOS",
+                "BITOP",
+                "BITFIELD",
+                "BITFIELD_RO",
+                "SETRANGE",
+                "GETRANGE",
+                "INCR",
+                "INCRBYFLOAT",
+                "APPEND",
+                "STRLEN",
+                "RENAME",
+                "DEL",
+                "GETDEL",
+                "EXISTS",
+                "PERSIST",
+                "EXPIRE",
+                "TTL",
+                "DUMP",
+                "RESTORE",
+                "SDIFFSTORE",
+                "SDIFF",
+                "SMOVE",
+                "SUNIONSTORE",
+                "SUNION",
+                "SINTERSTORE",
+                "SINTER",
+                "LMOVE",
+                "LPUSH",
+                "LPOP",
+                "LMPOP",
+                "ZMPOP",
+                "BLPOP",
+                "BLMOVE",
+                "BRPOPLPUSH",
+                "LLEN",
+                "LTRIM",
+                "LRANGE",
+                "LINDEX",
+                "LINSERT",
+                "LREM",
+                "RPOPLPUSH",
+                "LSET",
+                "SADD",
+                "SREM",
+                "SCARD",
+                "SMEMBERS",
+                "SISMEMBER",
+                "SMISMEMBER",
+                "SPOP",
+                "SRANDMEMBER",
+                "GEOADD",
+                "GEOHASH",
+                "GEOSEARCHSTORE",
+                "ZADD",
+                "ZREM",
+                "ZCARD",
+                "ZRANGE",
+                "ZREVRANGEBYLEX",
+                "ZRANGESTORE",
+                "ZSCORE",
+                "ZMSCORE",
+                "ZPOPMAX",
+                "ZCOUNT",
+                "ZLEXCOUNT",
+                "ZINCRBY",
+                "ZRANK",
+                "ZREMRANGEBYRANK",
+                "ZRANDMEMBER",
+                "ZDIFF",
+                "ZDIFFSTORE",
+                "ZINTER",
+                "ZINTERCARD",
+                "ZINTERSTORE",
+                "ZUNION",
+                "ZUNIONSTORE",
+                "HSET",
+                "HGET",
+                "HGETALL",
+                "HMGET",
+                "HRANDFIELD",
+                "HLEN",
+                "HSTRLEN",
+                "HDEL",
+                "HEXISTS",
+                "HKEYS",
+                "HINCRBY",
+                "HEXPIRE",
+                "HPEXPIRE",
+                "HEXPIREAT",
+                "HPEXPIREAT",
+                "HTTL",
+                "HPTTL",
+                "HEXPIRETIME",
+                "HPEXPIRETIME",
+                "HPERSIST",
+                "HCOLLECT",
+                "CLUSTERGETPROC",
+                "CLUSTERSETPROC",
+                "WATCH",
+                "WATCHMS",
+                "WATCHOS",
+                "SINTERCARD",
+                "EVALSHA",
+                "LCS"
+            ];
+
         [OneTimeTearDown]
         public virtual void OneTimeTearDown()
         {
@@ -242,875 +370,72 @@ namespace Garnet.test.cluster
 
         [Test, Order(1), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        [TestCase("GET")]
-        [TestCase("SET")]
-        [TestCase("GETSET")]
-        [TestCase("SETNX")]
-        [TestCase("SUBSTR")]
-        [TestCase("MGET")]
-        [TestCase("MSET")]
-        [TestCase("GETEX")]
-        [TestCase("PFADD")]
-        [TestCase("PFCOUNT")]
-        [TestCase("PFMERGE")]
-        [TestCase("SETBIT")]
-        [TestCase("GETBIT")]
-        [TestCase("BITCOUNT")]
-        [TestCase("BITPOS")]
-        [TestCase("BITOP")]
-        [TestCase("BITFIELD")]
-        [TestCase("BITFIELD_RO")]
-        [TestCase("SETRANGE")]
-        [TestCase("GETRANGE")]
-        [TestCase("INCR")]
-        [TestCase("INCRBYFLOAT")]
-        [TestCase("APPEND")]
-        [TestCase("STRLEN")]
-        [TestCase("RENAME")]
-        [TestCase("DEL")]
-        [TestCase("GETDEL")]
-        [TestCase("EXISTS")]
-        [TestCase("PERSIST")]
-        [TestCase("EXPIRE")]
-        [TestCase("TTL")]
-        [TestCase("DUMP")]
-        [TestCase("RESTORE")]
-        [TestCase("SDIFFSTORE")]
-        [TestCase("SDIFF")]
-        [TestCase("SMOVE")]
-        [TestCase("SUNIONSTORE")]
-        [TestCase("SUNION")]
-        [TestCase("SINTERSTORE")]
-        [TestCase("SINTER")]
-        [TestCase("LMOVE")]
-        [TestCase("LPUSH")]
-        [TestCase("LPOP")]
-        [TestCase("LMPOP")]
-        [TestCase("ZMPOP")]
-        [TestCase("BLPOP")]
-        [TestCase("BLMOVE")]
-        [TestCase("BRPOPLPUSH")]
-        [TestCase("LLEN")]
-        [TestCase("LTRIM")]
-        [TestCase("LRANGE")]
-        [TestCase("LINDEX")]
-        [TestCase("LINSERT")]
-        [TestCase("LREM")]
-        [TestCase("RPOPLPUSH")]
-        [TestCase("LSET")]
-        [TestCase("SADD")]
-        [TestCase("SREM")]
-        [TestCase("SCARD")]
-        [TestCase("SMEMBERS")]
-        [TestCase("SISMEMBER")]
-        [TestCase("SMISMEMBER")]
-        [TestCase("SPOP")]
-        [TestCase("SRANDMEMBER")]
-        [TestCase("GEOADD")]
-        [TestCase("GEOHASH")]
-        [TestCase("GEOSEARCHSTORE")]
-        [TestCase("ZADD")]
-        [TestCase("ZREM")]
-        [TestCase("ZCARD")]
-        [TestCase("ZRANGE")]
-        [TestCase("ZREVRANGEBYLEX")]
-        [TestCase("ZRANGESTORE")]
-        [TestCase("ZSCORE")]
-        [TestCase("ZMSCORE")]
-        [TestCase("ZPOPMAX")]
-        [TestCase("ZCOUNT")]
-        [TestCase("ZLEXCOUNT")]
-        [TestCase("ZINCRBY")]
-        [TestCase("ZRANK")]
-        [TestCase("ZREMRANGEBYRANK")]
-        [TestCase("ZRANDMEMBER")]
-        [TestCase("ZDIFF")]
-        [TestCase("ZDIFFSTORE")]
-        [TestCase("ZINTER")]
-        [TestCase("ZINTERCARD")]
-        [TestCase("ZINTERSTORE")]
-        [TestCase("ZUNION")]
-        [TestCase("ZUNIONSTORE")]
-        [TestCase("ZEXPIRE")]
-        [TestCase("ZPEXPIRE")]
-        [TestCase("ZEXPIREAT")]
-        [TestCase("ZPEXPIREAT")]
-        [TestCase("ZTTL")]
-        [TestCase("ZPTTL")]
-        [TestCase("ZEXPIRETIME")]
-        [TestCase("ZPEXPIRETIME")]
-        [TestCase("ZPERSIST")]
-        [TestCase("ZCOLLECT")]
-        [TestCase("HSET")]
-        [TestCase("HGET")]
-        [TestCase("HGETALL")]
-        [TestCase("HMGET")]
-        [TestCase("HRANDFIELD")]
-        [TestCase("HLEN")]
-        [TestCase("HSTRLEN")]
-        [TestCase("HDEL")]
-        [TestCase("HEXISTS")]
-        [TestCase("HKEYS")]
-        [TestCase("HINCRBY")]
-        [TestCase("HEXPIRE")]
-        [TestCase("HPEXPIRE")]
-        [TestCase("HEXPIREAT")]
-        [TestCase("HPEXPIREAT")]
-        [TestCase("HTTL")]
-        [TestCase("HPTTL")]
-        [TestCase("HEXPIRETIME")]
-        [TestCase("HPEXPIRETIME")]
-        [TestCase("HPERSIST")]
-        [TestCase("HCOLLECT")]
-        [TestCase("CLUSTERGETPROC")]
-        [TestCase("CLUSTERSETPROC")]
-        [TestCase("WATCH")]
-        [TestCase("WATCHMS")]
-        [TestCase("WATCHOS")]
-        [TestCase("SINTERCARD")]
-        [TestCase("EVALSHA")]
-        [TestCase("LCS")]
-        public void ClusterCLUSTERDOWNTest(string commandName)
+        public void ClusterCLUSTERDOWNTest()
         {
-            var requestNodeIndex = otherIndex;
-            var dummyCommand = new DummyCommand(commandName);
-            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
-
-            Initialize(command);
-
-            for (var i = 0; i < iterations; i++)
-                SERedisClusterDown(command);
-
-            for (var i = 0; i < iterations; i++)
-                GarnetClientSessionClusterDown(command);
-
-            void SERedisClusterDown(BaseCommand command)
+            foreach (var commandName in clusterDownTestList)
             {
-                try
-                {
-                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
+                var requestNodeIndex = otherIndex;
+                var dummyCommand = new DummyCommand(commandName);
+                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
-            void GarnetClientSessionClusterDown(BaseCommand command)
-            {
-                var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
-                try
+                Initialize(command);
+
+                for (var i = 0; i < iterations; i++)
+                    SERedisClusterDown(command);
+
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionClusterDown(command);
+
+                void SERedisClusterDown(BaseCommand command)
                 {
-                    _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    try
+                    {
+                        AssertSlotsNotAssigned(requestNodeIndex);
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
                 }
-                catch (Exception ex)
+
+                void GarnetClientSessionClusterDown(BaseCommand command)
                 {
-                    ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
-                    return;
+                    var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
+                    try
+                    {
+                        AssertSlotsNotAssigned(requestNodeIndex);
+                        _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
                 }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
             }
         }
 
         [Test, Order(2), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        [TestCase("GET")]
-        [TestCase("SET")]
-        [TestCase("GETSET")]
-        [TestCase("SETNX")]
-        [TestCase("SUBSTR")]
-        [TestCase("MGET")]
-        [TestCase("MSET")]
-        [TestCase("GETEX")]
-        [TestCase("PFADD")]
-        [TestCase("PFCOUNT")]
-        [TestCase("PFMERGE")]
-        [TestCase("SETBIT")]
-        [TestCase("GETBIT")]
-        [TestCase("BITCOUNT")]
-        [TestCase("BITPOS")]
-        [TestCase("BITOP")]
-        [TestCase("BITFIELD")]
-        [TestCase("BITFIELD_RO")]
-        [TestCase("SETRANGE")]
-        [TestCase("GETRANGE")]
-        [TestCase("INCR")]
-        [TestCase("INCRBYFLOAT")]
-        [TestCase("APPEND")]
-        [TestCase("STRLEN")]
-        [TestCase("RENAME")]
-        [TestCase("DEL")]
-        [TestCase("GETDEL")]
-        [TestCase("EXISTS")]
-        [TestCase("PERSIST")]
-        [TestCase("EXPIRE")]
-        [TestCase("TTL")]
-        [TestCase("DUMP")]
-        [TestCase("RESTORE")]
-        [TestCase("SDIFFSTORE")]
-        [TestCase("SDIFF")]
-        [TestCase("SMOVE")]
-        [TestCase("SUNIONSTORE")]
-        [TestCase("SUNION")]
-        [TestCase("SINTERSTORE")]
-        [TestCase("SINTER")]
-        [TestCase("LMOVE")]
-        [TestCase("EVAL")]
-        [TestCase("EVALSHA")]
-        [TestCase("LPUSH")]
-        [TestCase("LPOP")]
-        [TestCase("LMPOP")]
-        [TestCase("ZMPOP")]
-        [TestCase("BLPOP")]
-        [TestCase("BLMOVE")]
-        [TestCase("BRPOPLPUSH")]
-        [TestCase("LLEN")]
-        [TestCase("LTRIM")]
-        [TestCase("LRANGE")]
-        [TestCase("LINDEX")]
-        [TestCase("LINSERT")]
-        [TestCase("LREM")]
-        [TestCase("RPOPLPUSH")]
-        [TestCase("LSET")]
-        [TestCase("SADD")]
-        [TestCase("SREM")]
-        [TestCase("SCARD")]
-        [TestCase("SMEMBERS")]
-        [TestCase("SISMEMBER")]
-        [TestCase("SMISMEMBER")]
-        [TestCase("SPOP")]
-        [TestCase("SRANDMEMBER")]
-        [TestCase("GEOADD")]
-        [TestCase("GEOHASH")]
-        [TestCase("GEOSEARCHSTORE")]
-        [TestCase("ZADD")]
-        [TestCase("ZREM")]
-        [TestCase("ZCARD")]
-        [TestCase("ZRANGE")]
-        [TestCase("ZREVRANGEBYLEX")]
-        [TestCase("ZRANGESTORE")]
-        [TestCase("ZSCORE")]
-        [TestCase("ZMSCORE")]
-        [TestCase("ZPOPMAX")]
-        [TestCase("ZCOUNT")]
-        [TestCase("ZLEXCOUNT")]
-        [TestCase("ZINCRBY")]
-        [TestCase("ZRANK")]
-        [TestCase("ZREMRANGEBYRANK")]
-        [TestCase("ZRANDMEMBER")]
-        [TestCase("ZDIFF")]
-        [TestCase("ZDIFFSTORE")]
-        [TestCase("ZINTER")]
-        [TestCase("ZINTERCARD")]
-        [TestCase("ZINTERSTORE")]
-        [TestCase("ZUNION")]
-        [TestCase("ZUNIONSTORE")]
-        [TestCase("ZEXPIRE")]
-        [TestCase("ZPEXPIRE")]
-        [TestCase("ZEXPIREAT")]
-        [TestCase("ZPEXPIREAT")]
-        [TestCase("ZTTL")]
-        [TestCase("ZPTTL")]
-        [TestCase("ZEXPIRETIME")]
-        [TestCase("ZPEXPIRETIME")]
-        [TestCase("ZPERSIST")]
-        [TestCase("ZCOLLECT")]
-        [TestCase("HSET")]
-        [TestCase("HGET")]
-        [TestCase("HGETALL")]
-        [TestCase("HMGET")]
-        [TestCase("HRANDFIELD")]
-        [TestCase("HLEN")]
-        [TestCase("HSTRLEN")]
-        [TestCase("HDEL")]
-        [TestCase("HEXISTS")]
-        [TestCase("HKEYS")]
-        [TestCase("HINCRBY")]
-        [TestCase("HEXPIRE")]
-        [TestCase("HPEXPIRE")]
-        [TestCase("HEXPIREAT")]
-        [TestCase("HPEXPIREAT")]
-        [TestCase("HTTL")]
-        [TestCase("HPTTL")]
-        [TestCase("HEXPIRETIME")]
-        [TestCase("HPEXPIRETIME")]
-        [TestCase("HPERSIST")]
-        [TestCase("HCOLLECT")]
-        [TestCase("CLUSTERGETPROC")]
-        [TestCase("CLUSTERSETPROC")]
-        [TestCase("WATCHMS")]
-        [TestCase("WATCHOS")]
-        [TestCase("SINTERCARD")]
-        [TestCase("LCS")]
-        public void ClusterOKTest(string commandName)
+        public void ClusterOKTest()
         {
-            var requestNodeIndex = sourceIndex;
-            var dummyCommand = new DummyCommand(commandName);
-            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
-
-            Initialize(command);
-
-            for (var i = 0; i < iterations; i++)
-                SERedisOKTest(command);
-
-            for (var i = 0; i < iterations; i++)
-                GarnetClientSessionOK(command);
-
-            try
+            foreach (var commandName in clusterDownTestList)
             {
-                var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
-            }
-            catch (Exception ex)
-            {
-                context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
-                Assert.Fail($"Failed executing cleanup. Command: {command.Command}");
-            }
+                var requestNodeIndex = sourceIndex;
+                var dummyCommand = new DummyCommand(commandName);
+                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
-            void SERedisOKTest(BaseCommand command)
-            {
-                try
-                {
-                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
-                }
-                catch (Exception ex)
-                {
-                    if (!command.RequiresExistingKey)
-                        Assert.Fail($"{ex.Message}. Command: {command.Command}");
-                }
-            }
-
-            void GarnetClientSessionOK(BaseCommand command)
-            {
-                var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
-                try
-                {
-                    if (command.ArrayResponse)
-                        _ = client.ExecuteForArrayAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
-                    else
-                        _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
-                }
-                catch (Exception ex)
-                {
-                    if (!command.RequiresExistingKey)
-                        Assert.Fail($"{ex.Message}. Command: {command.Command}");
-                }
-            }
-        }
-
-        [Test, Order(3)]
-        [Category("SLOT_VERIFY")]
-        [TestCase("GET")]
-        [TestCase("SET")]
-        [TestCase("GETSET")]
-        [TestCase("SETNX")]
-        [TestCase("SUBSTR")]
-        [TestCase("MGET")]
-        [TestCase("MSET")]
-        [TestCase("GETEX")]
-        [TestCase("PFADD")]
-        [TestCase("PFCOUNT")]
-        [TestCase("PFMERGE")]
-        [TestCase("SETBIT")]
-        [TestCase("GETBIT")]
-        [TestCase("BITCOUNT")]
-        [TestCase("BITPOS")]
-        [TestCase("BITOP")]
-        [TestCase("BITFIELD")]
-        [TestCase("BITFIELD_RO")]
-        [TestCase("SETRANGE")]
-        [TestCase("GETRANGE")]
-        [TestCase("INCR")]
-        [TestCase("INCRBYFLOAT")]
-        [TestCase("APPEND")]
-        [TestCase("STRLEN")]
-        [TestCase("RENAME")]
-        [TestCase("DEL")]
-        [TestCase("GETDEL")]
-        [TestCase("EXISTS")]
-        [TestCase("PERSIST")]
-        [TestCase("EXPIRE")]
-        [TestCase("TTL")]
-        [TestCase("DUMP")]
-        [TestCase("RESTORE")]
-        [TestCase("SDIFFSTORE")]
-        [TestCase("SDIFF")]
-        [TestCase("SMOVE")]
-        [TestCase("SUNIONSTORE")]
-        [TestCase("SUNION")]
-        [TestCase("SINTERSTORE")]
-        [TestCase("SINTER")]
-        [TestCase("LMOVE")]
-        [TestCase("EVAL")]
-        [TestCase("EVALSHA")]
-        [TestCase("LPUSH")]
-        [TestCase("LPOP")]
-        [TestCase("LMPOP")]
-        [TestCase("ZMPOP")]
-        [TestCase("BLPOP")]
-        [TestCase("BLMOVE")]
-        [TestCase("BRPOPLPUSH")]
-        [TestCase("LLEN")]
-        [TestCase("LTRIM")]
-        [TestCase("LRANGE")]
-        [TestCase("LINDEX")]
-        [TestCase("LINSERT")]
-        [TestCase("LREM")]
-        [TestCase("RPOPLPUSH")]
-        [TestCase("LSET")]
-        [TestCase("SADD")]
-        [TestCase("SREM")]
-        [TestCase("SCARD")]
-        [TestCase("SMEMBERS")]
-        [TestCase("SISMEMBER")]
-        [TestCase("SMISMEMBER")]
-        [TestCase("SPOP")]
-        [TestCase("SRANDMEMBER")]
-        [TestCase("GEOADD")]
-        [TestCase("GEOHASH")]
-        [TestCase("GEOSEARCHSTORE")]
-        [TestCase("ZADD")]
-        [TestCase("ZREM")]
-        [TestCase("ZCARD")]
-        [TestCase("ZRANGE")]
-        [TestCase("ZREVRANGEBYLEX")]
-        [TestCase("ZRANGESTORE")]
-        [TestCase("ZSCORE")]
-        [TestCase("ZMSCORE")]
-        [TestCase("ZPOPMAX")]
-        [TestCase("ZCOUNT")]
-        [TestCase("ZLEXCOUNT")]
-        [TestCase("ZINCRBY")]
-        [TestCase("ZRANK")]
-        [TestCase("ZREMRANGEBYRANK")]
-        [TestCase("ZRANDMEMBER")]
-        [TestCase("ZDIFF")]
-        [TestCase("ZDIFFSTORE")]
-        [TestCase("ZINTER")]
-        [TestCase("ZINTERCARD")]
-        [TestCase("ZINTERSTORE")]
-        [TestCase("ZUNION")]
-        [TestCase("ZUNIONSTORE")]
-        [TestCase("ZEXPIRE")]
-        [TestCase("ZPEXPIRE")]
-        [TestCase("ZEXPIREAT")]
-        [TestCase("ZPEXPIREAT")]
-        [TestCase("ZTTL")]
-        [TestCase("ZPTTL")]
-        [TestCase("ZEXPIRETIME")]
-        [TestCase("ZPEXPIRETIME")]
-        [TestCase("ZPERSIST")]
-        [TestCase("ZCOLLECT")]
-        [TestCase("HSET")]
-        [TestCase("HGET")]
-        [TestCase("HGETALL")]
-        [TestCase("HMGET")]
-        [TestCase("HRANDFIELD")]
-        [TestCase("HLEN")]
-        [TestCase("HSTRLEN")]
-        [TestCase("HDEL")]
-        [TestCase("HEXISTS")]
-        [TestCase("HKEYS")]
-        [TestCase("HINCRBY")]
-        [TestCase("HEXPIRE")]
-        [TestCase("HPEXPIRE")]
-        [TestCase("HEXPIREAT")]
-        [TestCase("HPEXPIREAT")]
-        [TestCase("HTTL")]
-        [TestCase("HPTTL")]
-        [TestCase("HEXPIRETIME")]
-        [TestCase("HPEXPIRETIME")]
-        [TestCase("HPERSIST")]
-        [TestCase("HCOLLECT")]
-        [TestCase("CLUSTERGETPROC")]
-        [TestCase("CLUSTERSETPROC")]
-        [TestCase("WATCHMS")]
-        [TestCase("WATCHOS")]
-        [TestCase("SINTERCARD")]
-        [TestCase("LCS")]
-        public void ClusterCROSSSLOTTest(string commandName)
-        {
-            var requestNodeIndex = sourceIndex;
-            var dummyCommand = new DummyCommand(commandName);
-            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
-
-            Initialize(command);
-
-            for (var i = 0; i < iterations; i++)
-                SERedisCrossslotTest(command);
-
-            for (var i = 0; i < iterations; i++)
-                GarnetClientSessionCrossslotTest(command);
-
-            void SERedisCrossslotTest(BaseCommand command)
-            {
-                if (!command.IsArrayCommand)
-                    return;
-                try
-                {
-                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetCrossSlotRequest());
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
-
-            void GarnetClientSessionCrossslotTest(BaseCommand command)
-            {
-                if (!command.IsArrayCommand)
-                    return;
-                var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
-                try
-                {
-                    client.ExecuteAsync(command.GetCrossslotRequestWithCommand).GetAwaiter().GetResult();
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
-        }
-
-        [Test, Order(4), NonParallelizable]
-        [Category("SLOT_VERIFY")]
-        [TestCase("GET")]
-        [TestCase("SET")]
-        [TestCase("GETSET")]
-        [TestCase("SETNX")]
-        [TestCase("SUBSTR")]
-        [TestCase("MGET")]
-        [TestCase("MSET")]
-        [TestCase("GETEX")]
-        [TestCase("PFADD")]
-        [TestCase("PFCOUNT")]
-        [TestCase("PFMERGE")]
-        [TestCase("SETBIT")]
-        [TestCase("GETBIT")]
-        [TestCase("BITCOUNT")]
-        [TestCase("BITPOS")]
-        [TestCase("BITOP")]
-        [TestCase("BITFIELD")]
-        [TestCase("BITFIELD_RO")]
-        [TestCase("SETRANGE")]
-        [TestCase("GETRANGE")]
-        [TestCase("INCR")]
-        [TestCase("INCRBYFLOAT")]
-        [TestCase("APPEND")]
-        [TestCase("STRLEN")]
-        [TestCase("RENAME")]
-        [TestCase("DEL")]
-        [TestCase("GETDEL")]
-        [TestCase("EXISTS")]
-        [TestCase("PERSIST")]
-        [TestCase("EXPIRE")]
-        [TestCase("TTL")]
-        [TestCase("SDIFFSTORE")]
-        [TestCase("SDIFF")]
-        [TestCase("SMOVE")]
-        [TestCase("SUNIONSTORE")]
-        [TestCase("SUNION")]
-        [TestCase("SINTERSTORE")]
-        [TestCase("SINTER")]
-        [TestCase("LMOVE")]
-        [TestCase("LPUSH")]
-        [TestCase("LPOP")]
-        [TestCase("LMPOP")]
-        [TestCase("ZMPOP")]
-        [TestCase("BLPOP")]
-        [TestCase("BLMOVE")]
-        [TestCase("BRPOPLPUSH")]
-        [TestCase("LLEN")]
-        [TestCase("LTRIM")]
-        [TestCase("LRANGE")]
-        [TestCase("LINDEX")]
-        [TestCase("LINSERT")]
-        [TestCase("LREM")]
-        [TestCase("RPOPLPUSH")]
-        [TestCase("LSET")]
-        [TestCase("SADD")]
-        [TestCase("SREM")]
-        [TestCase("SCARD")]
-        [TestCase("SMEMBERS")]
-        [TestCase("SISMEMBER")]
-        [TestCase("SMISMEMBER")]
-        [TestCase("SPOP")]
-        [TestCase("SRANDMEMBER")]
-        [TestCase("GEOADD")]
-        [TestCase("GEOHASH")]
-        [TestCase("GEOSEARCHSTORE")]
-        [TestCase("ZADD")]
-        [TestCase("ZREM")]
-        [TestCase("ZCARD")]
-        [TestCase("ZRANGE")]
-        [TestCase("ZREVRANGEBYLEX")]
-        [TestCase("ZRANGESTORE")]
-        [TestCase("ZSCORE")]
-        [TestCase("ZMSCORE")]
-        [TestCase("ZPOPMAX")]
-        [TestCase("ZCOUNT")]
-        [TestCase("ZLEXCOUNT")]
-        [TestCase("ZINCRBY")]
-        [TestCase("ZRANK")]
-        [TestCase("ZREMRANGEBYRANK")]
-        [TestCase("ZRANDMEMBER")]
-        [TestCase("ZDIFF")]
-        [TestCase("ZDIFFSTORE")]
-        [TestCase("ZINTER")]
-        [TestCase("ZINTERCARD")]
-        [TestCase("ZINTERSTORE")]
-        [TestCase("ZUNION")]
-        [TestCase("ZUNIONSTORE")]
-        [TestCase("ZEXPIRE")]
-        [TestCase("ZPEXPIRE")]
-        [TestCase("ZEXPIREAT")]
-        [TestCase("ZPEXPIREAT")]
-        [TestCase("ZTTL")]
-        [TestCase("ZPTTL")]
-        [TestCase("ZEXPIRETIME")]
-        [TestCase("ZPEXPIRETIME")]
-        [TestCase("ZPERSIST")]
-        [TestCase("ZCOLLECT")]
-        [TestCase("HSET")]
-        [TestCase("HGET")]
-        [TestCase("HGETALL")]
-        [TestCase("HMGET")]
-        [TestCase("HRANDFIELD")]
-        [TestCase("HLEN")]
-        [TestCase("HSTRLEN")]
-        [TestCase("HDEL")]
-        [TestCase("HEXISTS")]
-        [TestCase("HKEYS")]
-        [TestCase("HINCRBY")]
-        [TestCase("HEXPIRE")]
-        [TestCase("HPEXPIRE")]
-        [TestCase("HEXPIREAT")]
-        [TestCase("HPEXPIREAT")]
-        [TestCase("HTTL")]
-        [TestCase("HPTTL")]
-        [TestCase("HEXPIRETIME")]
-        [TestCase("HPEXPIRETIME")]
-        [TestCase("HPERSIST")]
-        [TestCase("HCOLLECT")]
-        [TestCase("CLUSTERGETPROC")]
-        [TestCase("CLUSTERSETPROC")]
-        [TestCase("WATCHMS")]
-        [TestCase("WATCHOS")]
-        [TestCase("SINTERCARD")]
-        [TestCase("EVALSHA")]
-        [TestCase("LCS")]
-        public void ClusterMOVEDTest(string commandName)
-        {
-            var requestNodeIndex = targetIndex;
-            var address = "127.0.0.1";
-            var port = context.clusterTestUtils.GetPortFromNodeIndex(sourceIndex);
-            var dummyCommand = new DummyCommand(commandName);
-            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
-
-            Initialize(command);
-
-            for (var i = 0; i < iterations; i++)
-                SERedisMOVEDTest(command);
-
-            for (var i = 0; i < iterations; i++)
-                GarnetClientSessionMOVEDTest(command);
-
-            void SERedisMOVEDTest(BaseCommand command)
-            {
-                try
-                {
-                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
-                    var tokens = ex.Message.Split(' ');
-                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.Command);
-
-                    var _address = tokens[5].Split(':')[0];
-                    var _port = int.Parse(tokens[5].Split(':')[1]);
-                    var _slot = int.Parse(tokens[8]);
-                    ClassicAssert.AreEqual(address, _address, command.Command);
-                    ClassicAssert.AreEqual(port, _port, command.Command);
-                    ClassicAssert.AreEqual(command.GetSlot, _slot, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
-
-            void GarnetClientSessionMOVEDTest(BaseCommand command)
-            {
-                var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
-                try
-                {
-                    client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
-        }
-
-        [Test, Order(5), NonParallelizable]
-        [Category("SLOT_VERIFY")]
-        [TestCase("GET")]
-        [TestCase("SET")]
-        [TestCase("GETSET")]
-        [TestCase("SETNX")]
-        [TestCase("SUBSTR")]
-        [TestCase("MGET")]
-        [TestCase("MSET")]
-        [TestCase("GETEX")]
-        [TestCase("PFADD")]
-        [TestCase("PFCOUNT")]
-        [TestCase("PFMERGE")]
-        [TestCase("SETBIT")]
-        [TestCase("GETBIT")]
-        [TestCase("BITCOUNT")]
-        [TestCase("BITPOS")]
-        [TestCase("BITOP")]
-        [TestCase("BITFIELD")]
-        [TestCase("BITFIELD_RO")]
-        [TestCase("SETRANGE")]
-        [TestCase("GETRANGE")]
-        [TestCase("INCR")]
-        [TestCase("INCRBYFLOAT")]
-        [TestCase("APPEND")]
-        [TestCase("STRLEN")]
-        [TestCase("RENAME")]
-        [TestCase("DEL")]
-        [TestCase("GETDEL")]
-        [TestCase("EXISTS")]
-        [TestCase("PERSIST")]
-        [TestCase("EXPIRE")]
-        [TestCase("TTL")]
-        [TestCase("DUMP")]
-        [TestCase("RESTORE")]
-        [TestCase("SDIFFSTORE")]
-        [TestCase("SDIFF")]
-        [TestCase("SMOVE")]
-        [TestCase("SUNIONSTORE")]
-        [TestCase("SUNION")]
-        [TestCase("SINTERSTORE")]
-        [TestCase("SINTER")]
-        [TestCase("LMOVE")]
-        [TestCase("LPUSH")]
-        [TestCase("LPOP")]
-        [TestCase("LMPOP")]
-        [TestCase("ZMPOP")]
-        [TestCase("BLPOP")]
-        [TestCase("BLMOVE")]
-        [TestCase("BRPOPLPUSH")]
-        [TestCase("LLEN")]
-        [TestCase("LTRIM")]
-        [TestCase("LRANGE")]
-        [TestCase("LINDEX")]
-        [TestCase("LINSERT")]
-        [TestCase("LREM")]
-        [TestCase("RPOPLPUSH")]
-        [TestCase("LSET")]
-        [TestCase("SADD")]
-        [TestCase("SREM")]
-        [TestCase("SCARD")]
-        [TestCase("SMEMBERS")]
-        [TestCase("SISMEMBER")]
-        [TestCase("SMISMEMBER")]
-        [TestCase("SPOP")]
-        [TestCase("SRANDMEMBER")]
-        [TestCase("GEOADD")]
-        [TestCase("GEOHASH")]
-        [TestCase("GEOSEARCHSTORE")]
-        [TestCase("ZADD")]
-        [TestCase("ZREM")]
-        [TestCase("ZCARD")]
-        [TestCase("ZRANGE")]
-        [TestCase("ZREVRANGEBYLEX")]
-        [TestCase("ZRANGESTORE")]
-        [TestCase("ZSCORE")]
-        [TestCase("ZMSCORE")]
-        [TestCase("ZPOPMAX")]
-        [TestCase("ZCOUNT")]
-        [TestCase("ZLEXCOUNT")]
-        [TestCase("ZINCRBY")]
-        [TestCase("ZRANK")]
-        [TestCase("ZREMRANGEBYRANK")]
-        [TestCase("ZRANDMEMBER")]
-        [TestCase("ZDIFF")]
-        [TestCase("ZDIFFSTORE")]
-        [TestCase("ZINTER")]
-        [TestCase("ZINTERCARD")]
-        [TestCase("ZINTERSTORE")]
-        [TestCase("ZUNION")]
-        [TestCase("ZUNIONSTORE")]
-        [TestCase("ZEXPIRE")]
-        [TestCase("ZPEXPIRE")]
-        [TestCase("ZEXPIREAT")]
-        [TestCase("ZPEXPIREAT")]
-        [TestCase("ZTTL")]
-        [TestCase("ZPTTL")]
-        [TestCase("ZEXPIRETIME")]
-        [TestCase("ZPEXPIRETIME")]
-        [TestCase("ZPERSIST")]
-        [TestCase("ZCOLLECT")]
-        [TestCase("HSET")]
-        [TestCase("HGET")]
-        [TestCase("HGETALL")]
-        [TestCase("HMGET")]
-        [TestCase("HRANDFIELD")]
-        [TestCase("HLEN")]
-        [TestCase("HSTRLEN")]
-        [TestCase("HDEL")]
-        [TestCase("HEXISTS")]
-        [TestCase("HKEYS")]
-        [TestCase("HINCRBY")]
-        [TestCase("HEXPIRE")]
-        [TestCase("HPEXPIRE")]
-        [TestCase("HEXPIREAT")]
-        [TestCase("HPEXPIREAT")]
-        [TestCase("HTTL")]
-        [TestCase("HPTTL")]
-        [TestCase("HEXPIRETIME")]
-        [TestCase("HPEXPIRETIME")]
-        [TestCase("HPERSIST")]
-        [TestCase("HCOLLECT")]
-        [TestCase("CLUSTERGETPROC")]
-        [TestCase("CLUSTERSETPROC")]
-        [TestCase("WATCHMS")]
-        [TestCase("WATCHOS")]
-        [TestCase("SINTERCARD")]
-        [TestCase("EVALSHA")]
-        [TestCase("LCS")]
-        public void ClusterASKTest(string commandName)
-        {
-            var requestNodeIndex = sourceIndex;
-            var address = "127.0.0.1";
-            var port = context.clusterTestUtils.GetPortFromNodeIndex(targetIndex);
-            var dummyCommand = new DummyCommand(commandName);
-            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
-
-            Initialize(command);
-
-            ConfigureSlotForMigration();
-
-            try
-            {
+                Initialize(command);
                 for (var i = 0; i < iterations; i++)
-                    SERedisASKTest(command);
+                    SERedisOKTest(command);
 
                 for (var i = 0; i < iterations; i++)
-                    GarnetClientSessionASKTest(command);
-            }
-            finally
-            {
-                ResetSlot();
+                    GarnetClientSessionOK(command);
+
                 try
                 {
                     var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
@@ -1120,221 +445,182 @@ namespace Garnet.test.cluster
                     context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
                     Assert.Fail($"Failed executing cleanup. Command: {command.Command}");
                 }
-            }
 
-            void SERedisASKTest(BaseCommand command)
-            {
-                RedisResult result = default;
-                try
+                void SERedisOKTest(BaseCommand command)
                 {
-                    result = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
-                }
-                catch (Exception ex)
-                {
-                    var tokens = ex.Message.Split(' ');
-                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
-
-                    var _address = tokens[1].Split(':')[0];
-                    var _port = int.Parse(tokens[1].Split(':')[1]);
-                    var _slot = int.Parse(tokens[4]);
-                    ClassicAssert.AreEqual(address, _address, command.Command);
-                    ClassicAssert.AreEqual(port, _port, command.Command);
-                    ClassicAssert.AreEqual(command.GetSlot, _slot, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
-
-            void GarnetClientSessionASKTest(BaseCommand command)
-            {
-                var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
-                try
-                {
-                    _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.Command);
-                    return;
-                }
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
-            }
-        }
-
-        [Test, Order(6), NonParallelizable]
-        [Category("SLOT_VERIFY")]
-        [TestCase("GET")]
-        [TestCase("SET")]
-        [TestCase("GETSET")]
-        [TestCase("SETNX")]
-        [TestCase("SUBSTR")]
-        [TestCase("MGET")]
-        [TestCase("MSET")]
-        [TestCase("GETEX")]
-        [TestCase("PFADD")]
-        [TestCase("PFCOUNT")]
-        [TestCase("PFMERGE")]
-        [TestCase("SETBIT")]
-        [TestCase("GETBIT")]
-        [TestCase("BITCOUNT")]
-        [TestCase("BITPOS")]
-        [TestCase("BITOP")]
-        [TestCase("BITFIELD")]
-        [TestCase("BITFIELD_RO")]
-        [TestCase("SETRANGE")]
-        [TestCase("GETRANGE")]
-        [TestCase("INCR")]
-        [TestCase("INCRBYFLOAT")]
-        [TestCase("APPEND")]
-        [TestCase("STRLEN")]
-        [TestCase("RENAME")]
-        [TestCase("DEL")]
-        [TestCase("GETDEL")]
-        [TestCase("EXISTS")]
-        [TestCase("PERSIST")]
-        [TestCase("EXPIRE")]
-        [TestCase("TTL")]
-        [TestCase("DUMP")]
-        [TestCase("RESTORE")]
-        [TestCase("SDIFFSTORE")]
-        [TestCase("SDIFF")]
-        [TestCase("SMOVE")]
-        [TestCase("SUNIONSTORE")]
-        [TestCase("SUNION")]
-        [TestCase("SINTERSTORE")]
-        [TestCase("SINTER")]
-        [TestCase("LMOVE")]
-        [TestCase("LPUSH")]
-        [TestCase("LPOP")]
-        [TestCase("LMPOP")]
-        [TestCase("ZMPOP")]
-        [TestCase("BLPOP")]
-        [TestCase("BLMOVE")]
-        [TestCase("BRPOPLPUSH")]
-        [TestCase("LLEN")]
-        [TestCase("LTRIM")]
-        [TestCase("LRANGE")]
-        [TestCase("LINDEX")]
-        [TestCase("LINSERT")]
-        [TestCase("LREM")]
-        [TestCase("RPOPLPUSH")]
-        [TestCase("LSET")]
-        [TestCase("SADD")]
-        [TestCase("SREM")]
-        [TestCase("SCARD")]
-        [TestCase("SMEMBERS")]
-        [TestCase("SISMEMBER")]
-        [TestCase("SMISMEMBER")]
-        [TestCase("SPOP")]
-        [TestCase("SRANDMEMBER")]
-        [TestCase("GEOADD")]
-        [TestCase("GEOHASH")]
-        [TestCase("GEOSEARCHSTORE")]
-        [TestCase("ZADD")]
-        [TestCase("ZREM")]
-        [TestCase("ZCARD")]
-        [TestCase("ZRANGE")]
-        [TestCase("ZREVRANGEBYLEX")]
-        [TestCase("ZRANGESTORE")]
-        [TestCase("ZSCORE")]
-        [TestCase("ZMSCORE")]
-        [TestCase("ZPOPMAX")]
-        [TestCase("ZCOUNT")]
-        [TestCase("ZLEXCOUNT")]
-        [TestCase("ZINCRBY")]
-        [TestCase("ZRANK")]
-        [TestCase("ZREMRANGEBYRANK")]
-        [TestCase("ZRANDMEMBER")]
-        [TestCase("ZDIFF")]
-        [TestCase("ZDIFFSTORE")]
-        [TestCase("ZINTER")]
-        [TestCase("ZINTERCARD")]
-        [TestCase("ZINTERSTORE")]
-        [TestCase("ZUNION")]
-        [TestCase("ZUNIONSTORE")]
-        [TestCase("ZEXPIRE")]
-        [TestCase("ZPEXPIRE")]
-        [TestCase("ZEXPIREAT")]
-        [TestCase("ZPEXPIREAT")]
-        [TestCase("ZTTL")]
-        [TestCase("ZPTTL")]
-        [TestCase("ZEXPIRETIME")]
-        [TestCase("ZPEXPIRETIME")]
-        [TestCase("ZPERSIST")]
-        [TestCase("ZCOLLECT")]
-        [TestCase("HSET")]
-        [TestCase("HGET")]
-        [TestCase("HGETALL")]
-        [TestCase("HMGET")]
-        [TestCase("HRANDFIELD")]
-        [TestCase("HLEN")]
-        [TestCase("HSTRLEN")]
-        [TestCase("HDEL")]
-        [TestCase("HEXISTS")]
-        [TestCase("HKEYS")]
-        [TestCase("HINCRBY")]
-        [TestCase("HEXPIRE")]
-        [TestCase("HPEXPIRE")]
-        [TestCase("HEXPIREAT")]
-        [TestCase("HPEXPIREAT")]
-        [TestCase("HTTL")]
-        [TestCase("HPTTL")]
-        [TestCase("HEXPIRETIME")]
-        [TestCase("HPEXPIRETIME")]
-        [TestCase("HPERSIST")]
-        [TestCase("HCOLLECT")]
-        [TestCase("CLUSTERGETPROC")]
-        [TestCase("CLUSTERSETPROC")]
-        [TestCase("WATCHMS")]
-        [TestCase("WATCHOS")]
-        [TestCase("SINTERCARD")]
-        [TestCase("LCS")]
-        public void ClusterTRYAGAINTest(string commandName)
-        {
-            var requestNodeIndex = sourceIndex;
-            var dummyCommand = new DummyCommand(commandName);
-            ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
-
-            Initialize(command);
-
-            for (var i = 0; i < iterations; i++)
-                SERedisTRYAGAINTest(command);
-
-            void SERedisTRYAGAINTest(BaseCommand command)
-            {
-                if (!command.IsArrayCommand)
-                    return;
-
-                foreach (var setup in command.SetupSingleSlotRequest())
-                {
-                    var setupParameters = setup.Slice(1).ToArray();
                     try
                     {
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(setup[0], setupParameters, CommandFlags.NoRedirect);
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
                     }
                     catch (Exception ex)
                     {
-                        context.logger?.LogError(ex, "Failed executing setup {command}", command.Command);
-                        Assert.Fail($"Failed executing setup. Command: {command.Command}");
+                        if (!command.RequiresExistingKey)
+                            Assert.Fail($"{ex.Message}. Command: {command.Command}");
                     }
                 }
 
+                void GarnetClientSessionOK(BaseCommand command)
+                {
+                    var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
+                    try
+                    {
+                        if (command.ArrayResponse)
+                            _ = client.ExecuteForArrayAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                        else
+                            _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!command.RequiresExistingKey)
+                            Assert.Fail($"{ex.Message}. Command: {command.Command}");
+                    }
+                }
+            }
+        }
+
+        [Test, Order(3)]
+        [Category("SLOT_VERIFY")]
+        public void ClusterCROSSSLOTTest()
+        {
+            foreach (var commandName in clusterDownTestList)
+            {
+                var requestNodeIndex = sourceIndex;
+                var dummyCommand = new DummyCommand(commandName);
+                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
+
+                Initialize(command);
+
+                for (var i = 0; i < iterations; i++)
+                    SERedisCrossslotTest(command);
+
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionCrossslotTest(command);
+
+                void SERedisCrossslotTest(BaseCommand command)
+                {
+                    if (!command.IsArrayCommand)
+                        return;
+                    try
+                    {
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetCrossSlotRequest());
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
+
+                void GarnetClientSessionCrossslotTest(BaseCommand command)
+                {
+                    if (!command.IsArrayCommand)
+                        return;
+                    var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
+                    try
+                    {
+                        client.ExecuteAsync(command.GetCrossslotRequestWithCommand).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
+            }
+        }
+
+        [Test, Order(4), NonParallelizable]
+        [Category("SLOT_VERIFY")]
+        public void ClusterMOVEDTest()
+        {
+            foreach (var commandName in clusterDownTestList)
+            {
+                var requestNodeIndex = targetIndex;
+                var address = "127.0.0.1";
+                var port = context.clusterTestUtils.GetPortFromNodeIndex(sourceIndex);
+                var dummyCommand = new DummyCommand(commandName);
+                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
+
+                Initialize(command);
+
+                for (var i = 0; i < iterations; i++)
+                    SERedisMOVEDTest(command);
+
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionMOVEDTest(command);
+
+                void SERedisMOVEDTest(BaseCommand command)
+                {
+                    try
+                    {
+                        context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
+                        var tokens = ex.Message.Split(' ');
+                        ClassicAssert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.Command);
+
+                        var _address = tokens[5].Split(':')[0];
+                        var _port = int.Parse(tokens[5].Split(':')[1]);
+                        var _slot = int.Parse(tokens[8]);
+                        ClassicAssert.AreEqual(address, _address, command.Command);
+                        ClassicAssert.AreEqual(port, _port, command.Command);
+                        ClassicAssert.AreEqual(command.GetSlot, _slot, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
+
+                void GarnetClientSessionMOVEDTest(BaseCommand command)
+                {
+                    var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
+                    try
+                    {
+                        client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
+            }
+        }
+
+        [Test, Order(5), NonParallelizable]
+        [Category("SLOT_VERIFY")]
+        public void ClusterASKTest()
+        {
+            foreach (var commandName in clusterDownTestList)
+            {
+                var requestNodeIndex = sourceIndex;
+                var address = "127.0.0.1";
+                var port = context.clusterTestUtils.GetPortFromNodeIndex(targetIndex);
+                var dummyCommand = new DummyCommand(commandName);
+                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
+
+                Initialize(command);
+
                 ConfigureSlotForMigration();
+
                 try
                 {
-                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
-                }
-                catch (Exception ex)
-                {
-                    ClassicAssert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command);
-                    return;
+                    for (var i = 0; i < iterations; i++)
+                        SERedisASKTest(command);
+
+                    for (var i = 0; i < iterations; i++)
+                        GarnetClientSessionASKTest(command);
                 }
                 finally
                 {
                     ResetSlot();
                     try
                     {
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+                        var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
                     }
                     catch (Exception ex)
                     {
@@ -1343,7 +629,109 @@ namespace Garnet.test.cluster
                     }
                 }
 
-                Assert.Fail($"Should not reach here. Command: {command.Command}");
+                void SERedisASKTest(BaseCommand command)
+                {
+                    RedisResult result = default;
+                    try
+                    {
+                        result = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    }
+                    catch (Exception ex)
+                    {
+                        var tokens = ex.Message.Split(' ');
+                        ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
+
+                        var _address = tokens[1].Split(':')[0];
+                        var _port = int.Parse(tokens[1].Split(':')[1]);
+                        var _slot = int.Parse(tokens[4]);
+                        ClassicAssert.AreEqual(address, _address, command.Command);
+                        ClassicAssert.AreEqual(port, _port, command.Command);
+                        ClassicAssert.AreEqual(command.GetSlot, _slot, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
+
+                void GarnetClientSessionASKTest(BaseCommand command)
+                {
+                    var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
+                    try
+                    {
+                        _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.Command);
+                        return;
+                    }
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
+            }
+        }
+
+        [Test, Order(6), NonParallelizable]
+        [Category("SLOT_VERIFY")]
+        public void ClusterTRYAGAINTest()
+        {
+            foreach (var commandName in clusterDownTestList)
+            {
+                var requestNodeIndex = sourceIndex;
+                var dummyCommand = new DummyCommand(commandName);
+                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
+
+                if (command.Command.Equals("EVALSHA"))
+                    continue;
+
+                Initialize(command);
+
+                for (var i = 0; i < iterations; i++)
+                    SERedisTRYAGAINTest(command);
+
+                void SERedisTRYAGAINTest(BaseCommand command)
+                {
+                    if (!command.IsArrayCommand)
+                        return;
+
+                    foreach (var setup in command.SetupSingleSlotRequest())
+                    {
+                        var setupParameters = setup.Slice(1).ToArray();
+                        try
+                        {
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(setup[0], setupParameters, CommandFlags.NoRedirect);
+                        }
+                        catch (Exception ex)
+                        {
+                            context.logger?.LogError(ex, "Failed executing setup {command}", command.Command);
+                            Assert.Fail($"Failed executing setup. Command: {command.Command}");
+                        }
+                    }
+
+                    ConfigureSlotForMigration();
+                    try
+                    {
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    }
+                    catch (Exception ex)
+                    {
+                        ClassicAssert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command);
+                        return;
+                    }
+                    finally
+                    {
+                        ResetSlot();
+                        try
+                        {
+                            _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+                        }
+                        catch (Exception ex)
+                        {
+                            context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
+                            Assert.Fail($"Failed executing cleanup. Command: {command.Command}");
+                        }
+                    }
+
+                    Assert.Fail($"Should not reach here. Command: {command.Command}");
+                }
             }
         }
 
