@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.IO;
-using System.Security.Cryptography;
 
 namespace Tsavorite.core
 {
@@ -15,23 +13,23 @@ namespace Tsavorite.core
         /// <summary>The value length and whether optional fields are present.</summary>
         public RecordFieldInfo FieldInfo;
 
-        /// <summary>Whether the key was long enough to overflow the inline max length.</summary>
-        public bool KeyIsOverflow;
+        /// <summary>Whether the key was within the inline max key length. Set automatically by Tsavorite based on <see cref="RecordFieldInfo.KeyTotalSize"/> key size.</summary>
+        public bool KeyIsInline;
 
-        /// <summary>Whether the value was long enough to overflow the inline max length.</summary>
-        public bool ValueIsOverflow;
+        /// <summary>Whether the value was within the inline max value length.</summary>
+        public bool ValueIsInline;
 
         /// <summary>Returns the inline length of the key (the amount it will take in the record).</summary>
-        public readonly int InlineKeySize => KeyIsOverflow ? SpanField.OverflowInlineSize : FieldInfo.KeySize;
+        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
 
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
-        public readonly int InlineValueSize => ValueIsOverflow ? SpanField.OverflowInlineSize : FieldInfo.ValueSize;
+        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueTotalSize : SpanField.OverflowInlineSize;
 
         /// <summary>Returns the data length of the key (the amount it will take in the record without length prefix).</summary>
-        public readonly int KeyDataSize => FieldInfo.KeySize - SpanField.FieldLengthPrefixSize;
+        public readonly int KeyDataSize => KeyIsInline ? FieldInfo.KeyTotalSize - SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
 
         /// <summary>Returns the data length of the value (the amount it will take in the record without length prefix).</summary>
-        public readonly int ValueDataSize => FieldInfo.ValueSize - SpanField.FieldLengthPrefixSize;
+        public readonly int ValueDataSize => ValueIsInline ? FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSpanSize { readonly get; internal set; }
@@ -51,9 +49,6 @@ namespace Tsavorite.core
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
         public readonly int OptionalSize => ETagSize + ExpirationSize;
-
-        /// <summary>Shortcut to see if either key or value is overflow.</summary>
-        public bool HasOverflow => KeyIsOverflow || ValueIsOverflow;
 
         /// <summary>Whether these values are set (default instances are used for Delete internally, for example).</summary>
         public readonly bool IsSet => AllocatedInlineRecordSize != 0;
@@ -77,7 +72,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"[{FieldInfo}] | KeyIsOF {bstr(KeyIsOverflow)}, ValIsOF {bstr(ValueIsOverflow)}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}, HasOF {bstr(HasOverflow)}";
+            return $"[{FieldInfo}] | KeyIsInln {bstr(KeyIsInline)}, ValIsInln {bstr(ValueIsInline)}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}";
         }
     }
 }

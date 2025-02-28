@@ -517,12 +517,12 @@ namespace Tsavorite.test.Revivification
 
                 // If the logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of SpanField.OverflowDataPtrSize,
                 // and we'll call SpanField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
-                if (logRecord.Info.ValueIsOverflow || (sizeInfo.IsSet && sizeInfo.ValueIsOverflow))
-                    ClassicAssert.AreEqual(SpanField.OverflowDataPtrSize, SpanField.GetInlineSize(logRecord.ValueAddress) - SpanField.FieldLengthPrefixSize);
-                if (sizeInfo.ValueIsOverflow)
-                    ClassicAssert.AreEqual(logRecord.Info.ValueIsOverflow ? expectedValueLength : SpanField.OverflowDataPtrSize, logRecord.ValueSpan.Length);
-                else 
+                if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
+                    ClassicAssert.AreEqual(SpanField.OverflowInlineSize, SpanField.GetTotalSizeOfInlineField(logRecord.ValueAddress) - SpanField.FieldLengthPrefixSize);
+                if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
+                else
+                    ClassicAssert.AreEqual(logRecord.Info.ValueIsInline ? expectedValueLength : SpanField.OverflowInlineSize, logRecord.ValueSpan.Length);
 
                 ClassicAssert.GreaterOrEqual(recordAddress, store.hlogBase.ReadOnlyAddress);
 
@@ -635,13 +635,13 @@ namespace Tsavorite.test.Revivification
             // Override the default SpanByteFunctions impelementation; for these tests, we always want the input length.
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByte input)
-                => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = input.TotalSize };
+                => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = input.TotalSize };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref SpanByte input)
-                => new() { KeySize = key.TotalSize, ValueSize = input.TotalSize };
+                => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = input.TotalSize };
             /// <inheritdoc/>
             public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref SpanByte input)
-                => new() { KeySize = key.TotalSize, ValueSize = input.TotalSize };
+                => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = input.TotalSize };
         }
 
         const int NumRecords = 200;
@@ -1447,7 +1447,7 @@ namespace Tsavorite.test.Revivification
             // Oversize records in this test do not go to "next higher" bin (there is no next-higher bin in the default PowersOf2 bins we use)
             // and they become an out-of-line pointer.
             functions.expectedInputLength = OversizeLength;
-            functions.expectedValueLengths.Enqueue(SpanField.OverflowDataPtrSize);
+            functions.expectedValueLengths.Enqueue(SpanField.OverflowInlineSize);
 
             // Initial insert of the oversize record
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref input, input, ref output) : bContext.RMW(key, ref input);

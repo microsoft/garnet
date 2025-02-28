@@ -117,13 +117,13 @@ namespace Tsavorite.test.Cancellation
 
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref int input)
-                => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(int) };
+                => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(int) };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref int input)
-                => new() { KeySize = key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(int) };
+                => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(int) };
             /// <inheritdoc/>
             public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref int input)
-                => new() { KeySize = key.TotalSize, ValueSize = value.TotalSize };
+                => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = value.TotalSize };
         }
 
         IDevice log;

@@ -101,7 +101,7 @@ namespace Tsavorite.benchmark
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref Input input) => GetFieldInfo();
 
-        static unsafe RecordFieldInfo GetFieldInfo() => new () { KeySize = SpanField.FieldLengthPrefixSize + sizeof(FixedLengthKey), ValueSize = SpanField.FieldLengthPrefixSize + sizeof(FixedLengthValue) };
+        static unsafe RecordFieldInfo GetFieldInfo() => new () { KeyTotalSize = SpanField.FieldLengthPrefixSize + sizeof(FixedLengthKey), ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(FixedLengthValue) };
 
         public void PostSingleDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo) { }
 

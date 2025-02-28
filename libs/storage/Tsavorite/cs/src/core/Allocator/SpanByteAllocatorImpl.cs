@@ -113,9 +113,10 @@ namespace Tsavorite.core
         public void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
         {
             var valueAddress = LogRecord.GetValueAddress(physicalAddress);
-            _ = !sizeInfo.ValueIsOverflow
-                        ? SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueSize - SpanField.FieldLengthPrefixSize)
-                        : SpanField.SetInlineDataLength(valueAddress, SpanField.OverflowDataPtrSize);   // Set the field length for the pointer, but wait for LogRecord<TValue>.TrySetValueSpan to do the allocation.
+            LogRecord.GetInfoRef(physicalAddress).ValueIsInline = sizeInfo.ValueIsInline;
+            _ = sizeInfo.ValueIsInline
+                        ? SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize)
+                        : SpanField.SetInlineDataLength(valueAddress, SpanField.OverflowInlineSize);    // Set the field length for the out-of-line pointer, but wait for LogRecord<TValue>.TrySetValueSpan to do the actual allocation.
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -157,8 +158,8 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
-                    KeySize = key.TotalSize,
-                    ValueSize = sizeof(int), // No payload for the default value
+                    KeyTotalSize = key.TotalSize,
+                    ValueTotalSize = sizeof(int), // No payload for the default value
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -169,19 +170,16 @@ namespace Tsavorite.core
 
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            var keySize = sizeInfo.FieldInfo.KeySize;
-            if (keySize > maxInlineKeySize)
-            {
-                keySize = SpanField.OverflowInlineSize;
-                sizeInfo.KeyIsOverflow = true;
-            }
-            var valueSize = sizeInfo.FieldInfo.ValueSize;
-            if (valueSize > maxInlineValueSize)
-            {
-                valueSize = SpanField.OverflowInlineSize;
-                sizeInfo.ValueIsOverflow = true;
-            }
+            // Key
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyTotalSize <= maxInlineKeySize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
+
+            // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
+            sizeInfo.ValueIsInline = sizeInfo.FieldInfo.ValueTotalSize <= sizeInfo.MaxInlineValueSpanSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : SpanField.OverflowInlineSize;
+
+            // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }

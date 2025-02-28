@@ -45,6 +45,8 @@ namespace Tsavorite.test
         [FieldOffset(8)]
         public long vfield2;
 
+        public static int AsSpanByteTotalSize => sizeof(ValueStruct) + SpanField.FieldLengthPrefixSize;
+
         public override readonly string ToString() => $"vfield1 {vfield1}, vfield2 {vfield2}";
     }
 
@@ -136,13 +138,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref InputStruct input)
-            => new() { KeySize = key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref InputStruct input)
-            => new() { KeySize = key.TotalSize, ValueSize = value.TotalSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = value.TotalSize };
     }
 
     public class FunctionsCompaction : SessionFunctionsBase<SpanByte, InputStruct, OutputStruct, int>
@@ -209,13 +211,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref InputStruct input)
-            => new() { KeySize = key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref InputStruct input)
-            => new() { KeySize = key.TotalSize, ValueSize = value.TotalSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = value.TotalSize };
     }
 
     public class FunctionsCopyOnWrite : SessionFunctionsBase<SpanByte, InputStruct, OutputStruct, Empty>
@@ -296,13 +298,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref InputStruct input)
-            => new() { KeySize = key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref InputStruct input)
-            => new() { KeySize = key.TotalSize, ValueSize = value.TotalSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = value.TotalSize };
     }
 
     public class SimpleLongSimpleFunctions : SessionFunctionsBase<SpanByte, long, long, Empty>
@@ -369,12 +371,12 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref long input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(long) };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(long) };
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref long input)
-            => new() { KeySize = key.TotalSize, ValueSize = SpanField.FieldLengthPrefixSize + sizeof(long) };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = SpanField.FieldLengthPrefixSize + sizeof(long) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref long input)
-            => new() { KeySize = key.TotalSize, ValueSize = value.TotalSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = value.TotalSize };
     }
 }

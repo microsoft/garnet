@@ -92,8 +92,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
             {
-                KeySize = Key.TotalSize,
-                ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+                KeyTotalSize = Key.TotalSize,
+                ValueTotalSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration
             };
@@ -103,9 +103,9 @@ namespace Tsavorite.core
 
         readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
-        internal readonly long ValueAddress => KeyAddress + SpanField.GetInlineSize(KeyAddress);
+        internal readonly long ValueAddress => KeyAddress + SpanField.GetTotalSizeOfInlineField(KeyAddress);
 
-        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.GetInlineSize(ValueAddress);
+        private readonly int InlineValueLength => IsObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.GetTotalSizeOfInlineField(ValueAddress);
         public readonly int OptionalLength => (Info.HasETag ? LogRecord.ETagSize : 0) + (Info.HasExpiration ? LogRecord.ExpirationSize : 0);
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;

@@ -45,6 +45,7 @@ namespace Tsavorite.core
         internal ObjectPage[] values;
 
         readonly int maxInlineKeySize;
+        readonly int maxInlineValueSize;
         readonly int overflowAllocatorFixedPageSize;
 
         // Size of object chunks being written to storage
@@ -61,6 +62,7 @@ namespace Tsavorite.core
             IsObjectAllocator = true;
 
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
+            maxInlineValueSize = Math.Min(512 * 1024 * 1024, PageSize / RecordFieldInfo.InlineObjectValueSizeMaxPageDivisor);
             overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
@@ -138,8 +140,15 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, ref RecordSizeInfo _)
-            => *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+        public static void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
+        {
+            var valueAddress = LogRecord.GetValueAddress(physicalAddress);
+            LogRecord.GetInfoRef(physicalAddress).ValueIsInline = sizeInfo.ValueIsInline;
+            if (sizeInfo.ValueIsInline)
+                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize);
+            else
+                *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
@@ -180,8 +189,8 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
-                    KeySize = key.TotalSize,
-                    ValueSize = ObjectIdMap.ObjectIdSize,
+                    KeyTotalSize = key.TotalSize,
+                    ValueTotalSize = ObjectIdMap.ObjectIdSize,
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -193,13 +202,17 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            var keySize = sizeInfo.FieldInfo.KeySize;
-            if (keySize > maxInlineKeySize)
-            {
-                keySize = SpanField.OverflowInlineSize;
-                sizeInfo.KeyIsOverflow = true;
-            }
-            sizeInfo.MaxInlineValueSpanSize = ObjectIdMap.ObjectIdSize;
+            // Key
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyTotalSize <= maxInlineKeySize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
+
+            // Value
+            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
+            sizeInfo.ValueIsInline = sizeInfo.FieldInfo.ValueTotalSize != RecordFieldInfo.ValueObjectIdSize
+                                    && sizeInfo.FieldInfo.ValueTotalSize <= sizeInfo.MaxInlineValueSpanSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : ObjectIdMap.ObjectIdSize;
+
+            // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + ObjectIdMap.ObjectIdSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
@@ -238,7 +251,7 @@ namespace Tsavorite.core
             // Release any overflow allocations for Key
             logRecord.FreeKeyOverflow();
 
-            if (logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
+            if (!logRecord.Info.ValueIsInline && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
             {
                 var heapObj = logRecord.ValueObject;
                 if (heapObj is not null)

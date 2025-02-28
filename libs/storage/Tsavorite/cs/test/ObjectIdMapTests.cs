@@ -50,7 +50,7 @@ namespace Tsavorite.test
                     for (int page = 0; page < MultiLevelPageArray.ChapterSize; ++page)
                     {
                         // Assert.That() does reflection and allocates a ConstraintResult class instance, so use a bare test to filter for it in inner loops.
-                        map.Allocate(out int objectId);
+                        var objectId = map.Allocate();
                         if (objectId > map.Count)
                             Assert.Fail("objectId should be <= map.Count");
                         map.Set(objectId, valueObject);
@@ -108,7 +108,7 @@ namespace Tsavorite.test
                 // we'd Allocate() which does per-thread ownership instead.
                 for (var page = 0; page < MultiLevelPageArray.ChapterSize; ++page)
                 {
-                    map.Allocate(out var objectId);
+                    var objectId = map.Allocate();
 
                     // The request should have been satisfied from the freeList, not another allocation.
                     if (objectId >= allocatedCount)

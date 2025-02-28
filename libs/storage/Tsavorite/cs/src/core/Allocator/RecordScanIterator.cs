@@ -334,8 +334,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRecordFieldInfo() => new()
         {
-            KeySize = Key.TotalSize,
-            ValueSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+            KeyTotalSize = Key.TotalSize,
+            ValueTotalSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
         };

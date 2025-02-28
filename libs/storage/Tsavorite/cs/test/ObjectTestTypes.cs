@@ -42,6 +42,8 @@ namespace Tsavorite.test
     {
         public int value;
 
+        public bool wantInlineValue;
+
         public override readonly string ToString() => value.ToString();
     }
 
@@ -49,13 +51,16 @@ namespace Tsavorite.test
     {
         public TestObjectValue value;
 
+        public bool srcWasInlineValue;
+        public bool destIsInlineValue;
+
         public override string ToString() => value.ToString();
     }
 
     public class TestObjectFunctions : SessionFunctionsBase<TestObjectValue, TestObjectInput, TestObjectOutput, Empty>
     {
         public override bool InitialUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value });
+            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value }, ref sizeInfo);
 
         public override bool InPlaceUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
@@ -66,7 +71,7 @@ namespace Tsavorite.test
         public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => true;
 
         public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TestObjectValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = srcLogRecord.ValueObject.value + input.value } );
+            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = srcLogRecord.ValueObject.value + input.value }, ref sizeInfo);
 
         public override bool ConcurrentReader(ref LogRecord<TestObjectValue> logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
@@ -76,7 +81,7 @@ namespace Tsavorite.test
 
         public override bool ConcurrentWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueObject(srcValue))
+            if (!logRecord.TrySetValueObject(srcValue, ref sizeInfo))
                 return false;
             output.value = logRecord.ValueObject;
             return true;
@@ -101,20 +106,20 @@ namespace Tsavorite.test
         }
 
         public override bool SingleWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => logRecord.TrySetValueObject(srcValue);
+            => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = RecordFieldInfo.ValueObjectIdSize };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
-            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = RecordFieldInfo.ValueObjectIdSize };
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestObjectValue value, ref TestObjectInput input)
-            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = RecordFieldInfo.ValueObjectIdSize };
     }
 
     public class TestObjectFunctionsDelete : SessionFunctionsBase<TestObjectValue, TestObjectInput, TestObjectOutput, int>
     {
         public override bool InitialUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value });
+            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value }, ref sizeInfo);
 
         public override bool InPlaceUpdater(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
@@ -125,7 +130,7 @@ namespace Tsavorite.test
         public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => true;
 
         public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TestObjectValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = srcLogRecord.ValueObject.value + input.value });
+            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = srcLogRecord.ValueObject.value + input.value }, ref sizeInfo);
 
         public override bool ConcurrentReader(ref LogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
         {
@@ -134,7 +139,7 @@ namespace Tsavorite.test
         }
 
         public override bool ConcurrentWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObject(srcValue);
+            => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override void ReadCompletionCallback(ref DiskLogRecord<TestObjectValue> srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -167,14 +172,14 @@ namespace Tsavorite.test
         }
 
         public override bool SingleWriter(ref LogRecord<TestObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => logRecord.TrySetValueObject(srcValue);
+            => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
-            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize };
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestObjectValue value, ref TestObjectInput input)
-            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize };
     }
 
     public class TestLargeObjectValue
@@ -239,7 +244,7 @@ namespace Tsavorite.test
 
         public override bool ConcurrentWriter(ref LogRecord<TestLargeObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestLargeObjectValue srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
-            if (!logRecord.TrySetValueObject(srcValue))
+            if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
             output.value = logRecord.ValueObject;
             return true;
@@ -247,17 +252,17 @@ namespace Tsavorite.test
 
         public override bool SingleWriter(ref LogRecord<TestLargeObjectValue> logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestLargeObjectValue srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo, WriteReason reason)
         {
-            if (!logRecord.TrySetValueObject(srcValue))
+            if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
             output.value = logRecord.ValueObject;
             return true;
         }
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-            => new() { KeySize = srcLogRecord.Key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = RecordFieldInfo.ValueObjectIdSize };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
-            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = RecordFieldInfo.ValueObjectIdSize };
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestLargeObjectValue value, ref TestObjectInput input)
-            => new() { KeySize = key.TotalSize, ValueSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = RecordFieldInfo.ValueObjectIdSize };
     }
 }

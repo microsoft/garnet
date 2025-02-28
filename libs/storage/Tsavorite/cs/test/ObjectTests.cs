@@ -50,9 +50,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
+        [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectInMemWriteRead()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
@@ -70,8 +68,7 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(value.value, output.value.value);
         }
 
-        [Test]
-        [Category("TsavoriteKV")]
+        [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectInMemWriteRead2()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
@@ -95,13 +92,9 @@ namespace Tsavorite.test
 
             _ = bContext.Read(key2, ref input2, ref output, Empty.Default);
             ClassicAssert.AreEqual(input2.value, output.value.value);
-
         }
 
-
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
+        [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteRead()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());

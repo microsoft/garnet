@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Tsavorite.core
 {
@@ -41,18 +42,26 @@ namespace Tsavorite.core
 
         /// <summary>Reserve a slot and return its ID.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Allocate(out int objectId)
-        {
-            if (!freeList.TryPop(out objectId))
-                objectId = objectArray.Allocate();
-        }
+        public int Allocate()
+            => freeList.TryPop(out var objectId) ? objectId : objectArray.Allocate();
 
         /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free(int objectId)
         {
-            Set(objectId, default);
-            freeList.Push(objectId);
+            if (objectId != ObjectIdMap.InvalidObjectId)
+            {
+                Set(objectId, default);
+                freeList.Push(objectId);
+            }
+        }
+
+        /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Free(int* ptrToObjectId)
+        {
+            Free(*ptrToObjectId);
+            *ptrToObjectId = ObjectIdMap.InvalidObjectId;
         }
 
         /// <summary>Returns the slot's object.</summary>
@@ -65,7 +74,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear() => objectArray?.Clear();    // TODO reduce allocated chapter count also?
-            
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ClearAt(int objectId, Action<TValue> disposer)
         {

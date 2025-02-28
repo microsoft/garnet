@@ -82,7 +82,12 @@ namespace Tsavorite.core
         public virtual bool InPlaceUpdater(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
         /// <inheritdoc/>
-        public virtual bool SingleDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo) => dstLogRecord.IsObjectRecord ? dstLogRecord.TrySetValueObject(default) : true;
+        public virtual bool SingleDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo)
+        {
+            if (dstLogRecord.IsObjectRecord)
+                dstLogRecord.ClearValueObject(_ => { });
+            return true;
+        }
         public virtual void PostSingleDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo) { }
         public virtual bool ConcurrentDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo) => true;
 
