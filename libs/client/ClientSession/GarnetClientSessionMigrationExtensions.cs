@@ -176,6 +176,7 @@ namespace Garnet.client
             tcsQueue.Enqueue(currTcsIterationTask);
             curr = offset;
             this.isMainStore = isMainStore;
+            this.ist = IncrementalSendType.MIGRATE;
             var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
             var replaceOption = replace ? T : F;
 

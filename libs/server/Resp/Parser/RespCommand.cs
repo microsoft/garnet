@@ -280,6 +280,7 @@ namespace Garnet.server
         ACL,
         ACL_CAT,
         ACL_DELUSER,
+        ACL_GETUSER,
         ACL_LIST,
         ACL_LOAD,
         ACL_SAVE,
@@ -321,6 +322,7 @@ namespace Garnet.server
         CLUSTER_ADDSLOTSRANGE,
         CLUSTER_AOFSYNC,
         CLUSTER_APPENDLOG,
+        CLUSTER_ATTACH_SYNC,
         CLUSTER_BANLIST,
         CLUSTER_BEGIN_REPLICA_RECOVER,
         CLUSTER_BUMPEPOCH,
@@ -358,7 +360,8 @@ namespace Garnet.server
         CLUSTER_SETSLOTSRANGE,
         CLUSTER_SHARDS,
         CLUSTER_SLOTS,
-        CLUSTER_SLOTSTATE, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
+        CLUSTER_SLOTSTATE,
+        CLUSTER_SYNC, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
 
         // Don't require AUTH (if auth is enabled)
         AUTH, // Note: Update IsNoAuth if adding new no-auth commands before this
@@ -394,6 +397,7 @@ namespace Garnet.server
             // ACL
             RespCommand.ACL_CAT,
             RespCommand.ACL_DELUSER,
+            RespCommand.ACL_GETUSER,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
             RespCommand.ACL_SAVE,
@@ -595,7 +599,7 @@ namespace Garnet.server
         {
             // If cmd < RespCommand.CLUSTER_ADDSLOTS - underflows, setting high bits
             uint test = (uint)((int)cmd - (int)RespCommand.CLUSTER_ADDSLOTS);
-            bool inRange = test <= (RespCommand.CLUSTER_SLOTSTATE - RespCommand.CLUSTER_ADDSLOTS);
+            bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
     }
@@ -2078,6 +2082,10 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_APPENDLOG;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.attach_sync))
+                {
+                    return RespCommand.CLUSTER_ATTACH_SYNC;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.banlist))
                 {
                     return RespCommand.CLUSTER_BANLIST;
@@ -2113,6 +2121,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
+                {
+                    return RespCommand.CLUSTER_SYNC;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
@@ -2306,6 +2318,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
                 {
                     return RespCommand.ACL_DELUSER;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
+                {
+                    return RespCommand.ACL_GETUSER;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.LIST))
                 {
