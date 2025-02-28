@@ -762,10 +762,26 @@ namespace Garnet.test
             return new LightClientRequest(EndPoint, 0, onReceive, sslOptions, countResponseType);
         }
 
+        public static string GetHostName(ILogger logger = null)
+        {
+            try
+            {
+                var serverName = Environment.MachineName; // host name sans domain
+                var fqhn = Dns.GetHostEntry(serverName).HostName; // fully qualified hostname
+                return fqhn;
+            }
+            catch (SocketException ex)
+            {
+                logger?.LogError(ex, "GetHostName threw an error");
+            }
+
+            return "";
+        }
+
         public static EndPointCollection GetShardEndPoints(int shards, IPAddress address, int port)
         {
             EndPointCollection endPoints = [];
-            for (int i = 0; i < shards; i++)
+            for (var i = 0; i < shards; i++)
                 endPoints.Add(address, port + i);
             return endPoints;
         }

@@ -1152,6 +1152,24 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void Meet(int sourceNodeIndex, int meetNodeIndex, string hostname, ILogger logger = null)
+            => Meet((IPEndPoint)endpoints[sourceNodeIndex], (IPEndPoint)endpoints[meetNodeIndex], hostname, logger);
+
+        public void Meet(IPEndPoint source, IPEndPoint target, string hostname, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(source);
+                var resp = server.Execute("cluster", "meet", $"{hostname}", $"{target.Port}");
+                ClassicAssert.AreEqual((string)resp, "OK");
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred");
+                Assert.Fail(ex.Message);
+            }
+        }
+
         public string[] BanList(int sourceNodeIndex, ILogger logger = null)
             => BanList((IPEndPoint)endpoints[sourceNodeIndex], logger);
 
@@ -1304,7 +1322,7 @@ namespace Garnet.test.cluster
             while (true)
             {
                 var configs = new List<ClusterConfiguration>();
-                for (int i = 0; i < endpoints.Count; i++)
+                for (var i = 0; i < endpoints.Count; i++)
                 {
                     if (i == nodeIndex) continue;
                     configs.Add(ClusterNodes(i, logger));

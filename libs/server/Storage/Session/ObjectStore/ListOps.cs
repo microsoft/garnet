@@ -260,6 +260,15 @@ namespace Garnet.server
 
                         dstListObject = listObject;
                     }
+                    else // sameKey
+                    {
+                        if (sourceDirection == destinationDirection)
+                        {
+                            element = (sourceDirection == OperationDirection.Right) ?
+                                        srcListObject.LnkList.Last.Value : srcListObject.LnkList.First.Value;
+                            return GarnetStatus.OK;
+                        }
+                    }
 
                     // Right pop (removelast) from source
                     if (sourceDirection == OperationDirection.Right)
@@ -299,9 +308,9 @@ namespace Garnet.server
                     else
                     {
                         // When the source and the destination key is the same the operation is done only in the sourceList
-                        if (sourceDirection == OperationDirection.Right && destinationDirection == OperationDirection.Left)
+                        if (destinationDirection == OperationDirection.Left)
                             srcListObject.LnkList.AddFirst(element);
-                        else if (sourceDirection == OperationDirection.Left && destinationDirection == OperationDirection.Right)
+                        else if (destinationDirection == OperationDirection.Right)
                             srcListObject.LnkList.AddLast(element);
                         newListValue = srcListObject;
                         ((ListObject)newListValue).UpdateSize(element);
