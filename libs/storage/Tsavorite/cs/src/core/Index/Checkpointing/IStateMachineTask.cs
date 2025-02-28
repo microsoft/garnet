@@ -3,6 +3,9 @@
 
 namespace Tsavorite.core
 {
+    /// <summary>
+    /// Interface for tasks that are executed as part of the state machine
+    /// </summary>
     public interface IStateMachineTask
     {
         /// <summary>

@@ -10,6 +10,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    /// <summary>
+    /// Driver for the state machine. This class is responsible for executing the state machine.
+    /// </summary>
     public class StateMachineDriver
     {
         SystemState systemState;
@@ -205,11 +208,11 @@ namespace Tsavorite.core
                 _ = Interlocked.Exchange(ref stateMachine, null);
                 if (ex != null)
                 {
-                    _stateMachineCompleted.TrySetException(ex);
+                    _ = _stateMachineCompleted.TrySetException(ex);
                 }
                 else
                 {
-                    _stateMachineCompleted.TrySetResult(true);
+                    _ = _stateMachineCompleted.TrySetResult(true);
                 }
             }
         }
