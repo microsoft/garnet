@@ -18,7 +18,7 @@ namespace Garnet.common
         public LogLevel LogLevel { get; } = LogLevel.Trace;
         public bool ClientResponse { get; } = true;
         public bool Panic { get; } = false;
-        public bool DisposeSession { get; } = false;
+        public bool DisposeSession { get; } = true;
 
         /// <summary>
         /// Throw Garnet exception.
