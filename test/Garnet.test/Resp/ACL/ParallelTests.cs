@@ -90,7 +90,7 @@ namespace Garnet.test.Resp.ACL
             // This is a combination of the two commands above indicative of threading issues.
             string inactiveUserWithGet = $"user {TestUserA} off #{DummyPasswordHash} +get";
 
-            var c = TestUtils.GetGarnetClientSession();
+            using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
             _ = await c.ExecuteAsync(activeUserWithGetCommand.Split(" "));
 
