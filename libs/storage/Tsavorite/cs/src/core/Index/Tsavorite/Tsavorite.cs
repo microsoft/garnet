@@ -66,7 +66,6 @@ namespace Tsavorite.core
 
         int maxSessionID;
 
-        internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> LockTable;
 
         internal void IncrementNumLockingSessions()
@@ -98,7 +97,6 @@ namespace Tsavorite.core
 
             var checkpointSettings = kvSettings.GetCheckpointSettings() ?? new CheckpointSettings();
 
-            CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)

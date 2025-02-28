@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -42,6 +43,11 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     break;
                 case Phase.IN_PROGRESS:
+                    // Wait for PREPARE threads to finish active transactions and enter barrier
+                    while (store.hlogBase.NumActiveLockingSessions > 0)
+                    {
+                        _ = Thread.Yield();
+                    }
                     store.CheckpointVersionShift(lastVersion, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:

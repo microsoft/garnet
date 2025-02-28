@@ -556,7 +556,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 long dummyInOut = 0;
                 status = useRMW
                     ? luContext.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
@@ -702,7 +702,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 status = useRMW
                     ? luContext.RMW(resultKey, (readValue24 + readValue51) * valueMult2)
                     : luContext.Upsert(resultKey, (readValue24 + readValue51) * valueMult2);
@@ -770,7 +770,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 status = luContext.Delete(ref resultKey);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
 

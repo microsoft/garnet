@@ -20,8 +20,10 @@ namespace Tsavorite.core
             // Control automatic Read copy operations. These flags override flags specified at the TsavoriteKV level, but may be overridden on the individual Read() operations
             internal ReadCopyOptions ReadCopyOptions;
 
-            internal long version;
-            public Phase phase;
+            public SystemState SessionState;
+            internal long version => SessionState.Version;
+            public Phase phase => SessionState.Phase;
+
             public long totalPending;
             public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
             public readonly AsyncCountDown pendingReads;
@@ -31,8 +33,7 @@ namespace Tsavorite.core
 
             public TsavoriteExecutionContext(int sessionID, string sessionName)
             {
-                phase = Phase.REST;
-                version = 1;
+                SessionState = SystemState.Make(Phase.REST, 1);
                 this.sessionID = sessionID;
                 this.sessionName = sessionName;
                 readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
