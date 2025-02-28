@@ -101,7 +101,7 @@ namespace Tsavorite.core
 
                 uint chunkSize = (uint)(totalSize / numChunks);
                 mainIndexCheckpointCallbackCount = numChunks;
-                
+
                 if (throttleCheckpointFlushDelayMs >= 0)
                     throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
                 HashBucket* start = state[version].tableAligned;
