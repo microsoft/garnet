@@ -760,5 +760,29 @@ namespace Garnet.test.cluster
                 }
             }
         }
+
+        [Test, Order(13)]
+        public void ClusterMeetHostname([Values] bool useLoopback)
+        {
+            var hostname = useLoopback ? "localhost" : TestUtils.GetHostName(context.logger);
+            ClassicAssert.IsNotNull(hostname);
+            ClassicAssert.IsNotEmpty(hostname);
+
+            var node_count = 3;
+            context.CreateInstances(node_count, enableAOF: true, useHostname: !useLoopback);
+            context.CreateConnection();
+
+            for (var i = 0; i < node_count; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
+
+
+            for (var i = 1; i < node_count; i++)
+                context.clusterTestUtils.Meet(0, i, hostname, context.logger);
+
+            for (var i = 0; i < node_count; i++)
+                for (var j = 0; j < node_count; j++)
+                    if (i != j)
+                        context.clusterTestUtils.WaitUntilNodeIsKnown(i, j, context.logger);
+        }
     }
 }
