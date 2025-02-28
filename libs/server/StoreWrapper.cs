@@ -581,6 +581,7 @@ namespace Garnet.server
             itemBroker?.Dispose();
             monitor?.Dispose();
             ctsCommit?.Cancel();
+            databaseManager.Dispose();
 
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();

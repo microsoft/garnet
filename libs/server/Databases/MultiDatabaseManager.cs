@@ -886,6 +886,7 @@ namespace Garnet.server
             if (Disposed) return;
 
             cts.Cancel();
+            Disposed = true;
 
             // Disable changes to databases map and dispose all databases
             databases.mapLock.WriteLock();
@@ -893,8 +894,6 @@ namespace Garnet.server
                 db.Dispose();
 
             cts.Dispose();
-
-            Disposed = true;
         }
     }
 }

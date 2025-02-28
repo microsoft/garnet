@@ -130,6 +130,9 @@ namespace Garnet.server
         {
             if (disposed) return;
 
+            // Wait for checkpoints to complete and disable checkpointing
+            CheckpointingLock.CloseLock();
+
             MainStore?.Dispose();
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
@@ -140,9 +143,6 @@ namespace Garnet.server
                 while (!ObjectStoreSizeTracker.Stopped)
                     Thread.Yield();
             }
-
-            // Wait for checkpoints to complete and disable checkpointing
-            CheckpointingLock.CloseLock();
 
             disposed = true;
         }
