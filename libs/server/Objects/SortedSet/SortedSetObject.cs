@@ -77,7 +77,7 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Options for specifying the range in sorted set operations.
+    /// Options for specifying command type in sorted set geo operations.
     /// </summary>
     [Flags]
     public enum SortedSetGeoOpts : byte
