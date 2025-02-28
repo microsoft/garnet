@@ -71,7 +71,6 @@ namespace Tsavorite.core
 
         internal void IncrementNumLockingSessions()
         {
-            _hybridLogCheckpoint.info.manualLockingActive = true;
             Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
         }
         internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
