@@ -18,7 +18,7 @@ namespace Garnet.test
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, commitFrequencyMs: 1000);
             server.Start();
         }
@@ -899,7 +899,6 @@ namespace Garnet.test
                     Task.Delay(TimeSpan.FromMilliseconds(100), cts.Token);
                 }
 
-                var prevLastSave = expectedLastSave;
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave + 2));
 
@@ -908,7 +907,7 @@ namespace Garnet.test
                 lastSaveStr = db1.Execute("LASTSAVE", "1").ToString();
                 parsed = long.TryParse(lastSaveStr, out lastSave);
                 ClassicAssert.IsTrue(parsed);
-                ClassicAssert.AreEqual(prevLastSave, lastSave);
+                ClassicAssert.AreEqual(0, lastSave);
             }
 
             // Restart server

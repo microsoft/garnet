@@ -55,8 +55,8 @@ namespace Garnet.server
 
         readonly string checkpointDirBaseName;
 
-        public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate,
-            StoreWrapper storeWrapper, bool createDefaultDatabase = true) : base(createsDatabaseDelegate, storeWrapper)
+        public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate,
+            StoreWrapper storeWrapper, bool createDefaultDatabase = true) : base(createDatabaseDelegate, storeWrapper)
         {
             maxDatabases = storeWrapper.serverOptions.MaxDatabases;
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(MultiDatabaseManager));
@@ -67,7 +67,7 @@ namespace Garnet.server
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
             {
-                var db = CreateDatabaseDelegate(0, out var storeCheckpointDir, out var aofDir);
+                var db = createDatabaseDelegate(0, out var storeCheckpointDir, out var aofDir);
 
                 var checkpointDirInfo = new DirectoryInfo(storeCheckpointDir);
                 checkpointDirBaseName = checkpointDirInfo.Name;
@@ -525,6 +525,15 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new MultiDatabaseManager(this, enableAof);
 
+        protected override ref GarnetDatabase GetDatabaseByRef(int dbId = 0)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault());
+
+            return ref databasesMapSnapshot[dbId];
+        }
+
         public override FunctionsState CreateFunctionsState(int dbId = 0)
         {
             if (!TryGetOrAddDatabase(dbId, out var db))
@@ -558,15 +567,16 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId, CancellationToken token = default)
         {
-            if (!TryGetOrAddDatabase(dbId, out var db))
-                throw new GarnetException($"Database with ID {dbId} was not found.");
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault());
 
-            var checkpointsPaused = TryPauseCheckpoints(ref db);
+            var checkpointsPaused = TryPauseCheckpoints(ref databasesMapSnapshot[dbId]);
 
             while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
             {
                 await Task.Yield();
-                checkpointsPaused = TryPauseCheckpoints(ref db);
+                checkpointsPaused = TryPauseCheckpoints(ref databasesMapSnapshot[dbId]);
             }
 
             return checkpointsPaused;
@@ -575,10 +585,11 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void ResumeCheckpoints(int dbId)
         {
-            if (!TryGetOrAddDatabase(dbId, out var db))
-                throw new GarnetException($"Database with ID {dbId} was not found.");
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault());
 
-            ResumeCheckpoints(ref db);
+            ResumeCheckpoints(ref databasesMapSnapshot[dbId]);
         }
 
         /// <inheritdoc/>
@@ -814,34 +825,41 @@ namespace Garnet.server
             for (var i = 0; i < checkpointTasks.Length; i++)
                 checkpointTasks[i] = Task.CompletedTask;
 
-            var databaseMapSnapshot = databases.Map;
-
-            var currIdx = 0;
-            while (currIdx < dbIdsCount)
-            {
-                var dbId = dbIdsToCheckpoint[currIdx];
-
-                // Prevent parallel checkpoint
-                if (!await TryPauseCheckpointsContinuousAsync(dbId, token))
-                    continue;
-
-                checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], storeType, logger: logger, token: token).ContinueWith(
-                    _ =>
-                    {
-                        TryUpdateLastSaveTimeAsync(dbId, token).GetAwaiter().GetResult();
-                        ResumeCheckpoints(dbId);
-                    }, TaskContinuationOptions.ExecuteSynchronously);
-
-                currIdx++;
-            }
+            var lockAcquired = await TryGetDatabasesReadLockAsync(token);
+            if (!lockAcquired) return;
 
             try
             {
+                var databaseMapSnapshot = databases.Map;
+
+                var currIdx = 0;
+                while (currIdx < dbIdsCount)
+                {
+                    var dbId = dbIdsToCheckpoint[currIdx];
+
+                    // Prevent parallel checkpoint
+                    if (!await TryPauseCheckpointsContinuousAsync(dbId, token))
+                        continue;
+
+                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], storeType, logger: logger, token: token).ContinueWith(
+                        _ =>
+                        {
+                            TryUpdateLastSaveTimeAsync(dbId, token).GetAwaiter().GetResult();
+                            ResumeCheckpoints(dbId);
+                        }, TaskContinuationOptions.ExecuteSynchronously);
+
+                    currIdx++;
+                }
+
                 await Task.WhenAll(checkpointTasks);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Checkpointing threw exception");
+            }
+            finally
+            {
+                databasesLock.ReadUnlock();
             }
         }
 

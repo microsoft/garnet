@@ -235,7 +235,7 @@ namespace Garnet.server
             {
                 databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
                 if (!databaseSessions.TrySetValue(0, ref dbSession))
-                    throw new GarnetException("Failed to set initial database in databases map");
+                    throw new GarnetException("Failed to set initial database session in database sessions map");
             }
 
             SwitchActiveDatabaseSession(0, ref dbSession);

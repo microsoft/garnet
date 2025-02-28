@@ -156,6 +156,8 @@ namespace Garnet.server
             this.LoggerFactory = storeWrapper.loggerFactory;
         }
 
+        protected abstract ref GarnetDatabase GetDatabaseByRef(int dbId = 0);
+
         protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
         {
             storeVersion = db.MainStore.Recover();

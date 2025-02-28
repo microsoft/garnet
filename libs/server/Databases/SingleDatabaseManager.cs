@@ -19,15 +19,15 @@ namespace Garnet.server
 
         GarnetDatabase defaultDatabase;
 
-        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createsDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) : 
-            base(createsDatabaseDelegate, storeWrapper)
+        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) : 
+            base(createDatabaseDelegate, storeWrapper)
         {
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
 
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
             {
-                defaultDatabase = createsDatabaseDelegate(0, out _, out _);
+                defaultDatabase = createDatabaseDelegate(0, out _, out _);
             }
         }
 
@@ -300,6 +300,8 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
+
+        protected override ref GarnetDatabase GetDatabaseByRef(int dbId = 0) => ref DefaultDatabase;
 
         public override FunctionsState CreateFunctionsState(int dbId = 0)
         {

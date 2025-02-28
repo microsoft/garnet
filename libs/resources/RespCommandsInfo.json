@@ -4592,6 +4592,13 @@
     ]
   },
   {
+    "Command": "SWAPDB",
+    "Name": "SWAPDB",
+    "Arity": 3,
+    "Flags": "Fast, Write",
+    "AclCategories": "Dangerous, Fast, KeySpace, Write"
+  },
+  {
     "Command": "TIME",
     "Name": "TIME",
     "Arity": 1,

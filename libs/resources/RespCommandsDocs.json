@@ -6891,6 +6891,25 @@
     ]
   },
   {
+    "Command": "SWAPDB",
+    "Name": "SWAPDB",
+    "Summary": "Swaps two Memurai databases",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the count of clients watching or blocking on keys from both databases.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX1",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX2",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "TIME",
     "Name": "TIME",
     "Summary": "Returns the server time.",

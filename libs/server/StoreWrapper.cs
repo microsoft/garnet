@@ -126,6 +126,8 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string runId;
 
+        private readonly DatabaseCreatorDelegate createDatabaseDelegate;
+
         readonly CancellationTokenSource ctsCommit;
 
         // True if StoreWrapper instance is disposed
@@ -153,6 +155,7 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
+            this.createDatabaseDelegate = createDatabaseDelegate;
             this.databaseManager = serverOptions.EnableCluster || serverOptions.MaxDatabases == 1
                 ? new SingleDatabaseManager(createDatabaseDelegate, this)
                 : new MultiDatabaseManager(createDatabaseDelegate, this);
@@ -225,7 +228,7 @@ namespace Garnet.server
             storeWrapper.version,
             storeWrapper.redisProtocolVersion,
             storeWrapper.server,
-            null,
+            storeWrapper.createDatabaseDelegate,
             storeWrapper.customCommandManager,
             storeWrapper.serverOptions,
             storeWrapper.subscribeBroker,
@@ -489,6 +492,25 @@ namespace Garnet.server
             }
 
             await databaseManager.CommitToAofAsync(dbId, token);
+        }
+
+        /// <summary>
+        /// Take checkpoint of all active database IDs or a specified database ID
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, int dbId = -1, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
+        {
+            if (dbId == -1)
+            {
+                return databaseManager.TakeCheckpoint(background, storeType, logger, token);
+            }
+
+            return databaseManager.TakeCheckpoint(background, dbId, storeType, logger, token);
         }
 
         internal void Start()
