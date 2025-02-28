@@ -2508,5 +2508,26 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(-1, pos);
             }
         }
+
+        [Test, Order(40)]
+        [Category("BITFIELD")]
+        public void BitmapBitfieldBoundaryTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var bit = db.StringSetBit(key, offset: 0, bit: true);
+            ClassicAssert.AreEqual(expected: false, actual: bit);
+            bit = db.StringSetBit(key, offset: 8, bit: true);
+            ClassicAssert.AreEqual(expected: false, actual: bit);
+
+            _ = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 0, 1);
+            _ = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 0, 128);
+            _ = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 8, 1);
+
+
+            var result = (byte[])db.StringGet(key);
+            ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x01 }, actual: result);
+        }
     }
 }
