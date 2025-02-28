@@ -74,18 +74,18 @@ namespace Garnet.test
             string configPath = $"{dir}\\test1.conf";
 
             // Help
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--help"], out var options, out var invalidOptions, out var exitGracefully);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--help"], out var options, out var invalidOptions, out var exitGracefully, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
             ClassicAssert.IsTrue(exitGracefully);
 
             // Version
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--version"], out options, out invalidOptions, out exitGracefully);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--version"], out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
             ClassicAssert.IsTrue(exitGracefully);
 
             // No import path, no command line args
             // Check values match those on defaults.conf
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out exitGracefully);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("32m", options.PageSize);
@@ -94,8 +94,8 @@ namespace Garnet.test
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}", "--loadmodulecs", $"{Assembly.GetExecutingAssembly().Location}" };
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}", "--loadmodulecs", $"{Assembly.GetExecutingAssembly().Location}" };
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("4m", options.PageSize);
@@ -113,7 +113,7 @@ namespace Garnet.test
             // Import from previous export command, no command line args
             // Check values from import path override values from default.conf
             args = ["--config-import-path", configPath];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
@@ -122,7 +122,7 @@ namespace Garnet.test
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof"];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
@@ -136,7 +136,7 @@ namespace Garnet.test
             // No import path, include command line args
             // Check that all invalid options flagged
             args = ["--bind", "1.1.1.257", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
             ClassicAssert.IsFalse(exitGracefully);
             ClassicAssert.IsNull(options);
@@ -164,7 +164,7 @@ namespace Garnet.test
             // Import from redis.conf file, no command line args
             // Check values from import path override values from default.conf
             var args = new[] { "--config-import-path", redisConfigPath, "--config-import-format", "RedisConf" };
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("127.0.0.1", options.Address);
@@ -189,7 +189,7 @@ namespace Garnet.test
             // Import from redis.conf file, include command line args
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true"];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
@@ -221,21 +221,21 @@ namespace Garnet.test
                 var deviceFactory = TestUtils.AzureStorageNamedDeviceFactoryCreator.Create(AzureTestDirectory);
                 deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out var exitGracefully);
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(invalidOptions.Count, 0);
                 ClassicAssert.IsTrue(options.PageSize == "32m");
                 ClassicAssert.IsTrue(options.MemorySize == "16g");
 
-                var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+                var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
+                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(invalidOptions.Count, 0);
                 ClassicAssert.IsTrue(options.PageSize == "4m");
                 ClassicAssert.IsTrue(options.MemorySize == "128m");
 
                 args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully);
+                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(invalidOptions.Count, 0);
                 ClassicAssert.IsTrue(options.PageSize == "4m");
@@ -254,7 +254,7 @@ namespace Garnet.test
                 // Defaults to Native with no limit
                 {
                     var args = new[] { "--lua" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Native, options.LuaMemoryManagementMode);
@@ -264,14 +264,14 @@ namespace Garnet.test
                 // Native with limit rejected
                 {
                     var args = new[] { "--lua", "--lua-script-memory-limit", "10m" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Tracked with no limit works
                 {
                     var args = new[] { "--lua", "--lua-memory-management-mode", "Tracked" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Tracked, options.LuaMemoryManagementMode);
@@ -281,7 +281,7 @@ namespace Garnet.test
                 // Tracked with limit works
                 {
                     var args = new[] { "--lua", "--lua-memory-management-mode", "Tracked", "--lua-script-memory-limit", "10m" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Tracked, options.LuaMemoryManagementMode);
@@ -291,14 +291,14 @@ namespace Garnet.test
                 // Tracked with bad limit rejected
                 {
                     var args = new[] { "--lua", "--lua-memory-management-mode", "Tracked", "--lua-script-memory-limit", "10Q" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Managed with no limit works
                 {
                     var args = new[] { "--lua", "--lua-memory-management-mode", "Managed" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Managed, options.LuaMemoryManagementMode);
@@ -308,7 +308,7 @@ namespace Garnet.test
                 // Managed with limit works
                 {
                     var args = new[] { "--lua", "--lua-memory-management-mode", "Managed", "--lua-script-memory-limit", "10m" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Managed, options.LuaMemoryManagementMode);
@@ -318,7 +318,7 @@ namespace Garnet.test
                 // Managed with bad limit rejected
                 {
                     var args = new[] { "--lua", "--lua-memory-management-mode", "Managed", "--lua-script-memory-limit", "10Q" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
             }
@@ -328,7 +328,7 @@ namespace Garnet.test
                 // Defaults to Native with no limit
                 {
                     const string JSON = @"{ ""EnableLua"": true }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Native, options.LuaMemoryManagementMode);
@@ -338,14 +338,14 @@ namespace Garnet.test
                 // Native with limit rejected
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaScriptMemoryLimit"": ""10m"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Tracked with no limit works
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaMemoryManagementMode"": ""Tracked"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Tracked, options.LuaMemoryManagementMode);
@@ -355,7 +355,7 @@ namespace Garnet.test
                 // Tracked with limit works
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaMemoryManagementMode"": ""Tracked"", ""LuaScriptMemoryLimit"": ""10m"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Tracked, options.LuaMemoryManagementMode);
@@ -365,14 +365,14 @@ namespace Garnet.test
                 // Tracked with bad limit rejected
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaMemoryManagementMode"": ""Tracked"", ""LuaScriptMemoryLimit"": ""10Q"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Managed with no limit works
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaMemoryManagementMode"": ""Managed"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Managed, options.LuaMemoryManagementMode);
@@ -382,7 +382,7 @@ namespace Garnet.test
                 // Managed with limit works
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaMemoryManagementMode"": ""Managed"", ""LuaScriptMemoryLimit"": ""10m"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(LuaMemoryManagementMode.Managed, options.LuaMemoryManagementMode);
@@ -392,7 +392,7 @@ namespace Garnet.test
                 // Managed with bad limit rejected
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaMemoryManagementMode"": ""Managed"", ""LuaScriptMemoryLimit"": ""10Q"" }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
             }
@@ -406,7 +406,7 @@ namespace Garnet.test
                 // No value is accepted
                 {
                     var args = new[] { "--lua" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(0, options.LuaScriptTimeoutMs);
@@ -415,7 +415,7 @@ namespace Garnet.test
                 // Positive accepted
                 {
                     var args = new[] { "--lua", "--lua-script-timeout", "10" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(10, options.LuaScriptTimeoutMs);
@@ -425,14 +425,14 @@ namespace Garnet.test
                 for (var ms = 1; ms < 10; ms++)
                 {
                     var args = new[] { "--lua", "--lua-script-timeout", ms.ToString() };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Negative rejected
                 {
                     var args = new[] { "--lua", "--lua-script-timeout", "-10" };
-                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
             }
@@ -442,7 +442,7 @@ namespace Garnet.test
                 // No value is accepted
                 {
                     const string JSON = @"{ ""EnableLua"": true }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(0, options.LuaScriptTimeoutMs);
@@ -451,7 +451,7 @@ namespace Garnet.test
                 // Positive accepted
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeoutMs"": 10 }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
                     ClassicAssert.IsTrue(parseSuccessful);
                     ClassicAssert.IsTrue(options.EnableLua);
                     ClassicAssert.AreEqual(10, options.LuaScriptTimeoutMs);
@@ -461,14 +461,14 @@ namespace Garnet.test
                 for (var ms = 1; ms < 10; ms++)
                 {
                     var json = $@"{{ ""EnableLua"": true, ""LuaScriptTimeoutMs"": {ms} }}";
-                    var parseSuccessful = TryParseGarnetConfOptions(json, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(json, out _, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
 
                 // Negative rejected
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaScriptTimeoutMs"": -10 }";
-                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }
             }
@@ -486,7 +486,7 @@ namespace Garnet.test
             {
                 File.WriteAllText(tempPath, json);
 
-                return ServerSettingsManager.TryParseCommandLineArguments(["--config-import-path", tempPath], out options, out invalidOptions, out exitGracefully);
+                return ServerSettingsManager.TryParseCommandLineArguments(["--config-import-path", tempPath], out options, out invalidOptions, out exitGracefully, silentMode: true);
             }
             finally
             {
@@ -505,7 +505,7 @@ namespace Garnet.test
         public void UnixSocketPath_CanParseValidPath()
         {
             string[] args = ["--unixsocket", "./config-parse-test.sock"];
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
         }
 
@@ -514,7 +514,7 @@ namespace Garnet.test
         {
             // Socket path directory does not exists
             string[] args = ["--unixsocket", "./does-not-exists/config-parse-test.sock"];
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
         }
 
@@ -525,7 +525,7 @@ namespace Garnet.test
                 return;
 
             string[] args = ["--unixsocketperm", "777"];
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(777, options.UnixSocketPermission);
         }
@@ -537,7 +537,7 @@ namespace Garnet.test
                 return;
 
             string[] args = ["--unixsocketperm", "888"];
-            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _);
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
         }
     }
