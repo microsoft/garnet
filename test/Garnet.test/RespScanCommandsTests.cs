@@ -601,8 +601,7 @@ namespace Garnet.test
 
             var expectedResponse = "*3\r\n$6\r\nkeyone\r\n$6\r\nkeytwo\r\n$8\r\nkeythree\r\n+PONG\r\n";
             var response = lightClientRequest.SendCommands("KEYS *", "PING", 4);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         #endregion
