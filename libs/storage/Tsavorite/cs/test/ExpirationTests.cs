@@ -701,7 +701,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void PassiveExpireTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void PassiveExpireTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -713,7 +713,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireDeleteTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ExpireDeleteTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -743,7 +743,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireRolloverTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ExpireRolloverTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -772,7 +772,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfKeyExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -816,7 +816,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyNotExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfKeyNotExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -861,7 +861,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfValueEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -907,7 +907,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -950,7 +950,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenUpdateTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteThenUpdateTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -999,7 +999,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenInsertTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteThenInsertTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -1047,7 +1047,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteAndCancelIfValueEqualsTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteAndCancelIfValueEqualsTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             const TestOp testOp = TestOp.DeleteIfValueEqualsAndStop;
@@ -1083,7 +1083,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);

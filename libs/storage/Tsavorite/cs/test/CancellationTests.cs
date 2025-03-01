@@ -171,7 +171,7 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void InitialUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void InitialUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -191,7 +191,7 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void CopyUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void CopyUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -224,7 +224,7 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void InPlaceUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void InPlaceUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -240,7 +240,7 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SingleWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SingleWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -255,7 +255,7 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ConcurrentWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ConcurrentWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);

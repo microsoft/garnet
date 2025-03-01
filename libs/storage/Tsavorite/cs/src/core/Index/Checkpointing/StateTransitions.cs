@@ -58,9 +58,6 @@ namespace Tsavorite.core
 
         /// <summary>Index resizing is in progress</summary>
         IN_PROGRESS_GROW,
-
-        /// <summary>Internal intermediate state of state machine</summary>
-        INTERMEDIATE = 16,
     };
 
     /// <summary>
@@ -143,22 +140,6 @@ namespace Tsavorite.core
             info.Phase = status;
             info.Version = version;
             return info;
-        }
-
-        /// <summary>
-        /// Create a copy of the passed <see cref="SystemState"/> that is marked with the <see cref="Phase.INTERMEDIATE"/> phase
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static SystemState MakeIntermediate(SystemState state)
-            => Make(state.Phase | Phase.INTERMEDIATE, state.Version);
-
-        /// <summary>
-        /// Create a copy of the passed <see cref="SystemState"/> that is not marked with the <see cref="Phase.INTERMEDIATE"/> phase
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void RemoveIntermediate(ref SystemState state)
-        {
-            state.Phase &= ~Phase.INTERMEDIATE;
         }
 
         /// <summary>

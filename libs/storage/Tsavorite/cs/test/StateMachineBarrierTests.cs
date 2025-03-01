@@ -39,8 +39,7 @@ namespace Tsavorite.test.statemachine
                 MutableFraction = 0.1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 13,
-                CheckpointDir = checkpointDir,
-                CheckpointVersionSwitchBarrier = true
+                CheckpointDir = checkpointDir
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
