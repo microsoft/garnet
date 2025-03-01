@@ -202,7 +202,20 @@ namespace Garnet.common
                 {
                     sb = sb.Append(to - tokenStart - hadEscapedChar);
                     sb = sb.Append("\r\n");
-                    sb = sb.Append(cmd[tokenStart..to].Replace("\\", ""));
+
+                    for (var j = tokenStart; j < to; ++j)
+                    {
+                        if (escapedChar)
+                        {
+                            escapedChar = false;
+                        }
+                        else if (cmd[j] == '\\')
+                        {
+                            escapedChar = true;
+                            continue;
+                        }
+                        sb = sb.Append(cmd[j]);
+                    }
                     hadEscapedChar = 0;
                 }
                 sb = sb.Append("\r\n");
