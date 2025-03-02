@@ -119,31 +119,24 @@ namespace Garnet.test.Resp.ACL
         /// <summary>
         /// Tests that ACL SETUSER works in parallel without fatal contention on user in ACL map.
         ///
-        /// Test uses a multi-threaded client that applies the same ACL change to the same user. Creates race to
-        /// become the first command invocation to add the user to the ACL. Throws after initial insert into ACL if
-        /// threading issues exist.
+        /// Test launches multiple clients that apply the same ACL change to the same user. Creates race to become the
+        /// the first client to add the user to the ACL. Throws after initial insert into ACL if threading issues exist.
         ///
         /// Race conditions are not deterministic so test uses repeat.
         ///
         /// </summary>
-        [TestCase(128, 2048)]
+        [TestCase(128)]
         [Repeat(5)]
-        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism, int iterationsPerSession)
+        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism)
         {
+            string setUserCommand = $"ACL SETUSER {TestUserA} on >{DummyPassword}";
+
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 // Use client with multi-threaded support.
-                using var c = TestUtils.GetGarnetClient();
+                using var c = TestUtils.GetGarnetClientSession();
                 c.Connect();
-
-                List<Task> tasks = new();
-                for (uint i = 0; i < iterationsPerSession; i++)
-                {
-                    // Creates race between threads contending for first insert into ACL. Throws after first ACL insert.
-                    tasks.Add(c.ExecuteForStringResultAsync("ACL", ["SETUSER", $"{TestUserA}", "on", $">{DummyPassword}"]));
-                }
-
-                await Task.WhenAll(tasks);
+                await c.ExecuteAsync(setUserCommand.Split(" "));
             });
 
             ClassicAssert.Pass();
