@@ -119,8 +119,8 @@ namespace Garnet.test.Resp.ACL
         /// <summary>
         /// Tests that ACL SETUSER works in parallel without fatal contention on user in ACL map.
         ///
-        /// Test launches multiple clients that apply the same ACL change to the same user. Creates race to become the
-        /// the first client to add the user to the ACL. Throws after initial insert into ACL if threading issues exist.
+        /// Test launches multiple single-threaded clients that apply the same ACL change to the same user. Creates race
+        /// to become the first client to add the user to the ACL. Throws after initial insert into ACL if threading issues exist.
         ///
         /// Race conditions are not deterministic so test uses repeat.
         ///
@@ -133,7 +133,7 @@ namespace Garnet.test.Resp.ACL
 
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
-                // Use client with multi-threaded support.
+                // Use client with support for single thread.
                 using var c = TestUtils.GetGarnetClientSession();
                 c.Connect();
                 await c.ExecuteAsync(setUserCommand.Split(" "));
