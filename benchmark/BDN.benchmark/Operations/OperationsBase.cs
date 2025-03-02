@@ -63,7 +63,7 @@ namespace BDN.benchmark.Operations
             {
                 opts.EnableAOF = true;
                 opts.UseAofNullDevice = true;
-                opts.MainMemoryReplication = true;
+                opts.FastAofTruncate = true;
                 opts.CommitFrequencyMs = -1;
                 opts.AofPageSize = "128m";
                 opts.AofMemorySize = "256m";

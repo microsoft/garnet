@@ -148,6 +148,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
         public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
 
         /// <summary>
@@ -244,6 +245,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_OVERFLOW_TYPE => "ERR Invalid OVERFLOW type specified"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
@@ -328,6 +330,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
         public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
         public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
+        public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
@@ -379,6 +382,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
+        public static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
         public static ReadOnlySpan<byte> banlist => "BANLIST"u8;
         public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
         public static ReadOnlySpan<byte> endpoint => "ENDPOINT"u8;
@@ -387,6 +391,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        public static ReadOnlySpan<byte> cluster_sync => "SYNC"u8;
 
         // Lua scripting strings
         public static ReadOnlySpan<byte> LUA_OK => "OK"u8;

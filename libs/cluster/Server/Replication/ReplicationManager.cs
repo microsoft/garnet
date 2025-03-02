@@ -19,6 +19,7 @@ namespace Garnet.cluster
         readonly StoreWrapper storeWrapper;
         readonly AofProcessor aofProcessor;
         readonly CheckpointStore checkpointStore;
+        readonly ReplicationSyncManager replicationSyncManager;
 
         readonly CancellationTokenSource ctsRepManager = new();
 
@@ -101,6 +102,7 @@ namespace Garnet.cluster
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
+            replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
             ReplicationOffset = 0;
 
@@ -154,7 +156,7 @@ namespace Garnet.cluster
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            storeWrapper.EnqueueCommit(isMainStore, newVersion);
+            storeWrapper.EnqueueCommit(isMainStore, newVersion, streaming: true);
         }
 
         /// <summary>
@@ -194,6 +196,8 @@ namespace Garnet.cluster
 
             replicationConfigDevice?.Dispose();
             replicationConfigDevicePool?.Free();
+
+            replicationSyncManager?.Dispose();
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();

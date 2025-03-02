@@ -24,6 +24,17 @@
         ]
       },
       {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Arity": 3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ]
+      },
+      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Arity": 2,
@@ -602,6 +613,14 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
+        "Command": "CLUSTER_ATTACH_SYNC",
+        "Name": "CLUSTER|ATTACH_SYNC",
+        "IsInternal": true,
+        "Arity": 3,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_BANLIST",
         "Name": "CLUSTER|BANLIST",
         "IsInternal": true,
@@ -926,6 +945,14 @@
             "Flags": "RO"
           }
         ]
+      },
+      {
+        "Command": "CLUSTER_SYNC",
+        "Name": "CLUSTER|SYNC",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
       }
     ]
   },
