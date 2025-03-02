@@ -58,6 +58,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
                 new("CLUSTER|AOFSYNC", RespCommand.CLUSTER_AOFSYNC),
                 new("CLUSTER|APPENDLOG", RespCommand.CLUSTER_APPENDLOG),
+                new("CLUSTER|ATTACH_SYNC", RespCommand.CLUSTER_ATTACH_SYNC),
                 new("CLUSTER|BANLIST", RespCommand.CLUSTER_BANLIST),
                 new("CLUSTER|BEGIN_REPLICA_RECOVER", RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER),
                 new("CLUSTER|BUMPEPOCH", RespCommand.CLUSTER_BUMPEPOCH),
@@ -95,7 +96,8 @@ namespace CommandInfoUpdater
                 new("CLUSTER|SETSLOTSRANGE", RespCommand.CLUSTER_SETSLOTSRANGE),
                 new("CLUSTER|SHARDS", RespCommand.CLUSTER_SHARDS),
                 new("CLUSTER|SLOTS", RespCommand.CLUSTER_SLOTS),
-                new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE)
+                new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
+                new("CLUSTER|SYNC", RespCommand.CLUSTER_SYNC),
             ]),
             new("COMMAND", RespCommand.COMMAND,
             [
@@ -261,6 +263,7 @@ namespace CommandInfoUpdater
             new("SETBIT", RespCommand.SETBIT),
             new("SETEX", RespCommand.SETEX),
             new("SETIFMATCH", RespCommand.SETIFMATCH),
+            new("SETIFGREATER", RespCommand.SETIFGREATER),
             new("SETNX", RespCommand.SETNX),
             new("SETRANGE", RespCommand.SETRANGE),
             new("SISMEMBER", RespCommand.SISMEMBER),

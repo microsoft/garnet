@@ -62,6 +62,7 @@ namespace Garnet.server
                 RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_GETUSER => NetworkAclGetUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -92,6 +93,7 @@ namespace Garnet.test.Resp.ACL
             {
                 // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
                 IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
+                var x = advertisedCommands.Except(withOnlySubCommands).Union(subCommands);
                 IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
                 IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
@@ -174,6 +176,22 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("ACL", ["DELUSER", "does-not-exist-1", "does-not-exist-2"]);
                 ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task AclGetUserACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GETUSER",
+                [DoAclGetUserAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoAclGetUserAsync(GarnetClient client)
+            {
+                // ACL GETUSER returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ACL", ["GETUSER", "default"]);
             }
         }
 
@@ -1006,6 +1024,54 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterAttachSyncACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER ATTACH_SYNC",
+                [DoClusterAttachSyncAsync]
+            );
+
+            static async Task DoClusterAttachSyncAsync(GarnetClient client)
+            {
+                var ms = new MemoryStream();
+                var writer = new BinaryWriter(ms, Encoding.ASCII);
+                // See SyncMetadata
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+
+                byte[] byteBuffer = ms.ToArray();
+                writer.Dispose();
+                ms.Dispose();
+
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ATTACH_SYNC", Encoding.UTF8.GetString(byteBuffer)]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+
+        [Test]
         public async Task ClusterBanListACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -1690,6 +1756,35 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("CLUSTER", ["MIGRATE", "a", "b", "c"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterSyncACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SYNC",
+                [DoClusterMigrateAsync]
+            );
+
+            static async Task DoClusterMigrateAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SYNC", "a", "b", "c"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
@@ -5450,8 +5545,23 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoSetIfMatchAsync(GarnetClient client)
             {
-                var res = await client.ExecuteForStringResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
-                ClassicAssert.IsNull(res);
+                var res = await client.ExecuteForStringArrayResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
+        public async Task SetIfGreaterACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "SETIFGREATER",
+               [DoSetIfGreaterAsync]
+           );
+
+            static async Task DoSetIfGreaterAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
             }
         }
 

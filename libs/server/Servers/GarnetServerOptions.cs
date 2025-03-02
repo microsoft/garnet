@@ -322,12 +322,22 @@ namespace Garnet.server
         /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
         /// </summary>
-        public bool MainMemoryReplication = false;
+        public bool FastAofTruncate = false;
 
         /// <summary>
         /// Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching
         /// </summary>
         public bool OnDemandCheckpoint = false;
+
+        /// <summary>
+        /// Whether diskless replication is enabled or not.
+        /// </summary>
+        public bool ReplicaDisklessSync = false;
+
+        /// <summary>
+        /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
+        /// </summary>
+        public int ReplicaDisklessSyncDelay = 5;
 
         /// <summary>
         /// With main-memory replication, whether we use null device for AOF. Ensures no disk IO, but can cause data loss during replication.
@@ -740,7 +750,7 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
-                MainMemoryReplication ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
+                FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
@@ -827,7 +837,7 @@ namespace Garnet.server
         /// <returns></returns>
         IDevice GetAofDevice()
         {
-            if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
+            if (UseAofNullDevice && EnableCluster && !FastAofTruncate)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
             else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
