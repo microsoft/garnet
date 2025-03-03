@@ -209,7 +209,17 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override async Task CommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
-            await AppendOnlyFile.CommitAsync(token: token);
+            try
+            {
+                await AppendOnlyFile.CommitAsync(token: token);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex,
+                    "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
+                    AppendOnlyFile.TailAddress, AppendOnlyFile.CommittedUntilAddress);
+                throw;
+            }
         }
 
         /// <inheritdoc/>

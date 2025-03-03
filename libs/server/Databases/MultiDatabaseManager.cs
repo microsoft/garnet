@@ -271,7 +271,7 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
             if (!lockAcquired) return;
 
-            var aofTasks = new Task[activeDbIdsSize];
+            var aofTasks = new Task<(long, long)>[activeDbIdsSize];
 
             try
             {
@@ -281,10 +281,27 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(!db.IsDefault());
 
-                    aofTasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask();
+                    aofTasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
                 }
 
-                await Task.WhenAll(aofTasks);
+                try
+                {
+                    await Task.WhenAll(aofTasks);
+                }
+                catch (Exception)
+                {
+                    // Only first exception is caught here, if any. 
+                    // Proper handling of this and consequent exceptions in the next loop. 
+                }
+
+                foreach (var t in aofTasks)
+                {
+                    if (!t.IsFaulted || t.Exception == null) continue;
+
+                    logger?.LogError(t.Exception,
+                        "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
+                        t.Result.Item1, t.Result.Item2);
+                }
             }
             finally
             {

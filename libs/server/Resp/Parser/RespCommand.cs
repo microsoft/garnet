@@ -2529,7 +2529,7 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
-            if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
             return cmd;

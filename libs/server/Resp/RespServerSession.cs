@@ -1211,7 +1211,7 @@ namespace Garnet.server
 
             if ((int)(dcurr - d) > 0)
             {
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 {
                     var task = storeWrapper.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
