@@ -151,4 +151,13 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
         }
     }
+
+    public class SimpleFunctions : SimpleSessionFunctions<AdId, NumClicks, Empty>
+    {
+        public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        {
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.adId, output.numClicks);
+        }
+    }
 }
