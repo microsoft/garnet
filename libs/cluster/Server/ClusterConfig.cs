@@ -495,7 +495,7 @@ namespace Garnet.cluster
             {
                 var info = default(ConnectionInfo);
                 _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[i].Nodeid, out info);
-                nodesStringBuilder.Append(GetNodeInfo(i, info));
+                GetNodeInfo(i, info, nodesStringBuilder);
             }
             return nodesStringBuilder.ToString();
         }
@@ -518,6 +518,12 @@ namespace Garnet.cluster
             //<link-state>
             //<slot> <slot> ... <slot>
             var nodeInfoStringBuilder = new StringBuilder();
+            GetNodeInfo(workerId, info, nodeInfoStringBuilder);
+            return nodeInfoStringBuilder.ToString();
+        }
+
+        private void GetNodeInfo(ushort workerId, ConnectionInfo info, StringBuilder nodeInfoStringBuilder)
+        {
             nodeInfoStringBuilder
                 .Append(workers[workerId].Nodeid).Append(' ')
                 .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
@@ -532,7 +538,6 @@ namespace Garnet.cluster
             AppendSlotRange(nodeInfoStringBuilder, workerId);
             AppendSpecialStates(nodeInfoStringBuilder, workerId);
             nodeInfoStringBuilder.Append('\n');
-            return nodeInfoStringBuilder.ToString();
         }
 
         private void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
