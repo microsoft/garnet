@@ -11,7 +11,6 @@ using CommandLine;
 using CommandLine.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet
 {
@@ -38,13 +37,10 @@ namespace Garnet
         /// <returns>True if parsing succeeded</returns>
         internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, out bool exitGracefully, bool silentMode = false, ILogger logger = null)
         {
-            if (logger == null)
-                logger = NullLogger.Instance;
-
             options = null;
-            invalidOptions = new List<string>();
+            invalidOptions = [];
 
-            if (args == null) args = [];
+            args ??= [];
 
             // Initialize command line parser
             var parser = new Parser(settings =>
@@ -56,7 +52,7 @@ namespace Garnet
 
             // Create an Options object and initialize it with default options,
             // then override them with options deserialized from ConfigImportPath (if specified)
-            Options initOptions = new Options();
+            var initOptions = new Options();
 
             // Initialize options with defaults
             var importSuccessful = TryImportServerOptions(DefaultOptionsEmbeddedFileName,
@@ -81,7 +77,7 @@ namespace Garnet
                 {
                     for (var i = dashDashIdx + 1; i < consolidatedArgs.Length; i++)
                     {
-                        unparsedArguments.Remove(consolidatedArgs[i]);
+                        _ = unparsedArguments.Remove(consolidatedArgs[i]);
                     }
                 }
 

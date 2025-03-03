@@ -558,7 +558,7 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void ThrowObjectStoreUninitializedException()
-            => throw new GarnetException("Object store is disabled");
+            => throw new GarnetException("Object store is disabled", disposeSession: false);
 
         #endregion
 

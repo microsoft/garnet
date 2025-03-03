@@ -3,13 +3,11 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -18,7 +16,6 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using Tsavorite.devices;
 
 namespace Garnet.test
 {
@@ -473,8 +470,6 @@ namespace Garnet.test
                 }
             }
         }
-
-
 
         /// <summary>
         /// Import a garnet.conf file with the given contents
