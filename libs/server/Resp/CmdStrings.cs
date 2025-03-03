@@ -414,5 +414,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> Lua_double => "double"u8;
         public static ReadOnlySpan<byte> Lua_map => "map"u8;
         public static ReadOnlySpan<byte> Lua_set => "set"u8;
+        public static ReadOnlySpan<byte> Lua_big_number => "big_number"u8;
+        public static ReadOnlySpan<byte> Lua_format => "format"u8;
+        public static ReadOnlySpan<byte> Lua_string => "string"u8;
     }
 }

@@ -188,6 +188,12 @@ namespace Garnet.server
             internal int Map { get; }
             /// <see cref="CmdStrings.Lua_set"/>
             internal int Set { get; }
+            /// <see cref="CmdStrings.Lua_big_number"/>
+            internal int BigNumber { get; }
+            /// <see cref="CmdStrings.Lua_format"/>
+            internal int Format { get; }
+            /// <see cref="CmdStrings.Lua_string"/>
+            internal int String { get; }
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
@@ -213,6 +219,9 @@ namespace Garnet.server
                 Double = ConstantStringToRegistry(ref state, CmdStrings.Lua_double);
                 Map = ConstantStringToRegistry(ref state, CmdStrings.Lua_map);
                 Set = ConstantStringToRegistry(ref state, CmdStrings.Lua_set);
+                BigNumber = ConstantStringToRegistry(ref state, CmdStrings.Lua_big_number);
+                Format = ConstantStringToRegistry(ref state, CmdStrings.Lua_format);
+                String = ConstantStringToRegistry(ref state, CmdStrings.Lua_string);
             }
 
             /// <summary>
@@ -1456,7 +1465,7 @@ end
 
                         // Response is a two level table, where { map = { ... } }
                         state.CreateTable(1, 0);
-                        state.PushBuffer("map"u8);
+                        state.PushConstantString(constStrs.Map);
                         state.CreateTable(mapPairCount, 0);
 
                         for (var pair = 0; pair < mapPairCount; pair++)
@@ -1512,7 +1521,7 @@ end
 
                         // Response is a two level table, where { set = { ... } }
                         state.CreateTable(1, 0);
-                        state.PushBuffer("set"u8);
+                        state.PushConstantString(constStrs.Set);
                         state.CreateTable(setItemCount, 0);
 
                         for (var pair = 0; pair < setItemCount; pair++)
@@ -1614,7 +1623,7 @@ end
 
                             // Create table like { double = <parsed> }
                             state.CreateTable(1, 0);
-                            state.PushBuffer("double"u8);
+                            state.PushConstantString(constStrs.Double);
                             state.PushNumber(parsed);
 
                             state.RawSet(curTop + 1);
@@ -1651,7 +1660,7 @@ end
 
                                 // Create table like { big_number = <bigNumBuf> }
                                 state.CreateTable(1, 0);
-                                state.PushBuffer("big_number"u8);
+                                state.PushConstantString(constStrs.BigNumber);
                                 state.PushBuffer(bigNumSpan);
 
                                 state.RawSet(curTop + 1);
@@ -1690,11 +1699,11 @@ end
                             state.ForceMinimumStackCapacity(3);
                             state.CreateTable(2, 0);
 
-                            state.PushBuffer("format"u8);
+                            state.PushConstantString(constStrs.Format);
                             state.PushBuffer(format);
                             state.RawSet(curTop + 1);
 
-                            state.PushBuffer("string"u8);
+                            state.PushConstantString(constStrs.String);
                             state.PushBuffer(data);
                             state.RawSet(curTop + 1);
 
