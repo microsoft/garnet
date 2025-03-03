@@ -518,28 +518,27 @@ namespace Garnet.cluster
             //<link-state>
             //<slot> <slot> ... <slot>
             var nodeInfoStringBuilder = new StringBuilder();
-            return nodeInfoStringBuilder
-                .Append(workers[workerId].Nodeid).Append(" ")
-                .Append(workers[workerId].Address).Append(":").Append(workers[workerId].Port)
-                .Append("@").Append(workers[workerId].Port + 10000).Append(",").Append(workers[workerId].hostname).Append(" ")
+            nodeInfoStringBuilder
+                .Append(workers[workerId].Nodeid).Append(' ')
+                .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
+                .Append('@').Append(workers[workerId].Port + 10000).Append(',').Append(workers[workerId].hostname).Append(' ')
                 .Append(workerId == 1 ? "myself," : "")
-                .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(" ")
-                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-").Append(" ")
-                .Append(info.ping).Append(" ")
-                .Append(info.pong).Append(" ")
-                .Append(workers[workerId].ConfigEpoch).Append(" ")
-                .Append(info.connected || workerId == 1 ? "connected" : "disconnected")
-                .Append(GetSlotRange(workerId))
-                .Append(GetSpecialStates(workerId))
-                .Append("\n")
-                .ToString();
+                .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(' ')
+                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-").Append(' ')
+                .Append(info.ping).Append(' ')
+                .Append(info.pong).Append(' ')
+                .Append(workers[workerId].ConfigEpoch).Append(' ')
+                .Append(info.connected || workerId == 1 ? "connected" : "disconnected");
+            AppendSlotRange(nodeInfoStringBuilder, workerId);
+            AppendSpecialStates(nodeInfoStringBuilder, workerId);
+            nodeInfoStringBuilder.Append('\n');
+            return nodeInfoStringBuilder.ToString();
         }
 
-        private string GetSpecialStates(ushort workerId)
+        private void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
         {
             // Only print special states for local node
-            if (workerId != 1) return "";
-            var specialStates = "";
+            if (workerId != 1) return;
             for (var slot = 0; slot < slotMap.Length; slot++)
             {
                 var _workerId = slotMap[slot]._workerId;
@@ -551,14 +550,14 @@ namespace Garnet.cluster
                 var _nodeId = workers[_workerId].Nodeid;
                 if (_nodeId == null) continue;
 
-                specialStates += _state switch
+                stringBuilder.Append( _state switch
                 {
                     SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
                     SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
                     _ => ""
-                };
+                });
             }
-            return specialStates;
+            return;
         }
 
         /// <summary>
@@ -727,9 +726,8 @@ namespace Garnet.cluster
             return completeSlotInfo;
         }
 
-        private string GetSlotRange(ushort workerId)
+        private void AppendSlotRange(StringBuilder stringBuilder, uint workerId)
         {
-            string result = "";
             ushort start = ushort.MaxValue, end = 0;
             for (ushort i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
@@ -742,8 +740,8 @@ namespace Garnet.cluster
                 {
                     if (start != ushort.MaxValue)
                     {
-                        if (end == start) result += $" {start}";
-                        else result += $" {start}-{end}";
+                        if (end == start) stringBuilder.Append($" {start}");
+                        else stringBuilder.Append($" {start}-{end}");
                         start = ushort.MaxValue;
                         end = 0;
                     }
@@ -751,10 +749,9 @@ namespace Garnet.cluster
             }
             if (start != ushort.MaxValue)
             {
-                if (end == start) result += $" {start}";
-                else result += $" {start}-{end}";
+                if (end == start) stringBuilder.Append($" {start}");
+                else stringBuilder.Append($" {start}-{end}");
             }
-            return result;
         }
 
         /// <summary>
