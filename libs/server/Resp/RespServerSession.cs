@@ -371,8 +371,11 @@ namespace Garnet.server
                     Environment.Exit(-1);
                 }
 
-                // The session is no longer usable, dispose it
-                networkSender.DisposeNetworkSender(true);
+                if (ex.DisposeSession)
+                {
+                    // The session is no longer usable, dispose it
+                    networkSender.DisposeNetworkSender(true);
+                }
             }
             catch (Exception ex)
             {
