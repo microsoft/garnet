@@ -42,6 +42,7 @@ namespace Tsavorite.core
                     // Capture begin address before checkpoint starts
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     break;
+
                 case Phase.IN_PROGRESS:
                     // Wait for PREPARE threads to finish active transactions and enter barrier
                     while (store.hlogBase.NumActiveLockingSessions > 0)
@@ -50,15 +51,18 @@ namespace Tsavorite.core
                     }
                     store.CheckpointVersionShift(lastVersion, next.Version);
                     break;
+
                 case Phase.WAIT_FLUSH:
                     store._hybridLogCheckpoint.info.headAddress = store.hlogBase.HeadAddress;
                     store._hybridLogCheckpoint.info.nextVersion = next.Version;
                     break;
+
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, store);
                     store.WriteHybridLogMetaInfo();
                     store.lastVersion = lastVersion;
                     break;
+
                 case Phase.REST:
                     store._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);

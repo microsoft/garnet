@@ -22,29 +22,32 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override void GlobalBeforeEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
-            base.GlobalBeforeEnteringState(next, stateMachineDriver);
-
-            if (next.Phase == Phase.PREPARE)
+            switch (next.Phase)
             {
-                store._lastSnapshotCheckpoint.Dispose();
-            }
+                case Phase.PREPARE:
+                    store._lastSnapshotCheckpoint.Dispose();
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                    break;
+                
+                case Phase.WAIT_FLUSH:
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                    try
+                    {
+                        store.epoch.Resume();
+                        _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
+                        if (store._hybridLogCheckpoint.flushedSemaphore != null)
+                            stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
+                        store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
+                    }
+                    finally
+                    {
+                        store.epoch.Suspend();
+                    }
+                    break;
 
-            if (next.Phase == Phase.IN_PROGRESS)
-                base.GlobalBeforeEnteringState(next, stateMachineDriver);
-
-            if (next.Phase != Phase.WAIT_FLUSH) return;
-
-            try
-            {
-                store.epoch.Resume();
-                _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
-                if (store._hybridLogCheckpoint.flushedSemaphore != null)
-                    stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
-                store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
-            }
-            finally
-            {
-                store.epoch.Suspend();
+                default:
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                    break;
             }
         }
     }

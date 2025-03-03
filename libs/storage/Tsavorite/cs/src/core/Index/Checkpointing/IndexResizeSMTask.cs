@@ -26,6 +26,7 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE_GROW:
                     break;
+
                 case Phase.IN_PROGRESS_GROW:
                     // Wait for PREPARE_GROW threads to finish active transactions and enter barrier
                     while (store.hlogBase.NumActiveLockingSessions > 0)
@@ -49,9 +50,11 @@ namespace Tsavorite.core
 
                     store.resizeInfo.version = 1 - store.resizeInfo.version;
                     break;
+
                 case Phase.REST:
                     // nothing to do
                     break;
+
                 default:
                     throw new TsavoriteException("Invalid Enum Argument");
             }

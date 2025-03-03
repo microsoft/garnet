@@ -15,6 +15,7 @@ namespace Tsavorite.core
     {
         readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
         readonly Guid guid;
+
         public FullCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
@@ -31,10 +32,12 @@ namespace Tsavorite.core
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     break;
+
                 case Phase.WAIT_FLUSH:
                     store._indexCheckpoint.info.num_buckets = store.overflowBucketsAllocator.GetMaxValidAddress();
                     store._indexCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
                     break;
+
                 case Phase.PERSISTENCE_CALLBACK:
                     store.WriteIndexMetaInfo();
                     store._indexCheckpoint.Reset();

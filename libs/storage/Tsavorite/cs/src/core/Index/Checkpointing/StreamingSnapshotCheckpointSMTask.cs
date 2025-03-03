@@ -42,15 +42,18 @@ namespace Tsavorite.core
                     store._lastSnapshotCheckpoint.Dispose();
                     store.StreamingSnapshotScanPhase1();
                     break;
+
                 case Phase.PREPARE:
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
+
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     var finalLogicalAddress = store.hlogBase.GetTailAddress();
                     store.StreamingSnapshotScanPhase2(finalLogicalAddress);
                     break;
+
                 default:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;

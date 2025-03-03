@@ -29,9 +29,11 @@ namespace Tsavorite.core
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.prevVersion = next.Version;
                     break;
+
                 case Phase.IN_PROGRESS:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
+
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
@@ -59,6 +61,7 @@ namespace Tsavorite.core
                     if (store._hybridLogCheckpoint.flushedSemaphore != null)
                         stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
                     break;
+
                 case Phase.PERSISTENCE_CALLBACK:
                     CollectMetadata(next, store);
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;
