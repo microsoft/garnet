@@ -79,6 +79,21 @@ namespace Garnet.common
             return true;
         }
 
+        /// <summary>
+        /// Writes an set length
+        /// </summary>
+        public static bool TryWriteSetLength(int len, ref byte* curr, byte* end)
+        {
+            var numDigits = NumUtils.CountDigits(len);
+            var totalLen = 1 + numDigits + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+            *curr++ = (byte)'~';
+            NumUtils.WriteInt32(len, numDigits, ref curr);
+            WriteNewline(ref curr);
+            return true;
+        }
+
         public static bool TryWriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
         {
             numDigits = NumUtils.CountDigits(len);
@@ -115,7 +130,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes a null
+        /// Writes a RESP2 null ($-1\r\n)
         /// </summary>
         public static bool TryWriteNull(ref byte* curr, byte* end)
         {
@@ -124,6 +139,19 @@ namespace Garnet.common
 
             *curr++ = (byte)'$';
             WriteBytes<uint>(ref curr, "-1\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
+        /// Writes a RESP3 null (_\r\n)
+        /// </summary>
+        public static bool TryWriteResp3Null(ref byte* curr, byte* end)
+        {
+            if (3 > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'_';
+            WriteBytes<ushort>(ref curr, "\r\n"u8);
             return true;
         }
 
@@ -671,6 +699,42 @@ namespace Garnet.common
                 return false;
 
             WriteBytes<uint>(ref curr, "*0\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
+        /// Write empty set
+        /// </summary>
+        public static bool TryWriteEmptySet(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, "~0\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
+        /// Write RESP3 true
+        /// </summary>
+        public static bool TryWriteTrue(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, "#t\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
+        /// Write RESP3 false
+        /// </summary>
+        public static bool TryWriteFalse(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, "#f\r\n"u8);
             return true;
         }
 

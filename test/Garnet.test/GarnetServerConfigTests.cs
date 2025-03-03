@@ -471,6 +471,102 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void LuaLoggingOptions()
+        {
+            // Command line args
+            {
+                // No value is accepted
+                {
+                    var args = new[] { "--lua" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Enable, options.LuaLoggingMode);
+                }
+
+                // Enable accepted
+                {
+                    var args = new[] { "--lua", "--lua-logging-mode", "Enable" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Enable, options.LuaLoggingMode);
+                }
+
+                // Silent accepted
+                {
+                    var args = new[] { "--lua", "--lua-logging-mode", "Silent" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Silent, options.LuaLoggingMode);
+                }
+
+                // Disable accepted
+                {
+                    var args = new[] { "--lua", "--lua-logging-mode", "Disable" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Disable, options.LuaLoggingMode);
+                }
+
+                // Invalid rejected
+                {
+                    var args = new[] { "--lua", "--lua-logging-mode", "Foo" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // Command line args
+            {
+                // No value is accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Enable, options.LuaLoggingMode);
+                }
+
+                // Enable accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaLoggingMode"": ""Enable"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Enable, options.LuaLoggingMode);
+                }
+
+                // Silent accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaLoggingMode"": ""Silent"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Silent, options.LuaLoggingMode);
+                }
+
+                // Disable accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaLoggingMode"": ""Disable"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(LuaLoggingMode.Disable, options.LuaLoggingMode);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaLoggingMode"": ""Foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
         /// <summary>
         /// Import a garnet.conf file with the given contents
         /// </summary>

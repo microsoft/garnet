@@ -457,9 +457,11 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
-        public CustomProcedureInput(ref SessionParseState parseState)
+        /// <param name="respVersion">RESP version for the session</param>
+        public CustomProcedureInput(ref SessionParseState parseState, byte respVersion)
         {
             this.parseState = parseState;
+            RespVersion = respVersion;
         }
 
         /// <summary>
@@ -467,13 +469,22 @@ namespace Garnet.server
         /// </summary>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
-        public CustomProcedureInput(ref SessionParseState parseState, int startIdx)
+        /// /// <param name="respVersion">RESP version for the session</param>
+        public CustomProcedureInput(ref SessionParseState parseState, int startIdx, byte respVersion)
         {
             this.parseState = parseState.Slice(startIdx);
+            RespVersion = respVersion;
         }
 
         /// <inheritdoc />
         public int SerializedLength => parseState.GetSerializedLength();
+
+        /// <summary>
+        /// RESP version of the session currently executing.
+        /// 
+        /// Will be 2 or 3.
+        /// </summary>
+        public byte RespVersion { get; }
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)

@@ -304,13 +304,13 @@ namespace Garnet.common
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP string.</param>
-        /// <param name="isArray">Whether to parse an array length header ('*...\r\n') or a string length header ('$...\r\n').</param>
+        /// <param name="expectedSigil">Expected type of RESP header, defaults to string ('$').</param>
         /// <returns>True if a length header was successfully read.</returns>
         /// <exception cref="RespParsingException">Thrown if the length header is negative.</exception>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadUnsignedLengthHeader(out int length, ref byte* ptr, byte* end, bool isArray = false)
+        public static bool TryReadUnsignedLengthHeader(out int length, ref byte* ptr, byte* end, char expectedSigil = '$')
         {
             length = -1;
             if (ptr + 3 > end)
@@ -324,7 +324,7 @@ namespace Garnet.common
                 RespParsingException.ThrowInvalidStringLength(length);
             }
 
-            if (!TryReadSignedLengthHeader(out length, ref ptr, end, isArray))
+            if (!TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil))
                 return false;
 
             return true;
@@ -342,12 +342,12 @@ namespace Garnet.common
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP string.</param>
-        /// <param name="isArray">Whether to parse an array length header ('*...\r\n') or a string length header ('$...\r\n').</param>
+        /// <param name="expectedSigil">Expected type of RESP header, defaults to string ('$').</param>
         /// <returns>True if a length header was successfully read.</returns>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadSignedLengthHeader(out int length, ref byte* ptr, byte* end, bool isArray = false)
+        public static bool TryReadSignedLengthHeader(out int length, ref byte* ptr, byte* end, char expectedSigil = '$')
         {
             length = -1;
             if (ptr + 3 > end)
@@ -357,7 +357,7 @@ namespace Garnet.common
             var negative = *readHead == '-';
 
             // String length headers must start with a '$', array headers with '*'
-            if (*ptr != (isArray ? '*' : '$'))
+            if (*ptr != expectedSigil)
             {
                 RespParsingException.ThrowUnexpectedToken(*ptr);
             }
@@ -486,7 +486,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         public static bool TryReadUnsignedArrayLength(out int length, ref byte* ptr, byte* end)
-            => TryReadUnsignedLengthHeader(out length, ref ptr, end, isArray: true);
+            => TryReadUnsignedLengthHeader(out length, ref ptr, end, expectedSigil: '*');
 
         /// <summary>
         /// Tries to read a RESP array length header from the given ASCII-encoded RESP string
@@ -498,11 +498,55 @@ namespace Garnet.common
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP string.</param>
         /// <returns>True if a length header was successfully read.</returns>
-        /// <exception cref="RespParsingException">Thrown if the length header is negative.</exception>
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         public static bool TryReadSignedArrayLength(out int length, ref byte* ptr, byte* end)
-            => TryReadSignedLengthHeader(out length, ref ptr, end, isArray: true);
+            => TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil: '*');
+
+        /// <summary>
+        /// Tries to read a RESP3 map length header from the given ASCII-encoded RESP string
+        /// and, if successful, moves the given ptr to the end of the length header.
+        /// <para />
+        /// NOTE: It will not throw an exception if length header is negative.
+        /// </summary>
+        /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
+        /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP string.</param>
+        /// <returns>True if a length header was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
+        public static bool TryReadSignedMapLength(out int length, ref byte* ptr, byte* end)
+            => TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil: '%');
+
+        /// <summary>
+        /// Tries to read a RESP3 set length header from the given ASCII-encoded RESP string
+        /// and, if successful, moves the given ptr to the end of the length header.
+        /// <para />
+        /// NOTE: It will not throw an exception if length header is negative.
+        /// </summary>
+        /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
+        /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP string.</param>
+        /// <returns>True if a length header was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
+        public static bool TryReadSignedSetLength(out int length, ref byte* ptr, byte* end)
+            => TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil: '~');
+
+        /// <summary>
+        /// Tries to read a RESP3 verbatim string length header from the given ASCII-encoded RESP string
+        /// and, if successful, moves the given ptr to the end of the length header.
+        /// <para />
+        /// NOTE: It will not throw an exception if length header is negative.
+        /// </summary>
+        /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
+        /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP string.</param>
+        /// <returns>True if a length header was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
+        /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
+        public static bool TryReadVerbatimStringLength(out int length, ref byte* ptr, byte* end)
+            => TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil: '=');
 
         /// <summary>
         /// Reads a signed 32-bit integer with length header
