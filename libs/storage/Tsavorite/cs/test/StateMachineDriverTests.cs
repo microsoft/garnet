@@ -15,64 +15,34 @@ namespace Tsavorite.test.recovery
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
-    class SumFunctions : SimpleSimpleFunctions<long, long>
+    public abstract class StateMachineDriverTestsBase
     {
-        public SumFunctions() : base((l, r) => l + r) { }
-    }
-
-    [TestFixture]
-    public class CheckpointVersionSwitchTest
-    {
+        readonly int numOpThreads = 2;
         IDevice log;
-        bool rmwDone;
-        long[] expectedV1Count;
-        long[] expectedV2Count;
-        readonly int numKeys = 2;
 
-        [SetUp]
-        public void Setup()
+        protected bool opsDone;
+        protected long[] expectedV1Count;
+        protected long[] expectedV2Count;
+        protected readonly int numKeys = 2;
+
+        protected void BaseSetup()
         {
-            rmwDone = false;
+            opsDone = false;
             expectedV1Count = new long[numKeys];
             expectedV2Count = new long[numKeys];
             log = CreateTestDevice(DeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
         }
 
-        [TearDown]
-        public void TearDown()
+        protected void BaseTearDown()
         {
             log?.Dispose();
             log = null;
             DeleteDirectory(MethodTestDir, true);
         }
 
-        void RmwOperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
-        {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
-            var bc = s.BasicContext;
-            var r = new Random(thread_id);
+        protected abstract void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store);
 
-            long key = 0;
-            long input = 1;
-            var v1count = new long[numKeys];
-            var v2count = new long[numKeys];
-            while (!rmwDone)
-            {
-                key = r.Next(numKeys);
-                _ = bc.RMW(ref key, ref input);
-                if (bc.Session.Version == 1)
-                    v1count[key]++;
-                v2count[key]++;
-            }
-            for (int i = 0; i < numKeys; i++)
-            {
-                _ = Interlocked.Add(ref expectedV1Count[i], v1count[i]);
-                _ = Interlocked.Add(ref expectedV2Count[i], v2count[i]);
-            }
-        }
-
-        [Test]
-        public async ValueTask CheckpointVersionSwitchTest1(
+        public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] bool isAsync, [Values(1L << 13, 1L << 16)] long indexSize)
         {
@@ -88,19 +58,18 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            // Start RMW operation threads
-            int NumRmwThreads = 2;
-            var rmwTasks = new Task[NumRmwThreads];
-            for (int i = 0; i < NumRmwThreads; i++)
+            // Start operation threads
+            var opTasks = new Task[numOpThreads];
+            for (int i = 0; i < numOpThreads; i++)
             {
                 var thread_id = i;
-                rmwTasks[i] = Task.Run(() => RmwOperationThread(thread_id, store1));
+                opTasks[i] = Task.Run(() => OperationThread(thread_id, store1));
             }
 
-            // Wait for some RMWs to complete in v1
+            // Wait for some operations to complete in v1
             await Task.Delay(500);
 
-            // Initiate checkpoint concurrent to the RMW operation threads
+            // Initiate checkpoint concurrent to the operation threads
             var task = store1.TakeFullCheckpointAsync(checkpointType);
 
             // Wait for the checkpoint to complete
@@ -114,12 +83,12 @@ namespace Tsavorite.test.recovery
                 (var status, token) = task.AsTask().GetAwaiter().GetResult();
             }
 
-            // Wait for some RMWs to complete in v2
+            // Wait for some operations to complete in v2
             await Task.Delay(500);
 
-            // Signal RMW threads to stop
-            rmwDone = true;
-            await Task.WhenAll(rmwTasks);
+            // Signal operation threads to stop, and wait for them to finish
+            opsDone = true;
+            await Task.WhenAll(opTasks);
 
             // Verify the final state of the old store
             using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
@@ -190,5 +159,138 @@ namespace Tsavorite.test.recovery
                 ClassicAssert.AreEqual(expectedV1Count[key], output, $"output = {output}");
             }
         }
+
+        public class SumFunctions : SimpleSimpleFunctions<long, long>
+        {
+            public SumFunctions() : base((l, r) => l + r) { }
+        }
+    }
+
+    [TestFixture]
+    public class CheckpointVersionSwitchRmw : StateMachineDriverTestsBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
+        protected override void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
+        {
+            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            var bc = s.BasicContext;
+            var r = new Random(thread_id);
+
+            long key = 0;
+            long input = 1;
+            var v1count = new long[numKeys];
+            var v2count = new long[numKeys];
+            while (!opsDone)
+            {
+                // Generate input for RMW
+                key = r.Next(numKeys);
+
+                // Run the RMW operation
+                _ = bc.RMW(ref key, ref input);
+
+                // Update expected counts for the old and new version of store
+                if (bc.Session.Version == 1)
+                    v1count[key]++;
+                v2count[key]++;
+            }
+
+            // Update the global expected counts
+            for (int i = 0; i < numKeys; i++)
+            {
+                _ = Interlocked.Add(ref expectedV1Count[i], v1count[i]);
+                _ = Interlocked.Add(ref expectedV2Count[i], v2count[i]);
+            }
+        }
+
+        [Test]
+        public async ValueTask CheckpointVersionSwitchRmwTest(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync,
+            [Values(1L << 13, 1L << 16)] long indexSize)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize);
+    }
+
+    [TestFixture]
+    public class CheckpointVersionSwitchTxn : StateMachineDriverTestsBase
+    {
+        [SetUp]
+        public void Setup() => BaseSetup();
+
+        [TearDown]
+        public void TearDown() => BaseTearDown();
+
+        protected override void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
+        {
+            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            var lc = s.LockableContext;
+            var r = new Random(thread_id);
+
+            ClassicAssert.IsTrue(numKeys > 1);
+            long key1 = 0, key2 = 0;
+            long input = 1;
+            var v1count = new long[numKeys];
+            var v2count = new long[numKeys];
+            while (!opsDone)
+            {
+                // Generate input for transaction
+                key1 = r.Next(numKeys);
+                do
+                {
+                    key2 = r.Next(numKeys);
+                } while (key2 == key1);
+
+                var exclusiveVec = new FixedLengthLockableKeyStruct<long>[] {
+                    new(key1, LockType.Exclusive, lc),
+                    new(key2, LockType.Exclusive, lc)
+                };
+
+                // Start transaction, session does not acquire version in this call
+                lc.BeginLockable();
+
+                // Lock keys, session acquires version in this call
+                lc.Lock(exclusiveVec);
+
+                // We have determined the version of the transaction
+                var txnVersion = lc.Session.Version;
+
+                // Run transaction
+                _ = lc.RMW(ref key1, ref input);
+                _ = lc.RMW(ref key2, ref input);
+
+                // Unlock keys
+                lc.Unlock(exclusiveVec);
+
+                // End transaction
+                lc.EndLockable();
+
+                // Update expected counts for the old and new version of store
+                if (txnVersion == 1)
+                {
+                    v1count[key1]++;
+                    v1count[key2]++;
+                }
+                v2count[key1]++;
+                v2count[key2]++;
+            }
+
+            // Update the global expected counts
+            for (int i = 0; i < numKeys; i++)
+            {
+                _ = Interlocked.Add(ref expectedV1Count[i], v1count[i]);
+                _ = Interlocked.Add(ref expectedV2Count[i], v2count[i]);
+            }
+        }
+
+        [Test]
+        public async ValueTask CheckpointVersionSwitchTxnTest(
+            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
+            [Values] bool isAsync,
+            [Values(1L << 13, 1L << 16)] long indexSize)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize);
     }
 }
