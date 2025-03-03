@@ -27,7 +27,7 @@ namespace Tsavorite.core
         // For this class, the "page" is a TValue.
         internal MultiLevelPageArray<TValue> objectArray;
 
-        internal SimpleConcurrentStack<int> freeList;
+        internal SimpleConcurrentStack<int> freeSlots;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectIdMap()
@@ -35,7 +35,7 @@ namespace Tsavorite.core
             // entriesPerPage comes from ObjectAllocator's minimum pagesize / expected record size so is the maximum possible number of records.
             // Records may be larger due to key size but we have limits on that so it is unlikely we will waste very much of this allocation.
             objectArray = new();
-            freeList = new();
+            freeSlots = new();
         }
 
         internal int Count => objectArray.Count;
@@ -43,7 +43,7 @@ namespace Tsavorite.core
         /// <summary>Reserve a slot and return its ID.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Allocate()
-            => freeList.TryPop(out var objectId) ? objectId : objectArray.Allocate();
+            => freeSlots.TryPop(out var objectId) ? objectId : objectArray.Allocate();
 
         /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -52,16 +52,17 @@ namespace Tsavorite.core
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
                 Set(objectId, default);
-                freeList.Push(objectId);
+                freeSlots.Push(objectId);
             }
         }
 
         /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Free(int* ptrToObjectId)
+        public void Free(ref int objectIdRef)
         {
-            Free(*ptrToObjectId);
-            *ptrToObjectId = ObjectIdMap.InvalidObjectId;
+            var objectId = objectIdRef;
+            objectIdRef = ObjectIdMap.InvalidObjectId;
+            Free(objectIdRef);
         }
 
         /// <summary>Returns the slot's object.</summary>

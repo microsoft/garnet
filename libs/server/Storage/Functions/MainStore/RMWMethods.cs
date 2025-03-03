@@ -54,8 +54,8 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.PFADD:
-                    sizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
-                    if (!logRecord.TrySetValueSpanLength(ref sizeInfo))
+                    sizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), ref sizeInfo);
+                    if (!logRecord.TrySetValueLength(ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFADD");
                         return false;
@@ -70,7 +70,7 @@ namespace Garnet.server
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
                     var sbSrcHLL = input.parseState.GetArgSliceByRef(0).SpanByte;
 
-                    if (!logRecord.TrySetValueSpanLength(sbSrcHLL.Length, ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(sbSrcHLL.Length, ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFMERGE");
                         return false;
@@ -119,7 +119,7 @@ namespace Garnet.server
                     var bOffset = input.parseState.GetLong(0);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!logRecord.TrySetValueSpanLength(BitmapManager.Length(bOffset), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETBIT");
                         return false;
@@ -134,7 +134,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
 
-                    if (!logRecord.TrySetValueSpanLength(BitmapManager.LengthFromType(bitFieldArgs), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
                         return false;
@@ -171,7 +171,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.INCR:
                     // This is InitialUpdater so set the value to 1 and the length to the # of digits in "1"
-                    if (!logRecord.TrySetValueSpanLength(1, ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(1, ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCR");
                         return false;
@@ -185,7 +185,7 @@ namespace Garnet.server
                     var incrBy = input.arg1;
 
                     var ndigits = NumUtils.NumDigitsInLong(incrBy, ref fNeg);
-                    if (!logRecord.TrySetValueSpanLength(ndigits + (fNeg ? 1 : 0), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(ndigits + (fNeg ? 1 : 0), ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCRBY");
                         return false;
@@ -196,7 +196,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.DECR:
                     // This is InitialUpdater so set the value to -1 and the length to the # of digits in "-1"
-                    if (!logRecord.TrySetValueSpanLength(2, ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(2, ref sizeInfo))
                     {
                         Debug.Assert(logRecord.ValueSpan.Length >= 2, "Length overflow in DECR");
                         return false;
@@ -209,7 +209,7 @@ namespace Garnet.server
                     var decrBy = -input.arg1;
 
                     ndigits = NumUtils.NumDigitsInLong(decrBy, ref fNeg);
-                    if (!logRecord.TrySetValueSpanLength(ndigits + (fNeg ? 1 : 0), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(ndigits + (fNeg ? 1 : 0), ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "DECRBY");
                         return false;
@@ -234,7 +234,7 @@ namespace Garnet.server
                     if ((ushort)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(ushort)input.header.cmd - CustomCommandManager.StartOffset].functions;
-                        if (!logRecord.TrySetValueSpanLength(functions.GetInitialLength(ref input), ref sizeInfo))
+                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), ref sizeInfo))
                         {
                             functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
                             return false;
@@ -407,7 +407,7 @@ namespace Garnet.server
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset) 
-                            && !logRecord.TrySetValueSpanLength(BitmapManager.Length(bOffset), ref sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), ref sizeInfo))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -422,7 +422,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length) 
-                            && !logRecord.TrySetValueSpanLength(BitmapManager.LengthFromType(bitFieldArgs), ref sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), ref sizeInfo))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -518,7 +518,7 @@ namespace Garnet.server
                     { 
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
-                        if (!logRecord.TrySetValueSpanLength(originalLength + appendLength, ref sizeInfo))
+                        if (!logRecord.TrySetValueLength(originalLength + appendLength, ref sizeInfo))
                             return false;
 
                         // Append the new value with the client input at the end of the old data
@@ -553,7 +553,7 @@ namespace Garnet.server
 
                         // Adjust value length if user shrinks it
                         if (valueLength < logRecord.ValueSpan.Length)
-                            _ = logRecord.TrySetValueSpanLength(valueLength, ref sizeInfo);
+                            _ = logRecord.TrySetValueLength(valueLength, ref sizeInfo);
 
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;

@@ -244,7 +244,7 @@ namespace Tsavorite.core
             try
             {
                 var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
-                if (logRecord.IsBigEnough(ref sizeInfo))
+                if (logRecord.TrySetValueLength(ref sizeInfo))
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();
@@ -544,7 +544,7 @@ namespace Tsavorite.core
             var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
 
             logRecord.ClearOptionals();
-            if (logRecord.TrySetValueSpanLength(ref sizeInfo))
+            if (logRecord.TrySetValueLength(ref sizeInfo))
             {
                 if (sessionFunctions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                 {

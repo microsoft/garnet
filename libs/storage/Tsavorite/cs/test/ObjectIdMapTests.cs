@@ -95,9 +95,9 @@ namespace Tsavorite.test
             }
             Task.WaitAll(tasks);
 
-            Assert.That(map.freeList.MaxCount, Is.EqualTo(MultiLevelPageArray.ChapterSize * numThreads), "All freed items should have been added to the the freeList elementArray");
-            Assert.That(map.freeList.stack.IsNil, Is.False, "All freed items should be in the stack");
-            Assert.That(map.freeList.freeNodes.IsNil, Is.True, "No freed items should be in the freeList");
+            Assert.That(map.freeSlots.MaxCount, Is.EqualTo(MultiLevelPageArray.ChapterSize * numThreads), "All freed items should have been added to the the freeList elementArray");
+            Assert.That(map.freeSlots.stack.IsNil, Is.False, "All freed items should be in the stack");
+            Assert.That(map.freeSlots.freeNodes.IsNil, Is.True, "No freed items should be in the freeList");
 
             // Finally, test the freelist allocation.
             void runAllocateFromFreeListThread(int tid)
@@ -130,9 +130,9 @@ namespace Tsavorite.test
 
             Assert.That(map.Count, Is.EqualTo(allocatedCount));
 
-            Assert.That(map.freeList.stack.IsNil, Is.True, "No freed items should be in the stack");
-            Assert.That(map.freeList.freeNodes.IsNil, Is.False, "All freed items should be in the freeList");
-            Assert.That(map.freeList.elementArray.Count, Is.EqualTo(MultiLevelPageArray.ChapterSize * numThreads), "No freed items should have been added to the the freeList elementArray");
+            Assert.That(map.freeSlots.stack.IsNil, Is.True, "No freed items should be in the stack");
+            Assert.That(map.freeSlots.freeNodes.IsNil, Is.False, "All freed items should be in the freeList");
+            Assert.That(map.freeSlots.elementArray.Count, Is.EqualTo(MultiLevelPageArray.ChapterSize * numThreads), "No freed items should have been added to the the freeList elementArray");
         }
     }
 }

@@ -260,7 +260,7 @@ namespace Tsavorite.core
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public bool IsObjectRecord => CurrentIter.IsObjectRecord;
+        public bool ValueIsObject => CurrentIter.ValueIsObject;
         /// <inheritdoc/>
         public ref RecordInfo InfoRef => ref CurrentIter.InfoRef;
         /// <inheritdoc/>

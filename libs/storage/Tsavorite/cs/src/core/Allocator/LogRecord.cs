@@ -49,20 +49,20 @@ namespace Tsavorite.core
         public static SpanByte GetKey(long physicalAddress) => SpanField.AsSpanByte(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsInline);
 
         // All Key information is independent of TValue, which means we can navigate to the ValueAddress since we know KeyAddress and size.
-        // However, any further Value operations requires knowledge of TValue, including IsObjectRecord.
+        // However, any further Value operations requires knowledge of TValue, including valueIsObject.
 
         /// <summary>The address of the value.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetValueAddress(long physicalAddress)
         {
             var keyAddress = GetKeyAddress(physicalAddress);
-            return keyAddress + SpanField.GetInlineTotalSizeOfField(keyAddress, GetInfo(physicalAddress).KeyIsInline);
+            return keyAddress + SpanField.GetInlineTotalSizeOfKey(keyAddress, GetInfo(physicalAddress).KeyIsInline);
         }
 
         /// <summary>The inline length of the value.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineTotalSizeOfValue(long valueAddress, bool isObjectRecord, bool valueIsInline)
-            => valueIsInline ? SpanField.GetTotalSizeOfInlineField(valueAddress) : GetInlineSizeOfOutOfLineValue(isObjectRecord);
+        internal static int GetInlineTotalSizeOfValue(long valueAddress, bool valueIsObject, bool valueIsInline)
+            => valueIsInline ? SpanField.GetTotalSizeOfInlineField(valueAddress) : GetInlineSizeOfOutOfLineValue(valueIsObject);
 
         /// <summary>The inline length of the out-of-line "pointer", either an Overflow pointer or an Object Id.</summary>
         /// <remarks>
@@ -73,7 +73,7 @@ namespace Tsavorite.core
         ///  </list>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineSizeOfOutOfLineValue(bool isObjectRecord) => isObjectRecord ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize;
+        internal static int GetInlineSizeOfOutOfLineValue(bool valueIsObject) => valueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize;
     }
 
     /// <summary>The in-memory record on the log: header, key, value, and optional fields
@@ -121,13 +121,20 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator)
             : this(physicalAddress)
-        {
-            this.overflowAllocator = overflowAllocator;
-        }
+            => this.overflowAllocator = overflowAllocator;
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public readonly bool IsObjectRecord => objectIdMap is not null;
+        public readonly bool ValueIsObject
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                Debug.Assert(!Info.ValueIsObject || objectIdMap is not null, $"Mismatch between Info.ValueIsObject ({Info.ValueIsObject}) and objectIdMap != null {objectIdMap is not null}");
+                return Info.ValueIsObject;
+            }
+        }
+
         /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0;
         /// <inheritdoc/>
@@ -142,7 +149,7 @@ namespace Tsavorite.core
         {
             get
             {
-                Debug.Assert(!IsObjectRecord || Info.ValueIsInline, "ValueSpan is not valid for non-inline Object log records");
+                Debug.Assert(!ValueIsObject || Info.ValueIsInline, "ValueSpan is not valid for non-inline Object log records");
                 return SpanField.AsSpanByte(ValueAddress, Info.ValueIsInline);
             }
         }
@@ -153,7 +160,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(IsObjectRecord, "ValueObject is not valid for String log records");
+                Debug.Assert(ValueIsObject, "ValueObject is not valid for String log records");
                 Debug.Assert(!Info.ValueIsInline, "ValueObject is not valid for inline Object values");
                 return (Info.ValueIsInline || *ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? default : objectIdMap.Get(ValueObjectId);
             }
@@ -163,7 +170,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly TValue GetReadOnlyValue()
         {
-            if (IsObjectRecord)
+            if (ValueIsObject)
                 return objectIdMap.Get(ValueObjectId);
 
             var sb = ValueSpan;
@@ -181,8 +188,8 @@ namespace Tsavorite.core
         public void ClearValueObject(Action<TValue> disposer)
 #pragma warning restore IDE0251
         {
-            Debug.Assert(IsObjectRecord, "ClearValueObject() is not valid for String log records");
-            if (IsObjectRecord)
+            Debug.Assert(ValueIsObject, "ClearValueObject() is not valid for String log records");
+            if (ValueIsObject)
             {
                 objectIdMap.ClearAt(ValueObjectId, disposer);
                 if (!Info.ValueIsInline)
@@ -197,12 +204,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
-            {
-                KeyTotalSize = SpanField.GetInlineTotalSizeOfField(KeyAddress, Info.KeyIsInline),
-                ValueTotalSize = LogRecord.GetInlineTotalSizeOfValue(ValueAddress, IsObjectRecord, Info.ValueIsInline),
-                HasETag = Info.HasETag,
-                HasExpiration = Info.HasExpiration
-            };
+        {
+            KeyTotalSize = SpanField.GetInlineTotalSizeOfKey(KeyAddress, Info.KeyIsInline),
+            ValueTotalSize = LogRecord.GetInlineTotalSizeOfValue(ValueAddress, ValueIsObject, Info.ValueIsInline),
+            ValueIsObject = ValueIsObject,
+            HasETag = Info.HasETag,
+            HasExpiration = Info.HasExpiration
+        };
         #endregion // ISourceLogRecord
 
         /// <summary>A ref to the record header</summary>
@@ -236,7 +244,7 @@ namespace Tsavorite.core
         {
             get
             {
-                Debug.Assert(IsObjectRecord, "Cannot get ValueObjectId for String LogRecord");
+                Debug.Assert(ValueIsObject, "Cannot get ValueObjectId for String LogRecord");
                 Debug.Assert(!Info.ValueIsInline, "Cannot get ValueObjectId for inline values");
                 return Info.ValueIsInline ? ObjectIdMap.InvalidObjectId : *ValueObjectIdAddress;
             }
@@ -249,19 +257,29 @@ namespace Tsavorite.core
             get
             {
                 var valueAddress = ValueAddress;
-                var valueSize = LogRecord.GetInlineTotalSizeOfValue(valueAddress, IsObjectRecord, GetInfo(physicalAddress).ValueIsInline);
+                var valueSize = LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, GetInfo(physicalAddress).ValueIsInline);
                 return (int)(valueAddress - physicalAddress + valueSize + OptionalSize);
             }
+        }
+
+        /// <summary>
+        /// Asserts that <paramref name="newValueSize"/> is the same size as the value data size in the <see cref="RecordSizeInfo"/> before setting the length.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySetValueLength(int newValueSize, ref RecordSizeInfo sizeInfo)
+        {
+            Debug.Assert(newValueSize == sizeInfo.ValueActualDataSize, $"Mismatched value size; expected {sizeInfo.ValueActualDataSize}, actual {newValueSize}");
+            return TrySetValueLength(ref sizeInfo);
         }
 
         /// <summary>
         /// Tries to set the length of the value field, with consideration to whether there is also space for the optionals (ETag and Expiration).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpanLength(ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueLength(ref RecordSizeInfo sizeInfo)
         {
             var valueAddress = ValueAddress;
-            var oldInlineValueSize = LogRecord.GetInlineTotalSizeOfValue(valueAddress, IsObjectRecord, Info.ValueIsInline);
+            var oldInlineValueSize = LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
             var newInlineValueSize = sizeInfo.InlineTotalValueSize;
 
             // Growth and fillerLen may be negative if shrinking.
@@ -284,77 +302,139 @@ namespace Tsavorite.core
             // changing the optionals here, so don't adjust fillerLen for them; only adjust it for value length change.
             fillerLen -= inlineValueGrowth;
 
-            var newInlineDataLength = sizeInfo.ValueDataSize;
+            int newDataLength = sizeInfo.ValueActualDataSize;
+
+            // See if we need to shift/zero the optionals and Filler.
+            var shiftOptionals = inlineValueGrowth != 0;
 
             // We have enough space to handle the changed value size, including changing between inline and out-of-line or vice-versa, and the new
             // optional space. But we do not count the change in optional space here; we just ensure there is enough, and a later operation will
             // actually add/remove/update the optional(s), including setting the flag. So only adjust offsets for valueGrowth, not totalGrowth.
-            if (Info.ValueIsInline == sizeInfo.ValueIsInline)
+
+            // Evaluate in order of most common (i.e. most perf-critical) cases first.
+            if (Info.ValueIsInline && sizeInfo.ValueIsInline)
             {
-                if (Info.ValueIsInline)
+                // Both are inline, so resize in place (and adjust filler) if needed.
+                if (inlineValueGrowth != 0)
                 {
-                    // Both are inline, so resize in place (and adjust filler) if needed.
-                    if (inlineValueGrowth != 0)
-                    {
-                        var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                        _ = SpanField.AdjustInlineLength(ValueAddress, newInlineDataLength);
-                        optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
-                    }
+                    var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                    _ = SpanField.AdjustInlineLength(ValueAddress, newDataLength);
+                    optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                 }
-                else if (!IsObjectRecord)
-                {
-                    // Both are out-of-line, so reallocate in place if needed. Object records will do what they need to after this call returns;
-                    // we're only here to set up inline lengths, and that hasn't changed here.
-                    if (newInlineDataLength != BlockHeader.GetUserSize(SpanField.GetOverflowPointer(valueAddress)))
-                        _ = SpanField.ReallocateOverflow(valueAddress, newInlineDataLength, overflowAllocator);
-                }
+                goto Done;
+            }
+            else if (Info.ValueIsOverflow && sizeInfo.ValueIsOverflow)
+            {
+                // Both are out-of-line, so reallocate in place if needed. Object records will do what they need to after this call returns;
+                // we're only here to set up inline lengths, and that hasn't changed here.
+                if (newDataLength != BlockHeader.GetUserSize(SpanField.GetOverflowPointer(valueAddress)))
+                    _ = SpanField.ReallocateOverflow(valueAddress, newDataLength, overflowAllocator);
+                goto Done;
+            }
+            else if (Info.ValueIsObject && sizeInfo.ValueIsObject)
+            {
+                // Both are object records, so nothing to change.
+                goto Done;
             }
             else
             {
-                // Overflow-ness differs and we've verified there is enough space for the change, so convert. The SpanField.ConvertTo* functions copy
+                // Overflow/Object-ness differs and we've verified there is enough space for the change, so convert. The SpanField.ConvertTo* functions copy
                 // existing data, as we are likely here for IPU or for the initial update going from inline to overflow with Value length == sizeof(IntPtr).
                 if (Info.ValueIsInline)
                 {
-                    // Convert from inline to out-of-line.
-                    Debug.Assert(inlineValueGrowth == SpanField.OverflowInlineSize - oldInlineValueSize,
-                                $"ValueGrowth {inlineValueGrowth} does not equal expected {oldInlineValueSize - SpanField.OverflowInlineSize}");
-
-                    // If there is no change in inline size (it is already the out-of-line inline-portion size), we don't need the optional-shift.
-                    if (inlineValueGrowth != 0)
+                    if (sizeInfo.ValueIsOverflow)
                     {
-                        var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                        if (!IsObjectRecord)
-                            _ = SpanField.ConvertToOverflow(valueAddress, newInlineDataLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
+                        // Convert from inline to overflow.
+                        Debug.Assert(inlineValueGrowth == SpanField.OverflowInlineSize - oldInlineValueSize,
+                                    $"ValueGrowth {inlineValueGrowth} does not equal expected {oldInlineValueSize - SpanField.OverflowInlineSize}");
+
+                        if (shiftOptionals)
+                        {
+                            var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                            _ = SpanField.ConvertInlineToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                            optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                        }
                         else
-                            _ = SpanField.ConvertToObjectId((long)ValueObjectIdAddress, newInlineDataLength, objectIdMap);
-                        InfoRef.ClearValueIsInline();
-                        optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                            _ = SpanField.ConvertInlineToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
                     }
                     else
                     {
-                        if (!IsObjectRecord)
-                            _ = SpanField.ConvertToOverflow(valueAddress, newInlineDataLength, overflowAllocator);   // zeroes any "extra" space if there was shrinkage
+                        Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 1");
+
+                        // If there is no change in inline size (it is already the out-of-line inline-portion size), we don't need the optional-shift.
+                        if (shiftOptionals)
+                        {
+                            var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                            _ = SpanField.ConvertInlineToObjectId(ref InfoRef, (long)ValueObjectIdAddress, objectIdMap);
+                            optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                        }
                         else
-                            _ = SpanField.ConvertToObjectId((long)ValueObjectIdAddress, newInlineDataLength, objectIdMap);
-                        InfoRef.ClearValueIsInline();
+                            _ = SpanField.ConvertInlineToObjectId(ref InfoRef, (long)ValueObjectIdAddress, objectIdMap);
+                    }
+                }
+                else if (Info.ValueIsOverflow)
+                {
+                    if (sizeInfo.ValueIsInline)
+                    {
+                        // Convert from overflow to inline.
+                        Debug.Assert(fillerLen >= sizeInfo.FieldInfo.ValueTotalSize - SpanField.OverflowInlineSize,
+                                $"Inconsistent required Inline space: available {fillerLen}, required {sizeInfo.FieldInfo.ValueTotalSize - SpanField.OverflowInlineSize}");
+
+                        if (shiftOptionals)
+                        {
+                            var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                            _ = SpanField.ConvertOverflowToInline(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                            optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                        }
+                        else
+                            _ = SpanField.ConvertOverflowToInline(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                    }
+                    else
+                    {
+                        Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 2");
+
+                        if (shiftOptionals)
+                        {
+                            var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, overflowAllocator, objectIdMap);
+                            optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                        }
+                        else
+                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, overflowAllocator, objectIdMap);
                     }
                 }
                 else
                 {
-                    // Convert from overflow to inline.
-                    Debug.Assert(fillerLen >= newInlineDataLength - SpanField.OverflowInlineSize,
-                                $"Inconsistent required Inline space: available {fillerLen}, required {newInlineDataLength - SpanField.OverflowInlineSize}");
+                    Debug.Assert(Info.ValueIsObject, "Expected ValueIsObject to be set, pt 3");
 
-                    var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                    if (!IsObjectRecord)
-                        _ = SpanField.ConvertToInline(valueAddress, newInlineDataLength, overflowAllocator);
+                    if (sizeInfo.ValueIsInline)
+                    {
+                        if (shiftOptionals)
+                        {
+                            var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                            _ = SpanField.ConvertObjectIdToInline(ref InfoRef, valueAddress, newDataLength, objectIdMap);
+                            optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                        }
+                        else
+                            _ = SpanField.ConvertObjectIdToInline(ref InfoRef, valueAddress, newDataLength, objectIdMap);
+                    }
                     else
-                        objectIdMap.Free(ValueObjectIdAddress);     // Sets to ObjectIdMap.InvalidObjectId
-                    InfoRef.SetValueIsInline();
-                    optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                    {
+                        Debug.Assert(sizeInfo.ValueIsOverflow, "Expected ValueIsOverflow to be true");
+
+                        if (shiftOptionals)
+                        {
+                            var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
+                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator, objectIdMap);
+                            optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
+                        }
+                        else
+                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator, objectIdMap);
+                    }
                 }
             }
 
+        Done:
             Debug.Assert(Info.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
             Debug.Assert(!Info.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSpanSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSpanSize}");
             return true;
@@ -363,12 +443,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetValueSpan(SpanByte value, ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(!IsObjectRecord || Info.ValueIsInline, "ValueSpan cannot be used with non-inline Object log records");
-            sizeInfo.AssertValueDataLength(value.Length);
+            sizeInfo.AssertValueDataLength(value.TotalSize, ref sizeInfo);
 
-            if (!TrySetValueSpanLength(ref sizeInfo))
+            if (!TrySetValueLength(ref sizeInfo))
                 return false;
-            
+
             value.CopyTo(SpanField.AsSpanByte(ValueAddress, Info.ValueIsInline));
             return true;
         }
@@ -381,8 +460,7 @@ namespace Tsavorite.core
         public bool TrySetValueObject(TValue value, ref RecordSizeInfo sizeInfo)
 #pragma warning restore IDE0251
         {
-            Debug.Assert(IsObjectRecord, $"Cannot call {GetCurrentMethodName()} for String LogRecord");
-            return TrySetValueSpanLength(ref sizeInfo) && TrySetValueObject(value);
+            return TrySetValueLength(ref sizeInfo) && TrySetValueObject(value);
         }
 
 
@@ -395,7 +473,7 @@ namespace Tsavorite.core
         public bool TrySetValueObject(TValue value)
 #pragma warning restore IDE0251
         {
-            Debug.Assert(IsObjectRecord, $"Cannot call {GetCurrentMethodName()} for String LogRecord");
+            Debug.Assert(ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
 
             if (Info.ValueIsInline)
             {
@@ -425,7 +503,7 @@ namespace Tsavorite.core
         internal readonly long GetOptionalStartAddress()
         {
             var valueAddress = ValueAddress;
-            return ValueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, IsObjectRecord, Info.ValueIsInline);
+            return ValueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
         }
 
         public readonly int OptionalSize => ETagLen + ExpirationLen;
@@ -460,12 +538,12 @@ namespace Tsavorite.core
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
             // Therefore optionals (ETag, Expiration) are not considered here.
             var valueAddress = ValueAddress;
-            var fillerAddress = valueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, IsObjectRecord, Info.ValueIsInline);
+            var fillerAddress = valueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
             var usedSize = (int)(fillerAddress - physicalAddress);
             var fillerSize = allocatedSize - usedSize;
 
             if (fillerSize >= LogRecord.FillerLengthSize)
-            { 
+            {
                 InfoRef.SetHasFiller(); // must do this first, for zero-init
                 *(int*)fillerAddress = fillerSize;
             }
@@ -665,9 +743,9 @@ namespace Tsavorite.core
         {
             // This assumes the Key has been set and is not changed
             var srcRecordInfo = srcLogRecord.Info;
-            if (!srcLogRecord.IsObjectRecord)
+            if (!srcLogRecord.ValueIsObject)
             {
-                if (!TrySetValueSpanLength(ref sizeInfo))
+                if (!TrySetValueLength(ref sizeInfo))
                     return false;
                 srcLogRecord.ValueSpan.AsReadOnlySpan().CopyTo(ValueSpan.AsSpan());
             }
@@ -709,36 +787,21 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void FreeKeyOverflow()
+        internal bool FreeKeyOverflow()
         {
-            if (Info.KeyIsInline)
-                return;
-            overflowAllocator.Free(SpanField.GetOverflowPointer(KeyAddress));
-            InfoRef.ClearKeyIsInline();
+            if (!Info.KeyIsOverflow)
+                return false;
+            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, KeyAddress, overflowAllocator, isKey: true);
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void FreeValueOverflow()
+        internal bool FreeValueOverflow()
         {
-            if (Info.ValueIsInline)
-                return;
-            overflowAllocator.Free(SpanField.GetOverflowPointer(ValueAddress));
-            InfoRef.ClearValueIsInline();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsBigEnough(ref RecordSizeInfo sizeInfo)
-        {
-            // For revivification: see if the current record is big enough to handle sizeInfo.
-            // The rules:
-            //  If the record's key or value has an overflow alloc, then the inline size cost is SpanField.OverflowInlineSize (overriding sizeInfo).
-            //      - This is consistent with LogRecord.TrySetValueSpan which shrinks in place if there is an overflow alloc.
-            //  If key or value has no overflow alloc but sizeInfo.(Key|Value)IsOverflow is true, the cost is SpanField.OverflowInlineSize
-            //  If after the above are checked the inline size cannot fit into the record size, return false.
-            //      - This is so we don't waste a bunch of small allocs in the overflow allocator
-            var keySize = Info.KeyIsInline && sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
-            var valueSize = Info.ValueIsInline && sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : SpanField.OverflowInlineSize;
-            return keySize + valueSize + sizeInfo.OptionalSize <= GetInlineRecordSizes().allocatedSize;
+            if (!Info.ValueIsOverflow)
+                return false;
+            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, KeyAddress, overflowAllocator, isKey: false);
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -751,7 +814,7 @@ namespace Tsavorite.core
             var newKeySize = Info.KeyIsInline && sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
             var newValueSize = Info.ValueIsInline && sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : SpanField.OverflowInlineSize;
 
-            // Zero out optionals
+            // Zero out optionals, starting from highest addresses
             var address = GetFillerLengthAddress();
             var allocatedRecordSize = GetInlineRecordSizes().allocatedSize;
             if (Info.HasFiller)
@@ -776,7 +839,7 @@ namespace Tsavorite.core
             // Value is going to take up whatever space is leftover after Key, so optimize zeroinit to be only from end of new Key length to end of old value, if this difference is > 0.
             var endOfNewKey = KeyAddress + newKeySize;
             var valueAddress = ValueAddress;
-            var endOfCurrentValue = valueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, IsObjectRecord, Info.ValueIsInline);
+            var endOfCurrentValue = valueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
             var zeroSize = (int)(endOfCurrentValue - endOfNewKey);
             if (zeroSize > 0)
                 new Span<byte>((byte*)endOfNewKey, zeroSize).Clear();
@@ -784,7 +847,7 @@ namespace Tsavorite.core
             // Set new key size
             if (Info.KeyIsInline)
                 *(int*)KeyAddress = newKeySize;
-            
+
             // Re-get ValueAddress due to the new KeyAddress and assign it all available space, unless it is already overflow, in which case the space after the overflow allocation pointer is filler space.
             valueAddress = ValueAddress;
             var spaceToEndOfRecord = allocatedRecordSize - (int)(valueAddress - physicalAddress) + newValueSize;
@@ -797,13 +860,14 @@ namespace Tsavorite.core
                 *(int*)address = spaceToEndOfRecord - SpanField.OverflowInlineSize;
             }
         }
-        #if false
+
         public override readonly string ToString()
         {
+            if (physicalAddress == 0)
+                return "<empty>";
             static string bstr(bool value) => value ? "T" : "F";
-            var valueString = IsObjectRecord && !Info.ValueIsInline ? "<obj>" : ValueSpan.ToShortString(20);
+            var valueString = ValueIsObject ? "<obj>" : ValueSpan.ToShortString(20);
             return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
         }
-        #endif
     }
 }

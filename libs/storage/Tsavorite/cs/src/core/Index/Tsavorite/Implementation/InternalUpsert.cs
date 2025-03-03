@@ -213,7 +213,7 @@ namespace Tsavorite.core
             try
             {
                 var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, value, ref input, sessionFunctions);
-                if (logRecord.IsBigEnough(ref sizeInfo))
+                if (logRecord.TrySetValueLength(ref sizeInfo))
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();

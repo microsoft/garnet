@@ -9,7 +9,7 @@ namespace Tsavorite.core
     public interface ISourceLogRecord<TValue>
     {
         /// <summary>Whether this is a record for an object or a SpanByte value</summary>
-        bool IsObjectRecord { get; }
+        bool ValueIsObject { get; }
 
         /// <summary>A ref to the record header</summary>
         ref RecordInfo InfoRef { get; }

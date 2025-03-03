@@ -16,8 +16,9 @@ namespace Garnet.server
         {
             return new RecordFieldInfo()
             {
-                KeySize = key.TotalSize,
-                ValueSize = ObjectIdMap.ObjectIdSize
+                KeyTotalSize = key.TotalSize,
+                ValueTotalSize = ObjectIdMap.ObjectIdSize,
+                ValueIsObject = true
                 // No object commands take an Expiration for InitialUpdater.
                 // TODO ETag?
             };
@@ -29,8 +30,9 @@ namespace Garnet.server
         {
             var fieldInfo = new RecordFieldInfo()
             {
-                KeySize = srcLogRecord.Key.TotalSize,
-                ValueSize = ObjectIdMap.ObjectIdSize,
+                KeyTotalSize = srcLogRecord.Key.TotalSize,
+                ValueTotalSize = ObjectIdMap.ObjectIdSize,
+                ValueIsObject = true,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -54,8 +56,9 @@ namespace Garnet.server
         {
             return new RecordFieldInfo()
             {
-                KeySize = key.TotalSize,
-                ValueSize = ObjectIdMap.ObjectIdSize
+                KeyTotalSize = key.TotalSize,
+                ValueTotalSize = ObjectIdMap.ObjectIdSize,
+                ValueIsObject = true
                 // No object commands take an Expiration for Upsert.
                 // TODO ETag?
             };

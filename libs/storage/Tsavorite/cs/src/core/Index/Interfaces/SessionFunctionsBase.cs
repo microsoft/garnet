@@ -23,7 +23,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual bool ConcurrentWriter(ref LogRecord<TValue> logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            var ok = logRecord.IsObjectRecord
+            var ok = logRecord.ValueIsObject
                 ? logRecord.TrySetValueObject(srcValue, ref sizeInfo)
                 : logRecord.TrySetValueSpan(Unsafe.As<TValue, SpanByte>(ref srcValue), ref sizeInfo);
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
@@ -44,7 +44,7 @@ namespace Tsavorite.core
         public virtual bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<TValue> dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
-            var ok = srcLogRecord.IsObjectRecord
+            var ok = srcLogRecord.ValueIsObject
                 ? dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject, ref sizeInfo)
                 : dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
             if (!ok)
@@ -84,7 +84,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual bool SingleDeleter(ref LogRecord<TValue> dstLogRecord, ref DeleteInfo deleteInfo)
         {
-            if (dstLogRecord.IsObjectRecord)
+            if (dstLogRecord.ValueIsObject)
                 dstLogRecord.ClearValueObject(_ => { });
             return true;
         }
@@ -120,7 +120,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override bool ConcurrentReader(ref LogRecord<TValue> logRecord, ref TValue input, ref TValue output, ref ReadInfo readInfo)
         {
-            if (logRecord.IsObjectRecord)
+            if (logRecord.ValueIsObject)
             {
                 output = logRecord.ValueObject;
                 return true;
@@ -131,7 +131,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TValue input, ref TValue output, ref ReadInfo readInfo)
         {
-            if (srcLogRecord.IsObjectRecord)
+            if (srcLogRecord.ValueIsObject)
             {
                 output = srcLogRecord.ValueObject;
                 return true;

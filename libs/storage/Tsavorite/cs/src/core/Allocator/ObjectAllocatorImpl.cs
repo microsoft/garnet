@@ -62,7 +62,7 @@ namespace Tsavorite.core
             IsObjectAllocator = true;
 
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            maxInlineValueSize = Math.Min(512 * 1024 * 1024, PageSize / RecordFieldInfo.InlineObjectValueSizeMaxPageDivisor);
+            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
             overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
@@ -112,7 +112,7 @@ namespace Tsavorite.core
             Debug.Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
-                _ = freePagePool.TryAdd(new ()
+                _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
                     value = values[index]
@@ -143,11 +143,19 @@ namespace Tsavorite.core
         public static void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
         {
             var valueAddress = LogRecord.GetValueAddress(physicalAddress);
-            LogRecord.GetInfoRef(physicalAddress).ValueIsInline = sizeInfo.ValueIsInline;
             if (sizeInfo.ValueIsInline)
+            {
+                // Set the actual length indicator for inline.
+                LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
                 _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize);
-            else
+            }
+            else if (sizeInfo.ValueIsObject)
+            {
+                LogRecord.GetInfoRef(physicalAddress).SetValueIsObject();
                 *LogRecord<TValue>.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+            }
+            else
+                SpanField.InitializeInlineForOverflowField(valueAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -208,12 +216,11 @@ namespace Tsavorite.core
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = sizeInfo.FieldInfo.ValueTotalSize != RecordFieldInfo.ValueObjectIdSize
-                                    && sizeInfo.FieldInfo.ValueTotalSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueTotalSize <= sizeInfo.MaxInlineValueSpanSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : (sizeInfo.ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
 
             // Record
-            sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + ObjectIdMap.ObjectIdSize + sizeInfo.OptionalSize;
+            sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
@@ -248,15 +255,17 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason)
         {
-            // Release any overflow allocations for Key
-            logRecord.FreeKeyOverflow();
+            _ = logRecord.FreeKeyOverflow();
 
-            if (!logRecord.Info.ValueIsInline && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
+            if (!logRecord.Info.ValueIsInline)
             {
-                var heapObj = logRecord.ValueObject;
-                if (heapObj is not null)
-                    storeFunctions.DisposeValueObject(heapObj, disposeReason);
-                logRecord.objectIdMap.Free(logRecord.ValueObjectId);
+                if (!logRecord.FreeValueOverflow() && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
+                {
+                    var heapObj = logRecord.ValueObject;
+                    if (heapObj is not null)
+                        storeFunctions.DisposeValueObject(heapObj, disposeReason);
+                    logRecord.objectIdMap.Free(logRecord.ValueObjectId);
+                }
             }
         }
 
@@ -264,7 +273,7 @@ namespace Tsavorite.core
         internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
-            if (logRecord.IsObjectRecord && logRecord.ValueObject is not null)
+            if (logRecord.ValueIsObject && logRecord.ValueObject is not null)
                 storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 
@@ -961,7 +970,7 @@ namespace Tsavorite.core
         }
 
         internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(key, bufferPool);
-#endregion
+        #endregion
 
         public long[] GetSegmentOffsets() => null;
 

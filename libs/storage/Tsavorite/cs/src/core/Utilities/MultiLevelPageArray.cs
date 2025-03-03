@@ -20,8 +20,8 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// This creates a 3-d array of page vectors. As we allocate for caller use as pages, this can be envisioned as a book, where
-    /// the first two dimensions are infrastructure, and the third is where the user-visible allocations are created. This may be
+    /// This creates a 3-d array of page vectors. The initial use of this as for <see cref="OverflowAllocator.NativePageAllocator"/> to allocate for caller use as pages,
+    /// so this can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where the user-visible allocations are created. This may be
     /// used for sub-allocations within page, particularly where the pages are unmanaged pointers; for example, <see cref="OverflowAllocator.FixedSizePages"/>.
     /// <list type="bullet">
     ///     <item>The first dimension is the "book", which is a collection of "chapters".</item>
@@ -68,7 +68,7 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                // We'll return the incremented value of tail.
+                // If we are here, we did not need to allocate a new chapter, or we own the new-page "latch". We'll return the incremented value of tail.
                 var newTail = Interlocked.Increment(ref tail);
                 var newChapter = newTail >> MultiLevelPageArray.ChapterSizeBits;
 

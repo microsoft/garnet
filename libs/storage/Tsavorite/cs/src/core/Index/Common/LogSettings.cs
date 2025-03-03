@@ -29,7 +29,7 @@ namespace Tsavorite.core
         public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;
 
         /// <summary>Default number of bits for the size of an inline (not overflow) value, for <see cref="SpanByteAllocator{TStoreFunctions}"/></summary>
-        public const int kDefaultMaxInlineValueSizeBits = 20;
+        public const int kDefaultMaxInlineValueSizeBits = 10;
 
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
         public const int kLowestMaxInlineSizeBits = kMinPageSizeBits - 1;

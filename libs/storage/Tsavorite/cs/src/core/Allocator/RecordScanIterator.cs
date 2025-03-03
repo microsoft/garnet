@@ -297,7 +297,7 @@ namespace Tsavorite.core
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public bool IsObjectRecord => false;
+        public bool ValueIsObject => false;
         /// <inheritdoc/>
         public ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
         /// <inheritdoc/>
@@ -335,7 +335,8 @@ namespace Tsavorite.core
         public RecordFieldInfo GetRecordFieldInfo() => new()
         {
             KeyTotalSize = Key.TotalSize,
-            ValueTotalSize = IsObjectRecord ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+            ValueTotalSize = ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+            ValueIsObject = ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
         };

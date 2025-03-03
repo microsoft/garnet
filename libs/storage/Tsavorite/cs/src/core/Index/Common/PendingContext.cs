@@ -35,7 +35,7 @@ namespace Tsavorite.core
             internal const ushort kIsNoKey = 0x0001;
             internal const ushort kIsAsync = 0x0002;
             internal const ushort kIsReadAtAddress = 0x0004;
-            internal const ushort kIsObjectRecord = 0x0008;
+            internal const ushort kIsObjectRecord = 0x0008; // TODO replace with RecordInfo.ValueIsObject
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
             internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
@@ -97,7 +97,7 @@ namespace Tsavorite.core
 
             #region ISourceLogRecord
             /// <inheritdoc/>
-            public readonly bool IsObjectRecord => (operationFlags & kIsObjectRecord) != 0;
+            public readonly bool ValueIsObject => (operationFlags & kIsObjectRecord) != 0;
             /// <inheritdoc/>
             public readonly ref RecordInfo InfoRef => throw new TsavoriteException("Cannot call InfoRef on PendingContext"); // Cannot return ref to 'this'
             /// <inheritdoc/>
@@ -110,7 +110,7 @@ namespace Tsavorite.core
             public readonly SpanByte Key => key.Get();
 
             /// <inheritdoc/>
-            public readonly unsafe SpanByte ValueSpan => IsObjectRecord ? throw new TsavoriteException("Cannot use ValueSpan on an Object record") : Unsafe.As<TValue, SpanByte>(ref value.Get());
+            public readonly unsafe SpanByte ValueSpan => ValueIsObject ? throw new TsavoriteException("Cannot use ValueSpan on an Object value") : Unsafe.As<TValue, SpanByte>(ref value.Get());
 
             /// <inheritdoc/>
             public readonly TValue ValueObject => value.Get();
@@ -135,7 +135,8 @@ namespace Tsavorite.core
             public readonly RecordFieldInfo GetRecordFieldInfo() => new()
                 {
                     KeyTotalSize = Key.TotalSize,
-                    ValueTotalSize = IsObjectRecord && !Info.ValueIsInline ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+                    ValueTotalSize = ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.TotalSize,
+                    ValueIsObject = ValueIsObject,
                     HasETag = Info.HasETag,
                     HasExpiration = Info.HasExpiration
                 };

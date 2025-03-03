@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.OverflowAllocator;
 
@@ -60,7 +61,7 @@ namespace Tsavorite.core
 
         /// <summary>Gets a pointer to the ObjectId at address (which is ValueAddress). There is no length prefix.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int* GetObjectIdPointer(long fieldAddress) => (int*)fieldAddress;
+        internal static ref int GetObjectIdRef(long fieldAddress) => ref *(int*)fieldAddress;
 
         /// <summary>For an inline field, get the total inline size of the field: The length prefix plus the length of the byte stream</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -68,7 +69,14 @@ namespace Tsavorite.core
 
         /// <summary>Get a field's inline length, depending on whether it is actually inline or whether it is an out-of-line pointer.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineTotalSizeOfField(long fieldAddress, bool isInline) => isInline ? FieldLengthPrefixSize + GetInlineLengthRef(fieldAddress) : OverflowInlineSize;
+        internal static int GetInlineTotalSizeOfKey(long fieldAddress, bool isInline) => isInline ? FieldLengthPrefixSize + GetInlineLengthRef(fieldAddress) : OverflowInlineSize;
+
+        /// <summary>
+        /// Initialize an inline field with the length necessary for the eventual overflow pointer, but don't set the field to overflow yet to avoid needing null-pointer checks.
+        /// <see cref="LogRecord{TValue}.TrySetValueLength(ref RecordSizeInfo)"/> will handle converting to overflow and allocating.
+        /// </summary>
+        /// <param name="fieldAddress"></param>
+        internal static void InitializeInlineForOverflowField(long fieldAddress) => GetInlineLengthRef(fieldAddress) = OverflowInlineSize - FieldLengthPrefixSize;
 
         /// <summary>
         /// Obtain a <see cref="Span{_byte_}"/> referencing the inline or overflow data and the datasize for this field.
@@ -123,7 +131,7 @@ namespace Tsavorite.core
         /// and that the field does not currently contain an overflow allocation. Applies to Keys as well during freelist revivification.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ConvertToOverflow(long fieldAddress, int newLength, OverflowAllocator allocator)
+        internal static byte* ConvertInlineToOverflow(ref RecordInfo recordInfo, long fieldAddress, int newLength, OverflowAllocator allocator)
         {
             // First copy the data
             byte* newPtr = allocator.Allocate(newLength, zeroInit: false);
@@ -143,6 +151,29 @@ namespace Tsavorite.core
                 ZeroData((long)newPtr + copyLength, clearLength);
 
             SetOverflowPointer(fieldAddress, (IntPtr)newPtr);
+            recordInfo.SetValueIsOverflow();
+            return newPtr;
+        }
+
+        /// <summary>
+        /// Convert a Span field from inline to overflow.
+        /// </summary>
+        /// <remarks>
+        /// Applies to Value-only during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
+        /// and that the field does not currently contain an overflow allocation. Here we do not copy the data; we assume the caller will have already
+        /// prepared to convert from Object format to inline format.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static byte* ConvertObjectIdToOverflow<TValue>(ref RecordInfo recordInfo, long fieldAddress, int newLength, OverflowAllocator allocator, ObjectIdMap<TValue> objectIdMap)
+        {
+            byte* newPtr = allocator.Allocate(newLength, zeroInit: false);
+            objectIdMap.Free(ref GetObjectIdRef(fieldAddress));
+
+            // OverflowInlineSize is >= ObjectIdSize so we will not be "shrinking" the allocation and therefore need not zeroinit the extra space.
+            Debug.Assert(OverflowInlineSize > ObjectIdMap.ObjectIdSize);
+
+            recordInfo.SetValueIsOverflow();    // Set this first so the new pointer isn't interpreted as ObjectId (re zeroinit). TODO: this could also be the inverse, so create OverflowAllocator.InvalidPointer consistent with InvalidObjectId.
+            SetOverflowPointer(fieldAddress, (IntPtr)newPtr);
             return newPtr;
         }
 
@@ -151,10 +182,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// Applies to Value during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
-        /// and that the field does not currently contain a valid ObjectId.
+        /// and that the field does not currently contain a valid ObjectId. Here we do not copy the data; we assume the caller will have already
+        /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertToObjectId<TValue>(long fieldAddress, int newLength, ObjectIdMap<TValue> objectIdMap)
+        internal static int ConvertInlineToObjectId<TValue>(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap<TValue> objectIdMap)
         {
             // Here we do not copy the data; we assume the caller will have already created an object that has converted from inline format to object format.
             var objectId = objectIdMap.Allocate();
@@ -165,7 +197,30 @@ namespace Tsavorite.core
             if (clearLength > 0)
                 ZeroInlineData(fieldAddress, ObjectIdMap.ObjectIdSize, clearLength);
 
-            *GetObjectIdPointer(fieldAddress) = objectId;
+            GetObjectIdRef(fieldAddress) = objectId;
+            recordInfo.SetValueIsObject();
+            return objectId;
+        }
+
+        /// <summary>
+        /// Convert a Span field from an out-of-line overflow allocation to ObjectId.
+        /// </summary>
+        /// <remarks>
+        /// Applies to Value during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
+        /// and that the field does not currently contain a valid ObjectId. Here we do not copy the data; we assume the caller will have already
+        /// created an object that has converted from inline format to object format.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int ConvertOverflowToObjectId<TValue>(ref RecordInfo recordInfo, long fieldAddress, OverflowAllocator allocator, ObjectIdMap<TValue> objectIdMap)
+        {
+            var oldPtr = (byte*)GetOverflowPointer(fieldAddress);
+            SetOverflowPointer(fieldAddress, IntPtr.Zero);
+            allocator.Free((long)oldPtr);
+
+            var objectId = objectIdMap.Allocate();
+
+            recordInfo.SetValueIsObject();    // Set this first so the objectId isn't interpreted as an overflow allocation (re zeroinit). TODO: The zero pointer could be interpreted as ObjectId before this line, so create OverflowAllocator.InvalidPointer consistent with InvalidObjectId.
+            GetObjectIdRef(fieldAddress) = objectId;
             return objectId;
         }
 
@@ -189,7 +244,7 @@ namespace Tsavorite.core
         /// and that the field currently contains an overflow allocation. Applies to Keys as well during freelist revivification.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ConvertToInline(long fieldAddress, int newLength, OverflowAllocator allocator)
+        internal static byte* ConvertOverflowToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, OverflowAllocator allocator)
         {
             // First copy the data
             var oldPtr = (byte*)GetOverflowPointer(fieldAddress);
@@ -197,16 +252,29 @@ namespace Tsavorite.core
             var copyLength = oldLength < newLength ? oldLength : newLength;
             var newPtr = SetInlineDataLength(fieldAddress, newLength);
             Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
+            SetOverflowPointer(fieldAddress, IntPtr.Zero);
             allocator.Free((long)oldPtr);
 
-            // We are either making an inline allocation >= old inline length, which was OverflowDataPtrSize, or we are "shrinking" the inline allocation
-            // because the new inline size is less than the inline size of the pointer. In the latter case we must zeroinit the extra space. If we grew the
-            // inline size, we must have already zero-init'd the extra space.
-            var clearLength = OverflowInlineSize - newLength;
-            if (clearLength > 0)
-                ZeroInlineData(fieldAddress, OverflowInlineSize - clearLength, clearLength);
-
+            recordInfo.SetValueIsInline();
             return newPtr;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void FreeOverflowAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, OverflowAllocator allocator, bool isKey)
+        {
+            var oldPtr = (byte*)GetOverflowPointer(fieldAddress);
+            SetOverflowPointer(fieldAddress, IntPtr.Zero);
+            allocator.Free((long)oldPtr);
+
+            // Set this as inline with length equal to the size difference.
+            int newLength = OverflowInlineSize - FieldLengthPrefixSize;
+            Debug.Assert(newLength >= 0, "newLength must be non-negative");
+            GetInlineLengthRef(fieldAddress) = newLength;
+
+            if (isKey)
+                recordInfo.SetKeyIsInline();
+            else
+                recordInfo.SetValueIsObject();
         }
 
         /// <summary>
@@ -214,22 +282,18 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// Applies to Value during normal ops, and assumes any record size adjustment due to Value growth/shrinkage has already been handled
-        /// and that the field currently contains an ObjectId (which may be ObjectIdMap.InvalidObjectId).
+        /// and that the field currently contains an ObjectId (which may be ObjectIdMap.InvalidObjectId). Here we do not copy the data; we assume
+        /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ConvertToInline<TValue>(long fieldAddress, int newLength, ObjectIdMap<TValue> objectIdMap)
+        internal static byte* ConvertObjectIdToInline<TValue>(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap<TValue> objectIdMap)
         {
-            // Here we do not copy the data; we assume the caller will have already prepared to convert from Object format to inline format.
-            objectIdMap.Free(*GetObjectIdPointer(fieldAddress));
+            ref int objIdRef = ref GetObjectIdRef(fieldAddress);
+            objectIdMap.Free(objIdRef);
+            objIdRef = 0;
+
+            recordInfo.SetValueIsInline();  // Set this before setting length, to so we don't have length potentially interpreted as objectId (re zeroinit). TODO: The zero pointer could be interpreted as ObjectId before this line
             var newPtr = SetInlineDataLength(fieldAddress, newLength);
-
-            // We are either making an inline allocation >= old inline length, which was ObjectIdMap.ObjectIdSize, or we are "shrinking" the inline allocation
-            // because the new inline size is less than the inline size of the pointer. In the latter case we must zeroinit the extra space. If we grew the
-            // inline size, we must have already zero-init'd the extra space.
-            var clearLength = ObjectIdMap.ObjectIdSize - newLength;
-            if (clearLength > 0)
-                ZeroInlineData(fieldAddress, ObjectIdMap.ObjectIdSize - clearLength, clearLength);
-
             return newPtr;
         }
 

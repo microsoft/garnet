@@ -113,10 +113,14 @@ namespace Tsavorite.core
         public void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
         {
             var valueAddress = LogRecord.GetValueAddress(physicalAddress);
-            LogRecord.GetInfoRef(physicalAddress).ValueIsInline = sizeInfo.ValueIsInline;
-            _ = sizeInfo.ValueIsInline
-                        ? SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize)
-                        : SpanField.SetInlineDataLength(valueAddress, SpanField.OverflowInlineSize);    // Set the field length for the out-of-line pointer, but wait for LogRecord<TValue>.TrySetValueSpan to do the actual allocation.
+            if (sizeInfo.ValueIsInline)
+            {
+                // Only set length indicator for inline; overflow does not have a length header
+                LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
+                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize);
+            }
+            else
+                SpanField.InitializeInlineForOverflowField(valueAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -208,9 +212,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord<SpanByte> logRecord, DisposeReason disposeReason)
         {
-            // Release any overflow allocations for Key and possibly Value spans.
-            logRecord.FreeKeyOverflow();
-            logRecord.FreeValueOverflow();
+            _ = logRecord.FreeKeyOverflow();
+            _ = logRecord.FreeValueOverflow();
         }
 
         internal void DisposeRecord(ref DiskLogRecord<SpanByte> logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }

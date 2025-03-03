@@ -423,7 +423,7 @@ namespace Garnet.server
             var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
             ndigits += fNeg ? 1 : 0;
 
-            if (!logRecord.TrySetValueSpanLength(ndigits, ref sizeInfo))
+            if (!logRecord.TrySetValueLength(ndigits, ref sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
@@ -439,7 +439,7 @@ namespace Garnet.server
         {
             var ndigits = NumUtils.NumOfCharInDouble(val, out var _, out var _, out var _);
 
-            if (!logRecord.TrySetValueSpanLength(ndigits, ref sizeInfo))
+            if (!logRecord.TrySetValueLength(ndigits, ref sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
