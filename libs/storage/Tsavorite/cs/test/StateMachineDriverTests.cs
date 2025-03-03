@@ -23,7 +23,7 @@ namespace Tsavorite.test.recovery
         protected bool opsDone;
         protected long[] expectedV1Count;
         protected long[] expectedV2Count;
-        protected readonly int numKeys = 2;
+        protected readonly int numKeys = 4;
 
         protected void BaseSetup()
         {
