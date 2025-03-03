@@ -138,7 +138,7 @@ namespace Garnet.server
     /// <summary>
     /// Sorted Set
     /// </summary>
-    public unsafe partial class SortedSetObject : GarnetObjectBase
+    public partial class SortedSetObject : GarnetObjectBase
     {
         private readonly SortedSet<(double Score, byte[] Element)> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
@@ -175,41 +175,42 @@ namespace Garnet.server
                 keyLength &= ~ExpirationBitMask;
                 var item = reader.ReadBytes(keyLength);
                 var score = reader.ReadDouble();
+                var canAddItem = true;
+                long expiration = 0;
 
                 if (hasExpiration)
                 {
-                    var expiration = reader.ReadInt64();
-                    var isExpired = expiration < DateTimeOffset.UtcNow.Ticks;
-                    if (!isExpired)
+                    expiration = reader.ReadInt64();
+                    canAddItem = expiration >= DateTimeOffset.UtcNow.Ticks;
+                }
+
+                if (canAddItem)
+                {
+                    sortedSetDict.Add(item, score);
+                    sortedSet.Add((score, item));
+                    this.UpdateSize(item);
+
+                    if (expiration > 0)
                     {
-                        sortedSetDict.Add(item, score);
-                        sortedSet.Add((score, item));
                         InitializeExpirationStructures();
                         expirationTimes.Add(item, expiration);
                         expirationQueue.Enqueue(item, expiration);
                         UpdateExpirationSize(item, true);
                     }
                 }
-                else
-                {
-                    sortedSetDict.Add(item, score);
-                    sortedSet.Add((score, item));
-                }
-
-                this.UpdateSize(item);
             }
         }
 
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SortedSetObject(SortedSet<(double, byte[])> sortedSet, Dictionary<byte[], double> sortedSetDict, Dictionary<byte[], long> expirationTimes, PriorityQueue<byte[], long> expirationQueue, long expiration, long size)
-            : base(expiration, size)
+        public SortedSetObject(SortedSetObject sortedSetObject)
+            : base(sortedSetObject.Expiration, sortedSetObject.Size)
         {
-            this.sortedSet = sortedSet;
-            this.sortedSetDict = sortedSetDict;
-            this.expirationTimes = expirationTimes;
-            this.expirationQueue = expirationQueue;
+            this.sortedSet = sortedSetObject.sortedSet;
+            this.sortedSetDict = sortedSetObject.sortedSetDict;
+            this.expirationTimes = sortedSetObject.expirationTimes;
+            this.expirationQueue = sortedSetObject.expirationQueue;
         }
 
         /// <inheritdoc />
@@ -290,12 +291,23 @@ namespace Garnet.server
         /// </summary>
         public bool Equals(SortedSetObject other)
         {
-            // TODO: Implement equals with expiration times
-            if (sortedSetDict.Count != other.sortedSetDict.Count) return false;
+            if (sortedSetDict.Count() != other.sortedSetDict.Count()) return false;
 
             foreach (var key in sortedSetDict)
+            {
+                if (IsExpired(key.Key) && IsExpired(key.Key))
+                {
+                    continue;
+                }
+
+                if (IsExpired(key.Key) || IsExpired(key.Key))
+                {
+                    return false;
+                }
+
                 if (!other.sortedSetDict.TryGetValue(key.Key, out var otherValue) || key.Value != otherValue)
                     return false;
+            }
 
             return true;
         }
@@ -304,7 +316,7 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SortedSetObject(sortedSet, sortedSetDict, expirationTimes, expirationQueue, Expiration, Size);
+        public override GarnetObjectBase Clone() => new SortedSetObject(this);
 
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
@@ -559,6 +571,12 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Tries to get the score of the specified key.
+        /// </summary>
+        /// <param name="key">The key to get the score for.</param>
+        /// <param name="value">The score of the key if found.</param>
+        /// <returns>True if the key is found and not expired; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetScore(byte[] key, out double value)
         {
@@ -571,9 +589,13 @@ namespace Garnet.server
             return sortedSetDict.TryGetValue(key, out value);
         }
 
+        /// <summary>
+        /// Gets the count of elements in the sorted set.
+        /// </summary>
+        /// <returns>The count of elements in the sorted set.</returns>
         public int Count()
         {
-            if (expirationTimes is null)
+            if (!HasExpirableItems())
             {
                 return sortedSetDict.Count;
             }
@@ -589,9 +611,18 @@ namespace Garnet.server
             return sortedSetDict.Count - expiredKeysCount;
         }
 
+        /// <summary>
+        /// Determines whether the specified key is expired.
+        /// </summary>
+        /// <param name="key">The key to check for expiration.</param>
+        /// <returns>True if the key is expired; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
 
+        /// <summary>
+        /// Determines whether the sorted set has expirable items.
+        /// </summary>
+        /// <returns>True if the sorted set has expirable items; otherwise, false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool HasExpirableItems()
         {
@@ -662,7 +693,7 @@ namespace Garnet.server
         {
             if (!sortedSetDict.ContainsKey(key))
             {
-                return (int)ExpireResult.KeyNotFound;
+                return (int)SortedSetExpireResult.KeyNotFound;
             }
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
@@ -670,7 +701,7 @@ namespace Garnet.server
                 sortedSetDict.Remove(key, out var value);
                 sortedSet.Remove((value, key));
                 UpdateSize(key, false);
-                return (int)ExpireResult.KeyAlreadyExpired;
+                return (int)SortedSetExpireResult.KeyAlreadyExpired;
             }
 
             InitializeExpirationStructures();
@@ -681,7 +712,7 @@ namespace Garnet.server
                     (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
                     (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
                 {
-                    return (int)ExpireResult.ExpireConditionNotMet;
+                    return (int)SortedSetExpireResult.ExpireConditionNotMet;
                 }
 
                 expirationTimes[key] = expiration;
@@ -692,7 +723,7 @@ namespace Garnet.server
             {
                 if (expireOption.HasFlag(ExpireOption.XX) || expireOption.HasFlag(ExpireOption.GT))
                 {
-                    return (int)ExpireResult.ExpireConditionNotMet;
+                    return (int)SortedSetExpireResult.ExpireConditionNotMet;
                 }
 
                 expirationTimes[key] = expiration;
@@ -700,7 +731,7 @@ namespace Garnet.server
                 UpdateExpirationSize(key);
             }
 
-            return (int)ExpireResult.ExpireUpdated;
+            return (int)SortedSetExpireResult.ExpireUpdated;
         }
 
         private int Persist(byte[] key)
@@ -775,11 +806,29 @@ namespace Garnet.server
             Debug.Assert(this.Size >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
         }
 
-        enum ExpireResult
+        /// <summary>
+        /// Result of an expiration operation.
+        /// </summary>
+        enum SortedSetExpireResult
         {
+            /// <summary>
+            /// The key was not found.
+            /// </summary>
             KeyNotFound = -2,
+
+            /// <summary>
+            /// The expiration condition was not met.
+            /// </summary>
             ExpireConditionNotMet = 0,
+
+            /// <summary>
+            /// The expiration was updated.
+            /// </summary>
             ExpireUpdated = 1,
+
+            /// <summary>
+            /// The key was already expired.
+            /// </summary>
             KeyAlreadyExpired = 2,
         }
     }

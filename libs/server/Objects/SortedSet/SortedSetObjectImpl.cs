@@ -370,6 +370,8 @@ namespace Garnet.server
 
         private void SortedSetIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            DeleteExpiredItems();
+
             // ZINCRBY key increment member
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -395,8 +397,7 @@ namespace Garnet.server
 
                 if (sortedSetDict.TryGetValue(member, out var score))
                 {
-                    score = IsExpired(member) ? 0 : score;
-                    sortedSetDict[member] = score + incrValue;
+                    sortedSetDict[member] += incrValue;
                     sortedSet.Remove((score, member));
                     sortedSet.Add((sortedSetDict[member], member));
                 }

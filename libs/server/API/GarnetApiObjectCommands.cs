@@ -174,16 +174,36 @@ namespace Garnet.server
             => storageSession.SortedSetExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetExpire(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results)
+            => storageSession.SortedSetExpire(key, members, expireAt, expireOption, out results, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SortedSetPersist(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetPersist(ArgSlice key, ReadOnlySpan<ArgSlice> members, out int[] results)
+            => storageSession.SortedSetPersist(key, members, out results, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn)
+            => storageSession.SortedSetTimeToLive(key, members, out expireIn, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input)
             => storageSession.SortedSetCollect(keys, ref input, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCollect()
+            => storageSession.SortedSetCollect(ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys)
+            => storageSession.SortedSetCollect(keys, ref objectContext);
 
         #endregion
 

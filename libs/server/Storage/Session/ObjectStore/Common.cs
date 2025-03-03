@@ -4,8 +4,10 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -334,11 +336,24 @@ namespace Garnet.server
                         elements = new int[arraySize];
                         for (int i = 0; i < elements.Length; i++)
                         {
+                            if (*refPtr != ':')
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+                            refPtr++;
+
                             element = null;
                             if (RespReadUtils.TryReadInt32(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
                             {
                                 elements[i] = number;
                             }
+
+                            if (*(ushort*)refPtr != MemoryMarshal.Read<ushort>("\r\n"u8))
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+
+                            refPtr += 2;
                         }
                     }
                 }

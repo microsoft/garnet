@@ -486,11 +486,7 @@ namespace Garnet.server
 
             static void ExecuteSortedSetCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
             {
-                var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
-                var input = new ObjectInput(header);
-
-                ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
-                storageSession.SortedSetCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+                storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
                 scratchBufferManager.Reset();
             }
         }
