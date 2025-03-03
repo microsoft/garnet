@@ -370,7 +370,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [Ignore("")]
+        //[Ignore("")]
         public void MultiDatabaseMultiSessionSwapDatabasesTestLC()
         {
             var db1Key1 = "db1:key1";

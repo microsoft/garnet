@@ -1276,14 +1276,13 @@ namespace Garnet.server
             return true;
         }
 
-        internal bool TrySwapDatabases(int dbId1, int dbId2)
+        internal bool TrySwapDatabaseSessions(int dbId1, int dbId2)
         {
             if (!allowMultiDb) return false;
             if (dbId1 == dbId2) return true;
-            if (!storeWrapper.TrySwapDatabases(dbId1, dbId2)) return false;
 
-            if (!databaseSessions.TryGetOrSet(dbId1, () => CreateDatabaseSession(dbId1), out var dbSession1, out _) ||
-                !databaseSessions.TryGetOrSet(dbId2, () => CreateDatabaseSession(dbId2), out var dbSession2, out _))
+            if (!databaseSessions.TryGetOrSet(dbId1, () => CreateDatabaseSession(dbId2), out var dbSession1, out _) ||
+                !databaseSessions.TryGetOrSet(dbId2, () => CreateDatabaseSession(dbId1), out var dbSession2, out _))
                 return false;
 
             databaseSessions.Map[dbId1] = dbSession2;

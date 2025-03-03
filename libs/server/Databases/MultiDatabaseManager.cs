@@ -503,6 +503,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool TrySwapDatabases(int dbId1, int dbId2)
         {
+            if (dbId1 == dbId2) return true;
+
             if (!TryGetOrAddDatabase(dbId1, out var db1) ||
                 !TryGetOrAddDatabase(dbId2, out var db2))
                 return false;
@@ -513,6 +515,14 @@ namespace Garnet.server
                 var databaseMapSnapshot = databases.Map;
                 databaseMapSnapshot[dbId2] = db1;
                 databaseMapSnapshot[dbId1] = db2;
+
+                var sessions = StoreWrapper.TcpServer.ActiveConsumers();
+                foreach (var session in sessions)
+                {
+                    if (session is not RespServerSession respServerSession) continue;
+
+                    respServerSession.TrySwapDatabaseSessions(dbId1, dbId2);
+                }
             }
             finally
             {

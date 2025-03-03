@@ -283,7 +283,7 @@ namespace Garnet.server
 
             if (index1 < storeWrapper.serverOptions.MaxDatabases && index2 < storeWrapper.serverOptions.MaxDatabases)
             {
-                if (this.TrySwapDatabases(index1, index2))
+                if (storeWrapper.TrySwapDatabases(index1, index2))
                 {
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
