@@ -550,7 +550,7 @@ namespace Garnet.cluster
                 var _nodeId = workers[_workerId].Nodeid;
                 if (_nodeId == null) continue;
 
-                stringBuilder.Append( _state switch
+                stringBuilder.Append(_state switch
                 {
                     SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
                     SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
