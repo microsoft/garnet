@@ -666,7 +666,8 @@ namespace Garnet.server
                 // Get the results
                 if (hasLonLat)
                 {
-                    var responseData = new List<GeoSearchData>();
+                    var len = opts.withCountAny ? opts.countValue : sortedSet.Count;
+                    var responseData = new List<GeoSearchData>(len);
                     foreach (var point in sortedSet)
                     {
                         var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
@@ -734,7 +735,7 @@ namespace Garnet.server
                         switch (opts.sort)
                         {
                             case GeoOrder.Descending:
-                                q = q.OrderByDescending(i => i.Distance); ;
+                                q = q.OrderByDescending(i => i.Distance);
                                 break;
                             case GeoOrder.Ascending:
                                 q = q.OrderBy(i => i.Distance);
