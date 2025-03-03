@@ -118,7 +118,7 @@ namespace Garnet.server
 
             internal bool withCoord;
             internal bool withHash;
-            //internal bool withCountAny;
+            internal bool withCountAny;
             internal bool withDist;
             internal GeoOrder sort;
         }
@@ -595,7 +595,7 @@ namespace Garnet.server
 
                     if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8))
                     {
-                        //geoSearchOpt.withCountAny = true;
+                        opts.withCountAny = true;
                         continue;
                     }
 
@@ -701,13 +701,13 @@ namespace Garnet.server
                             Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
                         });
 
-                        if (responseData.Count == opts.countValue)
+                        if (opts.withCountAny && (responseData.Count == opts.countValue))
                             break;
                     }
 
                     if (responseData.Count == 0)
                     {
-                        while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -731,10 +731,22 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                         var q = responseData.AsQueryable();
-                        if (opts.sort == GeoOrder.Ascending)
-                            q = q.OrderBy(i => i.Distance);
-                        else if (opts.sort == GeoOrder.Descending)
-                            q = q.OrderByDescending(i => i.Distance);
+                        switch (opts.sort)
+                        {
+                            case GeoOrder.Descending:
+                                q = q.OrderByDescending(i => i.Distance); ;
+                                break;
+                            case GeoOrder.Ascending:
+                                q = q.OrderBy(i => i.Distance);
+                                break;
+                            case GeoOrder.None:
+                                if (opts.countValue > 0)
+                                    q = q.OrderBy(i => i.Distance);
+                                break;
+                        }
+
+                        if (opts.countValue > 0)
+                            q = q.Take(opts.countValue);
 
                         foreach (var item in q)
                         {
