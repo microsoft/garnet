@@ -5,17 +5,22 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Text;
+using System.Xml.Linq;
 using Garnet.common;
+using HdrHistogram;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using static System.Runtime.InteropServices.JavaScript.JSType;
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
     sealed partial class StorageSession : IDisposable
     {
+        private SingleWriterMultiReaderLock _zcollectTaskLock;
 
         /// <summary>
         /// Adds the specified member and score to the sorted set stored at key.
@@ -1215,9 +1220,9 @@ namespace Garnet.server
                     }
 
                     if (pairs == default)
-                        pairs = SortedSetObject.CopyDiff(firstSortedSet.Dictionary, nextSortedSet.Dictionary);
+                        pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
                     else
-                        SortedSetObject.InPlaceDiff(pairs, nextSortedSet.Dictionary);
+                        SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
                 }
             }
 
@@ -1415,16 +1420,10 @@ namespace Garnet.server
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                if (keys.Length == 1)
-                {
-                    pairs = firstSortedSet.Dictionary;
-                    return GarnetStatus.OK;
-                }
-
                 // Initialize result with first set
                 if (weights is null)
                 {
-                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                    pairs = keys.Length == 1 ? firstSortedSet.Dictionary : new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
                 }
                 else
                 {
@@ -1433,6 +1432,11 @@ namespace Garnet.server
                     {
                         pairs[kvp.Key] = kvp.Value * weights[0];
                     }
+                }
+
+                if (keys.Length == 1)
+                {
+                    return GarnetStatus.OK;
                 }
 
                 // Intersect with remaining sets
@@ -1453,7 +1457,7 @@ namespace Garnet.server
 
                     foreach (var kvp in pairs)
                     {
-                        if (!nextSortedSet.Dictionary.TryGetValue(kvp.Key, out var score))
+                        if (!nextSortedSet.TryGetScore(kvp.Key, out var score))
                         {
                             pairs.Remove(kvp.Key);
                             continue;
@@ -1478,6 +1482,268 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Sets the expiration time for the specified key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key for which to set the expiration time.</param>
+        /// <param name="expireAt">The expiration time in ticks.</param>
+        /// <param name="isMilliseconds">Indicates whether the expiration time is in milliseconds.</param>
+        /// <param name="expireOption">The expiration option to use.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus SortedSetExpire<TObjectContext>(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
+            var expiryLength = NumUtils.CountDigits(expireAtUtc);
+            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySpan = expirySlice.Span;
+            NumUtils.WriteInt64(expireAtUtc, expirySpan);
+
+            parseState.Initialize(1 + input.parseState.Count);
+            parseState.SetArgument(0, expirySlice);
+            parseState.SetArguments(1, input.parseState.Parameters);
+
+            var innerInput = new ObjectInput(input.header, ref parseState, startIdx: 0, arg1: (int)expireOption);
+
+            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Sets the expiration time for the specified key and fields in a sorted set.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members within the sorted set to set the expiration time for.</param>
+        /// <param name="expireAt">The expiration time as a DateTimeOffset.</param>
+        /// <param name="expireOption">The expiration option to use.</param>
+        /// <param name="results">The results of the operation, indicating the number of fields that were successfully set to expire.</param>
+        /// <param name="objectContext">The context of the object store.</param>
+        /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
+        public GarnetStatus SortedSetExpire<TObjectContext>(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            results = default;
+            var expireAtUtc = expireAt.UtcTicks;
+            var expiryLength = NumUtils.CountDigits(expireAtUtc);
+            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySpan = expirySlice.Span;
+            NumUtils.WriteInt64(expireAtUtc, expirySpan);
+
+            parseState.Initialize(1 + members.Length);
+            parseState.SetArgument(0, expirySlice);
+            parseState.SetArguments(1, members);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
+            var innerInput = new ObjectInput(header, ref parseState, startIdx: 0, arg1: (int)expireOption);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                results = ProcessRespIntegerArrayOutput(outputFooter, out _);
+            }
+
+            return status;
+        }
+
+        /// <summary>
+        /// Returns the time-to-live (TTL) of a SortedSet member.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the hash.</param>
+        /// <param name="isMilliseconds">Indicates whether the TTL is in milliseconds.</param>
+        /// <param name="isTimestamp">Indicates whether the TTL is a timestamp.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus SortedSetTimeToLive<TObjectContext>(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var innerInput = new ObjectInput(input.header, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
+
+            return ReadObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Returns the time-to-live (TTL) of a SortedSet member.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members within the sorted set to get the TTL for.</param>
+        /// <param name="expireIn">The array of TimeSpan representing the TTL for each member.</param>
+        /// <param name="objectContext">The context of the object store.</param>
+        /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
+        public GarnetStatus SortedSetTimeToLive<TObjectContext>(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            expireIn = default;
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
+            parseState.Initialize(members.Length);
+            parseState.SetArguments(0, members);
+            var isMilliseconds = 1;
+            var isTimestamp = 0;
+            var innerInput = new ObjectInput(header, ref parseState, arg1: isMilliseconds, arg2: isTimestamp);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                expireIn = ProcessRespIntegerArrayOutput(outputFooter, out _).Select(x => TimeSpan.FromMilliseconds(x < 0 ? 0 : x)).ToArray();
+            }
+
+            return status;
+        }
+
+        /// <summary>
+        /// Removes the expiration time from a SortedSet member, making it persistent.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the SortedSet.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="outputFooter">The output footer object to store the result.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        public GarnetStatus SortedSetPersist<TObjectContext>(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Removes the expiration time from the specified members in the sorted set stored at the given key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members whose expiration time will be removed.</param>
+        /// <param name="results">The results of the operation, indicating the number of members whose expiration time was successfully removed.</param>
+        /// <param name="objectContext">The context of the object store.</param>
+        /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
+        public GarnetStatus SortedSetPersist<TObjectContext>(ArgSlice key, ReadOnlySpan<ArgSlice> members, out int[] results, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            results = default;
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
+            parseState.Initialize(members.Length);
+            parseState.SetArguments(0, members);
+            var innerInput = new ObjectInput(header, ref parseState);
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                results = ProcessRespIntegerArrayOutput(outputFooter, out _);
+            }
+
+            return status;
+        }
+
+        /// <summary>
+        /// Collects SortedSet keys and performs a specified operation on them.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="keys">The keys to collect.</param>
+        /// <param name="input">The input object containing the operation details.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        /// <remarks>
+        /// If the first key is "*", all SortedSet keys are scanned in batches and the operation is performed on each key.
+        /// Otherwise, the operation is performed on the specified keys.
+        /// </remarks>
+        public GarnetStatus SortedSetCollect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (!_zcollectTaskLock.TryWriteLock())
+            {
+                return GarnetStatus.NOTFOUND;
+            }
+
+            try
+            {
+                if (keys[0].ReadOnlySpan.SequenceEqual("*"u8))
+                {
+                    long cursor = 0;
+                    long storeCursor = 0;
+
+                    // Scan all SortedSet keys in batches
+                    do
+                    {
+                        if (!DbScan(keys[0], true, cursor, out storeCursor, out var hashKeys, 100, CmdStrings.ZSET))
+                        {
+                            return GarnetStatus.OK;
+                        }
+
+                        // Process each SortedSet key
+                        foreach (var hashKey in hashKeys)
+                        {
+                            RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
+                        }
+
+                        cursor = storeCursor;
+                    } while (storeCursor != 0);
+
+                    return GarnetStatus.OK;
+                }
+
+                foreach (var key in keys)
+                {
+                    RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+                }
+
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                _zcollectTaskLock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Collects SortedSet keys and performs a specified operation on them.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        /// <remarks>
+        /// If the first key is "*", all SortedSet keys are scanned in batches and the operation is performed on each key.
+        /// Otherwise, the operation is performed on the specified keys.
+        /// </remarks>
+        public GarnetStatus SortedSetCollect<TObjectContext>(ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            return SortedSetCollect([], ref objectContext);
+        }
+
+        /// <summary>
+        /// Collects SortedSet keys and performs a specified operation on them.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="keys">The keys to collect.</param>
+        /// <param name="objectContext">The object context for the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        /// <remarks>
+        /// If the first key is "*", all SortedSet keys are scanned in batches and the operation is performed on each key.
+        /// Otherwise, the operation is performed on the specified keys.
+        /// </remarks>
+        public GarnetStatus SortedSetCollect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
+            var innerInput = new ObjectInput(header);
+
+            if (keys.IsEmpty)
+            {
+                return SortedSetCollect([ArgSlice.FromPinnedSpan("*"u8)], ref innerInput, ref objectContext);
+            }
+
+            return SortedSetCollect(keys, ref innerInput, ref objectContext);
         }
     }
 }

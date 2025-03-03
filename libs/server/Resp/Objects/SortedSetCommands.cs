@@ -425,7 +425,7 @@ namespace Garnet.server
 
             if (numKeys < 0)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys")));
+                return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
             }
 
             // Validate we have enough arguments (no of keys + (MIN or MAX))
@@ -470,7 +470,7 @@ namespace Garnet.server
 
                 if (count < 0)
                 {
-                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count")));
+                    return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
                 }
             }
 
@@ -1066,7 +1066,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTER))));
+                return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTER));
             }
 
             if (parseState.Count < nKeys + 1)
@@ -1105,7 +1105,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
+                            return AbortWithErrorMessage(CmdStrings.GenericErrNotAFloat, "weight");
                         }
                     }
                     currentArg += nKeys;
@@ -1181,7 +1181,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERCARD))));
+                return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERCARD));
             }
 
             if (parseState.Count < nKeys + 1)
@@ -1208,7 +1208,7 @@ namespace Garnet.server
 
                 if (limitVal < 0)
                 {
-                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCantBeNegative, "LIMIT")));
+                    return AbortWithErrorMessage(CmdStrings.GenericErrCantBeNegative, "LIMIT");
                 }
 
                 limit = limitVal;
@@ -1277,7 +1277,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
+                            return AbortWithErrorMessage(CmdStrings.GenericErrNotAFloat, "weight");
                         }
                     }
                     currentArg += nKeys;
@@ -1341,7 +1341,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNION))));
+                return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNION));
             }
 
             if (parseState.Count < nKeys + 1)
@@ -1376,7 +1376,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
+                            return AbortWithErrorMessage(CmdStrings.GenericErrNotAFloat, "weight");
                         }
                     }
                     currentArg += nKeys;
@@ -1465,7 +1465,7 @@ namespace Garnet.server
 
             if (nKeys < 1)
             {
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNIONSTORE))));
+                return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNIONSTORE));
             }
 
             if (parseState.Count < nKeys + 2)
@@ -1494,7 +1494,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetDouble(currentArg + i, out weights[i]))
                         {
-                            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrNotAFloat, "weight")));
+                            return AbortWithErrorMessage(CmdStrings.GenericErrNotAFloat, "weight");
                         }
                     }
                     currentArg += nKeys;
@@ -1613,8 +1613,7 @@ namespace Garnet.server
             // Read count of keys
             if (!parseState.TryGetInt(currTokenId++, out var numKeys))
             {
-                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
-                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
             }
 
             // Should have MAX|MIN or it should contain COUNT + value
@@ -1659,8 +1658,7 @@ namespace Garnet.server
 
                 if (!parseState.TryGetInt(currTokenId, out popCount) || popCount < 1)
                 {
-                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
-                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                    return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
                 }
             }
 
@@ -1693,6 +1691,275 @@ namespace Garnet.server
                     SendAndReset();
                 while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
                     SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Sets an expiration time for a member in the SortedSet stored at key.
+        /// ZEXPIRE key seconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+        /// ZPEXPIRE key milliseconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+        /// ZEXPIREAT key unix-time-seconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+        /// ZPEXPIREAT key unix-time-milliseconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SortedSetExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 4)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            long expireAt = 0;
+            var isMilliseconds = false;
+            if (!parseState.TryGetLong(1, out expireAt))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (expireAt < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
+            }
+
+            switch (command)
+            {
+                case RespCommand.ZEXPIRE:
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireAt;
+                    isMilliseconds = false;
+                    break;
+                case RespCommand.ZPEXPIRE:
+                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireAt;
+                    isMilliseconds = true;
+                    break;
+                case RespCommand.ZPEXPIREAT:
+                    isMilliseconds = true;
+                    break;
+                default: // RespCommand.ZEXPIREAT
+                    break;
+            }
+
+            var currIdx = 2;
+            if (parseState.TryGetExpireOption(currIdx, out var expireOption))
+            {
+                currIdx++; // If expire option is present, move to next argument else continue with the current argument
+            }
+
+            var fieldOption = parseState.GetArgSliceByRef(currIdx++);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEMBERS))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrMandatoryMissing, "MEMBERS");
+            }
+
+            if (!parseState.TryGetInt(currIdx++, out var numMembers))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "numMembers");
+            }
+
+            if (parseState.Count != currIdx + numMembers)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
+            }
+
+            var membersParseState = parseState.Slice(currIdx, numMembers);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
+            var input = new ObjectInput(header, ref membersParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numMembers; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the time to live (TTL) for the specified members in the SortedSet stored at the given key.
+        /// ZTTL key MEMBERS nummembers member [member ...]
+        /// ZPTTL key MEMBERS nummembers member [member ...]
+        /// ZEXPIRETIME key MEMBERS nummembers member [member ...]
+        /// ZPEXPIRETIME key MEMBERS nummembers member [member ...]
+        /// </summary>
+        /// <typeparam name="TGarnetApi">The type of the storage API.</typeparam>
+        /// <param name="command">The RESP command indicating the type of TTL operation.</param>
+        /// <param name="storageApi">The storage API instance to interact with the underlying storage.</param>
+        /// <returns>True if the operation was successful; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown when the object store is disabled.</exception>
+        private unsafe bool SortedSetTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 3)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var fieldOption = parseState.GetArgSliceByRef(1);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEMBERS))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrMandatoryMissing, "MEMBERS");
+            }
+
+            if (!parseState.TryGetInt(2, out var numMembers))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "numMembers");
+            }
+
+            if (parseState.Count != 3 + numMembers)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
+            }
+
+            var isMilliseconds = false;
+            var isTimestamp = false;
+            switch (command)
+            {
+                case RespCommand.ZPTTL:
+                    isMilliseconds = true;
+                    isTimestamp = false;
+                    break;
+                case RespCommand.ZEXPIRETIME:
+                    isMilliseconds = false;
+                    isTimestamp = true;
+                    break;
+                case RespCommand.ZPEXPIRETIME:
+                    isMilliseconds = true;
+                    isTimestamp = true;
+                    break;
+                default: // RespCommand.ZTTL
+                    break;
+            }
+
+            var membersParseState = parseState.Slice(3, numMembers);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
+            var input = new ObjectInput(header, ref membersParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numMembers; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Removes the expiration time from the specified members in the sorted set stored at the given key.
+        /// ZPERSIST key MEMBERS nummembers member [member ...]
+        /// </summary>
+        /// <typeparam name="TGarnetApi">The type of the storage API.</typeparam>
+        /// <param name="storageApi">The storage API instance to interact with the underlying storage.</param>
+        /// <returns>True if the operation was successful; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown when the object store is disabled.</exception>
+        private unsafe bool SortedSetPersist<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            if (parseState.Count <= 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZPERSIST));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            var fieldOption = parseState.GetArgSliceByRef(1);
+            if (!fieldOption.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEMBERS))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrMandatoryMissing, "MEMBERS");
+            }
+
+            if (!parseState.TryGetInt(2, out var numMembers))
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "numMembers");
+            }
+
+            if (parseState.Count != 3 + numMembers)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
+            }
+
+            var membersParseState = parseState.Slice(3, numMembers);
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
+            var input = new ObjectInput(header, ref membersParseState);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetPersist(key, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
+                        SendAndReset();
+                    for (var i = 0; i < numMembers; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    break;
             }
 
             return true;
