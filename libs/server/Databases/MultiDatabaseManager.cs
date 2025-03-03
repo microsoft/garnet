@@ -284,6 +284,7 @@ namespace Garnet.server
                     aofTasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
                 }
 
+                var exThrown = false;
                 try
                 {
                     await Task.WhenAll(aofTasks);
@@ -292,6 +293,7 @@ namespace Garnet.server
                 {
                     // Only first exception is caught here, if any. 
                     // Proper handling of this and consequent exceptions in the next loop. 
+                    exThrown = true;
                 }
 
                 foreach (var t in aofTasks)
@@ -302,6 +304,9 @@ namespace Garnet.server
                         "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
                         t.Result.Item1, t.Result.Item2);
                 }
+
+                if (exThrown) 
+                    throw new GarnetException($"Error occurred while committing to AOF in {nameof(MultiDatabaseManager)}. Refer to previous log messages for more details.");
             }
             finally
             {
