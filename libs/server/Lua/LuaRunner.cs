@@ -9,7 +9,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Azure;
+using Azure.Storage.Blobs.Models;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -141,6 +141,89 @@ namespace Garnet.server
                 origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
                 BufferEnd = origin + scratchSpace.Length;
                 curHead = origin + len;
+            }
+        }
+
+        /// <summary>
+        /// Just to DRY it up some, a holding type for all the constant strings we pre-load into
+        /// the Lua VM.
+        /// </summary>
+        private readonly struct ConstantStringRegistryIndexes
+        {
+            /// <see cref="CmdStrings.LUA_OK"/>
+            internal int Ok { get; }
+            /// <see cref="CmdStrings.LUA_ok"/>
+            internal int OkLower { get; }
+            /// <see cref="CmdStrings.LUA_err"/>
+            internal int Err { get; }
+            /// <see cref="CmdStrings.LUA_No_session_available"/>
+            internal int NoSessionAvailable { get; }
+            /// <see cref="CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call"/>
+            internal int PleaseSpecifyRedisCall { get; }
+            /// <see cref="CmdStrings.RESP_ERR_NOAUTH"/>
+            internal int ErrNoAuth { get; }
+            /// <see cref="CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script"/>
+            internal int ErrUnknown { get; }
+            /// <see cref="CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers"/>
+            internal int ErrBadArg { get; }
+            /// <see cref="CmdStrings.Lua_ERR_wrong_number_of_arguments"/>
+            internal int ErrWrongNumberOfArgs { get; }
+            /// <see cref="CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more"/>
+            internal int ErrRedisLogRequired { get; }
+            /// <see cref="CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level"/>
+            internal int ErrFirstArgMustBeNumber { get; }
+            /// <see cref="CmdStrings.Lua_ERR_Invalid_debug_level"/>
+            internal int ErrInvalidDebugLevel { get; }
+            /// <see cref="CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd"/>
+            internal int ErrInvalidCommand { get; }
+            /// <see cref="CmdStrings.Lua_ERR_redis_setresp_requires_one_argument"/>
+            internal int ErrRedisSetRespArg { get; }
+            /// <see cref="CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3"/>
+            internal int ErrRespVersion { get; }
+            /// <see cref="CmdStrings.Lua_ERR_redis_log_disabled"/>
+            internal int ErrLoggingDisabled { get; }
+            /// <see cref="CmdStrings.Lua_double"/>
+            internal int Double { get; }
+            /// <see cref="CmdStrings.Lua_map"/>
+            internal int Map { get; }
+            /// <see cref="CmdStrings.Lua_set"/>
+            internal int Set { get; }
+
+            internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
+            {
+                // Commonly used strings, register them once so we don't have to copy them over each time we need them
+                //
+                // As a side benefit, we don't have to worry about reserving memory for them either during normal operation
+                Ok = ConstantStringToRegistry(ref state, CmdStrings.LUA_OK);
+                OkLower = ConstantStringToRegistry(ref state, CmdStrings.LUA_ok);
+                Err = ConstantStringToRegistry(ref state, CmdStrings.LUA_err);
+                NoSessionAvailable = ConstantStringToRegistry(ref state, CmdStrings.LUA_No_session_available);
+                PleaseSpecifyRedisCall = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
+                ErrNoAuth = ConstantStringToRegistry(ref state, CmdStrings.RESP_ERR_NOAUTH);
+                ErrUnknown = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
+                ErrBadArg = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
+                ErrWrongNumberOfArgs = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_wrong_number_of_arguments);
+                ErrRedisLogRequired = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more);
+                ErrFirstArgMustBeNumber = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level);
+                ErrInvalidDebugLevel = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_Invalid_debug_level);
+                ErrInvalidCommand = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
+                ErrRedisSetRespArg = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_redis_setresp_requires_one_argument);
+                ErrRespVersion = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3);
+                ErrLoggingDisabled = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_redis_log_disabled);
+                Double = ConstantStringToRegistry(ref state, CmdStrings.Lua_double);
+                Map = ConstantStringToRegistry(ref state, CmdStrings.Lua_map);
+                Set = ConstantStringToRegistry(ref state, CmdStrings.Lua_set);
+            }
+
+            /// <summary>
+            /// Some strings we use a bunch, and copying them to Lua each time is wasteful
+            ///
+            /// So instead we stash them in the Registry and load them by index
+            /// </summary>
+            private int ConstantStringToRegistry(ref LuaStateWrapper state, ReadOnlySpan<byte> str)
+            {
+                state.PushBuffer(str);
+                return state.Ref();
             }
         }
 
@@ -338,25 +421,7 @@ end
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
         readonly int resetKeysAndArgvRegistryIndex;
-        readonly int okConstStringRegistryIndex;
-        readonly int okLowerConstStringRegistryIndex;
-        readonly int errConstStringRegistryIndex;
-        readonly int noSessionAvailableConstStringRegistryIndex;
-        readonly int pleaseSpecifyRedisCallConstStringRegistryIndex;
-        readonly int errNoAuthConstStringRegistryIndex;
-        readonly int errUnknownConstStringRegistryIndex;
-        readonly int errBadArgConstStringRegistryIndex;
-        readonly int errWrongNumberOfArgumentsConstStringRegistryIndex;
-        readonly int errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex;
-        readonly int errFirstArgumentMustBeANumberConstStringRegistryIndex;
-        readonly int errInvalidDebugLevelConstStringRegistryIndex;
-        readonly int errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex;
-        readonly int errRedisSetrespRequiresOneArgumentConstStringRegistryIndex;
-        readonly int errRespVersionMustBe2Or3ConstStringRegistryIndex;
-        readonly int errLoggingDisabledConstStringRegistryIndex;
-        readonly int doubleConstStringRegistryIndex;
-        readonly int mapConstStringRegistryIndex;
-        readonly int setConstStringRegistryIndex;
+        readonly ConstantStringRegistryIndexes constStrs;
 
         readonly LuaLoggingMode logMode;
         readonly ReadOnlyMemory<byte> source;
@@ -507,28 +572,8 @@ end
             state.GetGlobal(LuaType.Function, "reset_keys_and_argv\0"u8);
             resetKeysAndArgvRegistryIndex = state.Ref();
 
-            // Commonly used strings, register them once so we don't have to copy them over each time we need them
-            //
-            // As a side benefit, we don't have to worry about reserving memory for them either during normal operation
-            okConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_OK);
-            okLowerConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ok);
-            errConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_err);
-            noSessionAvailableConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_No_session_available);
-            pleaseSpecifyRedisCallConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call);
-            errNoAuthConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.RESP_ERR_NOAUTH);
-            errUnknownConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
-            errBadArgConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
-            errWrongNumberOfArgumentsConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_wrong_number_of_arguments);
-            errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more);
-            errFirstArgumentMustBeANumberConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level);
-            errInvalidDebugLevelConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_debug_level);
-            errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
-            errRedisSetrespRequiresOneArgumentConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_setresp_requires_one_argument);
-            errRespVersionMustBe2Or3ConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3);
-            errLoggingDisabledConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_ERR_redis_log_disabled);
-            doubleConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_double);
-            mapConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_map);
-            setConstStringRegistryIndex = ConstantStringToRegistry(CmdStrings.Lua_set);
+            // Load all the constant strings into the VM
+            constStrs = new(ref state);
 
             state.ExpectLuaStackEmpty();
         }
@@ -539,17 +584,6 @@ end
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
             : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
-        }
-
-        /// <summary>
-        /// Some strings we use a bunch, and copying them to Lua each time is wasteful
-        ///
-        /// So instead we stash them in the Registry and load them by index
-        /// </summary>
-        private int ConstantStringToRegistry(ReadOnlySpan<byte> str)
-        {
-            state.PushBuffer(str);
-            return state.Ref();
         }
 
         /// <summary>
@@ -710,7 +744,7 @@ end
             var argCount = state.StackTop;
             if (argCount != 1)
             {
-                state.PushConstantString(errWrongNumberOfArgumentsConstStringRegistryIndex);
+                state.PushConstantString(constStrs.ErrWrongNumberOfArgs);
                 return state.RaiseErrorFromStack();
             }
 
@@ -738,23 +772,23 @@ end
             var argCount = state.StackTop;
             if (argCount < 2)
             {
-                return LuaStaticError(errRedisLogRequiredTwoArgumentsOrMoreConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrRedisLogRequired);
             }
 
             if (state.Type(1) != LuaType.Number)
             {
-                return LuaStaticError(errFirstArgumentMustBeANumberConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrFirstArgMustBeNumber);
             }
 
             var rawLevel = state.CheckNumber(1);
             if (rawLevel is not (0 or 1 or 2 or 3))
             {
-                return LuaStaticError(errInvalidDebugLevelConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrInvalidDebugLevel);
             }
 
             if (logMode == LuaLoggingMode.Disable)
             {
-                return LuaStaticError(errLoggingDisabledConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrLoggingDisabled);
             }
 
             // When shipped as a service, allowing arbitrary writes to logs is dangerous
@@ -828,13 +862,13 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1)
             {
-                return LuaStaticError(errRedisSetrespRequiresOneArgumentConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrRedisSetRespArg);
             }
 
             double num;
             if (state.Type(1) != LuaType.Number || (num = state.CheckNumber(1)) is not (2 or 3))
             {
-                return LuaStaticError(errRespVersionMustBe2Or3ConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrRespVersion);
             }
 
             respServerSession.respProtocolVersion = (byte)num;
@@ -852,12 +886,12 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0)
             {
-                return LuaStaticError(pleaseSpecifyRedisCallConstStringRegistryIndex);
+                return LuaStaticError(constStrs.PleaseSpecifyRedisCall);
             }
 
             if (!state.CheckBuffer(1, out var cmdSpan))
             {
-                return LuaStaticError(errBadArgConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrBadArg);
             }
 
             // It's most accurate to use our existing parsing code
@@ -869,7 +903,7 @@ end
             var cmdStr = Encoding.UTF8.GetString(cmdSpan);
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmdStr, out var info, externalOnly: false, includeSubCommands: true))
             {
-                return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                return LuaStaticError(constStrs.ErrInvalidCommand);
             }
 
             var providedRespArgCount = luaArgCount - 1;
@@ -907,12 +941,12 @@ end
 
                     if (badArg)
                     {
-                        return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrBadArg);
                     }
 
                     if (parsedCmd == RespCommand.INVALID)
                     {
-                        return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrInvalidCommand);
                     }
 
                     if (!respServerSession.CheckACLPermissions(parsedCmd))
@@ -979,12 +1013,12 @@ end
 
                         if (badArg)
                         {
-                            return LuaStaticError(errBadArgConstStringRegistryIndex);
+                            return LuaStaticError(constStrs.ErrBadArg);
                         }
 
                         if (parsedCmd == RespCommand.INVALID)
                         {
-                            return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                            return LuaStaticError(constStrs.ErrInvalidCommand);
                         }
 
                         if (!respServerSession.CheckACLPermissions(parsedCmd))
@@ -1013,12 +1047,12 @@ end
 
                 if (badArg)
                 {
-                    return LuaStaticError(errBadArgConstStringRegistryIndex);
+                    return LuaStaticError(constStrs.ErrBadArg);
                 }
 
                 if (parsedCommand == RespCommand.INVALID)
                 {
-                    return LuaStaticError(errInvalidCommandPassedToRedis_acl_check_cmdConstStringRegistryIndex);
+                    return LuaStaticError(constStrs.ErrInvalidCommand);
                 }
 
                 success = respServerSession.CheckACLPermissions(parsedCommand);
@@ -1145,14 +1179,14 @@ end
 
                 if (argCount <= 0)
                 {
-                    return LuaStaticError(pleaseSpecifyRedisCallConstStringRegistryIndex);
+                    return LuaStaticError(constStrs.PleaseSpecifyRedisCall);
                 }
 
                 state.ForceMinimumStackCapacity(AdditionalStackSpace);
 
                 if (!state.CheckBuffer(1, out var cmdSpan))
                 {
-                    return LuaStaticError(errBadArgConstStringRegistryIndex);
+                    return LuaStaticError(constStrs.ErrBadArg);
                 }
 
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
@@ -1160,12 +1194,12 @@ end
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.SET))
                     {
-                        return LuaStaticError(errNoAuthConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrNoAuth);
                     }
 
                     if (!state.CheckBuffer(2, out var keySpan) || !state.CheckBuffer(3, out var valSpan))
                     {
-                        return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrBadArg);
                     }
 
                     // Note these spans are implicitly pinned, as they're actually on the Lua stack
@@ -1174,19 +1208,19 @@ end
 
                     _ = api.SET(key, value);
 
-                    state.PushConstantString(okConstStringRegistryIndex);
+                    state.PushConstantString(constStrs.Ok);
                     return 1;
                 }
                 else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "GET"u8) && argCount == 2)
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.GET))
                     {
-                        return LuaStaticError(errNoAuthConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrNoAuth);
                     }
 
                     if (!state.CheckBuffer(2, out var keySpan))
                     {
-                        return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrBadArg);
                     }
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
@@ -1233,7 +1267,7 @@ end
                     }
                     else
                     {
-                        return LuaStaticError(errBadArgConstStringRegistryIndex);
+                        return LuaStaticError(constStrs.ErrBadArg);
                     }
                 }
 
@@ -1313,7 +1347,7 @@ end
 
                         // Construct a table = { 'ok': value }
                         state.CreateTable(0, 1);
-                        state.PushConstantString(okLowerConstStringRegistryIndex);
+                        state.PushConstantString(constStrs.OkLower);
                         state.PushBuffer(resultSpan);
                         state.RawSet(curTop + 1);
 
@@ -1340,7 +1374,7 @@ end
                         if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
                         {
                             // Gets a special response
-                            return LuaStaticError(errUnknownConstStringRegistryIndex);
+                            return LuaStaticError(constStrs.ErrUnknown);
                         }
 
                         state.ForceMinimumStackCapacity(1);
@@ -2271,7 +2305,7 @@ end
                     // Need space for the lookup keys ("ok", "err", etc.) and their values
                     runner.state.ForceMinimumStackCapacity(1);
 
-                    runner.state.PushConstantString(runner.doubleConstStringRegistryIndex);
+                    runner.state.PushConstantString(runner.constStrs.Double);
                     var doubleType = runner.state.RawGet(null, curTop);
                     if (doubleType == LuaType.Number)
                     {
@@ -2295,7 +2329,7 @@ end
                     // Remove whatever we read from the table under the "double" key
                     runner.state.Pop(1);
 
-                    runner.state.PushConstantString(runner.mapConstStringRegistryIndex);
+                    runner.state.PushConstantString(runner.constStrs.Map);
                     var mapType = runner.state.RawGet(null, curTop);
                     if (mapType == LuaType.Table)
                     {
@@ -2317,7 +2351,7 @@ end
                     // Remove whatever we read from the table under the "map" key
                     runner.state.Pop(1);
 
-                    runner.state.PushConstantString(runner.setConstStringRegistryIndex);
+                    runner.state.PushConstantString(runner.constStrs.Set);
                     var setType = runner.state.RawGet(null, curTop);
                     if (setType == LuaType.Table)
                     {
@@ -2340,7 +2374,7 @@ end
                     runner.state.Pop(1);
 
                     // If the key "ok" is in there, we need to short circuit
-                    runner.state.PushConstantString(runner.okLowerConstStringRegistryIndex);
+                    runner.state.PushConstantString(runner.constStrs.OkLower);
                     var okType = runner.state.RawGet(null, curTop);
                     if (okType == LuaType.String)
                     {
@@ -2356,7 +2390,7 @@ end
                     runner.state.Pop(1);
 
                     // If the key "err" is in there, we need to short circuit 
-                    runner.state.PushConstantString(runner.errConstStringRegistryIndex);
+                    runner.state.PushConstantString(runner.constStrs.Err);
 
                     var errType = runner.state.RawGet(null, curTop);
                     if (errType == LuaType.String)
