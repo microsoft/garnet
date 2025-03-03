@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -50,11 +49,41 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// For logging, but limited to a maximum length of 4K chars.
+        /// </summary>
+        private sealed class LimitStringWriter : TextWriter
+        {
+            private const int LimitChars = 4 * 1024;
+
+            private readonly StringBuilder sb = new();
+
+            /// <inheritdoc/>
+            public override Encoding Encoding
+            => new UnicodeEncoding(false, false);
+
+            /// <inheritdoc/>
+            public override void Write(string value)
+            {
+                var remainingSpace = LimitChars - (sb.Length + value.Length);
+                if (remainingSpace < 0)
+                {
+                    _ = sb.Remove(0, -remainingSpace);
+                }
+
+                _ = sb.Append(value);
+            }
+
+            /// <inheritdoc/>
+            public override string ToString()
+            => sb.ToString();
+        }
+
         private readonly LuaMemoryManagementMode allocMode;
         private readonly string limitBytes;
         private readonly string limitTimeout;
 
-        private StringWriter loggerOutput;
+        private LimitStringWriter loggerOutput;
         private string aclFile;
         private GarnetServer server;
 
