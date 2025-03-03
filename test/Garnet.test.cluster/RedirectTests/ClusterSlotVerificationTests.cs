@@ -241,7 +241,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetIndex, sourceIndex, logger: context.logger);
         }
 
-        List<string> clusterDownTestList = [
+        readonly List<string> clusterDownTestList = [
                 "GET",
                 "SET",
                 "GETSET",
