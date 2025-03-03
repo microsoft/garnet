@@ -65,18 +65,26 @@ namespace Garnet.test
             /// <inheritdoc/>
             public override void Write(string value)
             {
-                var remainingSpace = LimitChars - (sb.Length + value.Length);
-                if (remainingSpace < 0)
+                lock (sb)
                 {
-                    _ = sb.Remove(0, -remainingSpace);
-                }
+                    var remainingSpace = LimitChars - (sb.Length + value.Length);
+                    if (remainingSpace < 0)
+                    {
+                        _ = sb.Remove(0, -remainingSpace);
+                    }
 
-                _ = sb.Append(value);
+                    _ = sb.Append(value);
+                }
             }
 
             /// <inheritdoc/>
             public override string ToString()
-            => sb.ToString();
+            {
+                lock (sb)
+                {
+                    return sb.ToString();
+                }
+            }
         }
 
         private readonly LuaMemoryManagementMode allocMode;
