@@ -400,6 +400,9 @@ namespace Garnet.test
             Assert.That(actualValues[1].Score, Is.EqualTo(198.424300439725).Within(1.0 / Math.Pow(10, 6)));
             ClassicAssert.AreEqual("New York", (string)actualValues[2].Element);
             Assert.That(actualValues[2].Score, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
+
+            actualCount = db.GeoSearchAndStore(key, destinationKey, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers), storeDistances: true);
+            ClassicAssert.AreEqual(3, actualCount);
         }
 
         [Test]
@@ -417,6 +420,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, actualCount);
 
             var actualValues = db.SortedSetRangeByScoreWithScores(destinationKey);
+            ClassicAssert.AreEqual(0, actualValues.Length);
+
+            actualCount = db.GeoSearchAndStore(key, destinationKey, new RedisValue("Washington"), new GeoSearchBox(800, 800, GeoUnit.Kilometers));
+            ClassicAssert.AreEqual(0, actualCount);
+
+            actualValues = db.SortedSetRangeByScoreWithScores(destinationKey);
             ClassicAssert.AreEqual(0, actualValues.Length);
         }
 

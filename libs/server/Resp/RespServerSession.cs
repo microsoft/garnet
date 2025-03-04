@@ -726,12 +726,12 @@ namespace Garnet.server
                 RespCommand.GEOHASH => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEODIST => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOPOS => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEORADIUS_RO or
+                RespCommand.GEORADIUS => GeoSearchStore(cmd, ref storageApi),
+                RespCommand.GEORADIUS_RO => GeoCommands(cmd, ref storageApi),
+                RespCommand.GEORADIUSBYMEMBER => GeoSearchStore(cmd, ref storageApi),
                 RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEORADIUS or
-                RespCommand.GEORADIUSBYMEMBER => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOSEARCH => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEOSEARCHSTORE => GeoSearchStore(ref storageApi),
+                RespCommand.GEOSEARCHSTORE => GeoSearchStore(cmd, ref storageApi),
                 //HLL Commands
                 RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
                 RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
