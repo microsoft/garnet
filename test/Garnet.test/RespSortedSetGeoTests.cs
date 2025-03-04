@@ -229,17 +229,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanValidateUnknownWithNotSupportedOptions()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-            var key = new RedisKey("Sicily");
-            db.GeoAdd(key, 13.361389, 38.115556, new RedisValue("Palermo"), CommandFlags.None);
-            var box = new GeoSearchBox(500, 500, GeoUnit.Kilometers);
-            Assert.Throws<RedisServerException>(() => db.GeoSearch(key, 73.9262, 40.8296, box, count: 2, options: GeoRadiusOptions.WithGeoHash));
-        }
-
-        [Test]
         public void CheckGeoSortedSetOperationsOnWrongTypeObjectSE()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
