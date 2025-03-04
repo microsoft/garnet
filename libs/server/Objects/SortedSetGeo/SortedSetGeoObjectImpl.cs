@@ -791,8 +791,16 @@ namespace Garnet.server
 
                             if (opts.withHash)
                             {
-                                while (!RespWriteUtils.TryWriteArrayItem(item.GeoHash, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                if (readOnlyCmd)
+                                {
+                                    while (!RespWriteUtils.TryWriteInt64(item.GeoHash, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
+                                else
+                                {
+                                    while (!RespWriteUtils.TryWriteArrayItem(item.GeoHash, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                }
                             }
 
                             if (opts.withCoord)
