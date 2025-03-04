@@ -13,17 +13,16 @@ namespace Tsavorite.core
         {
             guid = Guid.NewGuid();
             var indexCheckpointTask = new IndexCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
-            var fullCheckpointTask = new FullCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
 
             if (checkpointType == CheckpointType.FoldOver)
             {
                 var backend = new FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
-                return new FullCheckpointSM(targetVersion, indexCheckpointTask, fullCheckpointTask, backend);
+                return new FullCheckpointSM(targetVersion, indexCheckpointTask, backend);
             }
             else if (checkpointType == CheckpointType.Snapshot)
             {
                 var backend = new SnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>(store, guid);
-                return new FullCheckpointSM(targetVersion, indexCheckpointTask, fullCheckpointTask, backend);
+                return new FullCheckpointSM(targetVersion, indexCheckpointTask, backend);
             }
             else
             {

@@ -24,12 +24,6 @@ namespace Tsavorite.core
             var result = SystemState.Copy(ref start);
             switch (start.Phase)
             {
-                case Phase.REST:
-                    result.Phase = Phase.PREP_INDEX_CHECKPOINT;
-                    break;
-                case Phase.PREP_INDEX_CHECKPOINT:
-                    result.Phase = Phase.PREPARE;
-                    break;
                 case Phase.IN_PROGRESS:
                     result.Phase = Phase.WAIT_INDEX_CHECKPOINT;
                     break;

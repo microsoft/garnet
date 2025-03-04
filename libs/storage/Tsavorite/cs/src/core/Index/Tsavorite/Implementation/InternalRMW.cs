@@ -300,9 +300,6 @@ namespace Tsavorite.core
 
             switch (phase)
             {
-                case Phase.PREPARE: // Thread is in V
-                    break;
-
                 case Phase.IN_PROGRESS: // Thread is in v+1
                 case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
@@ -313,7 +310,7 @@ namespace Tsavorite.core
                         return LatchDestination.CreateNewRecord;    // Record is in memory so force creation of a (V+1) record
                     break;  // Normal Processing; the record is below HeadAddress so the operation will go pending
 
-                default:
+                default:  // Thread is in V
                     break;
             }
             return LatchDestination.NormalProcessing;

@@ -75,12 +75,6 @@ namespace Tsavorite.core
             checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
         }
 
-        internal bool ObtainCurrentTailAddress(ref long location)
-        {
-            var tailAddress = hlogBase.GetTailAddress();
-            return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
-        }
-
         internal void InitializeIndexCheckpoint(Guid indexToken)
         {
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);

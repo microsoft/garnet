@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
@@ -20,13 +18,11 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         readonly long targetVersion;
-        readonly Guid guid;
 
         public StreamingSnapshotCheckpointSMTask(long targetVersion, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
             this.targetVersion = targetVersion;
-            this.guid = guid;
         }
 
         /// <inheritdoc />
@@ -34,22 +30,16 @@ namespace Tsavorite.core
         {
             switch (next.Phase)
             {
-                case Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT:
-                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                case Phase.PREPARE:
+                    store._lastSnapshotCheckpoint.Dispose();
                     store._hybridLogCheckpointToken = guid;
+                    store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.nextVersion = targetVersion == -1 ? next.Version + 1 : targetVersion;
-                    store._lastSnapshotCheckpoint.Dispose();
                     store.StreamingSnapshotScanPhase1();
                     break;
 
-                case Phase.PREPARE:
-                    store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
-                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    break;
-
                 case Phase.WAIT_FLUSH:
-                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     var finalLogicalAddress = store.hlogBase.GetTailAddress();
                     store.StreamingSnapshotScanPhase2(finalLogicalAddress);
                     break;

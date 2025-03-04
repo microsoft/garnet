@@ -17,7 +17,7 @@ namespace Tsavorite.core
     {
         protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
         long lastVersion;
-        readonly Guid guid;
+        protected readonly Guid guid;
 
         public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
         {
@@ -31,15 +31,9 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    lastVersion = next.Version;
-                    if (store._hybridLogCheckpoint.IsDefault())
-                    {
-                        store._hybridLogCheckpointToken = guid;
-                        store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
-                    }
-                    store._hybridLogCheckpoint.info.version = next.Version;
+                    // Capture state before checkpoint starts
+                    lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
-                    // Capture begin address before checkpoint starts
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     break;
 

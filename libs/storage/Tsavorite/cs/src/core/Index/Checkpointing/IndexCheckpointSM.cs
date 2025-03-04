@@ -23,12 +23,18 @@ namespace Tsavorite.core
             switch (start.Phase)
             {
                 case Phase.REST:
-                    result.Phase = Phase.PREP_INDEX_CHECKPOINT;
+                    result.Phase = Phase.PREPARE;
                     break;
-                case Phase.PREP_INDEX_CHECKPOINT:
-                    result.Phase = Phase.WAIT_INDEX_ONLY_CHECKPOINT;
+                case Phase.PREPARE:
+                    result.Phase = Phase.WAIT_INDEX_CHECKPOINT;
                     break;
-                case Phase.WAIT_INDEX_ONLY_CHECKPOINT:
+                case Phase.WAIT_INDEX_CHECKPOINT:
+                    result.Phase = Phase.WAIT_FLUSH;
+                    break;
+                case Phase.WAIT_FLUSH:
+                    result.Phase = Phase.PERSISTENCE_CALLBACK;
+                    break;
+                case Phase.PERSISTENCE_CALLBACK:
                     result.Phase = Phase.REST;
                     break;
                 default:

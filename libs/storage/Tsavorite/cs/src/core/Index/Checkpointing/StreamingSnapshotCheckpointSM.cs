@@ -23,9 +23,6 @@ namespace Tsavorite.core
             switch (start.Phase)
             {
                 case Phase.REST:
-                    result.Phase = Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT;
-                    break;
-                case Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT:
                     result.Phase = Phase.PREPARE;
                     break;
                 case Phase.IN_PROGRESS:
