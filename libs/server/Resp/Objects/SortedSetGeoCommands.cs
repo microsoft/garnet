@@ -115,23 +115,22 @@ namespace Garnet.server
                     break;
                 case RespCommand.GEORADIUS:
                     op = SortedSetOperation.GEOSEARCH;
-                    opts = SortedSetGeoOpts.ByRadius;
+                    opts = SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.Store;
                     break;
                 case RespCommand.GEORADIUS_RO:
                     op = SortedSetOperation.GEOSEARCH;
-                    opts = SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.ReadOnly;
+                    opts = SortedSetGeoOpts.ByRadius;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                     op = SortedSetOperation.GEOSEARCH;
-                    opts = SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.ByMember;
+                    opts = SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.Store | SortedSetGeoOpts.ByMember;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     op = SortedSetOperation.GEOSEARCH;
-                    opts = SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.ReadOnly | SortedSetGeoOpts.ByMember;
+                    opts = SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.ByMember;
                     break;
                 case RespCommand.GEOSEARCH:
                     op = SortedSetOperation.GEOSEARCH;
-                    opts = SortedSetGeoOpts.ReadOnly;
                     break;
                 default:
                     throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
@@ -205,8 +204,8 @@ namespace Garnet.server
             var input = new ObjectInput(new RespInputHeader
             {
                 type = GarnetObjectType.SortedSet,
-                SortedSetOp = SortedSetOperation.GEOSEARCH
-            }, ref parseState, startIdx: 2);
+                SortedSetOp = SortedSetOperation.GEOSEARCH,
+            }, ref parseState, startIdx: 2, arg2: (int)SortedSetGeoOpts.Store);
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);
