@@ -61,7 +61,7 @@ namespace Garnet.server
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi, bool @readonly = true)
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
@@ -83,11 +83,11 @@ namespace Garnet.server
                     break;
                 case RespCommand.GEORADIUS:
                 case RespCommand.GEORADIUS_RO:
-                    paramsRequiredInCommand = 4;
+                    paramsRequiredInCommand = 5;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                 case RespCommand.GEORADIUSBYMEMBER_RO:
-                    paramsRequiredInCommand = 3;
+                    paramsRequiredInCommand = 4;
                     break;
             }
 
@@ -135,6 +135,9 @@ namespace Garnet.server
                 default:
                     throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
             }
+
+            if (@readonly)
+                opts &= ~SortedSetGeoOpts.Store;
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
@@ -187,25 +190,81 @@ namespace Garnet.server
         /// GEOSEARCHSTORE: Store the the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="cmd"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoSearchStore<TGarnetApi>(ref TGarnetApi storageApi)
+        private unsafe bool GeoSearchStore<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // GEOSEARCHSTORE dst src FROMEMBER key BYRADIUS 0 m
-            if (parseState.Count < 7)
+            int GetDestIdx()
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEOSEARCHSTORE));
+                var idx = 1;
+                while (true)
+                {
+                    if (idx >= parseState.Count - 1)
+                        break;
+
+                    var argSpan = parseState.GetArgSliceByRef(idx++).ReadOnlySpan;
+
+                    if (argSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
+                        argSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                    {
+                        return idx;
+                    }
+                }
+
+                return -1;
             }
 
-            var destinationKey = parseState.GetArgSliceByRef(0);
-            var sourceKey = parseState.GetArgSliceByRef(1);
+            SortedSetGeoOpts opt;
+            int destIdx, sourceIdx;
+
+            switch (cmd)
+            {
+                case RespCommand.GEORADIUS:
+                    // GERADIUS src lon lat 0 km
+                    if (parseState.Count < 5)
+                    {
+                        return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEORADIUS));
+                    }
+                    opt = SortedSetGeoOpts.Store | SortedSetGeoOpts.ByRadius;
+                    sourceIdx = 0;
+                    destIdx = GetDestIdx();
+                    break;
+                case RespCommand.GEORADIUSBYMEMBER:
+                    // GERADIUSBYMEMBER src member 0 km
+                    if (parseState.Count < 4)
+                    {
+                        return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEORADIUSBYMEMBER));
+                    }
+                    opt = SortedSetGeoOpts.Store | SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.ByMember;
+                    sourceIdx = 0;
+                    destIdx = GetDestIdx();
+                    break;
+                case RespCommand.GEOSEARCHSTORE:
+                default:
+                    // GEOSEARCHSTORE dst src FROMEMBER key BYRADIUS 0 m
+                    if (parseState.Count < 7)
+                    {
+                        return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEOSEARCHSTORE));
+                    }
+                    opt = SortedSetGeoOpts.Store;
+                    destIdx = 0;
+                    sourceIdx = 1;
+                    break;
+            }
+
+            if (destIdx == -1)
+                return GeoCommands(cmd, ref storageApi, true);
+
+            var destinationKey = parseState.GetArgSliceByRef(destIdx);
+            var sourceKey = parseState.GetArgSliceByRef(sourceIdx);
 
             var input = new ObjectInput(new RespInputHeader
             {
                 type = GarnetObjectType.SortedSet,
                 SortedSetOp = SortedSetOperation.GEOSEARCH,
-            }, ref parseState, startIdx: 2, arg2: (int)SortedSetGeoOpts.Store);
+            }, ref parseState, startIdx: sourceIdx + 1, arg2: (int)opt);
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);
