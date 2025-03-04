@@ -30,7 +30,7 @@ namespace Tsavorite.core
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
-                
+
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     try
