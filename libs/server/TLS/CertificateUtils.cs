@@ -58,7 +58,11 @@ namespace Garnet.server.TLS
         /// <exception cref="ArgumentException"></exception>
         public static X509Certificate2 GetMachineCertificateByFile(string fileName, string password)
         {
+#if NET9_0_OR_GREATER
+            return X509CertificateLoader.LoadPkcs12FromFile(fileName, password);
+#else
             return new X509Certificate2(fileName, password);
+#endif
         }
     }
 }

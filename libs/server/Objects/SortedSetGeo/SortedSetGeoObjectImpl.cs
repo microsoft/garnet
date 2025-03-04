@@ -409,7 +409,7 @@ namespace Garnet.server
                 }
 
                 // Check that we have the mandatory options
-                if (errorMessage == default && !((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
+                if (errorMessage.IsEmpty && !((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
                     argNumError = true;
 
                 // Check if we have a wrong number of arguments
@@ -420,7 +420,7 @@ namespace Garnet.server
                 }
 
                 // Check if we encountered an error while checking the parse state
-                if (errorMessage != default)
+                if (!errorMessage.IsEmpty)
                 {
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

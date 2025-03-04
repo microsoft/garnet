@@ -257,7 +257,11 @@ namespace Garnet.server.TLS
             {
                 try
                 {
+#if NET9_0_OR_GREATER
+                    issuer = X509CertificateLoader.LoadCertificateFromFile(issuerCertificatePath); 
+#else
                     issuer = new X509Certificate2(issuerCertificatePath);
+#endif
                 }
                 catch (Exception ex)
                 {
@@ -295,9 +299,7 @@ namespace Garnet.server.TLS
                 var chainBuilt = chain.Build(certificateToValidate);
                 if (!chainBuilt)
                 {
-                    string[] errors = chain.ChainStatus
-                        .Select(x => String.Format("{0} ({1})", x.StatusInformation.Trim(), x.Status))
-                        .ToArray();
+                    string[] errors = [.. chain.ChainStatus.Select(x => String.Format("{0} ({1})", x.StatusInformation.Trim(), x.Status))];
                     string certificateErrorsString = "Unknown errors.";
                     if (errors != null && errors.Length > 0)
                         certificateErrorsString = String.Join(", ", errors);

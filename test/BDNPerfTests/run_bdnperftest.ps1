@@ -48,6 +48,7 @@ function AnalyzeResult {
         if ($warnonly) {
             Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
             Write-Host "** "
+            return $true # Since it is warning, don't want to cause a fail
         }
         else {
             Write-Host "**   << PERF REGRESSION FAIL! >> The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
@@ -235,7 +236,7 @@ Get-Content $resultsFile | ForEach-Object {
 
                 # Check if found value is not equal to expected value
                 Write-Host "** Config: "$expectedResultsArray[$currentExpectedProp, 0].Substring(2) $expectedResultsArray[$currentExpectedProp, 1]
-                $currentResults = AnalyzeResult $foundValue $expectedResultsArray[$currentExpectedProp, 2] $acceptableAllocatedRange $true
+                $currentResults = AnalyzeResult $foundValue $expectedResultsArray[$currentExpectedProp, 2] $acceptableAllocatedRange $false
                 if ($currentResults -eq $false) {
                     $testSuiteResult = $false
                 }
