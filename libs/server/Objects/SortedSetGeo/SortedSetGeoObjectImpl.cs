@@ -727,10 +727,6 @@ namespace Garnet.server
                             innerArrayLength++;
                         }
 
-                        // Write results 
-                        while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
                         var q = responseData.AsQueryable();
                         switch (opts.sort)
                         {
@@ -746,8 +742,18 @@ namespace Garnet.server
                                 break;
                         }
 
+                        // Write results 
                         if (opts.countValue > 0)
+                        {
                             q = q.Take(opts.countValue);
+                            while (!RespWriteUtils.TryWriteArrayLength(opts.countValue, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
 
                         foreach (var item in q)
                         {
