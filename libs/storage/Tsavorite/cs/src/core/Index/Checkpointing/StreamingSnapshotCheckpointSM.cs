@@ -12,8 +12,8 @@ namespace Tsavorite.core
         /// Construct a new StreamingSnapshotCheckpointStateMachine, drawing boundary at targetVersion.
         /// </summary>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public StreamingSnapshotCheckpointSM(long targetVersion, IStateMachineTask backend)
-            : base(targetVersion, backend)
+        public StreamingSnapshotCheckpointSM(long targetVersion, params IStateMachineTask[] tasks)
+            : base(targetVersion, tasks)
         { }
 
         /// <inheritdoc />

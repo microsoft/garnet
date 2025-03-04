@@ -48,6 +48,9 @@ namespace Tsavorite.core
         public void BeginLockable() => clientSession.AcquireLockable(sessionFunctions);
 
         /// <inheritdoc/>
+        public bool TryBeginLockable() => clientSession.TryAcquireLockable(sessionFunctions);
+
+        /// <inheritdoc/>
         public void EndLockable() => clientSession.ReleaseLockable();
         #endregion Begin/EndLockable
 

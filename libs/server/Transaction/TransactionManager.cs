@@ -292,6 +292,33 @@ namespace Garnet.server
             readOnly = keyEntries.IsReadOnly;
         }
 
+        void BeginLockable(StoreType transactionStoreType)
+        {
+            while (true)
+            {
+                if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Main)
+                {
+                    lockableContext.BeginLockable();
+                }
+                if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Object)
+                {
+                    if (objectStoreBasicContext.IsNull)
+                        throw new Exception("Trying to perform object store transaction with object store disabled");
+                    if (objectStoreLockableContext.TryBeginLockable())
+                    {
+                        // If we managed to begin lockable for the object store, we MUST be in the same version as the main store
+                        return;
+                    }
+                    objectStoreLockableContext.Refresh();
+                }
+                if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Main)
+                {
+                    lockableContext.EndLockable();
+                    lockableContext.Refresh();
+                }
+            }
+        }
+
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)
         {
             // Save watch keys to lock list
@@ -299,16 +326,7 @@ namespace Garnet.server
                 watchContainer.SaveKeysToLock(this);
 
             // Acquire lock sessions
-            if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Main)
-            {
-                lockableContext.BeginLockable();
-            }
-            if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Object)
-            {
-                if (objectStoreBasicContext.IsNull)
-                    throw new Exception("Trying to perform object store transaction with object store disabled");
-                objectStoreLockableContext.BeginLockable();
-            }
+            BeginLockable(transactionStoreType);
 
             bool lockSuccess;
             if (fail_fast_on_lock)

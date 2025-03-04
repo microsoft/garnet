@@ -69,6 +69,27 @@ namespace Tsavorite.core
             }
         }
 
+        internal bool TryAcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            CheckIsNotAcquiredLockable();
+
+            // Checkpoints cannot complete while we have active locking sessions.
+            if (IsInPreparePhase())
+            {
+                return false;
+            }
+
+            store.IncrementNumLockingSessions();
+            isAcquiredLockable = true;
+
+            if (!IsInPreparePhase())
+                return true;
+
+            InternalReleaseLockable();
+            return false;
+        }
+
         internal void ReleaseLockable()
         {
             CheckIsAcquiredLockable();

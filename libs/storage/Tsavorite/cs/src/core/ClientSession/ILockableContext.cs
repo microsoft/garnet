@@ -20,6 +20,11 @@ namespace Tsavorite.core
         void BeginLockable();
 
         /// <summary>
+        /// Try to begin a series of lock operations on possibly multiple keys; call before any locks are taken.
+        /// </summary>
+        bool TryBeginLockable();
+
+        /// <summary>
         /// Ends a series of lock operations on possibly multiple keys; call after all locks are released.
         /// </summary>
         void EndLockable();
