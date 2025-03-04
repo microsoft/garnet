@@ -23,6 +23,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> get => "get"u8;
         public static ReadOnlySpan<byte> SET => "SET"u8;
         public static ReadOnlySpan<byte> set => "set"u8;
+        public static ReadOnlySpan<byte> GEORADIUSBYMEMBER_RO => "GEORADIUSBYMEMBER_RO"u8;
+
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
@@ -120,7 +122,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
         public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
         public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
+        public static ReadOnlySpan<byte> STORE => "STORE"u8;
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
+        public static ReadOnlySpan<byte> WITHCOORD => "WITHCOORD"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
         public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;

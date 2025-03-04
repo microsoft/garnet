@@ -32,7 +32,6 @@ namespace Garnet.server
         GEODIST,
         GEOPOS,
         GEOSEARCH,
-        GEOSEARCHSTORE,
         ZREVRANK,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -75,6 +74,30 @@ namespace Garnet.server
         /// Include scores in the result.
         /// </summary>
         WithScores = 1 << 4
+    }
+
+    /// <summary>
+    /// Options for specifying command type in sorted set geo operations.
+    /// </summary>
+    [Flags]
+    public enum SortedSetGeoOpts : byte
+    {
+        /// <summary>
+        /// No options specified.
+        /// </summary>
+        None = 0,
+        /// <summary>
+        /// Operation can store to database.
+        /// </summary>
+        Store = 1,
+        /// <summary>
+        /// Operate by radius.
+        /// </summary>
+        ByRadius = 1 << 1,
+        /// <summary>
+        /// Get lonlat from member.
+        /// </summary>
+        ByMember = 1 << 2
     }
 
     [Flags]
@@ -298,7 +321,6 @@ namespace Garnet.server
                         GeoPosition(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEOSEARCH:
-                    case SortedSetOperation.GEOSEARCHSTORE:
                         GeoSearch(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZRANGE:
