@@ -5,7 +5,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -23,11 +22,6 @@ namespace Garnet.cluster
         TsavoriteLogScanSingleIterator iter;
         readonly long startAddress;
         public long previousAddress;
-
-        /// <summary>
-        /// Used to mark if syncing is in progress
-        /// </summary>
-        SingleWriterMultiReaderLock aofSyncInProgress;
 
         /// <summary>
         /// Check if client connection is healthy
@@ -69,11 +63,6 @@ namespace Garnet.cluster
 
             // Finally, dispose the cts
             cts?.Dispose();
-
-            // Dispose only if AOF sync has not started
-            // otherwise sync task will dispose the client
-            if (aofSyncInProgress.TryWriteLock())
-                garnetClient?.Dispose();
         }
 
         public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
@@ -108,16 +97,8 @@ namespace Garnet.cluster
         {
             logger?.LogInformation("Starting ReplicationManager.ReplicaSyncTask for remote node {remoteNodeId} starting from address {address}", remoteNodeId, startAddress);
 
-            var failedToStart = false;
             try
             {
-                if (!aofSyncInProgress.TryWriteLock())
-                {
-                    logger?.LogWarning("{method} AOF sync for {remoteNodeId} failed to start", nameof(ReplicaSyncTask), remoteNodeId);
-                    failedToStart = true;
-                    return;
-                }
-
                 if (!IsConnected) garnetClient.Connect();
 
                 iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
@@ -134,7 +115,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (!failedToStart) garnetClient.Dispose();
+                garnetClient.Dispose();
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
                 logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, previousAddress);
 
