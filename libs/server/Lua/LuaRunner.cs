@@ -242,13 +242,48 @@ namespace Garnet.server
         private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes);
 
         private const string LoaderBlock = @"
+-- disable for sandboxing purposes
 import = function () end
+
+-- cutdown for sandboxing purposes
+local osClockRef = os.clock
+os = {
+    clock = osClockRef
+}
+
+-- globals to fill in on each invocation
 KEYS = {}
 ARGV = {}
 
 -- unpack moved after Lua 5.1, this provides Redis compat
 local unpack = table.unpack
 
+-- added after Lua 5.1, removing to maintain Redis compat
+string.pack = nil
+string.unpack = nil
+string.packsize = nil
+math.maxinteger = nil
+math.type = nil
+math.mininteger = nil
+math.tointeger = nil
+math.ult = nil
+table.pack = nil
+table.unpack = nil
+table.move = nil
+
+-- in Lua 5.1 but not 5.4, so implemented on the .NET side
+local loadstring = garnet_loadstring
+math.atan2 = garnet_atan2
+math.cosh = garnet_cosh
+math.frexp = garnet_frexp
+math.ldexp = garnet_ldexp
+math.log10 = garnet_log10
+math.pow = garnet_pow
+math.sinh = garnet_sinh
+math.tanh = garnet_tanh
+table.maxn = garnet_maxn
+
+local collectgarbageRef = collectgarbage
 local setMetatableRef = setmetatable
 local rawsetRef = rawset
 
@@ -273,6 +308,14 @@ local rawset = function(table, key, value)
     return rawsetRef(table, key, value)
 end
 
+local gcinfo = function()
+    return collectgarbageRef('count')
+end
+
+-- global object used for the sandbox environment
+--
+-- replacements are performed before VM initialization
+-- to allow configuring available functions
 sandbox_env = {
     _VERSION = _VERSION;
 
@@ -408,7 +451,7 @@ end
             "coroutine",
             "error",
             "gcinfo",
-            // Explicitly not allowing getfenv
+            // Intentionally not supporting getfenv, as it's too weird to backport to Lua 5.4
             "getmetatable",
             "ipairs",
             "load",
@@ -420,9 +463,9 @@ end
             "rawequal",
             "rawget",
             // Note rawset is proxied to implement readonly tables
-            "setraw",
+            "rawset",
             "select",
-            // Explicitly not allowing setfenv
+            // Intentionally not supporting setfenv, as it's too weird to backport to Lua 5.4
             // Note setmetatable is proxied to implement readonly tables
             "setmetatable",
             "string",
@@ -547,10 +590,28 @@ end
                 garnetCall = &LuaRunnerTrampolines.GarnetCallNoSession;
             }
 
+            // Lua 5.4 does not provide these functions, but 5.1 does - so implement tehm
+            state.Register("garnet_atan2\0"u8, &LuaRunnerTrampolines.Atan2);
+            state.Register("garnet_cosh\0"u8, &LuaRunnerTrampolines.Cosh);
+            state.Register("garnet_frexp\0"u8, &LuaRunnerTrampolines.Frexp);
+            state.Register("garnet_ldexp\0"u8, &LuaRunnerTrampolines.Ldexp);
+            state.Register("garnet_log10\0"u8, &LuaRunnerTrampolines.Log10);
+            state.Register("garnet_pow\0"u8, &LuaRunnerTrampolines.Pow);
+            state.Register("garnet_sinh\0"u8, &LuaRunnerTrampolines.Sinh);
+            state.Register("garnet_tanh\0"u8, &LuaRunnerTrampolines.Tanh);
+            state.Register("garnet_maxn\0"u8, &LuaRunnerTrampolines.Maxn);
+            state.Register("garnet_loadstring\0"u8, &LuaRunnerTrampolines.LoadString);
+
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
             {
-                throw new GarnetException("Couldn't load loader into Lua");
+                if (state.StackTop == 1 && state.CheckBuffer(1, out var buff))
+                {
+                    var innerError = Encoding.UTF8.GetString(buff);
+                    throw new GarnetException($"Could initialize Lua VM: {innerError}");
+                }
+
+                throw new GarnetException("Could initialize Lua VM");
             }
 
             var sandboxRes = state.PCall(0, -1);
@@ -887,6 +948,293 @@ end
             logger.Log(logLevel, "redis.log: {message}", logMessage.ToString());
 
             return 0;
+        }
+
+        /// <summary>
+        /// Entry point for math.atan2 from a Lua script.
+        /// </summary>
+        public int Atan2(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to atan2");
+            }
+
+            var x = state.CheckNumber(1);
+            var y = state.CheckNumber(2);
+
+            var res = Math.Atan2(x, y);
+            state.Pop(2);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.cosh from a Lua script.
+        /// </summary>
+        public int Cosh(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to cosh");
+            }
+
+            var value = state.CheckNumber(1);
+
+            var res = Math.Cosh(value);
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.frexp from a Lua script.
+        /// </summary>
+        public int Frexp(nint luaStatePtr)
+        {
+            // TODO: Test!
+
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to frexp");
+            }
+
+            var value = state.CheckNumber(1);
+
+            var asULong = BitConverter.DoubleToUInt64Bits(value);
+            var expBits = 0x7FF0_0000__0000_0000UL & asULong;
+
+            var num = value;
+            var exponent = expBits >> 20;
+            if (expBits is 0 or 0x7FF0_0000__0000_0000UL)
+            {
+                num *= 2;
+            }
+            else
+            {
+                exponent -= 1022;
+                if (expBits == 0)
+                {
+                    num *= BitConverter.Int64BitsToDouble(0x4350_0000__0000_0000L);
+                    asULong = BitConverter.DoubleToUInt64Bits(num);
+                    exponent = ((asULong & 0x7FF0_0000__0000_0000UL) >> 20) - 1022 - 54;
+                }
+
+                num = BitConverter.UInt64BitsToDouble((asULong & ~0x7FF0_0000__0000_0000UL) | 0x3FE0_0000__0000_0000UL);
+            }
+
+            state.ForceMinimumStackCapacity(2);
+            state.Pop(1);
+            state.PushNumber(num);
+            state.PushNumber(exponent);
+            return 2;
+        }
+
+        /// <summary>
+        /// Entry point for math.ldexp from a Lua script.
+        /// </summary>
+        public int Ldexp(nint luaStatePtr)
+        {
+            // TODO: Test!
+
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to ldexp");
+            }
+
+            var m = state.CheckNumber(1);
+            var e = state.CheckNumber(2);
+
+            var res = m * Math.Pow(2, e);
+
+            state.Pop(2);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.log10 from a Lua script.
+        /// </summary>
+        public int Log10(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to log10");
+            }
+
+            var val = state.CheckNumber(1);
+
+            var res = Math.Log10(val);
+
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.pow from a Lua script.
+        /// </summary>
+        public int Pow(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to pow");
+            }
+
+            var x = state.CheckNumber(1);
+            var y = state.CheckNumber(2);
+
+            var res = Math.Pow(x, y);
+
+            state.Pop(2);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.sinh from a Lua script.
+        /// </summary>
+        public int Sinh(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to sinh");
+            }
+
+            var val = state.CheckNumber(1);
+
+            var res = Math.Sinh(val);
+
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.sinh from a Lua script.
+        /// </summary>
+        public int Tanh(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to tanh");
+            }
+
+            var val = state.CheckNumber(1);
+
+            var res = Math.Tanh(val);
+
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for table.maxn from a Lua script.
+        /// </summary>
+        public int Maxn(nint luaStatePtr)
+        {
+            // TODO: Test?
+
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Table)
+            {
+                return state.RaiseError("bad argument to maxn");
+            }
+
+            state.ForceMinimumStackCapacity(2);
+
+            double res = 0;
+
+            // Initial key value onto stack
+            state.PushNil();
+            while (state.Next(1) != 0)
+            {
+                // Remove value
+                state.Pop(1);
+
+                double keyVal;
+                if (state.Type(2) == LuaType.Number && (keyVal = state.CheckNumber(2)) > res)
+                {
+                    res = keyVal;
+                }
+            }
+
+            // Remove table, and push largest number
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for loadstring from a Lus script.
+        /// </summary>
+        /// <returns></returns>
+        public int LoadString(nint luaStatePtr)
+        {
+            // TODO: Test?
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (
+                (luaArgCount == 1 && state.Type(1) != LuaType.String) ||
+                (luaArgCount == 2 && (state.Type(1) != LuaType.String || state.Type(2) != LuaType.String)) ||
+                (luaArgCount > 2)
+              )
+            {
+                return state.RaiseError("bad argument to loadstring");
+            }
+
+            // Ignore chunk name
+            if (luaArgCount == 2)
+            {
+                state.Pop(1);
+            }
+
+            _ = state.CheckBuffer(1, out var buff);
+            if (buff.Contains((byte)0))
+            {
+                return state.RaiseError("bad argument to loadstring, interior null byte");
+            }
+
+            state.ForceMinimumStackCapacity(1);
+
+            var res = state.LoadString(buff);
+            if (res != LuaStatus.OK)
+            {
+                state.ClearStack();
+                state.PushNil();
+                state.PushBuffer("load_string encountered error"u8);
+                return 2;
+            }
+
+            return 1;
         }
 
         /// <summary>
@@ -3032,5 +3380,75 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int SetResp(nint luaState)
         => CallbackContext.SetResp(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.atan2.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Atan2(nint luaState)
+        => CallbackContext.Atan2(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.cosh.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Cosh(nint luaState)
+        => CallbackContext.Cosh(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.frexp.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Frexp(nint luaState)
+        => CallbackContext.Frexp(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.ldexp.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Ldexp(nint luaState)
+        => CallbackContext.Ldexp(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.log10.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Log10(nint luaState)
+        => CallbackContext.Log10(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.pow.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Pow(nint luaState)
+        => CallbackContext.Pow(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.sinh.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Sinh(nint luaState)
+        => CallbackContext.Sinh(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.tanh.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Tanh(nint luaState)
+        => CallbackContext.Tanh(luaState);
+
+        /// <summary>
+        /// Entry point for calls to table.maxn.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Maxn(nint luaState)
+        => CallbackContext.Maxn(luaState);
+
+        /// <summary>
+        /// Entry point for calls to loadstring.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int LoadString(nint luaState)
+        => CallbackContext.LoadString(luaState);
     }
 }

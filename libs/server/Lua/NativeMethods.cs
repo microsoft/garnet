@@ -47,6 +47,13 @@ namespace Garnet.server
         private static partial LuaStatus luaL_loadbufferx(lua_State luaState, charptr_t buff, size_t sz, charptr_t name, charptr_t mode);
 
         /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#luaL_loadstring
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial LuaStatus luaL_loadstring(lua_State lua_State, charptr_t buff);
+
+        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#luaL_newstate
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -383,7 +390,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Push given span to stack, and compiles it.
+        /// Push given span to stack, compiles it, and executes it.
         /// 
         /// Provided data is copied, and can be reused once this call returns.
         /// </summary>
@@ -392,6 +399,19 @@ namespace Garnet.server
             fixed (byte* ptr = str)
             {
                 return luaL_loadbufferx(luaState, (charptr_t)ptr, (size_t)str.Length, (charptr_t)UIntPtr.Zero, (charptr_t)UIntPtr.Zero);
+            }
+        }
+
+        /// <summary>
+        /// Push given span to stack, and compiles it.
+        /// 
+        /// Provided data is copied, and can be reused once this call returns.
+        /// </summary>
+        internal static unsafe LuaStatus LoadString(lua_State luaState, ReadOnlySpan<byte> str)
+        {
+            fixed (byte* ptr = str)
+            {
+                return luaL_loadstring(luaState, (charptr_t)ptr);
             }
         }
 

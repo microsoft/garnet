@@ -444,18 +444,54 @@ namespace Garnet.server
         /// <summary>
         /// This should be used for all LoadBuffers into Lua.
         /// 
-        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
+        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled and executed.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LuaStatus LoadBuffer(ReadOnlySpan<byte> buffer)
         {
-            AssertLuaStackNotFull();
+            AssertLuaStackNotFull(2);
 
             var ret = NativeMethods.LoadBuffer(state, buffer);
 
-            UpdateStackTop(1);
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
+
+            return ret;
+        }
+
+        /// <summary>
+        /// This should be used for all LoadStrings into Lua.
+        /// 
+        /// Note that this is different from pushing or loading buffer, as the loaded buffer is compiled but NOT executed.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        internal LuaStatus LoadString(ReadOnlySpan<byte> buffer)
+        {
+            AssertLuaStackNotFull(2);
+
+            var ret = NativeMethods.LoadString(state, buffer);
+
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
 
             return ret;
         }
