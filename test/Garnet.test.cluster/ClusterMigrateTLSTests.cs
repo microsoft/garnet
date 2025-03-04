@@ -1,12 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterTLSMT
+    public class ClusterTLSMT
     {
         ClusterMigrateTests tests;
 
@@ -75,8 +77,8 @@ namespace Garnet.test.cluster
             => tests.ClusterSimpleMigrateKeysWithObjects();
 
         [Test, Order(11)]
-        [Category("CLUSTER")]
-        public void ClusterTLSMigratetWithReadWrite()
-            => tests.ClusterSimpleMigrateWithReadWrite();
+        [Category("CLUSTER"), CancelAfter(100000)]
+        public async Task ClusterTLSMigrateContinuousReadWrite(CancellationToken cancellationToken)
+            => await tests.ClusterSimpleMigrateContinuousReadWrite(cancellationToken);
     }
 }
