@@ -512,7 +512,7 @@ namespace Garnet.test
         public void RedisLogDisabled()
         {
             // Just because it's hard to test in LuaScriptTests, doing this here
-            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable), "redis.log(redis.LOG_WARNING, 'foo')");
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable, []), "redis.log(redis.LOG_WARNING, 'foo')");
 
             runner.CompileForRunner();
 
@@ -525,7 +525,7 @@ namespace Garnet.test
         {
             // Just because it's hard to test in LuaScriptTests, doing this here
             using var logger = new FakeLogger();
-            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent), "redis.log(redis.LOG_WARNING, 'foo')", logger: logger);
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, []), "redis.log(redis.LOG_WARNING, 'foo')", logger: logger);
 
             runner.CompileForRunner();
             _ = runner.RunForRunner();

@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -432,6 +433,7 @@ end
         readonly ConstantStringRegistryIndexes constStrs;
 
         readonly LuaLoggingMode logMode;
+        readonly HashSet<string> allowedFunctions;
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
@@ -467,6 +469,7 @@ end
             LuaMemoryManagementMode memMode,
             int? memLimitBytes,
             LuaLoggingMode logMode,
+            HashSet<string> allowedFunctions,
             ReadOnlyMemory<byte> source,
             bool txnMode = false,
             RespServerSession respServerSession = null,
@@ -480,6 +483,7 @@ end
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
             this.logMode = logMode;
+            this.allowedFunctions = allowedFunctions;
             this.logger = logger;
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
@@ -590,7 +594,7 @@ end
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, options.AllowedFunctions, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 
