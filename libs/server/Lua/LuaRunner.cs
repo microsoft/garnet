@@ -236,44 +236,52 @@ namespace Garnet.server
             }
         }
 
-        const string LoaderBlock = @"
+        /// <summary>
+        /// Simple cache of allowed functions to loader block.
+        /// </summary>
+        private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes);
+
+        private const string LoaderBlock = @"
 import = function () end
 KEYS = {}
 ARGV = {}
+
+-- unpack moved after Lua 5.1, this provides Redis compat
+local unpack = table.unpack
+
+local setMetatableRef = setmetatable
+local rawsetRef = rawset
+
+-- prevent modification to metatables for readonly tables
+-- Redis accomplishes this by patching Lua, we'd rather ship
+-- vanilla Lua and do it in code
+local setmetatable = function(table, metatable)
+    if table and table.__readonly then
+        error('Attempt to modify a readonly table', 0)
+    end
+
+    return setMetatableRef(table, metatable)
+end
+
+-- prevent bypassing metatables to update readonly tables
+-- as above, Redis prevents this with a patch to Lua
+local rawset = function(table, key, value)
+    if table and table.__readonly then
+        error('Attempt to modify a readonly table', 0)
+    end
+
+    return rawsetRef(table, key, value)
+end
+
 sandbox_env = {
     _VERSION = _VERSION;
 
-    assert = assert;
-    collectgarbage = collectgarbage;
-    coroutine = coroutine;
-    error = error;
-    gcinfo = gcinfo;
-    -- explicitly not allowing getfenv
-    getmetatable = getmetatable;
-    ipairs = ipairs;
-    load = load;
-    loadstring = loadstring;
-    math = math;
-    next = next;
-    pairs = pairs;
-    pcall = pcall;
-    rawequal = rawequal;
-    rawget = rawget;
-    -- rawset is proxied to implement readonly tables
-    select = select;
-    -- explicitly not allowing setfenv
-    -- setmetatable is proxied to implement readonly tables
-    string = string;
-    table = table;
-    tonumber = tonumber;
-    tostring = tostring;
-    type = type;
-    unpack = table.unpack;
-    xpcall = xpcall;
-
     KEYS = KEYS;
     ARGV = ARGV;
+
+!!SANDBOX_ENV REPLACEMENT TARGET!!
 }
+
 -- no reference to outermost set of globals (_G) should survive sandboxing
 sandbox_env._G = sandbox_env
 -- lock down a table, recursively doing the same to all table members
@@ -299,7 +307,7 @@ function recursively_readonly_table(table)
         end
     end
 
-    setmetatable(table, readonly_metatable)
+    setMetatableRef(table, readonly_metatable)
 end
 -- do resets in the Lua side to minimize pinvokes
 function reset_keys_and_argv(fromKey, fromArgv)
@@ -324,8 +332,6 @@ function load_sandboxed(source)
     local logRef = garnet_log
     local aclCheckCmdRef = garnet_acl_check_cmd
     local setRespRef = garnet_setresp
-    local setMetatableRef = setmetatable
-    local rawsetRaw = rawset
 
     sandbox_env.redis = {
         status_reply = function(text)
@@ -388,27 +394,6 @@ function load_sandboxed(source)
         REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
     }
 
-    -- prevent modification to metatables for readonly tables
-    -- Redis accomplishes this by patching Lua, we'd rather ship
-    -- vanilla Lua and do it in code
-    sandbox_env.setmetatable = function(table, metatable)
-        if table and table.__readonly then
-            error('Attempt to modify a readonly table', 0)
-        end
-
-        return setMetatableRef(table, metatable)
-    end
-
-    -- prevent bypassing metatables to update readonly tables
-    -- as above, Redis prevents this with a patch to Lua
-    sandbox_env.rawset = function(table, key, value)
-        if table and table.__readonly then
-            error('Attempt to modify a readonly table', 0)
-        end
-
-        return rawsetRef(table, key, value)
-    end
-
     recursively_readonly_table(sandbox_env)
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
@@ -416,8 +401,48 @@ function load_sandboxed(source)
     return err, rawFunc
 end
 ";
+        private static readonly HashSet<string> DefaultAllowedFunctions = [
+            // Built ins
+            "assert",
+            "collectgarbage",
+            "coroutine",
+            "error",
+            "gcinfo",
+            // Explicitly not allowing getfenv
+            "getmetatable",
+            "ipairs",
+            "load",
+            "loadstring",
+            "math",
+            "next",
+            "pairs",
+            "pcall",
+            "rawequal",
+            "rawget",
+            // Note rawset is proxied to implement readonly tables
+            "setraw",
+            "select",
+            // Explicitly not allowing setfenv
+            // Note setmetatable is proxied to implement readonly tables
+            "setmetatable",
+            "string",
+            "table",
+            "tonumber",
+            "tostring",
+            "type",
+            // Note unpack is actually table.unpack, and defined in the loader block
+            "unpack",
+            "xpcall",
 
-        private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
+            // Runtime libs
+            "bit",
+            "cjson",
+            "cmsgpack",
+            "os.clock",
+            "struct",
+        ];
+
+        private static LoaderBlockCache CachedLoaderBlock;
 
         private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
 
@@ -522,7 +547,7 @@ end
                 garnetCall = &LuaRunnerTrampolines.GarnetCallNoSession;
             }
 
-            var loadRes = state.LoadBuffer(LoaderBlockBytes.Span);
+            var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
             {
                 throw new GarnetException("Couldn't load loader into Lua");
@@ -2808,6 +2833,65 @@ end
             }
 
             return (start, bitmap);
+        }
+
+        /// <summary>
+        /// Modifies <see cref="LoaderBlock"/> to account for <paramref name="allowedFunctions"/>, and converts to bytes.
+        /// 
+        /// Provided as an optimization, as often this can be memoized.
+        /// </summary>
+        private static ReadOnlyMemory<byte> PrepareLoaderBlockBytes(HashSet<string> allowedFunctions)
+        {
+            // If nothing is explicitly allowed, fallback to our defaults
+            if (allowedFunctions.Count == 0)
+            {
+                allowedFunctions = DefaultAllowedFunctions;
+            }
+
+            // Most of the time this list never changes, so reuse the work
+            var cache = CachedLoaderBlock;
+            if (cache != null && ReferenceEquals(cache.AllowedFunctions, allowedFunctions))
+            {
+                return cache.LoaderBlockBytes;
+            }
+
+            // Build the subset of a Lua table where we export all these functions
+            var wholeIncludes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var replacement = new StringBuilder();
+            foreach (var wholeRef in allowedFunctions.Where(static x => !x.Contains('.')))
+            {
+                _ = replacement.AppendLine($"    {wholeRef}={wholeRef};");
+                _ = wholeIncludes.Add(wholeRef);
+            }
+
+            // Partial includes (ie. os.clock) need special handling
+            var partialIncludes = allowedFunctions.Where(static x => x.Contains('.')).Select(static x => (Leading: x[..x.IndexOf('.')], Trailing: x[(x.IndexOf('.') + 1)..]));
+            foreach (var grouped in partialIncludes.GroupBy(static t => t.Leading, StringComparer.OrdinalIgnoreCase))
+            {
+                if (wholeIncludes.Contains(grouped.Key))
+                {
+                    // Including a subset of something included in whole doesn't affect things
+                    continue;
+                }
+
+                _ = replacement.AppendLine($"    {grouped.Key}={{");
+                foreach (var part in grouped.Select(static t => t.Trailing).Distinct().OrderBy(static t => t))
+                {
+                    _ = replacement.AppendLine($"        {part}={grouped.Key}.{part};");
+                }
+                _ = replacement.AppendLine("    };");
+            }
+
+            var decl = replacement.ToString();
+            var finalLoaderBlock = LoaderBlock.Replace("!!SANDBOX_ENV REPLACEMENT TARGET!!", decl);
+
+            // Save off for next caller
+            //
+            // Inherently race-y, but that's fine - worst case we do a little extra work
+            var newCache = new LoaderBlockCache(allowedFunctions, Encoding.UTF8.GetBytes(finalLoaderBlock));
+            CachedLoaderBlock = newCache;
+
+            return newCache.LoaderBlockBytes;
         }
     }
 

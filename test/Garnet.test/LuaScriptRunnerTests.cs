@@ -59,7 +59,7 @@ namespace Garnet.test
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
-                ClassicAssert.AreEqual("ERR Lua encountered an error: [string \"os.exit();\"]:1: attempt to index a nil value (global 'os')", ex.Message);
+                ClassicAssert.AreEqual("ERR Lua encountered an error: [string \"os.exit();\"]:1: attempt to call a nil value (field 'exit')", ex.Message);
             }
 
             // Try to include a new .net library
