@@ -24,6 +24,7 @@ namespace Garnet.server
         {
             public Byte[] Member;
             public double Distance;
+            public long GeoHash;
             public string GeoHashCode;
             public (double Latitude, double Longitude) Coordinates;
         }
@@ -364,7 +365,7 @@ namespace Garnet.server
         {
             var cmtOpt = (SortedSetGeoOpts)input.arg2;
             var byRadiusCmd = (cmtOpt & SortedSetGeoOpts.ByRadius) != 0;
-            var readOnlyCmd = (cmtOpt & SortedSetGeoOpts.ReadOnly) != 0;
+            var readOnlyCmd = (cmtOpt & SortedSetGeoOpts.Store) == 0;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -646,14 +647,6 @@ namespace Garnet.server
                 }
 
                 #region act
-                // Not supported options in Garnet: WITHHASH
-                if (opts.withHash)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
                 // FROMLONLAT
                 bool hasLonLat = opts.origin == GeoOriginType.FromLonLat;
                 // FROMMEMBER
@@ -698,6 +691,7 @@ namespace Garnet.server
                         {
                             Member = point.Element,
                             Distance = distance,
+                            GeoHash = (long)point.Score,
                             GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
                             Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
                         });
@@ -777,6 +771,12 @@ namespace Garnet.server
                                 };
 
                                 while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+
+                            if (opts.withHash)
+                            {
+                                while (!RespWriteUtils.TryWriteInt64(item.GeoHash, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
 

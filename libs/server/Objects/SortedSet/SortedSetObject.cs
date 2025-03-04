@@ -87,9 +87,9 @@ namespace Garnet.server
         /// </summary>
         None = 0,
         /// <summary>
-        /// ReadOnly operation.
+        /// Operation can store to database.
         /// </summary>
-        ReadOnly = 1,
+        Store = 1,
         /// <summary>
         /// Operate by radius.
         /// </summary>
