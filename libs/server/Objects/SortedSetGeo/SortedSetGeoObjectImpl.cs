@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -588,22 +589,36 @@ namespace Garnet.server
                         continue;
                     }
 
-                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8))
-                    {
-                        opts.withCoord = true;
-                        continue;
-                    }
-
                     if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8))
                     {
                         opts.withCountAny = true;
                         continue;
                     }
 
-                    // When GEORADIUS STORE support is added we'll need to account for it.
-                    // For now we'll act as if all radius commands are readonly.
-                    if (readOnlyCmd || byRadiusCmd)
+                    if (!readOnlyCmd)
                     {
+                        if (byRadiusCmd && tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
+                        {
+                            if (byRadiusCmd)
+                                currTokenIdx++;
+                            continue;
+                        }
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                        {
+                            if (byRadiusCmd)
+                                currTokenIdx++;
+                            opts.withDist = true;
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHCOORD))
+                        {
+                            opts.withCoord = true;
+                            continue;
+                        }
+
                         if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHDIST))
                         {
                             opts.withDist = true;
@@ -615,12 +630,6 @@ namespace Garnet.server
                             opts.withHash = true;
                             continue;
                         }
-                    }
-                    // GEOSEARCHSTORE
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
-                    {
-                        opts.withDist = true;
-                        continue;
                     }
 
                     errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
@@ -644,6 +653,12 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
+                }
+
+                // On storing to ZSET, we need to use either dist or hash as score.
+                if (!readOnlyCmd && !opts.withDist && !opts.withHash)
+                {
+                    opts.withHash = true;
                 }
 
                 #region act
@@ -776,7 +791,7 @@ namespace Garnet.server
 
                             if (opts.withHash)
                             {
-                                while (!RespWriteUtils.TryWriteInt64(item.GeoHash, ref curr, end))
+                                while (!RespWriteUtils.TryWriteArrayItem(item.GeoHash, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
 
