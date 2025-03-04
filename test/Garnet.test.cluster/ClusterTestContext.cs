@@ -110,6 +110,7 @@ namespace Garnet.test.cluster
         /// <param name="enableDisklessSync"></param>
         /// <param name="luaMemoryMode"></param>
         /// <param name="luaMemoryLimit"></param>
+        /// <param name="useHostname"></param>
         public void CreateInstances(
             int shards,
             bool cleanClusterConfig = true,
@@ -139,10 +140,12 @@ namespace Garnet.test.cluster
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            bool useHostname = false)
         {
-            TestUtils.EndPoint = new IPEndPoint(IPAddress.Loopback, 7000);
-            endpoints = TestUtils.GetShardEndPoints(shards, IPAddress.Loopback, 7000);
+            var ipAddress = IPAddress.Loopback;
+            TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
+            endpoints = TestUtils.GetShardEndPoints(shards, useHostname ? IPAddress.Any : ipAddress, 7000);
 
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
@@ -181,6 +184,8 @@ namespace Garnet.test.cluster
 
             foreach (var node in nodes)
                 node.Start();
+
+            endpoints = TestUtils.GetShardEndPoints(shards, ipAddress, 7000);
         }
 
         /// <summary>
