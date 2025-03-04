@@ -100,8 +100,7 @@ namespace Garnet.server
         internal int activeDbId;
 
         readonly bool allowMultiDb;
-        readonly int maxDbs;
-        ExpandableMap<GarnetDatabaseSession> databaseSessions;
+        internal ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
         /// <summary>
         /// The user currently authenticated in this session
@@ -227,9 +226,9 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, logger);
 
             var dbSession = CreateDatabaseSession(0);
-            maxDbs = storeWrapper.serverOptions.MaxDatabases;
+            var maxDbs = storeWrapper.serverOptions.MaxDatabases;
             activeDbId = 0;
-            allowMultiDb = maxDbs > 1;
+            allowMultiDb = !storeWrapper.serverOptions.EnableCluster && maxDbs > 1;
 
             if (allowMultiDb)
             {

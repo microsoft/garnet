@@ -113,6 +113,11 @@ namespace Garnet.server
         /// </summary>
         public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId, out string storeCheckpointDir, out string aofDir);
 
+        /// <summary>
+        /// Number of active databases
+        /// </summary>
+        public int DatabaseCount => databaseManager.DatabaseCount;
+
         internal readonly IDatabaseManager databaseManager;
 
         internal readonly CollectionItemBroker itemBroker;
@@ -383,7 +388,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.DoCompaction(token);
+                    databaseManager.DoCompaction(token, logger);
 
                     if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
@@ -395,7 +400,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "CompactionTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CompactionTask exception received.");
             }
         }
 
@@ -407,7 +412,7 @@ namespace Garnet.server
                 var scratchBufferManager = new ScratchBufferManager();
                 using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
 
-                if (objectStore is null)
+                if (serverOptions.DisableObjects)
                 {
                     logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
                     return;
@@ -448,7 +453,7 @@ namespace Garnet.server
         /// <param name="spinWait">True if should wait until all commits complete</param>
         internal void CommitAOF(bool spinWait)
         {
-            if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
+            if (!serverOptions.EnableAOF) return;
 
             var task = databaseManager.CommitToAofAsync();
             if (!spinWait) return;
@@ -469,7 +474,7 @@ namespace Garnet.server
         /// <returns>ValueTask</returns>
         internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
+            if (!serverOptions.EnableAOF) return;
 
             await databaseManager.WaitForCommitToAofAsync(token);
         }
@@ -483,7 +488,7 @@ namespace Garnet.server
         /// <returns>ValueTask</returns>
         internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF || appendOnlyFile == null) return;
+            if (!serverOptions.EnableAOF) return;
 
             if (dbId == -1)
             {
@@ -524,7 +529,7 @@ namespace Garnet.server
                 Task.Run(async () => await AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, ctsCommit.Token, logger));
             }
 
-            if (serverOptions.CommitFrequencyMs > 0 && appendOnlyFile != null)
+            if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
             {
                 Task.Run(async () => await CommitTask(serverOptions.CommitFrequencyMs, logger, ctsCommit.Token));
             }
@@ -629,7 +634,7 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots && objectStore != null)
+                if (!hasKeyInSlots && !serverOptions.DisableObjects)
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);

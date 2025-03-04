@@ -36,11 +36,6 @@ namespace Garnet.server
         int activeDbId;
 
         /// <summary>
-        /// Replication offset
-        /// </summary>
-        internal long ReplicationOffset { get; private set; }
-
-        /// <summary>
         /// Session for main store
         /// </summary>
         BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
@@ -66,7 +61,6 @@ namespace Garnet.server
             ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
-            ReplicationOffset = 0;
 
             var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
@@ -91,22 +85,30 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            basicContext.Session?.Dispose();
-            objectStoreBasicContext.Session?.Dispose();
+            var databaseSessionsSnapshot = respServerSession.databaseSessions.Map;
+            foreach (var dbSession in databaseSessionsSnapshot)
+            {
+                dbSession.StorageSession.basicContext.Session?.Dispose();
+                dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
+            }
+
             handle.Free();
         }
 
         /// <summary>
         /// Recover store using AOF
         /// </summary>
-        public unsafe void Recover(ref GarnetDatabase db, long untilAddress = -1)
+        /// <param name="db">Database to recover</param>
+        /// <param name="untilAddress"></param>
+        /// <returns>Replication offset</returns>
+        public unsafe long Recover(ref GarnetDatabase db, long untilAddress = -1)
         {
             logger?.LogInformation("Begin AOF recovery");
-            RecoverReplay(ref db, untilAddress);
+            return RecoverReplay(ref db, untilAddress);
         }
 
         MemoryResult<byte> output = default;
-        private unsafe void RecoverReplay(ref GarnetDatabase db, long untilAddress)
+        private unsafe long RecoverReplay(ref GarnetDatabase db, long untilAddress)
         {
             logger?.LogInformation("Begin AOF replay");
             try
@@ -127,10 +129,8 @@ namespace Garnet.server
                         logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress}", count, nextAofAddress);
                 }
 
-                // Update ReplicationOffset
-                ReplicationOffset = untilAddress;
-
                 logger?.LogInformation("Completed full AOF log replay of {count} records", count);
+                return untilAddress;
             }
             catch (Exception ex)
             {
@@ -144,6 +144,8 @@ namespace Garnet.server
                 output.MemoryOwner?.Dispose();
                 respServerSession.Dispose();
             }
+
+            return -1;
         }
 
         internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length, bool asReplica = false)

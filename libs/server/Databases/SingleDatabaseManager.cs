@@ -259,7 +259,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void DoCompaction(CancellationToken token = default) => DoCompaction(ref DefaultDatabase);
+        public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(ref DefaultDatabase);
 
         public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
             GrowIndexesIfNeeded(ref DefaultDatabase);
@@ -277,12 +277,21 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public override void ResetRevivificationStats()
+        {
+            MainStore.ResetRevivificationStats();
+            ObjectStore?.ResetRevivificationStats();
+        }
+
+        /// <inheritdoc/>
         public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             EnqueueDatabaseCommit(ref DefaultDatabase, isMainStore, version);
         }
+
+        public override GarnetDatabase[] GetDatabasesSnapshot() => [DefaultDatabase];
 
         /// <inheritdoc/>
         public override bool TryGetDatabase(int dbId, out GarnetDatabase db)

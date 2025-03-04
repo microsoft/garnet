@@ -98,7 +98,7 @@ namespace Garnet.server
         public abstract long ReplayAOF(long untilAddress = -1);
 
         /// <inheritdoc/>
-        public abstract void DoCompaction(CancellationToken token = default);
+        public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
         public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
@@ -110,7 +110,13 @@ namespace Garnet.server
         public abstract void Reset(int dbId = 0);
 
         /// <inheritdoc/>
+        public abstract void ResetRevivificationStats();
+
+        /// <inheritdoc/>
         public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0);
+
+        /// <inheritdoc/>
+        public abstract GarnetDatabase[] GetDatabasesSnapshot();
 
         /// <inheritdoc/>
         public abstract bool TryGetDatabase(int dbId, out GarnetDatabase db);
@@ -301,9 +307,8 @@ namespace Garnet.server
             long replicationOffset = 0;
             try
             {
-                aofProcessor.Recover(ref db, untilAddress);
+                replicationOffset = aofProcessor.Recover(ref db, untilAddress);
                 db.LastSaveTime = DateTimeOffset.UtcNow;
-                replicationOffset = aofProcessor.ReplicationOffset;
             }
             catch (Exception ex)
             {
@@ -354,14 +359,24 @@ namespace Garnet.server
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
-        protected void DoCompaction(ref GarnetDatabase db)
+        protected void DoCompaction(ref GarnetDatabase db, ILogger logger = null)
         {
-            // Periodic compaction -> no need to compact before checkpointing
-            if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
+            try
+            {
+                // Periodic compaction -> no need to compact before checkpointing
+                if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
-            DoCompaction(ref db, StoreWrapper.serverOptions.CompactionMaxSegments,
-                StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
-                StoreWrapper.serverOptions.CompactionType, StoreWrapper.serverOptions.CompactionForceDelete);
+                DoCompaction(ref db, StoreWrapper.serverOptions.CompactionMaxSegments,
+                    StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
+                    StoreWrapper.serverOptions.CompactionType, StoreWrapper.serverOptions.CompactionForceDelete);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex,
+                    "Exception raised during compaction. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
+                    db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress);
+                throw;
+            }
         }
 
         private void DoCompaction(ref GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)

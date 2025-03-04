@@ -158,7 +158,7 @@ namespace Garnet.server
         /// <summary>
         /// Do compaction
         /// </summary>
-        public void DoCompaction(CancellationToken token = default);
+        public void DoCompaction(CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
         /// Grows indexes of both main store and object store for all active databases if current size is too small
@@ -178,12 +178,23 @@ namespace Garnet.server
         public void Reset(int dbId = 0);
 
         /// <summary>
+        /// Resets the revivification stats.
+        /// </summary>
+        public void ResetRevivificationStats();
+
+        /// <summary>
         /// Append a checkpoint commit to the AOF
         /// </summary>
         /// <param name="isMainStore"></param>
         /// <param name="version"></param>
         /// <param name="dbId"></param>
         public void EnqueueCommit(bool isMainStore, long version, int dbId = 0);
+
+        /// <summary>
+        /// Get a snapshot of all active databases
+        /// </summary>
+        /// <returns>Array of active databases</returns>
+        public GarnetDatabase[] GetDatabasesSnapshot();
 
         /// <summary>
         /// Get database DB ID

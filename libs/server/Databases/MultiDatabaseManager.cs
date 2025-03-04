@@ -418,7 +418,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void DoCompaction(CancellationToken token = default)
+        public override void DoCompaction(CancellationToken token = default, ILogger logger = null)
         {
             var lockAcquired = TryGetDatabasesReadLockAsync(token).Result;
             if (!lockAcquired) return;
@@ -430,14 +430,25 @@ namespace Garnet.server
                 var activeDbIdsSize = activeDbIdsLength;
                 var activeDbIdsSnapshot = activeDbIds;
 
+                var exThrown = false;
                 for (var i = 0; i < activeDbIdsSize; i++)
                 {
                     var dbId = activeDbIdsSnapshot[i];
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(!db.IsDefault());
 
-                    DoCompaction(ref db);
+                    try
+                    {
+                        DoCompaction(ref db);
+                    }
+                    catch (Exception)
+                    {
+                        exThrown = true;
+                    }
                 }
+
+                if (exThrown)
+                    throw new GarnetException($"Error occurred during compaction in {nameof(MultiDatabaseManager)}. Refer to previous log messages for more details.");
             }
             finally
             {
@@ -514,12 +525,44 @@ namespace Garnet.server
             ResetDatabase(ref db);
         }
 
+        /// <inheritdoc/>
+        public override void ResetRevivificationStats()
+        {
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+            var databaseMapSnapshot = databases.Map;
+
+            for (var i = 0; i < activeDbIdsSize; i++)
+            {
+                var dbId = activeDbIdsSnapshot[i];
+                databaseMapSnapshot[dbId].MainStore.ResetRevivificationStats();
+                databaseMapSnapshot[dbId].ObjectStore?.ResetRevivificationStats();
+            }
+        }
+
         public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
         {
             if (!TryGetOrAddDatabase(dbId, out var db))
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
             EnqueueDatabaseCommit(ref db, isMainStore, version);
+        }
+
+        /// <inheritdoc/>
+        public override GarnetDatabase[] GetDatabasesSnapshot()
+        {
+            var activeDbIdsSize = activeDbIdsLength;
+            var activeDbIdsSnapshot = activeDbIds;
+            var databaseMapSnapshot = databases.Map;
+            var databasesSnapshot = new GarnetDatabase[activeDbIdsSize];
+
+            for (var i = 0; i < activeDbIdsSize; i++)
+            {
+                var dbId = activeDbIdsSnapshot[i];
+                databasesSnapshot[i] = databaseMapSnapshot[dbId];
+            }
+
+            return databasesSnapshot;
         }
 
         /// <inheritdoc/>
