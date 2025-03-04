@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -38,8 +39,7 @@ namespace Tsavorite.test.statemachine
                 MutableFraction = 0.1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 13,
-                CheckpointDir = checkpointDir,
-                CheckpointVersionSwitchBarrier = true
+                CheckpointDir = checkpointDir
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -143,8 +143,21 @@ namespace Tsavorite.test.statemachine
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
+            // Wait for PREPARE phase
+            while (!SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState))
+                Thread.Yield();
+
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+        }
+    }
+
+    public class SimpleFunctions : SimpleSessionFunctions<AdId, NumClicks, Empty>
+    {
+        public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        {
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.adId, output.numClicks);
         }
     }
 }

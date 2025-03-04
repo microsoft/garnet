@@ -416,7 +416,7 @@ namespace Tsavorite.core
             hlogBase.Reset();
 
             // Reset system state
-            systemState = SystemState.Make(Phase.REST, 1);
+            stateMachineDriver.SetSystemState(SystemState.Make(Phase.REST, 1));
             lastVersion = 0;
         }
 
@@ -545,7 +545,7 @@ namespace Tsavorite.core
         /// <param name="version">Version to set the store to</param>
         public void SetVersion(long version)
         {
-            systemState = SystemState.Make(Phase.REST, version);
+            stateMachineDriver.SetSystemState(SystemState.Make(Phase.REST, version));
         }
 
         /// <summary>
@@ -557,11 +557,8 @@ namespace Tsavorite.core
         /// <returns>Whether we are recovering to the initial page</returns>
         private bool RecoverToInitialPage(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, out long recoverFromAddress)
         {
-            // Ensure active state machine to null
-            currentSyncStateMachine = null;
-
             // Set new system state after recovery
-            systemState = SystemState.Make(Phase.REST, recoveredHLCInfo.info.version + 1);
+            stateMachineDriver.SetSystemState(SystemState.Make(Phase.REST, recoveredHLCInfo.info.version + 1));
 
             if (!recoveredICInfo.IsDefault() && recoveryCountdown != null)
             {
@@ -1176,19 +1173,6 @@ namespace Tsavorite.core
 
                 result.Free();
             }
-        }
-
-        internal static bool AtomicSwitch<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> fromCtx, TsavoriteExecutionContext<TInput, TOutput, TContext> toCtx, long version)
-        {
-            lock (toCtx)
-            {
-                if (toCtx.version < version)
-                {
-                    CopyContext(fromCtx, toCtx);
-                    return true;
-                }
-            }
-            return false;
         }
     }
 

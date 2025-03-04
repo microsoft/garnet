@@ -133,7 +133,9 @@ namespace Tsavorite.core
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
-            store.DisposeClientSession(ID, ctx.phase);
+
+            if (store.RevivificationManager.IsEnabled)
+                MergeRevivificationStatsTo(ref store.RevivificationManager.stats, reset: true);
         }
 
         /// <summary>
@@ -388,7 +390,7 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+            if (!ctx.pendingReads.IsEmpty)
                 throw new TsavoriteException("Make sure all async operations issued on this session are awaited and completed first");
 
             // Complete all pending sync operations on session
@@ -536,11 +538,6 @@ namespace Tsavorite.core
             store.epoch.Suspend();
         }
 
-        void IClientSession.AtomicSwitch(long version)
-        {
-            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, version);
-        }
-
         /// <inheritdoc/>
         public void MergeRevivificationStatsTo(ref RevivificationStats to, bool reset) => ctx.MergeRevivificationStatsTo(ref to, reset);
 
@@ -552,7 +549,8 @@ namespace Tsavorite.core
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return store.SystemState.Phase == Phase.PREPARE || store.SystemState.Phase == Phase.PREPARE_GROW;
+            var storeState = store.stateMachineDriver.SystemState;
+            return storeState.Phase == Phase.PREPARE || storeState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations

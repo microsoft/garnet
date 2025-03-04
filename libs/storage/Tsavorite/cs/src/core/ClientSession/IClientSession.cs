@@ -12,8 +12,6 @@ namespace Tsavorite.core
 
     internal interface IClientSession
     {
-        void AtomicSwitch(long version);
-
         void MergeRevivificationStatsTo(ref RevivificationStats globalStats, bool reset);
 
         void ResetRevivificationStats();

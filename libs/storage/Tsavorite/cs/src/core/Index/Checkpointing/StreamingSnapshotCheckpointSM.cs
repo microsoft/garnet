@@ -6,18 +6,14 @@ namespace Tsavorite.core
     /// <summary>
     /// StreamingSnapshot checkpoint state machine.
     /// </summary>
-    class StreamingSnapshotCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    class StreamingSnapshotCheckpointSM : VersionChangeSM
     {
         /// <summary>
         /// Construct a new StreamingSnapshotCheckpointStateMachine, drawing boundary at targetVersion.
         /// </summary>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public StreamingSnapshotCheckpointStateMachine(long targetVersion)
-            : base(targetVersion,
-                  new VersionChangeTask<TKey, TValue, TStoreFunctions, TAllocator>(),
-                  new StreamingSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>(targetVersion))
+        public StreamingSnapshotCheckpointSM(long targetVersion, IStateMachineTask backend)
+            : base(targetVersion, backend)
         { }
 
         /// <inheritdoc />
@@ -27,9 +23,6 @@ namespace Tsavorite.core
             switch (start.Phase)
             {
                 case Phase.REST:
-                    result.Phase = Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT;
-                    break;
-                case Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT:
                     result.Phase = Phase.PREPARE;
                     break;
                 case Phase.IN_PROGRESS:
