@@ -147,7 +147,7 @@ namespace Tsavorite.core
             {
                 // Set the actual length indicator for inline.
                 LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize);
+                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
             }
             else if (sizeInfo.ValueIsObject)
             {
@@ -197,8 +197,8 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
-                    KeyTotalSize = key.TotalSize,
-                    ValueTotalSize = ObjectIdMap.ObjectIdSize,
+                    KeyDataSize = key.Length,
+                    ValueDataSize = ObjectIdMap.ObjectIdSize,   // Small but allows the possibility revivification can reuse the record for an Object or Overflow
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -211,13 +211,13 @@ namespace Tsavorite.core
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyTotalSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueTotalSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : (sizeInfo.ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize : (sizeInfo.ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

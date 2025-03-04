@@ -61,83 +61,83 @@ namespace Garnet.server
             var cmd = input.header.cmd;
             var fieldInfo = new RecordFieldInfo()
             {
-                KeyTotalSize = key.TotalSize,
-                ValueTotalSize = SpanField.FieldLengthPrefixSize
+                KeyDataSize = key.Length,
+                ValueDataSize = 0
             };
 
             switch (cmd)
             {
                 case RespCommand.SETBIT:
                     var bOffset = input.parseState.GetLong(0);
-                    fieldInfo.ValueTotalSize += BitmapManager.Length(bOffset);
+                    fieldInfo.ValueDataSize = BitmapManager.Length(bOffset);
                     return fieldInfo;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    fieldInfo.ValueTotalSize += BitmapManager.LengthFromType(bitFieldArgs);
+                    fieldInfo.ValueDataSize = BitmapManager.LengthFromType(bitFieldArgs);
                     return fieldInfo;
                 case RespCommand.PFADD:
-                    fieldInfo.ValueTotalSize += HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
+                    fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
                     return fieldInfo;
                 case RespCommand.PFMERGE:
-                    fieldInfo.ValueTotalSize += input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
                     return fieldInfo;
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
-                    fieldInfo.ValueTotalSize += input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
                 case RespCommand.SETKEEPTTL:
                     // Copy input to value; do not change expiration
-                    fieldInfo.ValueTotalSize += input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
                     return fieldInfo;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                    fieldInfo.ValueTotalSize += newValue.Length + offset;
+                    fieldInfo.ValueDataSize = newValue.Length + offset;
                     return fieldInfo;
 
                 case RespCommand.APPEND:
                     var valueLength = input.parseState.GetArgSliceByRef(0).Length;
-                    fieldInfo.ValueTotalSize += valueLength;
+                    fieldInfo.ValueDataSize = valueLength;
                     return fieldInfo;
 
                 case RespCommand.INCR:
-                    fieldInfo.ValueTotalSize += 1; // # of digits in "1"
+                    fieldInfo.ValueDataSize = 1; // # of digits in "1"
                     return fieldInfo;
 
                 case RespCommand.DECR:
-                    fieldInfo.ValueTotalSize += 2; // # of digits in "-1"
+                    fieldInfo.ValueDataSize = 2; // # of digits in "-1"
                     return fieldInfo;
 
                 case RespCommand.INCRBY:
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(input.arg1, ref fNeg);
 
-                    fieldInfo.ValueTotalSize += ndigits + (fNeg ? 1 : 0);
+                    fieldInfo.ValueDataSize = ndigits + (fNeg ? 1 : 0);
                     return fieldInfo;
 
                 case RespCommand.DECRBY:
                     fNeg = false;
                     ndigits = NumUtils.NumDigitsInLong(-input.arg1, ref fNeg);
 
-                    fieldInfo.ValueTotalSize += ndigits + (fNeg ? 1 : 0);
+                    fieldInfo.ValueDataSize = ndigits + (fNeg ? 1 : 0);
                     return fieldInfo;
 
                 case RespCommand.INCRBYFLOAT:
                     if (input.parseState.TryGetDouble(0, out var incrByFloat))
-                        fieldInfo.ValueTotalSize += NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
+                        fieldInfo.ValueDataSize = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
                     return fieldInfo;
 
                 default:
                     if ((ushort)cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
-                        fieldInfo.ValueTotalSize += functions.GetInitialLength(ref input);
+                        fieldInfo.ValueDataSize = functions.GetInitialLength(ref input);
                     }
                     else
-                        fieldInfo.ValueTotalSize += input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                        fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
             }
@@ -149,8 +149,8 @@ namespace Garnet.server
         {
             var fieldInfo = new RecordFieldInfo()
             {
-                KeyTotalSize = srcLogRecord.Key.TotalSize,
-                ValueTotalSize = SpanField.FieldLengthPrefixSize,
+                KeyDataSize = srcLogRecord.Key.Length,
+                ValueDataSize = 0,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -167,7 +167,7 @@ namespace Garnet.server
                         var next = curr + incrByValue;
 
                         var fNeg = false;
-                        fieldInfo.ValueTotalSize += NumUtils.NumDigitsInLong(next, ref fNeg) + (fNeg ? 1 : 0);
+                        fieldInfo.ValueDataSize = NumUtils.NumDigitsInLong(next, ref fNeg) + (fNeg ? 1 : 0);
                         return fieldInfo;
 
                     case RespCommand.DECR:
@@ -179,7 +179,7 @@ namespace Garnet.server
 
                         fNeg = false;
 
-                        fieldInfo.ValueTotalSize += NumUtils.NumDigitsInLong(next, ref fNeg) + (fNeg ? 1 : 0);
+                        fieldInfo.ValueDataSize = NumUtils.NumDigitsInLong(next, ref fNeg) + (fNeg ? 1 : 0);
                         return fieldInfo;
 
                     case RespCommand.INCRBYFLOAT:
@@ -189,32 +189,32 @@ namespace Garnet.server
                         _ = NumUtils.TryBytesToDouble(srcLogRecord.ValueSpan.AsSpan(), out var currVal);
                         var nextVal = currVal + incrByFloat;
 
-                        fieldInfo.ValueTotalSize += NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
+                        fieldInfo.ValueDataSize = NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
                         return fieldInfo;
 
                     case RespCommand.SETBIT:
                         var bOffset = input.parseState.GetLong(0);
-                        fieldInfo.ValueTotalSize += BitmapManager.NewBlockAllocLength(srcLogRecord.ValueSpan.Length, bOffset);
+                        fieldInfo.ValueDataSize = BitmapManager.NewBlockAllocLength(srcLogRecord.ValueSpan.Length, bOffset);
                         return fieldInfo;
 
                     case RespCommand.BITFIELD:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
-                        fieldInfo.ValueTotalSize += BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, srcLogRecord.ValueSpan.Length);
+                        fieldInfo.ValueDataSize = BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, srcLogRecord.ValueSpan.Length);
                         return fieldInfo;
 
                     case RespCommand.PFADD:
-                        fieldInfo.ValueTotalSize += HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.ValueSpan.ToPointer());
+                        fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.ValueSpan.ToPointer());
                         return fieldInfo;
 
                     case RespCommand.PFMERGE:
                         var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
                         var dstHLL = srcLogRecord.ValueSpan.ToPointer();
-                        fieldInfo.ValueTotalSize += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
+                        fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
                         return fieldInfo;
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
-                        fieldInfo.ValueTotalSize += input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
                         return fieldInfo;
 
                     case RespCommand.SET:
@@ -224,7 +224,7 @@ namespace Garnet.server
 
                     case RespCommand.PERSIST:
                         fieldInfo.HasExpiration = false;
-                        fieldInfo.ValueTotalSize += srcLogRecord.ValueSpan.Length;
+                        fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
 
                     case RespCommand.EXPIRE:
@@ -232,14 +232,14 @@ namespace Garnet.server
                     case RespCommand.EXPIREAT:
                     case RespCommand.PEXPIREAT:
                         fieldInfo.HasExpiration = true;
-                        fieldInfo.ValueTotalSize += srcLogRecord.ValueSpan.Length;
+                        fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
                         var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                        fieldInfo.ValueTotalSize += (newValue.Length + offset > srcLogRecord.ValueSpan.Length)
+                        fieldInfo.ValueDataSize = (newValue.Length + offset > srcLogRecord.ValueSpan.Length)
                             ? newValue.Length + offset
                             : srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
@@ -249,7 +249,7 @@ namespace Garnet.server
                         break;
 
                     case RespCommand.GETEX:
-                        fieldInfo.ValueTotalSize += srcLogRecord.ValueSpan.Length;
+                        fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
 
                         // If both EX and PERSIST were specified, EX wins
                         if (input.arg1 > 0)
@@ -263,14 +263,14 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.APPEND:
-                        fieldInfo.ValueTotalSize += srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
                         return fieldInfo;
 
                     default:
                         if ((ushort)cmd >= CustomCommandManager.StartOffset)
                         {
                             var functions = functionsState.customCommands[(ushort)cmd - CustomCommandManager.StartOffset].functions;
-                            fieldInfo.ValueTotalSize = functions.GetLength(srcLogRecord.ValueSpan.AsReadOnlySpan(), ref input);
+                            fieldInfo.ValueDataSize = functions.GetLength(srcLogRecord.ValueSpan.AsReadOnlySpan(), ref input);
                             fieldInfo.HasExpiration = input.arg1 != 0;
                             return fieldInfo;
                         }
@@ -278,7 +278,7 @@ namespace Garnet.server
                 }
             }
 
-            fieldInfo.ValueTotalSize += input.parseState.GetArgSliceByRef(0).Length;
+            fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
             fieldInfo.HasExpiration = input.arg1 != 0;
             return fieldInfo;
         }
@@ -287,8 +287,8 @@ namespace Garnet.server
         {
             var fieldInfo = new RecordFieldInfo()
             {
-                KeyTotalSize = key.TotalSize,
-                ValueTotalSize = value.TotalSize
+                KeyDataSize = key.Length,
+                ValueDataSize = value.Length
             };
 
             switch (input.header.cmd)

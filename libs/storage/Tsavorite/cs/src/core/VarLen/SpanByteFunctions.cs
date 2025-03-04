@@ -38,13 +38,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByte input)
-            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = input.TotalSize };
+            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = input.Length };
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref SpanByte input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = input.TotalSize };
+            => new() { KeyDataSize = key.Length, ValueDataSize = input.Length };
         /// <inheritdoc/>
         public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref SpanByte input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = value.TotalSize };
+            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
 
         /// <inheritdoc />
         public override void ConvertOutputToHeap(ref SpanByte input, ref SpanByteAndMemory output)
@@ -80,8 +80,8 @@ namespace Tsavorite.core
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByte input)
             => new()
             {
-                KeyTotalSize = srcLogRecord.Key.TotalSize,
-                ValueTotalSize = srcLogRecord.ValueSpan.TotalSize,
+                KeyDataSize = srcLogRecord.Key.Length,
+                ValueDataSize = srcLogRecord.ValueSpan.Length,
                 HasETag = srcLogRecord.Info.HasETag,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
@@ -90,8 +90,8 @@ namespace Tsavorite.core
         public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref SpanByte input)
             => new()
             {
-                KeyTotalSize = key.TotalSize,
-                ValueTotalSize = input.TotalSize
+                KeyDataSize = key.Length,
+                ValueDataSize = input.Length
             };
 
         /// <summary>
@@ -101,8 +101,8 @@ namespace Tsavorite.core
         public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref SpanByte input)
             => new()
             {
-                KeyTotalSize = key.TotalSize,
-                ValueTotalSize = input.TotalSize
+                KeyDataSize = key.Length,
+                ValueDataSize = input.Length
             };
     }
 }

@@ -69,7 +69,25 @@ namespace Tsavorite.core
 
         /// <summary>Get a field's inline length, depending on whether it is actually inline or whether it is an out-of-line pointer.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int GetInlineDataSizeOfKey(long fieldAddress, bool isInline) => isInline ? GetInlineLengthRef(fieldAddress) : OverflowInlineSize;
+
+        /// <summary>Get a field's inline length, depending on whether it is actually inline or whether it is an out-of-line pointer.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetInlineTotalSizeOfKey(long fieldAddress, bool isInline) => isInline ? FieldLengthPrefixSize + GetInlineLengthRef(fieldAddress) : OverflowInlineSize;
+
+        /// <summary>The inline length of the value without any length prefix.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int GetInlineDataSizeOfValue(long valueAddress, bool valueIsObject, bool valueIsInline)
+            => valueIsInline ? GetInlineLengthRef(valueAddress) : GetInlineSizeOfOutOfLineValue(valueIsObject);
+
+        /// <summary>The inline length of the out-of-line "pointer", either an Overflow pointer or an Object Id.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int GetInlineSizeOfOutOfLineValue(bool valueIsObject) => valueIsObject ? ObjectIdMap.ObjectIdSize : OverflowInlineSize;
+
+        /// <summary>The inline length of the value including any length prefix.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int GetInlineTotalSizeOfValue(long valueAddress, bool valueIsObject, bool valueIsInline)
+            => valueIsInline ? GetTotalSizeOfInlineField(valueAddress) : GetInlineSizeOfOutOfLineValue(valueIsObject);
 
         /// <summary>
         /// Initialize an inline field with the length necessary for the eventual overflow pointer, but don't set the field to overflow yet to avoid needing null-pointer checks.
@@ -150,8 +168,8 @@ namespace Tsavorite.core
             if (clearLength > 0)
                 ZeroData((long)newPtr + copyLength, clearLength);
 
-            SetOverflowPointer(fieldAddress, (IntPtr)newPtr);
             recordInfo.SetValueIsOverflow();
+            SetOverflowPointer(fieldAddress, (IntPtr)newPtr);
             return newPtr;
         }
 
@@ -169,10 +187,10 @@ namespace Tsavorite.core
             byte* newPtr = allocator.Allocate(newLength, zeroInit: false);
             objectIdMap.Free(ref GetObjectIdRef(fieldAddress));
 
-            // OverflowInlineSize is >= ObjectIdSize so we will not be "shrinking" the allocation and therefore need not zeroinit the extra space.
+            // OverflowInlineSize is >= ObjectIdSize so we will not be "shrinking" the allocation and therefore have no new extra space to zeroinit.
             Debug.Assert(OverflowInlineSize > ObjectIdMap.ObjectIdSize);
 
-            recordInfo.SetValueIsOverflow();    // Set this first so the new pointer isn't interpreted as ObjectId (re zeroinit). TODO: this could also be the inverse, so create OverflowAllocator.InvalidPointer consistent with InvalidObjectId.
+            recordInfo.SetValueIsOverflow();
             SetOverflowPointer(fieldAddress, (IntPtr)newPtr);
             return newPtr;
         }
@@ -197,8 +215,8 @@ namespace Tsavorite.core
             if (clearLength > 0)
                 ZeroInlineData(fieldAddress, ObjectIdMap.ObjectIdSize, clearLength);
 
-            GetObjectIdRef(fieldAddress) = objectId;
             recordInfo.SetValueIsObject();
+            GetObjectIdRef(fieldAddress) = objectId;
             return objectId;
         }
 
@@ -219,7 +237,7 @@ namespace Tsavorite.core
 
             var objectId = objectIdMap.Allocate();
 
-            recordInfo.SetValueIsObject();    // Set this first so the objectId isn't interpreted as an overflow allocation (re zeroinit). TODO: The zero pointer could be interpreted as ObjectId before this line, so create OverflowAllocator.InvalidPointer consistent with InvalidObjectId.
+            recordInfo.SetValueIsObject();
             GetObjectIdRef(fieldAddress) = objectId;
             return objectId;
         }
@@ -248,14 +266,16 @@ namespace Tsavorite.core
         {
             // First copy the data
             var oldPtr = (byte*)GetOverflowPointer(fieldAddress);
+            SetOverflowPointer(fieldAddress, IntPtr.Zero);
             var oldLength = BlockHeader.GetUserSize((long)oldPtr);
             var copyLength = oldLength < newLength ? oldLength : newLength;
+
+            // Sequencing here is important for zeroinit correctness
             var newPtr = SetInlineDataLength(fieldAddress, newLength);
+            recordInfo.SetValueIsInline();
             Buffer.MemoryCopy(oldPtr, newPtr, newLength, copyLength);
-            SetOverflowPointer(fieldAddress, IntPtr.Zero);
             allocator.Free((long)oldPtr);
 
-            recordInfo.SetValueIsInline();
             return newPtr;
         }
 
@@ -267,14 +287,15 @@ namespace Tsavorite.core
             allocator.Free((long)oldPtr);
 
             // Set this as inline with length equal to the size difference.
-            int newLength = OverflowInlineSize - FieldLengthPrefixSize;
+            int newLength = OverflowInlineSize;
             Debug.Assert(newLength >= 0, "newLength must be non-negative");
-            GetInlineLengthRef(fieldAddress) = newLength;
 
+            // Sequencing here is important for zeroinit correctness
+            GetInlineLengthRef(fieldAddress) = newLength;
             if (isKey)
                 recordInfo.SetKeyIsInline();
             else
-                recordInfo.SetValueIsObject();
+                recordInfo.SetValueIsInline();
         }
 
         /// <summary>
@@ -292,8 +313,9 @@ namespace Tsavorite.core
             objectIdMap.Free(objIdRef);
             objIdRef = 0;
 
-            recordInfo.SetValueIsInline();  // Set this before setting length, to so we don't have length potentially interpreted as objectId (re zeroinit). TODO: The zero pointer could be interpreted as ObjectId before this line
+            // Sequencing here is important for zeroinit correctness
             var newPtr = SetInlineDataLength(fieldAddress, newLength);
+            recordInfo.SetValueIsInline();
             return newPtr;
         }
 

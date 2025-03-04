@@ -13,7 +13,7 @@ namespace Tsavorite.core
         /// <summary>The value length and whether optional fields are present.</summary>
         public RecordFieldInfo FieldInfo;
 
-        /// <summary>Whether the key was within the inline max key length. Set automatically by Tsavorite based on <see cref="RecordFieldInfo.KeyTotalSize"/> key size.</summary>
+        /// <summary>Whether the key was within the inline max key length. Set automatically by Tsavorite based on <see cref="RecordFieldInfo.KeyDataSize"/> key size.</summary>
         public bool KeyIsInline;
 
         /// <summary>Whether the value was within the inline max value length.</summary>
@@ -29,19 +29,10 @@ namespace Tsavorite.core
         public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
 
         /// <summary>Returns the inline length of the key (the amount it will take in the record).</summary>
-        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
+        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyDataSize : SpanField.OverflowInlineSize;
 
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
-        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueTotalSize : (ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
-
-        /// <summary>Returns the data length of the key (the amount it will take in the record without length prefix).</summary>
-        public readonly int KeyDataSize => KeyIsInline ? FieldInfo.KeyTotalSize - SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
-
-        /// <summary>Returns the data length of the value (the amount it will take in the record without length prefix).</summary>
-        public readonly int ValueInlineDataSize => ValueIsInline ? FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize : (ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
-
-        /// <summary>Returns the actual data length of the value (the size of the actual data, not including the length prefix).</summary>
-        public readonly int ValueActualDataSize => FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize;
+        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize : (ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSpanSize { readonly get; internal set; }
@@ -70,9 +61,9 @@ namespace Tsavorite.core
         /// Usually called directly to save the cost of calculating actualDataSize twice (in Get*FieldInfo and the actual update methods).
         /// </summary>
         [Conditional("DEBUG")]
-        public void AssertValueDataLength(int totalSize, ref RecordSizeInfo sizeInfo)
+        public static void AssertValueDataLength(int dataSize, ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(sizeInfo.FieldInfo.ValueTotalSize == totalSize, $"Mismatch between expected value size {sizeInfo.FieldInfo.ValueTotalSize} and actual value size {totalSize}");
+            Debug.Assert(sizeInfo.FieldInfo.ValueDataSize == dataSize, $"Mismatch between expected value size {sizeInfo.FieldInfo.ValueDataSize} and actual value size {dataSize}");
         }
 
         /// <summary>Called from Upsert or RMW methods with the final record info; ensures consistency between the Get*FieldInfo methods and the actual update methods./// </summary>

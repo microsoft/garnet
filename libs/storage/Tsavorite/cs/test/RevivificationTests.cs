@@ -635,13 +635,13 @@ namespace Tsavorite.test.Revivification
             // Override the default SpanByteFunctions impelementation; for these tests, we always want the input length.
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByte input)
-                => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = input.TotalSize };
+                => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = input.Length };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref SpanByte input)
-                => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = input.TotalSize };
+                => new() { KeyDataSize = key.Length, ValueDataSize = input.Length };
             /// <inheritdoc/>
             public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref SpanByte input)
-                => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = input.TotalSize };
+                => new() { KeyDataSize = key.Length, ValueDataSize = input.Length };
         }
 
         const int NumRecords = 200;

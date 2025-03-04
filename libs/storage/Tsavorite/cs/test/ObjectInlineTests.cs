@@ -425,11 +425,11 @@ namespace Tsavorite.test
             static RecordFieldInfo GetFieldInfo(SpanByte key, ref TestObjectInput input)
                 => new()
                 {
-                    KeyTotalSize = key.TotalSize,
-                    ValueTotalSize = input.wantValueStyle switch
+                    KeyDataSize = key.Length,
+                    ValueDataSize = input.wantValueStyle switch
                     {
-                        TestValueStyle.Inline => ValueStruct.AsSpanByteTotalSize,
-                        TestValueStyle.Overflow => OverflowValueSize + SpanField.FieldLengthPrefixSize,
+                        TestValueStyle.Inline => ValueStruct.AsSpanByteDataSize,
+                        TestValueStyle.Overflow => OverflowValueSize,
                         TestValueStyle.Object => ObjectIdMap.ObjectIdSize,
                         _ => int.MaxValue
                     },

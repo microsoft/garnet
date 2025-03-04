@@ -54,7 +54,7 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.PFADD:
-                    sizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), ref sizeInfo);
+                    RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), ref sizeInfo);
                     if (!logRecord.TrySetValueLength(ref sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFADD");

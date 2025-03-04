@@ -111,11 +111,11 @@ namespace Tsavorite.test
             => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestObjectValue value, ref TestObjectInput input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
     public class TestObjectFunctionsDelete : SessionFunctionsBase<TestObjectValue, TestObjectInput, TestObjectOutput, int>
@@ -177,11 +177,11 @@ namespace Tsavorite.test
             => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestObjectValue value, ref TestObjectInput input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
     public class TestLargeObjectValue
@@ -261,10 +261,10 @@ namespace Tsavorite.test
         }
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
-            => new() { KeyTotalSize = srcLogRecord.Key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref TestObjectInput input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, TestLargeObjectValue value, ref TestObjectInput input)
-            => new() { KeyTotalSize = key.TotalSize, ValueTotalSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 }

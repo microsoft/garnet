@@ -117,7 +117,7 @@ namespace Tsavorite.core
             {
                 // Only set length indicator for inline; overflow does not have a length header
                 LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueTotalSize - SpanField.FieldLengthPrefixSize);
+                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
             }
             else
                 SpanField.InitializeInlineForOverflowField(valueAddress);
@@ -162,8 +162,8 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
-                    KeyTotalSize = key.TotalSize,
-                    ValueTotalSize = sizeof(int), // No payload for the default value
+                    KeyDataSize = key.Length,
+                    ValueDataSize = 0, // No payload for the default value
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -175,13 +175,13 @@ namespace Tsavorite.core
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyTotalSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = sizeInfo.FieldInfo.ValueTotalSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : SpanField.OverflowInlineSize;
+            sizeInfo.ValueIsInline = sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

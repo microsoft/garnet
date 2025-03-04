@@ -58,22 +58,6 @@ namespace Tsavorite.core
             var keyAddress = GetKeyAddress(physicalAddress);
             return keyAddress + SpanField.GetInlineTotalSizeOfKey(keyAddress, GetInfo(physicalAddress).KeyIsInline);
         }
-
-        /// <summary>The inline length of the value.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineTotalSizeOfValue(long valueAddress, bool valueIsObject, bool valueIsInline)
-            => valueIsInline ? SpanField.GetTotalSizeOfInlineField(valueAddress) : GetInlineSizeOfOutOfLineValue(valueIsObject);
-
-        /// <summary>The inline length of the out-of-line "pointer", either an Overflow pointer or an Object Id.</summary>
-        /// <remarks>
-        /// For out-of-line allocations, we have no length prefix, only the "pointer":
-        /// <list type="bullet">
-        ///  <item>For String records, we use have an actual overflow allocator (native) pointer, which is sizeof(IntPtr)</item>
-        ///  <item>For Object records, we use ObjectIdMap.ObjectIdSize (which is 4 bytes as it is an int ID to the .NET object held in a separate array)</item>
-        ///  </list>
-        /// </remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineSizeOfOutOfLineValue(bool valueIsObject) => valueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize;
     }
 
     /// <summary>The in-memory record on the log: header, key, value, and optional fields
@@ -205,8 +189,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
         {
-            KeyTotalSize = SpanField.GetInlineTotalSizeOfKey(KeyAddress, Info.KeyIsInline),
-            ValueTotalSize = LogRecord.GetInlineTotalSizeOfValue(ValueAddress, ValueIsObject, Info.ValueIsInline),
+            KeyDataSize = SpanField.GetInlineDataSizeOfKey(KeyAddress, Info.KeyIsInline),
+            ValueDataSize = SpanField.GetInlineDataSizeOfValue(ValueAddress, ValueIsObject, Info.ValueIsInline),
             ValueIsObject = ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
@@ -257,7 +241,7 @@ namespace Tsavorite.core
             get
             {
                 var valueAddress = ValueAddress;
-                var valueSize = LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, GetInfo(physicalAddress).ValueIsInline);
+                var valueSize = SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, GetInfo(physicalAddress).ValueIsInline);
                 return (int)(valueAddress - physicalAddress + valueSize + OptionalSize);
             }
         }
@@ -268,7 +252,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetValueLength(int newValueSize, ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(newValueSize == sizeInfo.ValueActualDataSize, $"Mismatched value size; expected {sizeInfo.ValueActualDataSize}, actual {newValueSize}");
+            Debug.Assert(newValueSize == sizeInfo.FieldInfo.ValueDataSize, $"Mismatched value size; expected {sizeInfo.FieldInfo.ValueDataSize}, actual {newValueSize}");
             return TrySetValueLength(ref sizeInfo);
         }
 
@@ -279,7 +263,7 @@ namespace Tsavorite.core
         public bool TrySetValueLength(ref RecordSizeInfo sizeInfo)
         {
             var valueAddress = ValueAddress;
-            var oldInlineValueSize = LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            var oldInlineValueSize = SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
             var newInlineValueSize = sizeInfo.InlineTotalValueSize;
 
             // Growth and fillerLen may be negative if shrinking.
@@ -302,7 +286,7 @@ namespace Tsavorite.core
             // changing the optionals here, so don't adjust fillerLen for them; only adjust it for value length change.
             fillerLen -= inlineValueGrowth;
 
-            int newDataLength = sizeInfo.ValueActualDataSize;
+            int newDataLength = sizeInfo.FieldInfo.ValueDataSize;
 
             // See if we need to shift/zero the optionals and Filler.
             var shiftOptionals = inlineValueGrowth != 0;
@@ -376,9 +360,9 @@ namespace Tsavorite.core
                 {
                     if (sizeInfo.ValueIsInline)
                     {
-                        // Convert from overflow to inline.
-                        Debug.Assert(fillerLen >= sizeInfo.FieldInfo.ValueTotalSize - SpanField.OverflowInlineSize,
-                                $"Inconsistent required Inline space: available {fillerLen}, required {sizeInfo.FieldInfo.ValueTotalSize - SpanField.OverflowInlineSize}");
+                        // Convert from overflow to inline. We should already have handled the case where it won't fit.
+                        Debug.Assert(fillerLen >= newDataLength + SpanField.FieldLengthPrefixSize - SpanField.OverflowInlineSize,
+                                $"Inconsistent required Inline space: available {fillerLen}, required {newDataLength + SpanField.FieldLengthPrefixSize - SpanField.OverflowInlineSize}");
 
                         if (shiftOptionals)
                         {
@@ -443,7 +427,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetValueSpan(SpanByte value, ref RecordSizeInfo sizeInfo)
         {
-            sizeInfo.AssertValueDataLength(value.TotalSize, ref sizeInfo);
+            RecordSizeInfo.AssertValueDataLength(value.Length, ref sizeInfo);
 
             if (!TrySetValueLength(ref sizeInfo))
                 return false;
@@ -503,7 +487,7 @@ namespace Tsavorite.core
         internal readonly long GetOptionalStartAddress()
         {
             var valueAddress = ValueAddress;
-            return ValueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            return ValueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
         }
 
         public readonly int OptionalSize => ETagLen + ExpirationLen;
@@ -538,7 +522,7 @@ namespace Tsavorite.core
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
             // Therefore optionals (ETag, Expiration) are not considered here.
             var valueAddress = ValueAddress;
-            var fillerAddress = valueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            var fillerAddress = valueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
             var usedSize = (int)(fillerAddress - physicalAddress);
             var fillerSize = allocatedSize - usedSize;
 
@@ -811,8 +795,8 @@ namespace Tsavorite.core
             // The rules:
             //  Zero things out, moving backward in address for both speed and zero-init correctness.
             //      - However, retain any overflow allocations.
-            var newKeySize = Info.KeyIsInline && sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyTotalSize : SpanField.OverflowInlineSize;
-            var newValueSize = Info.ValueIsInline && sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueTotalSize : SpanField.OverflowInlineSize;
+            var newKeySize = Info.KeyIsInline && sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
+            var newValueSize = Info.ValueIsInline && sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
 
             // Zero out optionals, starting from highest addresses
             var address = GetFillerLengthAddress();
@@ -839,7 +823,7 @@ namespace Tsavorite.core
             // Value is going to take up whatever space is leftover after Key, so optimize zeroinit to be only from end of new Key length to end of old value, if this difference is > 0.
             var endOfNewKey = KeyAddress + newKeySize;
             var valueAddress = ValueAddress;
-            var endOfCurrentValue = valueAddress + LogRecord.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            var endOfCurrentValue = valueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
             var zeroSize = (int)(endOfCurrentValue - endOfNewKey);
             if (zeroSize > 0)
                 new Span<byte>((byte*)endOfNewKey, zeroSize).Clear();
