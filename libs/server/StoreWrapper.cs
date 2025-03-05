@@ -325,9 +325,9 @@ namespace Garnet.server
         /// <param name="isMainStore"></param>
         /// <param name="version"></param>
         /// <param name="dbId"></param>
-        /// <param name="streaming"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false) =>
-            this.databaseManager.EnqueueCommit(isMainStore, version, dbId, streaming);
+        /// <param name="diskless"></param>
+        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false) =>
+            this.databaseManager.EnqueueCommit(isMainStore, version, dbId, diskless);
 
         /// <summary>
         /// Reset

@@ -113,7 +113,7 @@ namespace Garnet.server
         public abstract void ResetRevivificationStats();
 
         /// <inheritdoc/>
-        public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false);
+        public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false);
 
         /// <inheritdoc/>
         public abstract GarnetDatabase[] GetDatabasesSnapshot();
