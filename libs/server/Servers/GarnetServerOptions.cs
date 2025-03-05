@@ -758,7 +758,7 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
 
-            aofDir = Path.Combine(CheckpointDir, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            aofDir = Path.Combine(CheckpointDir ?? string.Empty, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(aofDir),
