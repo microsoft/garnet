@@ -56,11 +56,9 @@ function CleanUpFiles {
 	# Copy proper native run time to publish directory
 	Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
 
-	# If files are there, delete the runtimes folder
-	if ($deleteRunTimes -eq $true -and (Test-Path "$publishPath/$nativeFile")) {
+	# Delete the runtimes folder
+	if ($deleteRunTimes -eq $true) {
 		Remove-Item -Path "$publishPath/runtimes" -Recurse -Force
-	} else {
-		Write-Error "$publishPath/$nativeFile does not exist."
 	}
 }
 
