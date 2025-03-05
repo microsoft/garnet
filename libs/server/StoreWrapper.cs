@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
+using Garnet.server.Databases;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -131,8 +132,6 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string runId;
 
-        private readonly DatabaseCreatorDelegate createDatabaseDelegate;
-
         readonly CancellationTokenSource ctsCommit;
 
         // True if StoreWrapper instance is disposed
@@ -145,11 +144,12 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            DatabaseCreatorDelegate createDatabaseDelegate,
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
             SubscribeBroker subscribeBroker,
             AccessControlList accessControlList = null,
+            DatabaseCreatorDelegate createDatabaseDelegate = null,
+            IDatabaseManager databaseManager = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null)
         {
@@ -160,10 +160,7 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
-            this.createDatabaseDelegate = createDatabaseDelegate;
-            this.databaseManager = serverOptions.EnableCluster || serverOptions.MaxDatabases == 1
-                ? new SingleDatabaseManager(createDatabaseDelegate, this)
-                : new MultiDatabaseManager(createDatabaseDelegate, this);
+            this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
                 ? new GarnetServerMonitor(this, serverOptions, server,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -228,19 +225,18 @@ namespace Garnet.server
         /// Copy Constructor
         /// </summary>
         /// <param name="storeWrapper">Source instance</param>
-        /// <param name="recordToAof">Enable AOF in StoreWrapper copy</param>
-        public StoreWrapper(StoreWrapper storeWrapper, bool recordToAof)
+        /// <param name="recordToAof">Enable AOF in database manager</param>
+        public StoreWrapper(StoreWrapper storeWrapper, bool recordToAof) : this(storeWrapper.version,
+            storeWrapper.redisProtocolVersion, 
+            storeWrapper.server,
+            storeWrapper.customCommandManager, 
+            storeWrapper.serverOptions,
+            storeWrapper.subscribeBroker, 
+            storeWrapper.accessControlList,
+            databaseManager: storeWrapper.databaseManager.Clone(recordToAof), 
+            clusterFactory: null, 
+            loggerFactory: storeWrapper.loggerFactory)
         {
-            this.version = storeWrapper.version;
-            this.redisProtocolVersion = storeWrapper.version;
-            this.server = storeWrapper.server;
-            this.startupTime = DateTimeOffset.UtcNow.Ticks;
-            this.serverOptions = storeWrapper.serverOptions;
-            this.subscribeBroker = storeWrapper.subscribeBroker;
-            this.customCommandManager = storeWrapper.customCommandManager;
-            this.loggerFactory = storeWrapper.loggerFactory;
-            this.databaseManager = storeWrapper.databaseManager.Clone(recordToAof);
-            this.accessControlList = storeWrapper.accessControlList;
         }
 
         /// <summary>

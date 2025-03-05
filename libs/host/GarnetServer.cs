@@ -241,8 +241,11 @@ namespace Garnet
             this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax,
                 opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, createDatabaseDelegate,
-                customCommandManager, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server,
+                customCommandManager, opts, subscribeBroker, 
+                createDatabaseDelegate: createDatabaseDelegate,
+                clusterFactory: clusterFactory, 
+                loggerFactory: loggerFactory);
 
             if (logger != null)
             {
