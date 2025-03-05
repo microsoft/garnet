@@ -242,9 +242,9 @@ namespace Garnet
                 opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
 
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server,
-                customCommandManager, opts, subscribeBroker, 
+                customCommandManager, opts, subscribeBroker,
                 createDatabaseDelegate: createDatabaseDelegate,
-                clusterFactory: clusterFactory, 
+                clusterFactory: clusterFactory,
                 loggerFactory: loggerFactory);
 
             if (logger != null)

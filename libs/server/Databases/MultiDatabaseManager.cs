@@ -117,7 +117,7 @@ namespace Garnet.server
             }
 
             long storeVersion = -1, objectStoreVersion = -1;
-            
+
             foreach (var dbId in dbIdsToRecover)
             {
                 if (!TryGetOrAddDatabase(dbId, out var db))
@@ -250,7 +250,7 @@ namespace Garnet.server
                 }
 
                 if (dbIdsIdx == 0) return;
-                
+
                 await TakeDatabasesCheckpointAsync(StoreType.All, dbIdsIdx, logger: logger, token: token);
             }
             finally
@@ -305,7 +305,7 @@ namespace Garnet.server
                         t.Result.Item1, t.Result.Item2);
                 }
 
-                if (exThrown) 
+                if (exThrown)
                     throw new GarnetException($"Error occurred while committing to AOF in {nameof(MultiDatabaseManager)}. Refer to previous log messages for more details.");
             }
             finally
@@ -474,7 +474,7 @@ namespace Garnet.server
                 for (var i = 0; i < activeDbIdsSize; i++)
                 {
                     var dbId = activeDbIdsSnapshot[i];
-                    
+
                     var indexesMaxedOut = GrowIndexesIfNeeded(ref databasesMapSnapshot[dbId]);
                     if (allIndexesMaxedOut && !indexesMaxedOut)
                         allIndexesMaxedOut = false;

@@ -227,14 +227,14 @@ namespace Garnet.server
         /// <param name="storeWrapper">Source instance</param>
         /// <param name="recordToAof">Enable AOF in database manager</param>
         public StoreWrapper(StoreWrapper storeWrapper, bool recordToAof) : this(storeWrapper.version,
-            storeWrapper.redisProtocolVersion, 
+            storeWrapper.redisProtocolVersion,
             storeWrapper.server,
-            storeWrapper.customCommandManager, 
+            storeWrapper.customCommandManager,
             storeWrapper.serverOptions,
-            storeWrapper.subscribeBroker, 
+            storeWrapper.subscribeBroker,
             storeWrapper.accessControlList,
-            databaseManager: storeWrapper.databaseManager.Clone(recordToAof), 
-            clusterFactory: null, 
+            databaseManager: storeWrapper.databaseManager.Clone(recordToAof),
+            clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
         }

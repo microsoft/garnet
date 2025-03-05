@@ -19,7 +19,7 @@ namespace Garnet.server
 
         GarnetDatabase defaultDatabase;
 
-        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) : 
+        public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :
             base(createDatabaseDelegate, storeWrapper)
         {
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
@@ -86,7 +86,7 @@ namespace Garnet.server
                 Logger?.LogInformation(ex,
                     "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
                     storeVersion, objectStoreVersion);
-                
+
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
@@ -169,7 +169,7 @@ namespace Garnet.server
                 // If an external task has taken a checkpoint beyond the provided entryTime return
                 if (!checkpointsPaused || DefaultDatabase.LastSaveTime > entryTime)
                     return;
-                    
+
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
                 await TakeCheckpointAsync(DefaultDatabase, StoreType.All, logger: Logger);
 
@@ -247,7 +247,7 @@ namespace Garnet.server
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
             var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
-            
+
             try
             {
                 return ReplayDatabaseAOF(aofProcessor, ref DefaultDatabase, untilAddress);
