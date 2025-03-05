@@ -2761,10 +2761,10 @@ namespace Garnet.test.cluster
                     if (line.StartsWith('#'))
                         continue;
                     var field = line.Trim().Split(':');
-                    
+
                     // Remove 'db0.' prefix
                     var sepIdx = field[0].IndexOf('.');
-                    if (sepIdx == -1) 
+                    if (sepIdx == -1)
                         continue;
                     var key = field[0].Substring(sepIdx + 1);
 
