@@ -35,42 +35,32 @@ param (
 #  
 ######################################################
 function CleanUpFiles {
-    param ($publishFolder, $platform)
+    param ($publishFolder, $platform, $deleteRunTimes = $true)
 
 	$publishPath = "$basePath/main/GarnetServer/bin/Release/net8.0/publish/$publishFolder"
-	$garnetServerEXE = "$publishPath/GarnetServer.exe"
 	$excludeGarnetServerPDB = 'GarnetServer.pdb'
 
 	# Native binary is different based on OS by default
 	$nativeFile = "libnative_device.so"
-	$garnetServerEXE = "$publishPath/GarnetServer"
 
 	if ($platform -match "win-x64") {
 		$nativeFile = "native_device.dll"
-		$garnetServerEXE = "$publishPath/GarnetServer.exe"
 	}
 
 	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/$nativeFile"
 	
-	if (Test-Path $garnetServerEXE) {
-		Get-ChildItem -Path $publishPath -Filter '*.xml' | Remove-Item -Force
-		Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
-		Get-ChildItem -Path $publishPath -Filter *.pdb | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
+	Get-ChildItem -Path $publishPath -Filter '*.xml' | Remove-Item -Force
+	Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
+	Get-ChildItem -Path $publishPath -Filter '*.pdb' | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
 
-		# Copy proper native run time to publish directory
-		Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
+	# Copy proper native run time to publish directory
+	Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
 
-		# Confirm the files are there
-		if (Test-Path "$publishPath/$nativeFile") {
-	
-			# Delete RunTimes folder
-			Remove-Item -Path "$publishPath/runtimes" -Recurse -Force
-
-		} else {
-			Write-Error "$publishPath/$nativeFile does not exist."
-		}
+	# If files are there, delete the runtimes folder
+	if ($deleteRunTimes -eq $true -and (Test-Path "$publishPath/$nativeFile")) {
+		Remove-Item -Path "$publishPath/runtimes" -Recurse -Force
 	} else {
-		Write-Error "$garnetServerEXE was not found."
+		Write-Error "$publishPath/$nativeFile does not exist."
 	}
 }
 
@@ -99,6 +89,7 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	CleanUpFiles "osx-x64" "linux-x64"
 	#CleanUpFiles "portable" "win-x64"  # don't clean up all files for portable ... leave as is
 	CleanUpFiles "win-x64" "win-x64"
+	CleanUpFiles "win-x64\Service" "win-x64" $false
 	CleanUpFiles "win-arm64" "win-x64"
 }
 
