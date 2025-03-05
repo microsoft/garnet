@@ -315,7 +315,7 @@ namespace Garnet
         {
             kvSettings = opts.GetSettings(loggerFactory, out logFactory);
 
-            checkpointDir = opts.CheckpointDir ?? opts.LogDir;
+            checkpointDir = (opts.CheckpointDir ?? opts.LogDir) ?? string.Empty;
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
