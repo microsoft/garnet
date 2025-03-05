@@ -93,7 +93,7 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, this.initLogger))
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, logger: this.initLogger))
             {
                 if (exitGracefully)
                     Environment.Exit(0);
@@ -321,14 +321,13 @@ namespace Garnet
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
             kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-            var checkpointFactory = opts.DeviceFactoryCreator();
             var baseName = Path.Combine(checkpointDir, "Store", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
             mainStoreCheckpointDir = baseName;
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
-                clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: true, logger) :
-                new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
+                clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
+                new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
@@ -348,13 +347,12 @@ namespace Garnet
             objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
             objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-            var checkpointFactory = opts.DeviceFactoryCreator();
             var baseName = Path.Combine(checkpointDir, "ObjectStore", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             objKvSettings.CheckpointManager = opts.EnableCluster ?
-                clusterFactory.CreateCheckpointManager(checkpointFactory, defaultNamingScheme, isMainStore: false, logger) :
-                new DeviceLogCommitCheckpointManager(checkpointFactory, defaultNamingScheme, removeOutdated: true);
+                clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: false, logger) :
+                new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             var objStore = new TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator>(
                 objKvSettings,
@@ -377,7 +375,7 @@ namespace Garnet
 
             if (opts.EnableAOF)
             {
-                if (opts.MainMemoryReplication && opts.CommitFrequencyMs != -1)
+                if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                     throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
 
                 opts.GetAofSettings(dbId, out var aofSettings, out aofDir);
@@ -425,9 +423,8 @@ namespace Garnet
                 logFactory?.Delete(new FileDescriptor { directoryName = "" });
                 if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
                 {
-                    var ckptdir = opts.DeviceFactoryCreator();
-                    ckptdir.Initialize(opts.CheckpointDir);
-                    ckptdir.Delete(new FileDescriptor { directoryName = "" });
+                    var checkpointDeviceFactory = opts.DeviceFactoryCreator.Create(opts.CheckpointDir);
+                    checkpointDeviceFactory.Delete(new FileDescriptor { directoryName = "" });
                 }
             }
         }

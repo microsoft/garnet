@@ -61,6 +61,7 @@ namespace Garnet.server
                 RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_GETUSER => NetworkAclGetUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
@@ -120,9 +121,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool CheckACLPermissions(RespCommand cmd)
         {
-            Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
+            Debug.Assert(!_authenticator.IsAuthenticated || (_userHandle != null));
 
-            if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
+            // Authentication and authorization checks must be performed against the effective user.
+            if ((!_authenticator.IsAuthenticated || !_userHandle.User.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
                 OnACLOrNoScriptFailure(this, cmd);
                 return false;

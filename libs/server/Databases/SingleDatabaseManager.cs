@@ -284,11 +284,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
+        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            EnqueueDatabaseCommit(ref DefaultDatabase, isMainStore, version);
+            EnqueueDatabaseCommit(ref DefaultDatabase, isMainStore, version, streaming);
         }
 
         public override GarnetDatabase[] GetDatabasesSnapshot() => [DefaultDatabase];

@@ -540,12 +540,12 @@ namespace Garnet.server
             }
         }
 
-        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0)
+        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false)
         {
             if (!TryGetOrAddDatabase(dbId, out var db))
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            EnqueueDatabaseCommit(ref db, isMainStore, version);
+            EnqueueDatabaseCommit(ref db, isMainStore, version, streaming);
         }
 
         /// <inheritdoc/>

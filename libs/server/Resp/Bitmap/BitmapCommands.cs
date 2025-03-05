@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -10,6 +9,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using SecondaryCommandList = List<(RespCommand, ArgSlice[])>;
+
     ///  (1) , (2) , (3) 
     /// overflow check, ptr protection, and status not found implemented for below
     /// GETBIT, SETBIT, BITCOUNT, BITPOS (1),(2)
@@ -132,7 +133,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out _))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                            dend))
@@ -150,7 +151,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.SETBIT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.SETBIT, ref parseState, startIdx: 1, arg1: offset);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
@@ -178,7 +179,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             // Validate offset
-            if (!parseState.TryGetLong(1, out _))
+            if (!parseState.TryGetLong(1, out var offset) || (offset < 0))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                            dend))
@@ -186,7 +187,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.GETBIT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.GETBIT, ref parseState, startIdx: 1, arg1: offset);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
@@ -359,7 +360,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
-        private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi, bool readOnly = false)
+        private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1)
@@ -371,12 +372,11 @@ namespace Garnet.server
             // Extract Key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
-            var currTokenIdx = 1;
-
             var isOverflowTypeSet = false;
             ArgSlice overflowTypeSlice = default;
-            var secondaryCommandArgs = new List<(RespCommand, ArgSlice[])>();
+            var secondaryCommandArgs = new SecondaryCommandList();
 
+            var currTokenIdx = 1;
             while (currTokenIdx < parseState.Count)
             {
                 // Get subcommand
@@ -384,80 +384,56 @@ namespace Garnet.server
                 var command = commandSlice.ReadOnlySpan;
 
                 // Process overflow command
-                if (!readOnly && command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
+                if (command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
                 {
-                    // Get overflow parameter
-                    overflowTypeSlice = parseState.GetArgSliceByRef(currTokenIdx);
-                    isOverflowTypeSet = true;
-
                     // Validate overflow type
-                    if (!parseState.TryGetBitFieldOverflow(currTokenIdx, out _))
+                    if (currTokenIdx >= parseState.Count || !parseState.TryGetBitFieldOverflow(currTokenIdx, out _))
                     {
-                        while (!RespWriteUtils.TryWriteError(
-                                   $"ERR Overflow type {parseState.GetString(currTokenIdx)} not supported",
-                                   ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_OVERFLOW_TYPE, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
 
-                    currTokenIdx++;
+                    // Get overflow parameter
+                    overflowTypeSlice = parseState.GetArgSliceByRef(currTokenIdx++);
+                    isOverflowTypeSet = true;
 
                     continue;
                 }
 
                 // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
                 // Process encoding argument
-                var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx);
-                var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx + 1);
-                var encodingArg = parseState.GetString(currTokenIdx);
-                var offsetArg = parseState.GetString(currTokenIdx + 1);
-                currTokenIdx += 2;
-
-                // Validate encoding
-                if (encodingArg.Length < 2 ||
-                    (encodingArg[0] != 'i' && encodingArg[0] != 'u') ||
-                    !int.TryParse(encodingArg.AsSpan(1), out var bitCount) ||
-                    bitCount > 64 ||
-                    (bitCount == 64 && encodingArg[0] == 'u'))
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
                 }
+                var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
-                // Validate offset
-                var isOffsetValid = offsetArg[0] == '#'
-                    ? long.TryParse(offsetArg.AsSpan(1), out _)
-                    : long.TryParse(offsetArg, out _);
-
-                if (!isOffsetValid)
+                // Process offset argument
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
                                dend))
                         SendAndReset();
                     return true;
                 }
+                var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
-                // Subcommand takes 2 args, encoding and offset
-                if (command.EqualsUpperCaseSpanIgnoringCase("GET"u8))
+                // GET Subcommand takes 2 args, encoding and offset
+                if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 {
                     secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
                 }
                 else
                 {
-                    if (readOnly)
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
                     RespCommand op;
                     // SET and INCRBY take 3 args, encoding, offset, and valueArg
-                    if (command.EqualsUpperCaseSpanIgnoringCase("SET"u8))
+                    if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SET))
                         op = RespCommand.SET;
-                    else if (command.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
+                    else if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INCRBY))
                         op = RespCommand.INCRBY;
                     else
                     {
@@ -469,24 +445,96 @@ namespace Garnet.server
                     }
 
                     // Validate value
-                    var valueSlice = parseState.GetArgSliceByRef(currTokenIdx);
-                    if (!parseState.TryGetLong(currTokenIdx, out _))
+                    if (currTokenIdx >= parseState.Count || !parseState.TryGetLong(currTokenIdx, out _))
                     {
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
                                    dend))
                             SendAndReset();
                         return true;
                     }
+                    var valueSlice = parseState.GetArgSliceByRef(currTokenIdx);
                     currTokenIdx++;
 
                     secondaryCommandArgs.Add((op, [commandSlice, encodingSlice, offsetSlice, valueSlice]));
                 }
             }
 
+            return StringBitFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD,
+                                     secondaryCommandArgs, isOverflowTypeSet, overflowTypeSlice);
+        }
+
+        /// <summary>
+        /// Performs arbitrary read-only bitfield integer operations
+        /// </summary>
+        private bool StringBitFieldReadOnly<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD_RO));
+            }
+
+            // BITFIELD_RO key [GET encoding offset [GET encoding offset] ... ]
+            // Extract Key
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+
+            var secondaryCommandArgs = new SecondaryCommandList();
+
+            var currTokenIdx = 1;
+            while (currTokenIdx < parseState.Count)
+            {
+                // Get subcommand
+                var commandSlice = parseState.GetArgSliceByRef(currTokenIdx++);
+                var command = commandSlice.ReadOnlySpan;
+
+                // Read-only variant supports only GET subcommand
+                if (!command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                // GET Subcommand takes 2 args, encoding and offset
+
+                // Process encoding argument
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldEncoding(currTokenIdx, out _, out _))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_BITFIELD_TYPE, ref dcurr,
+                               dend))
+                        SendAndReset();
+                    return true;
+                }
+                var encodingSlice = parseState.GetArgSliceByRef(currTokenIdx++);
+
+                // Process offset argument
+                if ((currTokenIdx >= parseState.Count) || !parseState.TryGetBitfieldOffset(currTokenIdx, out _, out _))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
+                               dend))
+                        SendAndReset();
+                    return true;
+                }
+                var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
+
+                secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
+            }
+
+            return StringBitFieldAction(ref storageApi, ref sbKey, RespCommand.BITFIELD_RO, secondaryCommandArgs);
+        }
+
+        private bool StringBitFieldAction<TGarnetApi>(ref TGarnetApi storageApi,
+                                                      ref SpanByte sbKey,
+                                                      RespCommand cmd,
+                                                      SecondaryCommandList secondaryCommandArgs,
+                                                      bool isOverflowTypeSet = false,
+                                                      ArgSlice overflowTypeSlice = default)
+            where TGarnetApi : IGarnetApi
+        {
             while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
                 SendAndReset();
 
-            var input = new RawStringInput(RespCommand.BITFIELD);
+            var input = new RawStringInput(cmd);
 
             for (var i = 0; i < secondaryCommandArgs.Count; i++)
             {
@@ -512,7 +560,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {
-                    while (!RespWriteUtils.TryWriteArrayItem(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -525,16 +573,6 @@ namespace Garnet.server
             }
 
             return true;
-        }
-
-        /// <summary>
-        /// Performs arbitrary read-only bitfield integer operations
-        /// </summary>
-        private bool StringBitFieldReadOnly<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            // BITFIELD_RO key [GET encoding offset [GET encoding offset] ... ]
-            return StringBitField(ref storageApi, true);
         }
     }
 }

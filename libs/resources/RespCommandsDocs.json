@@ -39,6 +39,22 @@
         ]
       },
       {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Summary": "Returns the rules defined for an ACL user.",
+        "Group": "Server",
+        "Complexity": "O(1) amortized time considering the typical user.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "USERNAME",
+            "DisplayText": "username",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Summary": "Dumps the effective rules in ACL file format.",
@@ -6276,9 +6292,9 @@
     ]
   },
   {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "Summary": "Sets the string value of a key, ignoring its type, if the key\u0027s current etag matches the given etag.",
+    "Command": "SETIFGREATER",
+    "Name": "SETIFGREATER",
+    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request is greater than the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was greater than 0.",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -6322,6 +6338,70 @@
             "Token": "PX"
           }
         ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
+      }
+    ]
+  },
+  {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request matches the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was 0.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
       }
     ]
   },

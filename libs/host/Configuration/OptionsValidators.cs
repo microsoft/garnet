@@ -6,12 +6,12 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
+using Garnet.common;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet
 {
@@ -22,6 +22,11 @@ namespace Garnet
     [AttributeUsage(AttributeTargets.Property)]
     internal class OptionValidationAttribute : ValidationAttribute
     {
+        /// <summary>
+        /// Logger to use for validation
+        /// </summary>
+        public ILogger Logger { get; set; }
+
         /// <summary>
         /// Determines if current property is required to have a value
         /// </summary>
@@ -78,10 +83,18 @@ namespace Garnet
             validationResult = null;
             convertedValue = default;
 
-            if (!IsRequired && (value == GetDefault(value) || (value is string strVal && string.IsNullOrEmpty(strVal))))
+            if (!IsRequired)
             {
-                validationResult = ValidationResult.Success;
-                return true;
+                var isDefaultValue =
+                    (value == null && !typeof(T).IsValueType) ||
+                    (value?.Equals(GetDefault(typeof(T))) ?? false) ||
+                    (value is string strVal && string.IsNullOrEmpty(strVal));
+
+                if (isDefaultValue)
+                {
+                    validationResult = ValidationResult.Success;
+                    return true;
+                }
             }
 
             if (value is not T tValue)
@@ -347,11 +360,13 @@ namespace Garnet
             if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddress))
                 return initValidationResult;
 
-            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || IPAddress.TryParse(ipAddress, out _))
+            var logger = ((Options)validationContext.ObjectInstance).runtimeLogger;
+            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) ||
+                Format.TryCreateEndpoint(ipAddress, 0, useForBind: false, logger: logger).Result != null)
                 return ValidationResult.Success;
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
-            var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost'. Actual value: {ipAddress}";
+            var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {ipAddress}";
             return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
     }
@@ -605,7 +620,7 @@ namespace Garnet
 
                     if (forbiddenValues.Contains(otherOptionValueAsString, StringComparer.OrdinalIgnoreCase))
                     {
-                        return new ValidationResult($"{nameof(validationContext.DisplayName)} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
+                        return new ValidationResult($"{validationContext.DisplayName} cannot be set with {otherOptionName} has value '{otherOptionValueAsString}'");
                     }
                 }
             }
@@ -639,7 +654,7 @@ namespace Garnet
                     return ValidationResult.Success;
             }
 
-            return new ValidationResult($"{nameof(validationContext.DisplayName)} can only bet set on following platforms: {string.Join(',', supportedPlatforms)}");
+            return new ValidationResult($"{validationContext.DisplayName} can only bet set on following platforms: {string.Join(',', supportedPlatforms)}");
         }
     }
 }

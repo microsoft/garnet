@@ -98,6 +98,17 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.StringGetBit(key, 7999));
             ClassicAssert.IsFalse(db.StringGetBit(key, 8999));
             ClassicAssert.IsTrue(db.StringGetBit(key, 9999));
+
+            try
+            {
+                db.Execute("SETBIT", key, "-1", "1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
         }
 
         [Test, Order(2)]
@@ -111,6 +122,17 @@ namespace Garnet.test
             for (long i = 0; i < (1 << 5); i++)
             {
                 ClassicAssert.IsFalse(db.StringGetBit(key, i));
+            }
+
+            try
+            {
+                db.Execute("GETBIT", key, "-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
             }
         }
 
@@ -501,8 +523,8 @@ namespace Garnet.test
         private static unsafe long Bitpos(byte[] bitmap, int startOffset = 0, int endOffset = -1, bool set = true)
         {
             long pos = 0;
-            int start = startOffset < 0 ? (startOffset % bitmap.Length) + bitmap.Length : startOffset;
-            int end = endOffset < 0 ? (endOffset % bitmap.Length) + bitmap.Length : endOffset;
+            var start = startOffset < 0 ? (startOffset % bitmap.Length) + bitmap.Length : startOffset;
+            var end = endOffset < 0 ? (endOffset % bitmap.Length) + bitmap.Length : endOffset;
 
             if (start >= bitmap.Length) // If startOffset greater that valLen alway bitcount zero
                 return -1;
@@ -510,24 +532,27 @@ namespace Garnet.test
             if (start > end) // If start offset beyond endOffset return 0
                 return -1;
 
-            byte mask = (byte)(!set ? 0xFF : 0x00);
+            var mask = (byte)(!set ? 0xFF : 0x00);
+            var setbit = set ? 1 : 0;
             fixed (byte* b = bitmap)
             {
-                byte* curr = b + start;
-                byte* vend = b + end + 1;
+                var curr = b + start;
+                var vend = b + end + 1;
                 while (curr < vend)
                 {
                     if (*curr != mask) break;
                     curr++;
                 }
+
+                if (curr > vend) return -1;
+
                 pos = (curr - b) << 3;
 
-                byte byteVal = *curr;
-                byte bitv = (byte)(!set ? 0x0 : 0x1);
-                int bit = 7;
-                while (((byteVal >> bit) & 0x1) != bitv && bit > 0)
+                var value = *curr;
+                for (var i = 7; i >= 0; i--)
                 {
-                    bit--;
+                    if (((value & (1 << i)) >> i) == setbit)
+                        return pos;
                     pos++;
                 }
             }
@@ -542,47 +567,49 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string key = "SimpleBitPosTests";
+            var key = "SimpleBitPosTests";
 
             byte[] buf;
-            int maxBitmapLen = 1 << 10;
-            int iter = 256;
+            var maxBitmapLen = 1 << 10;
+            var iter = 256;
             long maxOffset = 0;
-            for (int i = 0; i < iter; i++)
+            for (var i = 0; i < iter; i++)
             {
                 long offset = r.Next(1, maxBitmapLen);
-                db.StringSetBit(key, offset, true);
+                _ = db.StringSetBit(key, offset, true);
+                buf = db.StringGet(key);
 
-                long offsetPos = db.StringBitPosition(key, true);
-                ClassicAssert.AreEqual(offset, offsetPos);
+                var offsetPos = db.StringBitPosition(key, true);
+                ClassicAssert.AreEqual(offset, offsetPos, $"iter:{i}");
 
                 buf = db.StringGet(key);
-                long expectedPos = Bitpos(buf, set: true);
-                ClassicAssert.AreEqual(expectedPos, offsetPos);
+                var expectedPos = Bitpos(buf, set: true);
+                ClassicAssert.AreEqual(expectedPos, offsetPos, $"iter:{i}");
 
-                db.StringSetBit(key, offset, false);
+                _ = db.StringSetBit(key, offset, false);
                 maxOffset = Math.Max(maxOffset, offset);
             }
 
-            for (int i = 0; i < maxOffset; i++)
-                db.StringSetBit(key, i, true);
+            for (var i = 0; i < maxOffset; i++)
+                _ = db.StringSetBit(key, i, true);
 
-            long count = db.StringBitCount(key);
+            var count = db.StringBitCount(key);
             ClassicAssert.AreEqual(count, maxOffset);
 
-            for (int i = 0; i < iter; i++)
+            for (var i = 0; i < iter; i++)
             {
                 long offset = r.Next(1, (int)maxOffset);
-                db.StringSetBit(key, offset, false);
-
-                long offsetPos = db.StringBitPosition(key, false);
-                ClassicAssert.AreEqual(offset, offsetPos);
+                _ = db.StringSetBit(key, offset, false);
 
                 buf = db.StringGet(key);
-                long expectedPos = Bitpos(buf, set: false);
-                ClassicAssert.AreEqual(expectedPos, offsetPos);
+                var offsetPos = db.StringBitPosition(key, false);
+                ClassicAssert.AreEqual(offset, offsetPos, $"iter:{i}");
 
-                db.StringSetBit(key, offset, true);
+                buf = db.StringGet(key);
+                var expectedPos = Bitpos(buf, set: false);
+                ClassicAssert.AreEqual(expectedPos, offsetPos, $"iter:{i}");
+
+                _ = db.StringSetBit(key, offset, true);
             }
         }
 
@@ -593,43 +620,53 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string key = "BitmapBitPosNegativeOffsets";
+            var key = "BitmapBitPosNegativeOffsets";
 
-            int maxBitmapLen = 1 << 12;
-            int maxByteLen = maxBitmapLen >> 3;
-            int iter = 1 << 5;
-            byte[] buf = new byte[maxByteLen];
+            var maxBitmapLen = 1 << 12;
+            var maxByteLen = maxBitmapLen >> 3;
+            var iter = 1 << 5;
+            var buf = new byte[maxByteLen];
             long expectedPos;
             long pos;
 
-            for (int j = 0; j < iter; j++)
+            for (var j = 0; j < iter; j++)
             {
                 r.NextBytes(buf);
-                db.StringSet(key, buf);
+                _ = db.StringSet(key, buf);
 
-                int startOffset = r.Next(0, maxByteLen);
-                int endOffset = r.Next(startOffset, maxByteLen);
+                var startOffset = r.Next(0, maxByteLen);
+                var endOffset = r.Next(startOffset, maxByteLen);
 
-                bool set = r.Next(0, 1) == 0 ? false : true;
+                var set = r.Next(0, 1) == 0 ? false : true;
                 expectedPos = Bitpos(buf, startOffset, endOffset, set);
                 pos = db.StringBitPosition(key, set, startOffset, endOffset);
 
-                ClassicAssert.AreEqual(expectedPos, pos, $"{set} {startOffset} {endOffset}");
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startOffset} {endOffset}");
+
+                var startBitOffset = startOffset << 3;
+                var endBitOffset = endOffset << 3;
+                pos = db.StringBitPosition(key, set, startBitOffset, endBitOffset, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startBitOffset} {endBitOffset} bit");
             }
 
-            //check negative offsets in range
-            for (int j = 0; j < iter; j++)
+            // check negative offsets in range
+            for (var j = 0; j < iter; j++)
             {
                 r.NextBytes(buf);
-                db.StringSet(key, buf);
+                _ = db.StringSet(key, buf);
 
-                int startOffset = j == 0 ? -10 : r.Next(-maxByteLen, 0);
-                int endOffset = j == 0 ? -1 : r.Next(startOffset, 0);
+                var startOffset = j == 0 ? -10 : r.Next(-maxByteLen, 0);
+                var endOffset = j == 0 ? -1 : r.Next(startOffset, 0);
 
-                bool set = r.Next(0, 1) == 0 ? false : true;
-                pos = Bitpos(buf, startOffset, endOffset, set);
-                expectedPos = db.StringBitPosition(key, set, startOffset, endOffset);
-                ClassicAssert.AreEqual(pos, expectedPos);
+                var set = r.Next(0, 1) != 0;
+                expectedPos = Bitpos(buf, startOffset, endOffset, set);
+                pos = db.StringBitPosition(key, set, startOffset, endOffset);
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startOffset} {endOffset}");
+
+                var startBitOffset = startOffset << 3;
+                var endBitOffset = endOffset << 3;
+                pos = db.StringBitPosition(key, set, startBitOffset, endBitOffset, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPos, pos, $"{j} {set} {startBitOffset} {endBitOffset} bit");
             }
         }
 
@@ -637,7 +674,7 @@ namespace Garnet.test
         [Category("BITPOS")]
         public void BitmapBitPosTest_LTM()
         {
-            int bitmapBytes = 512;
+            var bitmapBytes = 512;
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
@@ -647,26 +684,26 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            int keyCount = 64;
-            byte[] bitmap = new byte[bitmapBytes];
+            var keyCount = 64;
+            var bitmap = new byte[bitmapBytes];
             List<long> bitmapList = [];
 
-            for (int i = 0; i < keyCount; i++)
+            for (var i = 0; i < keyCount; i++)
             {
-                string sKey = i.ToString();
+                var sKey = i.ToString();
                 r.NextBytes(bitmap);
 
                 bitmapList.Add(Bitpos(bitmap, set: true));
-                db.StringSet(sKey, bitmap);
+                _ = db.StringSet(sKey, bitmap);
             }
 
-            int iter = 128;
-            for (int i = 0; i < iter; i++)
+            var iter = 128;
+            for (var i = 0; i < iter; i++)
             {
-                int key = r.Next(0, keyCount);
-                string sKey = key.ToString();
-                long pos = db.StringBitPosition(sKey, true);
-                long expectedPos = bitmapList[key];
+                var key = r.Next(0, keyCount);
+                var sKey = key.ToString();
+                var pos = db.StringBitPosition(sKey, true);
+                var expectedPos = bitmapList[key];
                 ClassicAssert.AreEqual(expectedPos, pos);
             }
         }
@@ -704,15 +741,15 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var db = redis.GetDatabase(0);
 
-            string key = "mykey";
-            int maxBitmapLen = 1 << 12;
-            byte[] buf = new byte[maxBitmapLen >> 3];
+            var key = "mykey";
+            var maxBitmapLen = 1 << 12;
+            var buf = new byte[maxBitmapLen >> 3];
             r.NextBytes(buf);
             db.StringSet(key, buf);
 
-            long expectedPos = Bitpos(buf);
+            var expectedPos = Bitpos(buf);
             long pos = 0;
-            byte[] response = lightClientRequest.SendCommandChunks("BITPOS mykey 1", bytesPerSend);
+            var response = lightClientRequest.SendCommandChunks("BITPOS mykey 1", bytesPerSend);
             pos = ResponseToLong(response, 1);
             ClassicAssert.AreEqual(expectedPos, pos);
         }
@@ -2267,24 +2304,27 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string key = "mykey";
-            byte[] value = [0x0, 0xff, 0xf0];
+            var key = "mykey";
+            byte[] value = [0x00, 0xff, 0xf0];
             db.StringSet(key, value);
 
-            long pos = db.StringBitPosition(key, true, 0);
+            var pos = db.StringBitPosition(key, true, 0);
             ClassicAssert.AreEqual(8, pos);
 
             pos = db.StringBitPosition(key, true, 2, -1, StringIndexType.Byte);
             ClassicAssert.AreEqual(16, pos);
 
             pos = db.StringBitPosition(key, true, 0, 0, StringIndexType.Byte);
-            ClassicAssert.AreEqual(0, pos);
+            ClassicAssert.AreEqual(-1, pos);
 
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
             ClassicAssert.AreEqual(0, pos);
 
+            pos = db.StringBitPosition(key, true, 7, 15, StringIndexType.Bit);
+            ClassicAssert.AreEqual(8, pos);
+
             value = [0xf8, 0x6f, 0xf0];
-            db.StringSet(key, value);
+            _ = db.StringSet(key, value);
             pos = db.StringBitPosition(key, true, 5, 17, StringIndexType.Bit);
             ClassicAssert.AreEqual(9, pos);
 
@@ -2295,12 +2335,17 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-1, pos);
 
             key = "mykey2";
-            db.StringSetBit(key, 63, false);
+            _ = db.StringSetBit(key, 63, false);
             pos = db.StringBitPosition(key, false, 1);
             ClassicAssert.AreEqual(8, pos);
 
             pos = db.StringBitPosition(key, false, 0);
             ClassicAssert.AreEqual(0, pos);
+
+            value = [0xff, 0x7f, 0xf0];
+            _ = db.StringSet(key, value);
+            pos = db.StringBitPosition(key, false, 7, 15, StringIndexType.Bit);
+            ClassicAssert.AreEqual(8, pos);
         }
 
         [Test, Order(35)]
@@ -2355,6 +2400,273 @@ namespace Garnet.test
             catch (Exception ex)
             {
                 ClassicAssert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
+            }
+        }
+
+        [Test, Order(38)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitOffsetTests([Values] bool searchFor)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            byte[] value = searchFor ?
+                [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] :
+                [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+            _ = db.StringSet(key, value);
+
+            var bitLength = value.Length * 8;
+            var expectedPosOffset = 5;
+
+            for (var i = 0; i < 10; i++)
+            {
+                // Set or clear bit
+                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: searchFor);
+
+                // Find pos of bit set/clear
+                var pos = db.StringBitPosition(key, bit: searchFor, 0, 19, StringIndexType.Bit);
+                ClassicAssert.AreEqual(expectedPosOffset, pos);
+
+                // Toggle bit back to initial value
+                _ = db.StringSetBit(key, offset: expectedPosOffset, bit: !searchFor);
+
+                expectedPosOffset++;
+            }
+        }
+
+        [Test, Order(38)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitInvalidMaskTests()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            // 0x3e = 00111110
+            byte[] value = [0x3e];
+            _ = db.StringSet(key, value);
+
+            // 0x3e = 00111110
+            var pos = db.StringBitPosition(key, bit: false, start: 0, end: 5, StringIndexType.Bit);
+            ClassicAssert.AreEqual(0, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 1, end: 5, StringIndexType.Bit);
+            ClassicAssert.AreEqual(1, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 2, end: 5, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 2, end: 6, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = db.StringBitPosition(key, bit: false, start: 2, end: 7, StringIndexType.Bit);
+            ClassicAssert.AreEqual(7, pos);
+
+            // 0x7e02 = 0111111000000010
+            value = [0x7e, 0x02];
+            _ = db.StringSet(key, value);
+            pos = db.StringBitPosition(key, bit: true, start: 7, end: 13, StringIndexType.Bit);
+            ClassicAssert.AreEqual(-1, pos);
+
+            pos = db.StringBitPosition(key, bit: true, start: 7, end: 14, StringIndexType.Bit);
+            ClassicAssert.AreEqual(14, pos);
+        }
+
+        [Test, Order(39)]
+        [Category("BITPOS")]
+        public void BitmapBitPosBitSearchSingleBitRangeTests()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mykey";
+            var valueLen = 1 << 12;
+            var value = new byte[valueLen];
+            for (var i = 0; i < valueLen; i++)
+                value[i] = 0xAA;
+
+            _ = db.StringSet(key, value);
+
+            var iter = 1 << 12;
+            var valueLenBits = valueLen << 3;
+            for (var i = 0; i < iter; i++)
+            {
+                var offset = r.NextInt64(0, valueLenBits);
+                BitSearch(offset, searchFor: true);
+                BitSearch(offset, searchFor: false);
+            }
+
+            void BitSearch(long offset, bool searchFor)
+            {
+                var pos = db.StringBitPosition(key, bit: searchFor, start: offset, end: offset, StringIndexType.Bit);
+                var equalsSearchFor = (offset & 0x1) == (searchFor ? 0 : 1);
+
+                if (equalsSearchFor)
+                    ClassicAssert.AreEqual(offset, pos);
+                else
+                    ClassicAssert.AreEqual(-1, pos);
+            }
+        }
+
+        [Test, Order(40)]
+        [Category("BITFIELD")]
+        public void BitmapBitfieldBoundaryTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var bit = db.StringSetBit(key, offset: 0, bit: true);
+            ClassicAssert.AreEqual(expected: false, actual: bit);
+            bit = db.StringSetBit(key, offset: 8, bit: true);
+            ClassicAssert.AreEqual(expected: false, actual: bit);
+
+            var ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 0, 1);
+            ClassicAssert.AreEqual(1, ((string[])ret).Length);
+            ClassicAssert.AreEqual("128", ret[0].ToString());
+
+            ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 0, 128);
+            ClassicAssert.AreEqual(1, ((string[])ret).Length);
+            ClassicAssert.AreEqual("1", ret[0].ToString());
+
+            ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 8, 1);
+            ClassicAssert.AreEqual(1, ((string[])ret).Length);
+            ClassicAssert.AreEqual("128", ret[0].ToString());
+
+            var result = (byte[])db.StringGet(key);
+            ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x01 }, actual: result);
+
+            ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 8, 128, "GET", "u8", 8);
+            ClassicAssert.AreEqual(2, ((string[])ret).Length);
+            ClassicAssert.AreEqual("1", ret[0].ToString());
+            ClassicAssert.AreEqual("128", ret[1].ToString());
+
+            result = (byte[])db.StringGet(key);
+            ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x80 }, actual: result);
+        }
+
+        [Order(41)]
+        [Test]
+        [Category("BITFIELD")]
+        public void BitmapBitFieldInvalidOptionsTest([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "BitmapBitFieldInvalidOptionsTest";
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u64", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i-1", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u8", @"""");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i16", "#");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "32", "1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u32", @"-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            if (testCmd == RespCommand.BITFIELD)
+            {
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "SET", "i32", "0");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR value is not an integer or out of range.",
+                                           ex.Message);
+                }
+
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "OVERFLOW", "NONE");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR Invalid OVERFLOW type specified",
+                                           ex.Message);
+                }
+            }
+            else
+            {
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "SET", "i64", "0");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR syntax error",
+                                           ex.Message);
+                }
             }
         }
     }

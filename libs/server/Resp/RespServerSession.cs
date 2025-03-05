@@ -105,7 +105,7 @@ namespace Garnet.server
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
-        User _user = null;
+        UserHandle _userHandle = null;
 
         readonly ILogger logger = null;
 
@@ -223,7 +223,7 @@ namespace Garnet.server
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
-                sessionScriptCache = new(storeWrapper, _authenticator, logger);
+                sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
             var dbSession = CreateDatabaseSession(0);
             var maxDbs = storeWrapper.serverOptions.MaxDatabases;
@@ -237,14 +237,14 @@ namespace Garnet.server
             SwitchActiveDatabaseSession(0, ref dbSession);
 
             // Associate new session with default user and automatically authenticate, if possible
-            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
+            this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
             txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
-            clusterSession?.SetUser(this._user);
-            sessionScriptCache?.SetUser(this._user);
+            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            clusterSession?.SetUserHandle(this._userHandle);
+            sessionScriptCache?.SetUserHandle(this._userHandle);
 
             parseState.Initialize();
             readHead = 0;
@@ -269,10 +269,10 @@ namespace Garnet.server
             return new GarnetDatabaseSession(dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
         }
 
-        internal void SetUser(User user)
+        internal void SetUserHandle(UserHandle userHandle)
         {
-            this._user = user;
-            clusterSession?.SetUser(user);
+            this._userHandle = userHandle;
+            clusterSession?.SetUserHandle(userHandle);
         }
 
         public override void Dispose()
@@ -322,16 +322,16 @@ namespace Garnet.server
                 // NOTE: Currently only GarnetACLAuthenticator supports multiple users
                 if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
                 {
-                    this._user = aclAuthenticator.GetUser();
+                    this._userHandle = aclAuthenticator.GetUserHandle();
                 }
                 else
                 {
-                    this._user = this.storeWrapper.accessControlList.GetDefaultUser();
+                    this._userHandle = this.storeWrapper.accessControlList.GetDefaultUserHandle();
                 }
 
                 // Propagate authentication to cluster session
-                clusterSession?.SetUser(this._user);
-                sessionScriptCache?.SetUser(this._user);
+                clusterSession?.SetUserHandle(this._userHandle);
+                sessionScriptCache?.SetUserHandle(this._userHandle);
             }
 
             return _authenticator.CanAuthenticate ? success : false;
@@ -393,8 +393,11 @@ namespace Garnet.server
                     Environment.Exit(-1);
                 }
 
-                // The session is no longer usable, dispose it
-                networkSender.DisposeNetworkSender(true);
+                if (ex.DisposeSession)
+                {
+                    // The session is no longer usable, dispose it
+                    networkSender.DisposeNetworkSender(true);
+                }
             }
             catch (Exception ex)
             {
@@ -552,14 +555,52 @@ namespace Garnet.server
         // Make first command in string as uppercase
         private bool MakeUpperCase(byte* ptr)
         {
-            byte* tmp = ptr;
+            // Assume most commands are already upper case.
+            // Assume most commands are 2-8 bytes long.
+            // If that's the case, we would see the following bit patterns:
+            //  *.\r\n$2\r\n..\r\n        = 12 bytes
+            //  *.\r\n$3\r\n...\r\n       = 13 bytes
+            //  ...
+            //  *.\r\n$8\r\n........\r\n  = 18 bytes
+            //
+            // Where . is <= 95
+            // 
+            // Note that _all_ of these bytes are <= 95 in the common case
+            // and there's no need to scan the whole string in those cases.
 
-            while (tmp < ptr + bytesRead - readHead)
+            var len = bytesRead - readHead;
+            if (len >= 12)
+            {
+                var cmdLen = (uint)(*(ptr + 5) - '2');
+                if (cmdLen <= 6 && (ptr + 4 + cmdLen + sizeof(ulong)) <= (ptr + len))
+                {
+                    var firstUlong = *(ulong*)(ptr + 4);
+                    var secondUlong = *((ulong*)ptr + 4 + cmdLen);
+
+                    // Ye olde bit twiddling to check if any sub-byte is > 95
+                    // See: https://graphics.stanford.edu/~seander/bithacks.html#HasMoreInWord
+                    var firstAllUpper = (((firstUlong + (~0UL / 255 * (127 - 95))) | (firstUlong)) & (~0UL / 255 * 128)) == 0;
+                    var secondAllUpper = (((secondUlong + (~0UL / 255 * (127 - 95))) | (secondUlong)) & (~0UL / 255 * 128)) == 0;
+
+                    var allLower = firstAllUpper && secondAllUpper;
+                    if (allLower)
+                    {
+                        // Nothing in the "command" part of the string would be upper cased, so return early
+                        return false;
+                    }
+                }
+            }
+
+            // If we're in a weird case, or there are lower case bytes, do the full scan
+
+            var tmp = ptr;
+
+            while (tmp < (ptr + len))
             {
                 if (*tmp > 64) // found string
                 {
-                    bool ret = false;
-                    while (*tmp > 64 && *tmp < 123 && tmp < ptr + bytesRead - readHead)
+                    var ret = false;
+                    while (*tmp > 64 && *tmp < 123 && tmp < (ptr + len))
                     {
                         if (*tmp > 96) { ret = true; *tmp -= 32; }
                         tmp++;
@@ -851,6 +892,7 @@ namespace Garnet.server
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

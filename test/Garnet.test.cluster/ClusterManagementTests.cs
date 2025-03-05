@@ -413,7 +413,7 @@ namespace Garnet.test.cluster
         public void ClusterClientList()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, mainMemoryReplication: true, commitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, FastAofTruncate: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -544,7 +544,7 @@ namespace Garnet.test.cluster
         public void ClusterClientKill()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, mainMemoryReplication: true, commitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, FastAofTruncate: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -561,7 +561,7 @@ namespace Garnet.test.cluster
             // Test SLAVE separately - it's equivalent to REPLICA, but needed for compatibility
 
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, mainMemoryReplication: true, commitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, FastAofTruncate: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -734,14 +734,14 @@ namespace Garnet.test.cluster
             var lines = result.ToString().Split("\n", StringSplitOptions.RemoveEmptyEntries);
             ClassicAssert.AreEqual(node_count, lines.Length);
 
-            var primaries = shardInfo[0].nodes.Where(x => x.role == Role.PRIMARY).Select(w => w.nodeid).ToArray();
+            var primaries = shardInfo[0].nodes.Where(x => x.role == NodeRole.PRIMARY).Select(w => w.nodeid).ToArray();
             foreach (var line in lines)
             {
                 var fields = line.Split(' ');
                 ClassicAssert.IsTrue(shardInfo[0].nodes.Any(e => e.nodeid == fields[0]));
 
                 var node = shardInfo[0].nodes.Single(e => e.nodeid == fields[0]);
-                if (node.role == Role.PRIMARY)
+                if (node.role == NodeRole.PRIMARY)
                 {
                     ClassicAssert.GreaterOrEqual(fields.Length, 8);
                     ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
@@ -759,6 +759,30 @@ namespace Garnet.test.cluster
                     ClassicAssert.AreEqual("connected", fields[7]);
                 }
             }
+        }
+
+        [Test, Order(13)]
+        public void ClusterMeetHostname([Values] bool useLoopback)
+        {
+            var hostname = useLoopback ? "localhost" : TestUtils.GetHostName(context.logger);
+            ClassicAssert.IsNotNull(hostname);
+            ClassicAssert.IsNotEmpty(hostname);
+
+            var node_count = 3;
+            context.CreateInstances(node_count, enableAOF: true, useHostname: !useLoopback);
+            context.CreateConnection();
+
+            for (var i = 0; i < node_count; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
+
+
+            for (var i = 1; i < node_count; i++)
+                context.clusterTestUtils.Meet(0, i, hostname, context.logger);
+
+            for (var i = 0; i < node_count; i++)
+                for (var j = 0; j < node_count; j++)
+                    if (i != j)
+                        context.clusterTestUtils.WaitUntilNodeIsKnown(i, j, context.logger);
         }
     }
 }

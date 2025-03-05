@@ -65,8 +65,6 @@ namespace Garnet.test
         {
             var db1Key1 = "db1:key1";
             var db1Key2 = "db1:key2";
-            var db2Key1 = "db2:key1";
-            var db2Key2 = "db2:key1";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db1 = redis.GetDatabase(0);
@@ -376,8 +374,6 @@ namespace Garnet.test
             var db1Key2 = "db1:key2";
             var db2Key1 = "db2:key1";
             var db2Key2 = "db2:key2";
-            var db12Key1 = "db12:key1";
-            var db12Key2 = "db12:key2";
 
             using var lightClientRequest1 = TestUtils.CreateRequest(); // Session for DB 0 context
             using var lightClientRequest2 = TestUtils.CreateRequest(); // Session for DB 1 context

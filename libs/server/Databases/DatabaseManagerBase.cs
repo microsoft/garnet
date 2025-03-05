@@ -113,7 +113,7 @@ namespace Garnet.server
         public abstract void ResetRevivificationStats();
 
         /// <inheritdoc/>
-        public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0);
+        public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false);
 
         /// <inheritdoc/>
         public abstract GarnetDatabase[] GetDatabasesSnapshot();
@@ -339,13 +339,17 @@ namespace Garnet.server
             }
         }
 
-        protected void EnqueueDatabaseCommit(ref GarnetDatabase db, bool isMainStore, long version)
+        protected void EnqueueDatabaseCommit(ref GarnetDatabase db, bool isMainStore, long version, bool streaming)
         {
             if (db.AppendOnlyFile == null) return;
 
+            var opType = streaming ?
+                isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit :
+                isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit;
+
             AofHeader header = new()
             {
-                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
+                opType = opType,
                 storeVersion = version,
                 sessionID = -1
             };

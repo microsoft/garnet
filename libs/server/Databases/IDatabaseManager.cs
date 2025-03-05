@@ -188,7 +188,8 @@ namespace Garnet.server
         /// <param name="isMainStore"></param>
         /// <param name="version"></param>
         /// <param name="dbId"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0);
+        /// <param name="streaming"></param>
+        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false);
 
         /// <summary>
         /// Get a snapshot of all active databases

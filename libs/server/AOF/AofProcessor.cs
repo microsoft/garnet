@@ -211,6 +211,16 @@ namespace Garnet.server
                             storeWrapper.databaseManager.TakeCheckpoint(false, StoreType.Object, logger: logger);
                     }
                     break;
+                case AofEntryType.MainStoreStreamingCheckpointCommit:
+                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    if (header.storeVersion > storeWrapper.store.CurrentVersion)
+                        storeWrapper.store.SetVersion(header.storeVersion);
+                    break;
+                case AofEntryType.ObjectStoreStreamingCheckpointCommit:
+                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    if (header.storeVersion > storeWrapper.store.CurrentVersion)
+                        storeWrapper.objectStore.SetVersion(header.storeVersion);
+                    break;
                 default:
                     ReplayOp(ptr);
                     break;

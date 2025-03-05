@@ -13,6 +13,7 @@ using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Garnet.server.Databases;
+using Garnet.server.Lua;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -103,7 +104,7 @@ namespace Garnet.server
         /// Lua script cache
         /// </summary>
         public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
-
+        
         /// <summary>
         /// Logging frequency
         /// </summary>
@@ -118,6 +119,11 @@ namespace Garnet.server
         /// Number of active databases
         /// </summary>
         public int DatabaseCount => databaseManager.DatabaseCount;
+
+        /// <summary>
+        /// Shared timeout manager for all <see cref="LuaRunner"/> across all sessions.
+        /// </summary>
+        internal readonly LuaTimeoutManager luaTimeoutManager;
 
         internal readonly IDatabaseManager databaseManager;
 
@@ -182,7 +188,14 @@ namespace Garnet.server
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
+            {
                 this.storeScriptCache = [];
+
+                if (serverOptions.LuaOptions.Timeout != Timeout.InfiniteTimeSpan)
+                {
+                    this.luaTimeoutManager = new(serverOptions.LuaOptions.Timeout, loggerFactory?.CreateLogger<LuaTimeoutManager>());
+                }
+            }
 
             if (accessControlList == null)
             {
@@ -312,8 +325,9 @@ namespace Garnet.server
         /// <param name="isMainStore"></param>
         /// <param name="version"></param>
         /// <param name="dbId"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0) =>
-            this.databaseManager.EnqueueCommit(isMainStore, version, dbId);
+        /// <param name="streaming"></param>
+        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool streaming = false) =>
+            this.databaseManager.EnqueueCommit(isMainStore, version, dbId, streaming);
 
         /// <summary>
         /// Reset
@@ -517,6 +531,7 @@ namespace Garnet.server
         {
             monitor?.Start();
             clusterProvider?.Start();
+            luaTimeoutManager?.Start();
 
             if (serverOptions.AofSizeLimit.Length > 0)
             {
@@ -580,6 +595,7 @@ namespace Garnet.server
 
             itemBroker?.Dispose();
             monitor?.Dispose();
+            luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             databaseManager.Dispose();
 
