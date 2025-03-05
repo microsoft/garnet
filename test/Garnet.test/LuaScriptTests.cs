@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -1732,6 +1733,126 @@ return count";
                 var resp3VerbatimStrToLua2 = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '=12\\r\\nfoo:fizzbuzz').string)");
                 ClassicAssert.AreEqual("string", resp3VerbatimStrToLua1);
                 ClassicAssert.AreEqual("string", resp3VerbatimStrToLua2);
+            }
+        }
+
+        [Test]
+        public void CJson()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Encoding
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("encode"));
+
+                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode(1, 2)"));
+                ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("encode"));
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode((function() end))"));
+                ClassicAssert.True(badTypeExc.Message.Contains("Cannot serialise"));
+
+                var nilResp = (string)db.ScriptEvaluate("return cjson.encode(nil)");
+                ClassicAssert.AreEqual("null", nilResp);
+
+                var boolResp = (string)db.ScriptEvaluate("return cjson.encode(true)");
+                ClassicAssert.AreEqual("true", boolResp);
+
+                var doubleResp = (string)db.ScriptEvaluate("return cjson.encode(1.23)");
+                ClassicAssert.AreEqual("1.23", doubleResp);
+
+                var emptyTableResp = (string)db.ScriptEvaluate("return cjson.encode({})");
+                ClassicAssert.AreEqual("{}", emptyTableResp);
+
+                var keyedTableResp = (string)db.ScriptEvaluate("return cjson.encode({key=123})");
+                ClassicAssert.AreEqual("{\"key\":123}", keyedTableResp);
+
+                var indexedTableResp = (string)db.ScriptEvaluate("return cjson.encode({123, 'foo'})");
+                ClassicAssert.AreEqual("[123,\"foo\"]", indexedTableResp);
+
+                var mixedTableResp = (string)db.ScriptEvaluate("local ret = {123}; ret.bar = 'foo'; return cjson.encode(ret)");
+                ClassicAssert.AreEqual("{\"1\":123,\"bar\":\"foo\"}", mixedTableResp);
+
+                // Ordering here is undefined, just doing the brute force approach for ease of implementation
+                var nestedTableResp = (string)db.ScriptEvaluate("return cjson.encode({num=1,str='hello',arr={1,2,3,4},obj={foo='bar'}})");
+                string[] nestedTableRespParts = [
+                    "\"arr\":[1,2,3,4]",
+                    "\"num\":1",
+                    "\"str\":\"hello\"",
+                    "\"obj\":{\"foo\":\"bar\"}",
+                ];
+                var possibleNestedTableResps = new List<string>();
+                for (var a = 0; a < nestedTableRespParts.Length; a++)
+                {
+                    for (var b = 0; b < nestedTableRespParts.Length; b++)
+                    {
+                        for (var c = 0; c < nestedTableRespParts.Length; c++)
+                        {
+                            for (var d = 0; d < nestedTableRespParts.Length; d++)
+                            {
+                                if (a == b || a == c || a == d || b == c || b == d || c == d)
+                                {
+                                    continue;
+                                }
+
+                                possibleNestedTableResps.Add($"{{{nestedTableRespParts[a]},{nestedTableRespParts[b]},{nestedTableRespParts[c]},{nestedTableRespParts[d]}}}");
+                            }
+                        }
+                    }
+                }
+                ClassicAssert.True(possibleNestedTableResps.Contains(nestedTableResp));
+
+                var nestArrayResp = (string)db.ScriptEvaluate("return cjson.encode({1,'hello',{1,2,3,4},{foo='bar'}})");
+                ClassicAssert.AreEqual("[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]", nestArrayResp);
+            }
+
+            // Decoding
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("decode"));
+
+                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode(1, 2)"));
+                ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("decode"));
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("decode"));
+
+                var badFormatExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
+                ClassicAssert.True(badFormatExc.Message.Contains("Expected value but found invalid token"));
+
+                var numberDecode = (string)db.ScriptEvaluate("return cjson.decode(123)");
+                ClassicAssert.AreEqual("123", numberDecode);
+
+                var boolDecode = (string)db.ScriptEvaluate("return type(cjson.decode('true'))");
+                ClassicAssert.AreEqual("boolean", boolDecode);
+
+                var stringDecode = (string)db.ScriptEvaluate("return cjson.decode('\"hello world\"')");
+                ClassicAssert.AreEqual("hello world", stringDecode);
+
+                var mapDecode = (string)db.ScriptEvaluate("return cjson.decode('{\"hello\":\"world\"}').hello");
+                ClassicAssert.AreEqual("world", mapDecode);
+
+                var arrayDecode = (string)db.ScriptEvaluate("return cjson.decode('[123]')[1]");
+                ClassicAssert.AreEqual("123", arrayDecode);
+
+                var complexMapDecodeArr = (string[])db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').arr");
+                ClassicAssert.True(complexMapDecodeArr.SequenceEqual(["1", "2", "3", "4"]));
+                var complexMapDecodeNum = (string)db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').num");
+                ClassicAssert.AreEqual("1", complexMapDecodeNum);
+                var complexMapDecodeStr = (string)db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').str");
+                ClassicAssert.AreEqual("hello", complexMapDecodeStr);
+                var complexMapDecodeObj = (string)db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').obj.foo");
+                ClassicAssert.AreEqual("bar", complexMapDecodeObj);
+
+                var complexArrDecodeNum = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[1]");
+                ClassicAssert.AreEqual("1", complexArrDecodeNum);
+                var complexArrDecodeStr = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[2]");
+                ClassicAssert.AreEqual("hello", complexArrDecodeStr);
+                var complexArrDecodeArr = (string[])db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[3]");
+                ClassicAssert.True(complexArrDecodeArr.SequenceEqual(["1", "2", "3", "4"]));
+                var complexArrDecodeObj = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[4].foo");
+                ClassicAssert.AreEqual("bar", complexArrDecodeObj);
             }
         }
 

@@ -10,6 +10,9 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Xml;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -242,18 +245,24 @@ namespace Garnet.server
         private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes);
 
         private const string LoaderBlock = @"
+-- globals to fill in on each invocation
+KEYS = {}
+ARGV = {}
+
 -- disable for sandboxing purposes
 import = function () end
 
--- cutdown for sandboxing purposes
+-- cutdown os for sandboxing purposes
 local osClockRef = os.clock
 os = {
     clock = osClockRef
 }
 
--- globals to fill in on each invocation
-KEYS = {}
-ARGV = {}
+-- define cjson for (optional) inclusion into sandbox_env
+local cjson = {
+    encode = garnet_cjson_encode;
+    decode = garnet_cjson_decode;
+}
 
 -- unpack moved after Lua 5.1, this provides Redis compat
 local unpack = table.unpack
@@ -308,8 +317,11 @@ local rawset = function(table, key, value)
     return rawsetRef(table, key, value)
 end
 
+-- technically deprecated in 5.1, but available in Redis
+-- this is only 'sort of' correct as 5.4 doesn't expose the same
+-- gc primitives
 local gcinfo = function()
-    return collectgarbageRef('count')
+    return collectgarbageRef('count'), 0
 end
 
 -- global object used for the sandbox environment
@@ -601,6 +613,10 @@ end
             state.Register("garnet_tanh\0"u8, &LuaRunnerTrampolines.Tanh);
             state.Register("garnet_maxn\0"u8, &LuaRunnerTrampolines.Maxn);
             state.Register("garnet_loadstring\0"u8, &LuaRunnerTrampolines.LoadString);
+
+            // Things provided as Lua libraries, which we actually implement in .NET
+            state.Register("garnet_cjson_encode\0"u8, &LuaRunnerTrampolines.CJsonEncode);
+            state.Register("garnet_cjson_decode\0"u8, &LuaRunnerTrampolines.CJsonDecode);
 
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
@@ -1193,9 +1209,8 @@ end
         }
 
         /// <summary>
-        /// Entry point for loadstring from a Lus script.
+        /// Entry point for loadstring from a Lua script.
         /// </summary>
-        /// <returns></returns>
         public int LoadString(nint luaStatePtr)
         {
             // TODO: Test?
@@ -1235,6 +1250,425 @@ end
             }
 
             return 1;
+        }
+
+        /// <summary>
+        /// Entry point for cjson.encode from a Lua script.
+        /// </summary>
+        public int CJsonEncode(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1)
+            {
+                return state.RaiseError("bad argument to encode");
+            }
+
+            var jsonUtf8Builder = new List<byte>();
+
+            Encode(jsonUtf8Builder, ref state);
+
+            // Encoding should leave nothing on the stack
+            state.ExpectLuaStackEmpty();
+
+            // Push the encoded string
+            var result = jsonUtf8Builder.ToArray();
+            state.PushBuffer(result);
+
+            return 1;
+
+            // Encode the unknown type on the top of the stack
+            static void Encode(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                var argType = state.Type(state.StackTop);
+
+                switch (argType)
+                {
+                    case LuaType.Boolean:
+                        EncodeBool(utf8, ref state);
+                        break;
+                    case LuaType.Nil:
+                        EncodeNull(utf8, ref state);
+                        break;
+                    case LuaType.Number:
+                        EncodeNumber(utf8, ref state);
+                        break;
+                    case LuaType.String:
+                        EncodeString(utf8, ref state);
+                        break;
+                    case LuaType.Table:
+                        EncodeTable(utf8, ref state);
+                        break;
+                    case LuaType.Function:
+                    case LuaType.LightUserData:
+                    case LuaType.None:
+                    case LuaType.Thread:
+                    case LuaType.UserData:
+                    default:
+                        _ = state.RaiseError($"Cannot serialise {argType} to JSON");
+                        break;
+                }
+            }
+
+            // Encode the boolean on the top of the stack and remove it
+            static void EncodeBool(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
+
+                if (state.ToBoolean(state.StackTop))
+                {
+                    utf8.AddRange("true"u8);
+                }
+                else
+                {
+                    utf8.AddRange("false"u8);
+                }
+
+                state.Pop(1);
+            }
+
+            // Encode the nil on the top of the stack and remove it
+            static void EncodeNull(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
+
+                utf8.AddRange("null"u8);
+
+                state.Pop(1);
+            }
+
+            // Encode the number on the top of the stack and remove it
+            static void EncodeNumber(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Number, "Expected number on top of stack");
+
+                var number = state.CheckNumber(state.StackTop);
+
+                Span<byte> space = stackalloc byte[64];
+
+                if (!number.TryFormat(space, out var written, "G", CultureInfo.InvariantCulture))
+                {
+                    _ = state.RaiseError("Unable to format number");
+                }
+
+                utf8.AddRange(space[..written]);
+
+                state.Pop(1);
+            }
+
+            // Encode the string on the top of the stack and remove it
+            static void EncodeString(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.String, "Expected string on top of stack");
+
+                _ = state.CheckBuffer(state.StackTop, out var buff);
+
+                utf8.Add((byte)'"');
+
+                var escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
+                while (escapeIx != -1)
+                {
+                    utf8.AddRange(buff[..escapeIx]);
+
+                    var toEscape = buff[escapeIx];
+                    if (toEscape == (byte)'"')
+                    {
+                        utf8.AddRange("\""u8);
+                    }
+                    else
+                    {
+                        utf8.AddRange("\\\\"u8);
+                    }
+
+                    buff = buff[(escapeIx + 1)..];
+                    escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
+                }
+
+                utf8.AddRange(buff);
+                utf8.Add((byte)'"');
+
+                state.Pop(1);
+            }
+
+            // Encode the table on the top of the stack and remove it
+            static void EncodeTable(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
+
+                // Space for key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var tableIndex = state.StackTop;
+
+                var isArray = false;
+                var arrayLength = 0;
+
+                state.PushNil();
+                while (state.Next(tableIndex) != 0)
+                {
+                    // Pop value
+                    state.Pop(1);
+
+                    double keyAsNumber;
+                    if (state.Type(tableIndex + 1) == LuaType.Number && (keyAsNumber = state.CheckNumber(tableIndex + 1)) >= 1 && keyAsNumber == (int)keyAsNumber)
+                    {
+                        if (keyAsNumber > arrayLength)
+                        {
+                            // Need at least one integer key >= 1 to consider this an array
+                            isArray = true;
+                            arrayLength = (int)keyAsNumber;
+                        }
+                    }
+                    else
+                    {
+                        // Non-integer key, or integer <= 0, so it's not an array
+                        isArray = false;
+
+                        // Remove key
+                        state.Pop(1);
+
+                        break;
+                    }
+                }
+
+                if (isArray)
+                {
+                    EncodeArray(utf8, arrayLength, ref state);
+                }
+                else
+                {
+                    EncodeObject(utf8, ref state);
+                }
+            }
+
+            // Encode the table on the top of the stack as an array and remove it
+            static void EncodeArray(List<byte> utf8, int length, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
+
+                // Space for value
+                state.ForceMinimumStackCapacity(1);
+
+                var tableIndex = state.StackTop;
+
+                utf8.Add((byte)'[');
+
+                for (var ix = 1; ix <= length; ix++)
+                {
+                    if (ix != 1)
+                    {
+                        utf8.Add((byte)',');
+                    }
+
+                    _ = state.RawGetInteger(null, tableIndex, ix);
+                    Encode(utf8, ref state);
+                }
+
+                utf8.Add((byte)']');
+
+                // Remove table
+                state.Pop(1);
+            }
+
+            // Encode the table on the top of the stack as an object and remove it
+            static void EncodeObject(List<byte> utf8, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
+
+                // Space for key and value and a copy of key
+                state.ForceMinimumStackCapacity(3);
+
+                var tableIndex = state.StackTop;
+
+                utf8.Add((byte)'{');
+
+                var firstValue = true;
+
+                state.PushNil();
+                while (state.Next(tableIndex) != 0)
+                {
+                    LuaType keyType;
+                    if ((keyType = state.Type(tableIndex + 1)) is not (LuaType.String or LuaType.Number))
+                    {
+                        // Ignore non-string-ify-abile keys
+
+                        // Remove value
+                        state.Pop(1);
+
+                        continue;
+                    }
+
+                    if (!firstValue)
+                    {
+                        utf8.Add((byte)',');
+                    }
+
+                    // Copy key to top of stack
+                    state.PushValue(tableIndex + 1);
+
+                    // Force the _copy_ of the key to be a string
+                    // if it is not already one.
+                    //
+                    // We don't modify the original key value, so we
+                    // can continue using it with Next(...)
+                    if (keyType == LuaType.Number)
+                    {
+                        _ = state.CheckBuffer(tableIndex + 3, out _);
+                    }
+
+                    // Encode key
+                    Encode(utf8, ref state);
+
+                    utf8.Add((byte)':');
+
+                    // Encode value
+                    Encode(utf8, ref state);
+
+                    firstValue = false;
+                }
+
+                utf8.Add((byte)'}');
+
+                // Remove table
+                state.Pop(1);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for cjson.decode from a Lua script.
+        /// </summary>
+        public int CJsonDecode(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1)
+            {
+                return state.RaiseError("bad argument to decode");
+            }
+
+            var argType = state.Type(1);
+            if (argType == LuaType.Number)
+            {
+                // We'd coerce this to a string, and then decode it, so just pass it back as is
+                //
+                // There are some cases where this wouldn't work, potentially, but they are super implementation
+                // specific so we can just pretend we made them work
+                return 1;
+            }
+
+            if (argType != LuaType.String)
+            {
+                return state.RaiseError("bad argument to decode");
+            }
+
+            _ = state.CheckBuffer(1, out var buff);
+
+            try
+            {
+                var parsed = JsonNode.Parse(buff);
+                Decode(parsed, ref state);
+
+                return 1;
+            }
+            catch (Exception e)
+            {
+                // Invalid token is implied (and matches Redis error replies)
+                //
+                // Additinal error details can be gleaned from messages
+                return state.RaiseError($"Expected value but found invalid token.  Inner Message = {e.Message}");
+            }
+
+            // Convert the JsonNode into a Lua value on the stack
+            static void Decode(JsonNode node, ref LuaStateWrapper state)
+            {
+                if (node is JsonValue v)
+                {
+                    DecodeValue(v, ref state);
+                }
+                else if (node is JsonArray a)
+                {
+                    DecodeArray(a, ref state);
+                }
+                else if (node is JsonObject o)
+                {
+                    DecodeObject(o, ref state);
+                }
+                else
+                {
+                    _ = state.RaiseError($"Unexpected json node type: {node.GetType().Name}");
+                }
+            }
+
+            // Convert the JsonValue int to a Lua string, nil, or number on the stack
+            static void DecodeValue(JsonValue value, ref LuaStateWrapper state)
+            {
+                // Reserve space for the value
+                state.ForceMinimumStackCapacity(1);
+
+                switch (value.GetValueKind())
+                {
+                    case JsonValueKind.Null: state.PushNil(); break;
+                    case JsonValueKind.True: state.PushBoolean(true); break;
+                    case JsonValueKind.False: state.PushBoolean(false); break;
+                    case JsonValueKind.Number: state.PushNumber(value.GetValue<double>()); break;
+                    case JsonValueKind.String:
+                        var str = value.GetValue<string>();
+
+                        // TODO: reuseable buffer?
+                        state.PushBuffer(Encoding.UTF8.GetBytes(str));
+                        break;
+                    case JsonValueKind.Undefined:
+                    case JsonValueKind.Object:
+                    case JsonValueKind.Array:
+                    default:
+                        _ = state.RaiseError($"Unexpected json value kind: {value.GetValueKind()}");
+                        break;
+                }
+            }
+
+            // Convert the JsonArray into a Lua table on the stack
+            static void DecodeArray(JsonArray arr, ref LuaStateWrapper state)
+            {
+                // Reserve space for the table
+                state.ForceMinimumStackCapacity(1);
+
+                state.CreateTable(arr.Count, 0);
+
+                var tableIndex = state.StackTop;
+
+                var storeAtIx = 1;
+                foreach (var item in arr)
+                {
+                    // Places item on the stack
+                    Decode(item, ref state);
+
+                    // Save into the table
+                    state.RawSetInteger(tableIndex, storeAtIx);
+                    storeAtIx++;
+                }
+            }
+
+            // Convert the JsonObject into a Lua table on the stack
+            static void DecodeObject(JsonObject obj, ref LuaStateWrapper state)
+            {
+                // Reserve space for table and key
+                state.ForceMinimumStackCapacity(2);
+
+                state.CreateTable(0, obj.Count);
+
+                var tableIndex = state.StackTop;
+
+                foreach(var (key, value) in obj)
+                {
+                    // TODO: reuseable buffer?
+                    state.PushBuffer(Encoding.UTF8.GetBytes(key));
+                    Decode(value, ref state);
+
+                    state.RawSet(tableIndex);
+                }
+            }
         }
 
         /// <summary>
@@ -3450,5 +3884,19 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int LoadString(nint luaState)
         => CallbackContext.LoadString(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cjson.encode.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CJsonEncode(nint luaState)
+        => CallbackContext.CJsonEncode(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cjson.decode.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CJsonDecode(nint luaState)
+        => CallbackContext.CJsonDecode(luaState);
     }
 }

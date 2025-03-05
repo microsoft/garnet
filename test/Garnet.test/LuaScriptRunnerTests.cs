@@ -541,7 +541,7 @@ namespace Garnet.test
                 new Dictionary<string, List<string>>
                 {
                     ["string"] = ["byte", "char", "dump", "find", "format", "gmatch", "gsub", "len", "lower", "match", "rep", "reverse", "sub", "upper"],
-                    //["cjson"] = ["encode", "decode"],
+                    ["cjson"] = ["encode", "decode"],
                     //["bit"] = ["tobit", "tohex", "bnot", "bor", "band", "xor", "lshift", "rshift", "arshift", "rol", "ror", "bswap"],
                     //["cmsgpack"] = ["pack", "unpack"],
                     ["math"] = ["abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor", "fmod", "frexp", "huge", "ldexp", "log", "log10", "max", "min", "modf", "pi", "pow", "rad", "random", "randomseed", "sin", "sinh", "sqrt", "tan", "tanh"],
