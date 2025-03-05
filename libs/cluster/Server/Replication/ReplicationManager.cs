@@ -156,7 +156,7 @@ namespace Garnet.cluster
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            storeWrapper.EnqueueCommit(isMainStore, newVersion, streaming: clusterProvider.serverOptions.ReplicaDisklessSync);
+            storeWrapper.EnqueueCommit(isMainStore, newVersion, diskless: clusterProvider.serverOptions.ReplicaDisklessSync);
         }
 
         /// <summary>
