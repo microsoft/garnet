@@ -2,11 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -1733,6 +1736,235 @@ return count";
                 var resp3VerbatimStrToLua2 = (string)db.ScriptEvaluate($"redis.setresp(3); return type(redis.call('RECHO', '=12\\r\\nfoo:fizzbuzz').string)");
                 ClassicAssert.AreEqual("string", resp3VerbatimStrToLua1);
                 ClassicAssert.AreEqual("string", resp3VerbatimStrToLua2);
+            }
+        }
+
+        [Test]
+        public void Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // tobit
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tobit"));
+
+                // Extra arguments are legal, but ignored
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("tobit"));
+
+                // Rules are suprisingly subtle, so test a bunch of tricky values
+                (string Value, string Expected)[] expectedValues = [
+                    ("0", "0"),
+                    ("1", "1"),
+                    ("1.1", "1"),
+                    ("1.5", "2"),
+                    ("1.9", "2"),
+                    ("0.1", "0"),
+                    ("0.5", "0"),
+                    ("0.9", "1"),
+                    ("-1.1", "-1"),
+                    ("-1.5", "-2"),
+                    ("-1.9", "-2"),
+                    ("-0.1", "0"),
+                    ("-0.5", "0"),
+                    ("-0.9", "-1"),
+                    (int.MinValue.ToString(), int.MinValue.ToString()),
+                    (int.MaxValue.ToString(), int.MaxValue.ToString()),
+                    ((1L + int.MaxValue).ToString(), int.MinValue.ToString()),
+                    ((-1L + int.MinValue).ToString(), int.MaxValue.ToString()),
+                    (double.MaxValue.ToString(), "-1"),
+                    (double.MinValue.ToString(), "-1"),
+                    (float.MaxValue.ToString(), "-447893512"),
+                    (float.MinValue.ToString(), "-447893512"),
+                ];
+                foreach (var (value, expected) in expectedValues)
+                {
+                    var actual = (string)db.ScriptEvaluate($"return bit.tobit({value})");
+                    ClassicAssert.AreEqual(expected, actual, $"bit.tobit conversion for {value} was incorrect");
+                }
+            }
+
+            // tohex
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tohex"));
+
+                // Extra arguments are legal, but ignored
+
+                var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex({})"));
+                ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains("tohex"));
+
+                var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex(1, {})"));
+                ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains("tohex"));
+
+                // Make sure casing is handled correctly
+                for (var h = 0; h < 16; h++)
+                {
+                    var lower = (string)db.ScriptEvaluate($"return bit.tohex({h}, 1)");
+                    var upper = (string)db.ScriptEvaluate($"return bit.tohex({h}, -1)");
+
+                    ClassicAssert.AreEqual(h.ToString("x1"), lower);
+                    ClassicAssert.AreEqual(h.ToString("X1"), upper);
+                }
+
+                // Run through some weird values
+                (string Value, int? N, string Expected)[] expectedValues = [
+                    ("0", null, "00000000"),
+                    ("0", 16, "00000000"),
+                    ("0", -8, "00000000"),
+                    ("123456", null, "0001e240"),
+                    ("123456", 5, "1e240"),
+                    ("123456", -5, "1E240"),
+                    (int.MinValue.ToString(), null, "80000000"),
+                    (int.MaxValue.ToString(), null, "7fffffff"),
+                    ((1L + int.MaxValue).ToString(), null, "80000000"),
+                    ((-1L + int.MinValue).ToString(), null, "7fffffff"),
+                    (double.MaxValue.ToString(), 1, "f"),
+                    (double.MinValue.ToString(), -1, "F"),
+                    (float.MaxValue.ToString(), null, "e54daff8"),
+                    (float.MinValue.ToString(), null, "e54daff8"),
+                ];
+                foreach (var (value, length, expected) in expectedValues)
+                {
+                    var actual = length != null ?
+                        (string)db.ScriptEvaluate($"return bit.tohex({value},{length})") :
+                        (string)db.ScriptEvaluate($"return bit.tohex({value})");
+
+                    ClassicAssert.AreEqual(expected, actual, $"bit.tohex result for ({value},{length}) was incorrect");
+                }
+            }
+
+            // bswap
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bswap"));
+
+                // Extra arguments are legal, but ignored
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bswap"));
+
+                // Just brute force a bunch of trial values
+                foreach(var a in new[] { 0, 1, 2, 4})
+                {
+                    foreach (var b in new[] { 8, 16, 32, 128 })
+                    {
+                        foreach (var c in new[] { 0, 2, 8, 32, })
+                        {
+                            foreach (var d in new[] { 1, 4, 16, 64 })
+                            {
+                                var input = a | (b << 8) | (c << 16) | (d << 32);
+                                var expected = BinaryPrimitives.ReverseEndianness(input);
+
+                                var actual = (int)db.ScriptEvaluate($"return bit.bswap({input})");
+                                ClassicAssert.AreEqual(expected, actual);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // bnot
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bnot"));
+
+                // Extra arguments are legal, but ignored
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bnot"));
+
+                foreach(var input in new int[] { 0, 1, 2, 4, 8, 32, 64, 128, 256, 0x70F0_F0F0, 0x6BCD_EF01, int.MinValue, int.MaxValue, -1})
+                {
+                    var expected = ~input;
+
+                    var actual = (int)db.ScriptEvaluate($"return bit.bnot({input})");
+                    ClassicAssert.AreEqual(expected, actual);
+                }
+            }
+
+            // band, bor, bxor
+            {
+                (int Base, string Name, Func<int, int, int> Op)[] ops = [
+                    (0, "bor", static (a, b) => a | b),
+                    (-1, "band", static (a, b) => a & b),
+                    (0, "bxor", static (a, b) => a ^ b),
+                ];
+
+                foreach(var op in ops)
+                {
+                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
+
+                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
+
+                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
+
+                    var badType3Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, 2, {{}})"));
+                    ClassicAssert.True(badType3Exc.Message.Contains("bad argument") && badType3Exc.Message.Contains(op.Name));
+
+                    // Gin up some unusual values and test them in different combinations
+                    var nextArg = 0x0102_0304;
+                    for(var numArgs = 1; numArgs <= 4; numArgs++)
+                    {
+                        var args = new List<int>();
+                        while(args.Count < numArgs)
+                        {
+                            args.Add(nextArg);
+                            nextArg *= 2;
+                            nextArg += args.Count;
+                        }
+
+                        var expected = op.Base;
+                        foreach(var arg in args)
+                        {
+                            expected = op.Op(expected, arg);
+                        }
+
+                        var actual = (int)db.ScriptEvaluate($"return bit.{op.Name}({string.Join(", ", args)})");
+                        ClassicAssert.AreEqual(expected, actual);
+                    }
+                }
+            }
+
+            // lshift, rshift, arshift, rol, ror
+            {
+                (string Name, Func<int, int, int> Op)[] ops = [
+                    ("lshift", static(x, n) => x << n),
+                    ("rshift", static(x, n) => (int)((uint)x >> n)),
+                    ("arshift", static(x, n) => x >> n),
+                    ("rol", static(x, n) => (int)BitOperations.RotateLeft((uint)x, n)),
+                    ("ror", static(x, n) => (int)BitOperations.RotateRight((uint)x, n)),
+                ];
+
+                foreach(var op in ops)
+                {
+                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
+
+                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
+
+                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
+
+                    // Extra args are allowed, but ignored
+
+                    for(var shift = 0; shift < 16; shift++)
+                    {
+                        const int Value = 0x1234_5678;
+                        
+                        var expected = op.Op(Value, shift);
+                        var actual = (int)db.ScriptEvaluate($"return bit.{op.Name}({Value}, {shift})");
+
+                        ClassicAssert.AreEqual(expected, actual, $"Incorrect value for bit.{op.Name}({Value}, {shift})");
+                    }
+                }
             }
         }
 

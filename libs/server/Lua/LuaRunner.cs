@@ -3,16 +3,18 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Xml;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -262,6 +264,21 @@ os = {
 local cjson = {
     encode = garnet_cjson_encode;
     decode = garnet_cjson_decode;
+}
+
+local bit = {
+    tobit = garnet_bit_tobit;
+    tohex = garnet_bit_tohex;
+    bnot = function(...) return garnet_bitop(0, ...); end;
+    bor = function(...) return garnet_bitop(1, ...); end;
+    band = function(...) return garnet_bitop(2, ...); end;
+    bxor = function(...) return garnet_bitop(3, ...); end;
+    lshift = function(...) return garnet_bitop(4, ...); end;
+    rshift = function(...) return garnet_bitop(5, ...); end;
+    arshift = function(...) return garnet_bitop(6, ...); end;
+    rol = function(...) return garnet_bitop(7, ...); end;
+    ror = function(...) return garnet_bitop(8, ...); end;
+    bswap = garnet_bit_bswap;
 }
 
 -- unpack moved after Lua 5.1, this provides Redis compat
@@ -617,6 +634,11 @@ end
             // Things provided as Lua libraries, which we actually implement in .NET
             state.Register("garnet_cjson_encode\0"u8, &LuaRunnerTrampolines.CJsonEncode);
             state.Register("garnet_cjson_decode\0"u8, &LuaRunnerTrampolines.CJsonDecode);
+            state.Register("garnet_bit_tobit\0"u8, &LuaRunnerTrampolines.BitToBit);
+            state.Register("garnet_bit_tohex\0"u8, &LuaRunnerTrampolines.BitToHex);
+            // This implements bnot, bor, band, xor, etc. but isn't directly exposed
+            state.Register("garnet_bitop\0"u8, &LuaRunnerTrampolines.Bitop);
+            state.Register("garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
 
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
@@ -1253,6 +1275,249 @@ end
         }
 
         /// <summary>
+        /// Converts a Lua number (ie. a double) into the expected 32-bit integer for
+        /// bit operations.
+        /// </summary>
+        private static int LuaNumberToBitValue(double value)
+        {
+            var scaled = value + 6_755_399_441_055_744.0;
+            var asULong = BitConverter.DoubleToUInt64Bits(scaled);
+            var asUInt = (uint)asULong;
+
+            return (int)asUInt;
+        }
+
+        /// <summary>
+        /// Entry point for bit.tobit from a Lua script.
+        /// </summary>
+        public int BitToBit(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount < 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to tobit");
+            }
+
+            var rawValue = state.CheckNumber(1);
+
+            // Make space on the stack
+            state.Pop(1);
+
+            state.PushNumber(LuaNumberToBitValue(rawValue));
+
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for bit.tohex from a Lua script.
+        /// </summary>
+        public int BitToHex(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to tohex");
+            }
+
+            var numDigits = 8;
+
+            if (luaArgCount == 2)
+            {
+                if (state.Type(2) != LuaType.Number)
+                {
+                    return state.RaiseError("bad argument to tohex");
+                }
+
+                numDigits = (int)state.CheckNumber(2);
+            }
+
+            var value = LuaNumberToBitValue(state.CheckNumber(1));
+
+            ReadOnlySpan<byte> hexBytes;
+            if (numDigits == int.MinValue)
+            {
+                numDigits = 8;
+                hexBytes = "0123456789ABCDEF"u8;
+            }
+            else if (numDigits < 0)
+            {
+                numDigits = -numDigits;
+                hexBytes = "0123456789ABCDEF"u8;
+            }
+            else
+            {
+                hexBytes = "0123456789abcdef"u8;
+            }
+
+            if (numDigits > 8)
+            {
+                numDigits = 8;
+            }
+
+            Span<byte> buff = stackalloc byte[numDigits];
+            for (var i = buff.Length - 1; i >= 0; i--)
+            {
+                buff[i] = hexBytes[value & 0xF];
+                value >>= 4;
+            }
+
+            // Free up space on stack
+            state.Pop(luaArgCount);
+
+            state.PushBuffer(buff);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for bit.bswap from a Lua script.
+        /// </summary>
+        public int BitBswap(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to bswap");
+            }
+
+            var value = LuaNumberToBitValue(state.CheckNumber(1));
+
+            // Free up space on stack
+            state.Pop(1);
+
+            var swapped = BinaryPrimitives.ReverseEndianness(value);
+            state.PushNumber(swapped);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for garnet_bitop from a Lua script.
+        /// 
+        /// Used to implement bit.bnot, bit.bor, bit.band, etc.
+        /// </summary>
+        public int Bitop(nint luaStatePtr)
+        {
+            const int BNot = 0;
+            const int BOr = 1;
+            const int BAnd = 2;
+            const int BXor = 3;
+            const int LShift = 4;
+            const int RShift = 5;
+            const int ARShift = 6;
+            const int Rol = 7;
+            const int Ror = 8;
+
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bitop was not indicated, should never happen");
+            }
+
+            var bitop = (int)state.CheckNumber(1);
+            if (bitop < BNot || bitop > Ror)
+            {
+                return state.RaiseError($"invalid bitop {bitop} was indicated, should never happen");
+            }
+
+            // Handle bnot specially
+            if (bitop == BNot)
+            {
+                if (luaArgCount < 2 || state.Type(2) != LuaType.Number)
+                {
+                    return state.RaiseError("bad argument to bnot");
+                }
+
+                var val = LuaNumberToBitValue(state.CheckNumber(2));
+                var res = ~val;
+                state.Pop(2);
+
+                state.PushNumber(res);
+                return 1;
+            }
+
+            var binOpName =
+                bitop switch
+                {
+                    BOr => "bor",
+                    BAnd => "band",
+                    BXor => "bxor",
+                    LShift => "lshift",
+                    RShift => "rshift",
+                    ARShift => "arshift",
+                    Rol => "rol",
+                    _ => "ror",
+                };
+
+            if(luaArgCount < 2)
+            {
+                return state.RaiseError($"bad argument to {binOpName}");
+            }
+
+            if (bitop is BOr or BAnd or BXor)
+            {
+                var ret =
+                    bitop switch
+                    {
+                        BOr => 0,
+                        BXor => 0,
+                        _ => -1,
+                    };
+
+                for (var argIx = 2; argIx <= luaArgCount; argIx++)
+                {
+                    if (state.Type(argIx) != LuaType.Number)
+                    {
+                        return state.RaiseError($"bad argument to {binOpName}");
+                    }
+
+                    var nextValue = LuaNumberToBitValue(state.CheckNumber(argIx));
+
+                    ret =
+                        bitop switch
+                        {
+                            BOr => ret | nextValue,
+                            BXor => ret ^ nextValue,
+                            _ => ret & nextValue,
+                        };
+                }
+
+                state.Pop(luaArgCount);
+                state.PushNumber(ret);
+
+                return 1;
+            }
+
+            if (luaArgCount < 3 || state.Type(2) != LuaType.Number || state.Type(3) != LuaType.Number)
+            {
+                return state.RaiseError($"bad argument to {binOpName}");
+            }
+
+            var x = LuaNumberToBitValue(state.CheckNumber(2));
+            var n = ((int)state.CheckNumber(3)) & 0b1111;
+
+            var shiftRes =
+                bitop switch
+                {
+                    LShift => x << n,
+                    RShift => (int)((uint)x >> n),
+                    ARShift => x >> n,
+                    Rol => (int)BitOperations.RotateLeft((uint)x, n),
+                    _ => (int)BitOperations.RotateRight((uint)x, n),
+                };
+
+            state.Pop(luaArgCount);
+            state.PushNumber(shiftRes);
+            return 1;
+        }
+
+        /// <summary>
         /// Entry point for cjson.encode from a Lua script.
         /// </summary>
         public int CJsonEncode(nint luaStatePtr)
@@ -1660,7 +1925,7 @@ end
 
                 var tableIndex = state.StackTop;
 
-                foreach(var (key, value) in obj)
+                foreach (var (key, value) in obj)
                 {
                     // TODO: reuseable buffer?
                     state.PushBuffer(Encoding.UTF8.GetBytes(key));
@@ -3898,5 +4163,34 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CJsonDecode(nint luaState)
         => CallbackContext.CJsonDecode(luaState);
+
+        /// <summary>
+        /// Entry point for calls to bit.tobit.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int BitToBit(nint luaState)
+        => CallbackContext.BitToBit(luaState);
+
+        /// <summary>
+        /// Entry point for calls to bit.tohex.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int BitToHex(nint luaState)
+        => CallbackContext.BitToHex(luaState);
+
+        /// <summary>
+        /// Entry point for calls to garnet_bitop, which backs
+        /// bit.bnot, bit.bor, etc.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Bitop(nint luaState)
+        => CallbackContext.Bitop(luaState);
+
+        /// <summary>
+        /// Entry point for calls to bit.bswap.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int BitBswap(nint luaState)
+        => CallbackContext.BitBswap(luaState);
     }
 }
