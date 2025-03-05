@@ -91,11 +91,16 @@ namespace Garnet.server
         bool toDispose;
 
         int opCount;
-        public readonly StorageSession storageSession;
+        public StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
 
         readonly IGarnetAuthenticator _authenticator;
+
+        internal int activeDbId;
+
+        readonly bool allowMultiDb;
+        internal ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
         /// <summary>
         /// The user currently authenticated in this session
@@ -213,18 +218,23 @@ namespace Garnet.server
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
             this.scratchBufferManager = new ScratchBufferManager();
 
-            // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
-
-            this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
-            this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
-
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
+
+            var dbSession = CreateDatabaseSession(0);
+            var maxDbs = storeWrapper.serverOptions.MaxDatabases;
+            activeDbId = 0;
+            allowMultiDb = !storeWrapper.serverOptions.EnableCluster && maxDbs > 1;
+
+            databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
+            if (!databaseSessions.TrySetValue(0, ref dbSession))
+                throw new GarnetException("Failed to set initial database session in database sessions map");
+
+            SwitchActiveDatabaseSession(0, ref dbSession);
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
@@ -251,6 +261,14 @@ namespace Garnet.server
             }
         }
 
+        private GarnetDatabaseSession CreateDatabaseSession(int dbId)
+        {
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
+            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
+            return new GarnetDatabaseSession(dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
+        }
+
         internal void SetUserHandle(UserHandle userHandle)
         {
             this._userHandle = userHandle;
@@ -265,6 +283,10 @@ namespace Garnet.server
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
             }
+
+            // Dispose all database sessions
+            foreach (var dbSession in databaseSessions.Map)
+                dbSession.Dispose();
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, latencyMetrics);
@@ -671,6 +693,7 @@ namespace Garnet.server
                 RespCommand.MSETNX => NetworkMSETNX(ref storageApi),
                 RespCommand.UNLINK => NetworkDEL(ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
+                RespCommand.SWAPDB => NetworkSWAPDB(),
                 RespCommand.WATCH => NetworkWATCH(),
                 RespCommand.WATCHMS => NetworkWATCH_MS(),
                 RespCommand.WATCHOS => NetworkWATCH_OS(),
@@ -1208,7 +1231,7 @@ namespace Garnet.server
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (waitForAofBlocking)
                 {
-                    var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
+                    var task = storeWrapper.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);
@@ -1226,9 +1249,9 @@ namespace Garnet.server
 
             if ((int)(dcurr - d) > 0)
             {
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 {
-                    var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
+                    var task = storeWrapper.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);
@@ -1278,6 +1301,45 @@ namespace Garnet.server
             }
 
             return header;
+        }
+
+        internal bool TrySwitchActiveDatabaseSession(int dbId)
+        {
+            if (!allowMultiDb) return false;
+
+            if (!databaseSessions.TryGetOrSet(dbId, () => CreateDatabaseSession(dbId), out var dbSession, out _))
+                return false;
+
+            SwitchActiveDatabaseSession(dbId, ref dbSession);
+            return true;
+        }
+
+        internal bool TrySwapDatabaseSessions(int dbId1, int dbId2)
+        {
+            if (!allowMultiDb) return false;
+            if (dbId1 == dbId2) return true;
+
+            if (!databaseSessions.TryGetOrSet(dbId1, () => CreateDatabaseSession(dbId2), out var dbSession1, out _) ||
+                !databaseSessions.TryGetOrSet(dbId2, () => CreateDatabaseSession(dbId1), out var dbSession2, out _))
+                return false;
+
+            databaseSessions.Map[dbId1] = dbSession2;
+            databaseSessions.Map[dbId2] = dbSession1;
+
+            if (activeDbId == dbId1)
+                SwitchActiveDatabaseSession(dbId1, ref dbSession2);
+            else if (activeDbId == dbId2)
+                SwitchActiveDatabaseSession(dbId2, ref dbSession1);
+
+            return true;
+        }
+
+        private void SwitchActiveDatabaseSession(int dbId, ref GarnetDatabaseSession dbSession)
+        {
+            this.activeDbId = dbId;
+            this.storageSession = dbSession.StorageSession;
+            this.basicGarnetApi = dbSession.GarnetApi;
+            this.lockableGarnetApi = dbSession.LockableGarnetApi;
         }
     }
 }

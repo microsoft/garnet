@@ -33,20 +33,17 @@ namespace Garnet.server
         private readonly CustomProcedureInput customProcInput;
         private readonly SessionParseState parseState;
 
-        /// <summary>
-        /// Replication offset
-        /// </summary>
-        internal long ReplicationOffset { get; private set; }
+        int activeDbId;
 
         /// <summary>
         /// Session for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Session for object store
         /// </summary>
-        readonly BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
         readonly Dictionary<int, List<byte[]>> inflightTxns;
         readonly byte[] buffer;
@@ -54,7 +51,6 @@ namespace Garnet.server
         readonly byte* bufferPtr;
 
         readonly ILogger logger;
-        readonly bool recordToAof;
 
         /// <summary>
         /// Create new AOF processor
@@ -65,31 +61,12 @@ namespace Garnet.server
             ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
-            this.recordToAof = recordToAof;
 
-            ReplicationOffset = 0;
+            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
-            var replayAofStoreWrapper = new StoreWrapper(
-                storeWrapper.version,
-                storeWrapper.redisProtocolVersion,
-                null,
-                storeWrapper.store,
-                storeWrapper.objectStore,
-                storeWrapper.objectStoreSizeTracker,
-                storeWrapper.customCommandManager,
-                recordToAof ? storeWrapper.appendOnlyFile : null,
-                storeWrapper.serverOptions,
-                storeWrapper.subscribeBroker,
-                accessControlList: storeWrapper.accessControlList,
-                loggerFactory: storeWrapper.loggerFactory);
-
+            this.activeDbId = 0;
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
-
-            var session = respServerSession.storageSession.basicContext.Session;
-            basicContext = session.BasicContext;
-            var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
-            if (objectStoreSession is not null)
-                objectStoreBasicContext = objectStoreSession.BasicContext;
+            SwitchActiveDatabaseContext(ref storeWrapper.DefaultDatabase, true);
 
             parseState.Initialize();
             storeInput.parseState = parseState;
@@ -108,29 +85,41 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            basicContext.Session?.Dispose();
-            objectStoreBasicContext.Session?.Dispose();
+            var databaseSessionsSnapshot = respServerSession.databaseSessions.Map;
+            foreach (var dbSession in databaseSessionsSnapshot)
+            {
+                dbSession.StorageSession.basicContext.Session?.Dispose();
+                dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
+            }
+
             handle.Free();
         }
 
         /// <summary>
         /// Recover store using AOF
         /// </summary>
-        public unsafe void Recover(long untilAddress = -1)
+        /// <param name="db">Database to recover</param>
+        /// <param name="untilAddress"></param>
+        /// <returns>Replication offset</returns>
+        public unsafe long Recover(ref GarnetDatabase db, long untilAddress = -1)
         {
             logger?.LogInformation("Begin AOF recovery");
-            RecoverReplay(untilAddress);
+            return RecoverReplay(ref db, untilAddress);
         }
 
         MemoryResult<byte> output = default;
-        private unsafe void RecoverReplay(long untilAddress)
+        private unsafe long RecoverReplay(ref GarnetDatabase db, long untilAddress)
         {
             logger?.LogInformation("Begin AOF replay");
             try
             {
                 int count = 0;
-                if (untilAddress == -1) untilAddress = storeWrapper.appendOnlyFile.TailAddress;
-                using var scan = storeWrapper.appendOnlyFile.Scan(storeWrapper.appendOnlyFile.BeginAddress, untilAddress);
+                var appendOnlyFile = db.AppendOnlyFile;
+
+                SwitchActiveDatabaseContext(ref db);
+
+                if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
+                using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
 
                 while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
                 {
@@ -140,10 +129,8 @@ namespace Garnet.server
                         logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress}", count, nextAofAddress);
                 }
 
-                // Update ReplicationOffset
-                ReplicationOffset = untilAddress;
-
                 logger?.LogInformation("Completed full AOF log replay of {count} records", count);
+                return untilAddress;
             }
             catch (Exception ex)
             {
@@ -157,6 +144,8 @@ namespace Garnet.server
                 output.MemoryOwner?.Dispose();
                 respServerSession.Dispose();
             }
+
+            return -1;
         }
 
         internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length, bool asReplica = false)
@@ -212,18 +201,14 @@ namespace Garnet.server
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.store.CurrentVersion)
-                        {
-                            storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
-                        }
+                            storeWrapper.databaseManager.TakeCheckpoint(false, StoreType.Main, logger: logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
-                        {
-                            storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
-                        }
+                            storeWrapper.databaseManager.TakeCheckpoint(false, StoreType.Object, logger: logger);
                     }
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointCommit:
@@ -290,6 +275,25 @@ namespace Garnet.server
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
             return true;
+        }
+
+        private void SwitchActiveDatabaseContext(ref GarnetDatabase db, bool initialSetup = false)
+        {
+            if (respServerSession.activeDbId != db.Id)
+            {
+                var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
+                Debug.Assert(switchDbSuccessful);
+            }
+
+            if (this.activeDbId != db.Id || initialSetup)
+            {
+                var session = respServerSession.storageSession.basicContext.Session;
+                basicContext = session.BasicContext;
+                var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
+                if (objectStoreSession is not null)
+                    objectStoreBasicContext = objectStoreSession.BasicContext;
+                this.activeDbId = db.Id;
+            }
         }
 
         unsafe void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)

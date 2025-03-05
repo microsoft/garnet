@@ -754,6 +754,8 @@ namespace Garnet.test.cluster
 
             if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(30)))
                 Assert.Fail("attachReplicaTask timeout");
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: 0, secondaryIndex: 1, logger: context.logger);
         }
 
         [Test, Order(14)]
