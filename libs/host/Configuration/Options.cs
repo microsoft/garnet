@@ -663,7 +663,7 @@ namespace Garnet
             }
             else
             {
-                endpoints = Address.Select(Address => Format.TryCreateEndpoint(Address, Port, useForBind: false).Result).ToArray();
+                endpoints = Address.SelectMany(Address => Format.TryCreateEndpoint(Address, Port, useForBind: false).Result).ToArray();
                 if (endpoints.Length == 0)
                     throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
             }
