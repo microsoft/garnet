@@ -501,8 +501,8 @@ namespace Garnet.server
         public void EnqueueCommit(bool isMainStore, long version, bool streaming = false)
         {
             var opType = streaming ?
-                isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit :
-                isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit;
+                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit) :
+                (isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit);
 
             AofHeader header = new()
             {
