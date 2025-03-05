@@ -497,16 +497,16 @@ namespace Garnet.server
         /// </summary>
         /// <param name="isMainStore"></param>
         /// <param name="version"></param>
-        /// <param name="streaming"></param>
-        public void EnqueueCommit(bool isMainStore, long version, bool streaming = false)
+        /// <param name="diskless"></param>
+        public void EnqueueCommit(bool isMainStore, long version, bool diskless)
         {
-            var opType = streaming ?
-                isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit :
-                isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit;
+            var opType = diskless ?
+                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit) :
+                (isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit);
 
             AofHeader header = new()
             {
-                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
+                opType = opType,
                 storeVersion = version,
                 sessionID = -1
             };
