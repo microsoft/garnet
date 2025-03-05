@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
@@ -39,14 +40,13 @@ namespace Garnet.common
         /// <param name="useForBind">Binding does not poll connection because is supposed to be called from the server side</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public static async Task<EndPoint> TryCreateEndpoint(string addressOrHostname, int port, bool useForBind = false, ILogger logger = null)
+        public static async Task<EndPoint[]> TryCreateEndpoint(string addressOrHostname, int port, bool useForBind = false, ILogger logger = null)
         {
-            IPEndPoint endpoint = null;
             if (string.IsNullOrEmpty(addressOrHostname) || string.IsNullOrWhiteSpace(addressOrHostname))
-                return new IPEndPoint(IPAddress.Any, port);
+                return [new IPEndPoint(IPAddress.Any, port)];
 
             if (IPAddress.TryParse(addressOrHostname, out var ipAddress))
-                return new IPEndPoint(ipAddress, port);
+                return [new IPEndPoint(ipAddress, port)];
 
             // Sanity check, there should be at least one ip address available
             try
@@ -62,9 +62,9 @@ namespace Garnet.common
                 {
                     foreach (var entry in ipAddresses)
                     {
-                        endpoint = new IPEndPoint(entry, port);
+                        var endpoint = new IPEndPoint(entry, port);
                         var IsListening = await IsReachable(endpoint);
-                        if (IsListening) break;
+                        if (IsListening) return [endpoint];
                     }
                 }
                 else
@@ -78,12 +78,7 @@ namespace Garnet.common
                         return null;
                     }
 
-                    if (ipAddresses.Length > 1) {
-                        logger?.LogError("Error hostname resolved to multiple endpoints. Garnet does not support multiple endpoints!");
-                        return null;
-                    }
-
-                    return new IPEndPoint(ipAddresses[0], port);
+                    return ipAddresses.Select(ip => new IPEndPoint(ip, port)).ToArray();
                 }
                 logger?.LogError("No reachable IP address found for hostname:{hostname}", addressOrHostname);
             }
@@ -92,7 +87,7 @@ namespace Garnet.common
                 logger?.LogError(ex, "Error while trying to resolve hostname:{hostname}", addressOrHostname);
             }
 
-            return endpoint;
+            return null;
 
             async Task<bool> IsReachable(IPEndPoint endpoint)
             {
