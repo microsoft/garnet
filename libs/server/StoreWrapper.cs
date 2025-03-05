@@ -506,7 +506,7 @@ namespace Garnet.server
 
             AofHeader header = new()
             {
-                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
+                opType = opType,
                 storeVersion = version,
                 sessionID = -1
             };
