@@ -40,8 +40,8 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Required = false, HelpText = "IP address to bind server to (default: any)")]
-        public string Address { get; set; }
+        [Option("bind", Separator = ',', Required = false, HelpText = "IP address to bind server to (default: any)")]
+        public IEnumerable<string> Address { get; set; }
 
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -616,9 +616,6 @@ namespace Garnet
             this.runtimeLogger = logger;
             foreach (var prop in typeof(Options).GetProperties())
             {
-                if (prop.Name.Equals("runtimeLogger"))
-                    continue;
-
                 // Ignore if property is not decorated with the OptionsAttribute or the ValidationAttribute
                 var validationAttr = prop.GetCustomAttributes(typeof(ValidationAttribute)).FirstOrDefault();
                 if (!Attribute.IsDefined(prop, typeof(OptionAttribute)) || validationAttr == null)
@@ -658,15 +655,16 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            EndPoint endpoint;
+            EndPoint[] endpoints;
             if (!string.IsNullOrEmpty(UnixSocketPath))
             {
-                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
+                endpoints = new EndPoint[1];
+                endpoints[0] = new UnixDomainSocketEndPoint(UnixSocketPath);
             }
             else
             {
-                endpoint = Format.TryCreateEndpoint(Address, Port, useForBind: false).Result;
-                if (endpoint == null)
+                endpoints = Address.Select(Address => Format.TryCreateEndpoint(Address, Port, useForBind: false).Result).ToArray();
+                if (endpoints.Length == 0)
                     throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
             }
 
@@ -722,7 +720,8 @@ namespace Garnet
             }
             return new GarnetServerOptions(logger)
             {
-                EndPoint = endpoint,
+                EndPoint = endpoints[0],
+                EndPoints = endpoints,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
