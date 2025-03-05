@@ -913,7 +913,7 @@ namespace Garnet.test
             }
         }
 
-        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false, bool isObjectStore = false)
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, int dbId = 0, bool includeReadCache = false, bool isObjectStore = false)
         {
             StoreAddressInfo result = default;
             var info = isObjectStore ? server.Info("OBJECTSTORE") : server.Info("STORE");
@@ -921,19 +921,19 @@ namespace Garnet.test
             {
                 foreach (var entry in section)
                 {
-                    if (entry.Key.Equals("Log.BeginAddress"))
+                    if (entry.Key.Equals($"db{dbId}.Log.BeginAddress"))
                         result.BeginAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals("Log.HeadAddress"))
+                    else if (entry.Key.Equals($"db{dbId}.Log.HeadAddress"))
                         result.HeadAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals("Log.SafeReadOnlyAddress"))
+                    else if (entry.Key.Equals($"db{dbId}.Log.SafeReadOnlyAddress"))
                         result.ReadOnlyAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals("Log.TailAddress"))
+                    else if (entry.Key.Equals($"db{dbId}.Log.TailAddress"))
                         result.TailAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals("Log.MemorySizeBytes"))
+                    else if (entry.Key.Equals($"db{dbId}.Log.MemorySizeBytes"))
                         result.MemorySize = long.Parse(entry.Value);
-                    else if (includeReadCache && entry.Key.Equals("ReadCache.BeginAddress"))
+                    else if (includeReadCache && entry.Key.Equals($"db{dbId}.ReadCache.BeginAddress"))
                         result.ReadCacheBeginAddress = long.Parse(entry.Value);
-                    else if (includeReadCache && entry.Key.Equals("ReadCache.TailAddress"))
+                    else if (includeReadCache && entry.Key.Equals($"db{dbId}.ReadCache.TailAddress"))
                         result.ReadCacheTailAddress = long.Parse(entry.Value);
                 }
             }

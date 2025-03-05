@@ -182,6 +182,7 @@ namespace Garnet.server
         SPOP,
         SREM,
         SUNIONSTORE,
+        SWAPDB,
         UNLINK,
         ZADD,
         ZDIFFSTORE,
@@ -263,7 +264,6 @@ namespace Garnet.server
         FORCEGC,
         PURGEBP,
         FAILOVER,
-        SWAPDB,
 
         // Custom commands
         CustomTxn,

@@ -230,12 +230,9 @@ namespace Garnet.server
             activeDbId = 0;
             allowMultiDb = !storeWrapper.serverOptions.EnableCluster && maxDbs > 1;
 
-            if (allowMultiDb)
-            {
-                databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
-                if (!databaseSessions.TrySetValue(0, ref dbSession))
-                    throw new GarnetException("Failed to set initial database session in database sessions map");
-            }
+            databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
+            if (!databaseSessions.TrySetValue(0, ref dbSession))
+                throw new GarnetException("Failed to set initial database session in database sessions map");
 
             SwitchActiveDatabaseSession(0, ref dbSession);
 

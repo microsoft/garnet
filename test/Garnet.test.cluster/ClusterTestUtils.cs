@@ -2697,7 +2697,7 @@ namespace Garnet.test.cluster
                 var result = server.Info(section);
                 ClassicAssert.AreEqual(1, result.Length, "section does not exist");
                 foreach (var item in result[0])
-                    if (item.Key.Equals(segment))
+                    if (item.Key.Equals($"db0.{segment}"))
                         return item.Value;
                 Assert.Fail($"Segment not available for {section} section");
                 return "";
