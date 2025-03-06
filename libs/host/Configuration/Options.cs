@@ -40,7 +40,7 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Separator = ',', Required = false, HelpText = "IP address to bind server to (default: any)")]
+        [Option("bind", Separator = ' ', Required = false, HelpText = "IP address to bind server to (default: any)")]
         public IEnumerable<string> Address { get; set; }
 
         [MemorySizeValidation]
@@ -720,7 +720,6 @@ namespace Garnet
             }
             return new GarnetServerOptions(logger)
             {
-                EndPoint = endpoints[0],
                 EndPoints = endpoints,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
