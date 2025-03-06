@@ -119,7 +119,7 @@ namespace Tsavorite.test.statemachine
 
             NumClicks value;
 
-            s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
+            s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f);
             var bc1 = s1.BasicContext;
 
             for (int key = 0; key < NumOps; key++)
