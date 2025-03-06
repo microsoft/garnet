@@ -35,7 +35,7 @@ namespace Tsavorite.core
                 //   have reached PREPARE/PREPARE_GROW and all transactions have concluded (i.e., NumActiveLockingSessions == 0).
                 //   See HybridLogCheckpointSMTask and IndexResizeSMTask for state machine progress condition.
                 //
-                //   Also, ClientSession.AcquireLockable() ensures that no new multi-key ops are started in
+                //   Also, ClientSession.AcquireLockable() ensures that no new transactions are started in
                 //   the PREPARE/PREPARE_GROW phase.
                 if ((sessionFunctions.Ctx.phase == Phase.PREPARE || sessionFunctions.Ctx.phase == Phase.PREPARE_GROW)
                     && !sessionFunctions.Ctx.isAcquiredLockable)
