@@ -40,14 +40,12 @@ namespace Tsavorite.core
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
 
-        bool isAcquiredLockable;
-
         ScanCursorState<TKey, TValue> scanCursorState;
 
         internal void AcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
             where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsNotAcquiredLockable();
+            CheckIsNotAcquiredLockable(sessionFunctions);
 
             while (true)
             {
@@ -60,11 +58,11 @@ namespace Tsavorite.core
                 }
 
                 store.IncrementNumLockingSessions();
-                isAcquiredLockable = true;
+                sessionFunctions.Ctx.isAcquiredLockable = true;
 
                 if (!IsInPreparePhase())
                     break;
-                InternalReleaseLockable();
+                InternalReleaseLockable(sessionFunctions);
                 _ = Thread.Yield();
             }
         }
@@ -72,7 +70,7 @@ namespace Tsavorite.core
         internal bool TryAcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
             where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsNotAcquiredLockable();
+            CheckIsNotAcquiredLockable(sessionFunctions);
 
             // Checkpoints cannot complete while we have active locking sessions.
             if (IsInPreparePhase())
@@ -81,39 +79,43 @@ namespace Tsavorite.core
             }
 
             store.IncrementNumLockingSessions();
-            isAcquiredLockable = true;
+            sessionFunctions.Ctx.isAcquiredLockable = true;
 
             if (!IsInPreparePhase())
                 return true;
 
-            InternalReleaseLockable();
+            InternalReleaseLockable(sessionFunctions);
             return false;
         }
 
-        internal void ReleaseLockable()
+        internal void ReleaseLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsAcquiredLockable();
+            CheckIsAcquiredLockable(sessionFunctions);
             if (TotalLockCount > 0)
                 throw new TsavoriteException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseLockable();
+            InternalReleaseLockable(sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseLockable()
+        private void InternalReleaseLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            isAcquiredLockable = false;
+            sessionFunctions.Ctx.isAcquiredLockable = false;
             store.DecrementNumLockingSessions();
         }
 
-        internal void CheckIsAcquiredLockable()
+        internal void CheckIsAcquiredLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (!isAcquiredLockable)
+            if (!sessionFunctions.Ctx.isAcquiredLockable)
                 throw new TsavoriteException("Lockable method call when BeginLockable has not been called");
         }
 
-        void CheckIsNotAcquiredLockable()
+        void CheckIsNotAcquiredLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (isAcquiredLockable)
+            if (sessionFunctions.Ctx.isAcquiredLockable)
                 throw new TsavoriteException("BeginLockable cannot be called twice (call EndLockable first)");
         }
 

@@ -51,7 +51,7 @@ namespace Tsavorite.core
         public bool TryBeginLockable() => clientSession.TryAcquireLockable(sessionFunctions);
 
         /// <inheritdoc/>
-        public void EndLockable() => clientSession.ReleaseLockable();
+        public void EndLockable() => clientSession.ReleaseLockable(sessionFunctions);
         #endregion Begin/EndLockable
 
         #region Key Locking
@@ -75,7 +75,7 @@ namespace Tsavorite.core
         public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
         {
-            clientSession.CheckIsAcquiredLockable();
+            clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
             while (true)
             {
@@ -123,7 +123,7 @@ namespace Tsavorite.core
         public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey
         {
-            clientSession.CheckIsAcquiredLockable();
+            clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
             return LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
@@ -148,7 +148,7 @@ namespace Tsavorite.core
         public bool TryPromoteLock<TLockableKey>(TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey
         {
-            clientSession.CheckIsAcquiredLockable();
+            clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
             return LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
@@ -161,7 +161,7 @@ namespace Tsavorite.core
         public void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
         {
-            clientSession.CheckIsAcquiredLockable();
+            clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
             LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualUnlock(clientSession, keys, start, start + count - 1);

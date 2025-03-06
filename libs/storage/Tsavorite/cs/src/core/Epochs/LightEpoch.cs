@@ -477,10 +477,14 @@ namespace Tsavorite.core
             public int reentrant;
 
             [FieldOffset(16)]
-            public fixed long placeholder[6];
+            public fixed long padding[6]; // Padding to end of cache line
 
             public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
         }
+
+        /// <summary>
+        /// Pair of epoch and action to be executed
+        /// </summary>
         struct EpochActionPair
         {
             public long epoch;

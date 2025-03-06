@@ -15,7 +15,6 @@ namespace Tsavorite.core
         internal sealed class TsavoriteExecutionContext<TInput, TOutput, TContext>
         {
             internal readonly int sessionID;
-            internal readonly string sessionName;
 
             // Control automatic Read copy operations. These flags override flags specified at the TsavoriteKV level, but may be overridden on the individual Read() operations
             internal ReadCopyOptions ReadCopyOptions;
@@ -30,15 +29,16 @@ namespace Tsavorite.core
             public readonly AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
             internal RevivificationStats RevivificationStats = new();
+            public bool isAcquiredLockable;
 
-            public TsavoriteExecutionContext(int sessionID, string sessionName)
+            public TsavoriteExecutionContext(int sessionID)
             {
                 SessionState = SystemState.Make(Phase.REST, 1);
                 this.sessionID = sessionID;
-                this.sessionName = sessionName;
                 readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
                 ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
                 pendingReads = new AsyncCountDown();
+                isAcquiredLockable = false;
             }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
