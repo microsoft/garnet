@@ -243,8 +243,8 @@ This is used to determine how many seconds to wait before starting the full sync
 There is no additional requirements to that of using the aforementioned flags in order to leverage diskless replication.
 The APIs for mapping replicas remains the same (i.e. CLUSTER REPLICATE, REPLICAOF etc.).
 
-Note that streaming replication does not take a checkpoint thus the AOF is not automatically truncated (unless FAT flag is sued) every time a full sync is performed.
+Note that diskless replication does not take an actual checkpoint.
+Hence every time a full sync is performed, the AOF is not automatically truncated (unless FAT flag is used).
 This happens to ensure durability in the event of a failure which will not be possible if the AOF gets truncated without a persitent checkpoint.
-However, the store version gets incremented to ensure consistency accross different instances that may be fully synced at different times.
-Users can still utilize SAVE/BGSAVE commands to take a manual checkpoint which safely truncates the AOF.
-
+However, the store version gets incremented to ensure consistency across different instances that may be fully synced at different times.
+Users can still utilize SAVE/BGSAVE commands or --aof-size-limit to periodically take a checkpoint and safely truncates the AOF.
