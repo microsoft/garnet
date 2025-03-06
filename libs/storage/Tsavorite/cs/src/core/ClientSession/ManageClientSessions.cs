@@ -17,20 +17,16 @@ namespace Tsavorite.core
         /// Start a new client session with Tsavorite.
         /// </summary>
         /// <param name="functions">Callback functions</param>
-        /// <param name="sessionName">Name of session (optional)</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(TFunctions functions, string sessionName = null,
-                ReadCopyOptions readCopyOptions = default)
+        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(TFunctions functions, ReadCopyOptions readCopyOptions = default)
             where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
-            if (sessionName == "")
-                throw new TsavoriteException("Cannot use empty string as session name");
 
             int sessionID = Interlocked.Increment(ref maxSessionID);
-            var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID, sessionName);
+            var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
 
 
@@ -41,7 +37,7 @@ namespace Tsavorite.core
                     _ = Interlocked.CompareExchange(ref _activeSessions, [], null);
 
                 lock (_activeSessions)
-                    _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
+                    _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             }
             return session;
         }

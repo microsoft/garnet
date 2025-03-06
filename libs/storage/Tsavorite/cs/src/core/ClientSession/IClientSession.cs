@@ -5,7 +5,6 @@ namespace Tsavorite.core
 {
     class SessionInfo
     {
-        public string sessionName;
         public bool isActive;
         public IClientSession session;
     }
