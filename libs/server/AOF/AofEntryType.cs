@@ -14,10 +14,10 @@ namespace Garnet.server
         TxnStart = 0x20,
         TxnCommit = 0x21,
         TxnAbort = 0x22,
-        MainStoreCheckpointCommit = 0x30,
-        ObjectStoreCheckpointCommit = 0x31,
-        MainStoreStreamingCheckpointCommit = 0x40,
-        ObjectStoreStreamingCheckpointCommit = 0x41,
+        MainStoreCheckpointStartCommit = 0x30,
+        ObjectStoreCheckpointStartCommit = 0x31,
+        MainStoreStreamingCheckpointStartCommit = 0x40,
+        ObjectStoreStreamingCheckpointStartCommit = 0x41,
         StoredProcedure = 0x50,
     }
 

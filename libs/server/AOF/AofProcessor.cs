@@ -208,7 +208,7 @@ namespace Garnet.server
                     // after a checkpoint, and the transaction belonged to the previous version. It can safely
                     // be ignored.
                     break;
-                case AofEntryType.MainStoreCheckpointCommit:
+                case AofEntryType.MainStoreCheckpointStartCommit:
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.store.CurrentVersion)
@@ -217,7 +217,7 @@ namespace Garnet.server
                         }
                     }
                     break;
-                case AofEntryType.ObjectStoreCheckpointCommit:
+                case AofEntryType.ObjectStoreCheckpointStartCommit:
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
@@ -226,12 +226,12 @@ namespace Garnet.server
                         }
                     }
                     break;
-                case AofEntryType.MainStoreStreamingCheckpointCommit:
+                case AofEntryType.MainStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (header.storeVersion > storeWrapper.store.CurrentVersion)
                         storeWrapper.store.SetVersion(header.storeVersion);
                     break;
-                case AofEntryType.ObjectStoreStreamingCheckpointCommit:
+                case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (header.storeVersion > storeWrapper.store.CurrentVersion)
                         storeWrapper.objectStore.SetVersion(header.storeVersion);
@@ -423,7 +423,7 @@ namespace Garnet.server
                 AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
                 AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
                 AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
-                AofEntryType.MainStoreCheckpointCommit or AofEntryType.ObjectStoreCheckpointCommit => AofStoreType.CheckpointType,
+                AofEntryType.MainStoreCheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit => AofStoreType.CheckpointType,
                 _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
             };
         }
