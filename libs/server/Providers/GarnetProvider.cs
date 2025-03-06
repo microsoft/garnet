@@ -33,7 +33,7 @@ namespace Garnet.server
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
+            SubscribeBroker broker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
         {

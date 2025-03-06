@@ -44,13 +44,10 @@ namespace Garnet.client
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
-        readonly string address;
-        readonly int port;
         readonly int sendPageSize;
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
         NetworkWriter networkWriter;
-        INetworkSender networkSender;
 
         readonly TcsWrapper[] tcsArray;
         readonly SslClientAuthenticationOptions sslOptions;
@@ -97,6 +94,11 @@ namespace Garnet.client
         static readonly Exception disposeException = new GarnetClientDisposedException();
 
         /// <summary>
+        /// The host endpoint
+        /// </summary>
+        public EndPoint EndPoint { get; }
+
+        /// <summary>
         /// Whether we are connected to the server
         /// </summary>
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
@@ -114,8 +116,7 @@ namespace Garnet.client
         /// <summary>
         /// Create client instance
         /// </summary>
-        /// <param name="address">IP address of server</param>
-        /// <param name="port">Port of server</param>
+        /// <param name="endpoint">Endpoint of the server</param>
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
@@ -128,8 +129,7 @@ namespace Garnet.client
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger instance</param>
         public GarnetClient(
-            string address,
-            int port,
+            EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
@@ -143,8 +143,7 @@ namespace Garnet.client
             int networkSendThrottleMax = 8,
             ILogger logger = null)
         {
-            this.address = address;
-            this.port = port;
+            EndPoint = endpoint;
             this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
             this.bufferSize = bufferSize;
             this.authUsername = authUsername;
@@ -163,7 +162,7 @@ namespace Garnet.client
             this.maxOutstandingTasks = maxOutstandingTasks;
             this.sslOptions = tlsOptions;
             this.disposed = 0;
-            this.tcsArray = new TcsWrapper[maxOutstandingTasks];
+            this.tcsArray = GC.AllocateArray<TcsWrapper>(maxOutstandingTasks, pinned: true);
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.logger = logger;
             this.latency = recordLatency ? new LongHistogram(1, TimeStamp.Seconds(100), 2) : null;
@@ -188,10 +187,9 @@ namespace Garnet.client
         /// </summary>
         public void Connect(CancellationToken token = default)
         {
-            socket = CreateSendSocket(timeoutMilliseconds);
+            socket = ConnectSendSocketAsync(timeoutMilliseconds).ConfigureAwait(false).GetAwaiter().GetResult();
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
-            networkSender = networkHandler.GetNetworkSender();
+            networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false).GetAwaiter().GetResult();
 
             if (timeoutMilliseconds > 0)
             {
@@ -221,10 +219,9 @@ namespace Garnet.client
         /// </summary>
         public async Task ConnectAsync(CancellationToken token = default)
         {
-            socket = CreateSendSocket(timeoutMilliseconds);
+            socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            await networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false);
-            networkSender = networkHandler.GetNetworkSender();
+            await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
             {
@@ -250,81 +247,87 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Create client send socket
+        /// Connect client send socket
         /// </summary>
         /// <param name="millisecondsTimeout"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        Socket CreateSendSocket(int millisecondsTimeout = 0)
+        private async Task<Socket> ConnectSendSocketAsync(int millisecondsTimeout = 0, CancellationToken cancellationToken = default)
         {
-            if (!IPAddress.TryParse(address, out var ip))
+            if (EndPoint is DnsEndPoint dnsEndpoint)
             {
-                var hostEntries = Dns.GetHostEntry(address);
+                var hostEntries = await Dns.GetHostEntryAsync(dnsEndpoint.Host, cancellationToken).ConfigureAwait(false);
                 // Try all available DNS entries if a hostName is provided
                 foreach (var addressEntry in hostEntries.AddressList)
                 {
-                    var endPoint = new IPEndPoint(addressEntry, port);
-                    if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
-                        continue;
-                    return socket;
-                }
+                    var endpoint = new IPEndPoint(addressEntry, dnsEndpoint.Port);
+                    var socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
 
-                // Reaching this point means we failed to establish connection from any of the provided addresses
-                throw new Exception($"Failed to connect at {address}:{port}");
+                    if (await TryConnectSocketAsync(socket, endpoint, millisecondsTimeout, cancellationToken))
+                        return socket;
+                }
             }
             else
             {
-                var endPoint = new IPEndPoint(ip, port);
-                if (!TryConnectSocket(endPoint, millisecondsTimeout, out var socket))
-                {
-                    // If failed here then provided endpoint does not accept connections
-                    logger?.LogWarning("Failed to connect at {address}:{port}", ip.ToString(), port);
-                    throw new Exception($"Failed to connect at {ip.ToString()}:{port}");
-                }
-                return socket;
+                var socket = new Socket(EndPoint.AddressFamily, SocketType.Stream, ProtocolType.Unspecified);
+                if (EndPoint is not UnixDomainSocketEndPoint)
+                    socket.NoDelay = true;
+
+                if (await TryConnectSocketAsync(socket, EndPoint, millisecondsTimeout, cancellationToken))
+                    return socket;
             }
+
+            logger?.LogWarning("Failed to connect at {endpoint}", EndPoint);
+            throw new Exception($"Failed to connect at {EndPoint}");
         }
 
         /// <summary>
-        /// Try to establish connection for socket using endPoint
+        /// Try to establish connection for <paramref name="socket"/> using <paramref name="endpoint"/>
         /// </summary>
-        /// <param name="endPoint"></param>
-        /// <param name="millisecondsTimeout"></param>
         /// <param name="socket"></param>
+        /// <param name="endpoint"></param>
+        /// <param name="millisecondsTimeout"></param>
+        /// <param name="cancellationToken">The cancellation token</param>
         /// <returns></returns>
-        bool TryConnectSocket(IPEndPoint endPoint, int millisecondsTimeout, out Socket socket)
+        private async Task<bool> TryConnectSocketAsync(Socket socket, EndPoint endpoint, int millisecondsTimeout, CancellationToken cancellationToken = default)
         {
-            socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
-            {
-                NoDelay = true
-            };
             try
             {
                 if (millisecondsTimeout > 0)
                 {
-                    var result = socket.BeginConnect(endPoint, null, null);
-                    result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-                    if (socket.Connected)
+                    var connectTask = socket.ConnectAsync(endpoint, timeoutCts.Token).AsTask();
+                    if (await Task.WhenAny(connectTask, Task.Delay(millisecondsTimeout, timeoutCts.Token)) == connectTask)
                     {
-                        socket.EndConnect(result);
+                        // Task completed within timeout.
+                        // Consider that the task may have faulted or been canceled.
+                        // We re-await the task so that any exceptions/cancellation is rethrown.
+                        await connectTask;
                     }
                     else
                     {
+                        timeoutCts.Cancel();
+                    }
+
+                    if (!socket.Connected)
+                    {
                         socket.Close();
-                        throw new Exception($"Failed to connect server {address}:{port}.");
+                        throw new Exception($"Failed to connect server {endpoint}.");
                     }
                 }
                 else
                 {
-                    socket.Connect(endPoint);
+                    await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocket");
+                logger?.LogWarning(ex, "Failed at GarnetClient.TryConnectSocketAsync");
                 socket.Dispose();
-                socket = null;
                 return false;
             }
 
@@ -507,13 +510,15 @@ namespace Garnet.client
                         case TaskType.MemoryByteArrayAsync:
                             if (oldTcs.memoryByteArrayTcs != null) await oldTcs.memoryByteArrayTcs.Task.ConfigureAwait(false);
                             break;
+                        case TaskType.LongAsync:
+                            if (oldTcs.longTcs != null) await oldTcs.longTcs.Task.ConfigureAwait(false);
+                            break;
                     }
                 }
                 catch
                 {
                     if (Disposed) ThrowException(disposeException);
                 }
-                await Task.Yield();
                 oldTcs = tcsArray[shortTaskId];
             }
         }
@@ -529,17 +534,17 @@ namespace Garnet.client
             if (param1 != null)
             {
                 int len = Encoding.UTF8.GetByteCount(param1);
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
             if (param2 != null)
             {
                 int len = Encoding.UTF8.GetByteCount(param2);
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
 
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+            totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
             CheckLength(totalLen, tcs);
             await InputGateAsync(token);
 
@@ -578,13 +583,13 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(op.Span, ref curr, end);
                     if (param1 != null)
-                        RespWriteUtils.WriteUtf8BulkString(param1, ref curr, end);
+                        RespWriteUtils.TryWriteUtf8BulkString(param1, ref curr, end);
                     if (param2 != null)
-                        RespWriteUtils.WriteUtf8BulkString(param2, ref curr, end);
+                        RespWriteUtils.TryWriteUtf8BulkString(param2, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -629,106 +634,6 @@ namespace Garnet.client
             {
                 networkWriter.epoch.Suspend();
             }
-        }
-
-        async ValueTask InternalExecuteAsync(Memory<byte> op, Memory<byte> clusterOp, string nodeId, long currentAddress, long nextAddress, long payloadPtr, int payloadLength, CancellationToken token = default)
-        {
-            Debug.Assert(nodeId != null);
-
-            int totalLen = 0;
-            int arraySize = 1;
-
-            totalLen += op.Length;
-
-            int len = clusterOp.Length;
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = Encoding.UTF8.GetByteCount(nodeId);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = NumUtils.NumDigitsInLong(currentAddress);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = NumUtils.NumDigitsInLong(nextAddress);
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            len = payloadLength;
-            totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
-            arraySize++;
-
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
-
-            if (totalLen > networkWriter.PageSize)
-            {
-                ThrowException(new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor."));
-            }
-
-            // No need for gate as this is a void return
-            // await InputGateAsync(token);
-
-            try
-            {
-                networkWriter.epoch.Resume();
-
-                #region reserveSpaceAndWriteIntoNetworkBuffer
-                int taskId;
-                long address;
-                while (true)
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (!IsConnected)
-                    {
-                        Dispose();
-                        ThrowException(disposeException);
-                    }
-                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent);
-                    if (address >= 0) break;
-                    try
-                    {
-                        networkWriter.epoch.Suspend();
-                        await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Resume();
-                    }
-                }
-
-                unsafe
-                {
-                    byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
-                    byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
-
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
-                    RespWriteUtils.WriteBulkString(clusterOp.Span, ref curr, end);
-                    RespWriteUtils.WriteUtf8BulkString(nodeId, ref curr, end);
-                    RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end);
-                    RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end);
-                    RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end);
-
-                    Debug.Assert(curr == end);
-                }
-                #endregion
-
-                if (!IsConnected)
-                {
-                    Dispose();
-                    ThrowException(disposeException);
-                }
-                // Console.WriteLine($"Filled {address}-{address + totalLen}");
-                networkWriter.epoch.ProtectAndDrain();
-                networkWriter.DoAggressiveShiftReadOnly();
-            }
-            finally
-            {
-                networkWriter.epoch.Suspend();
-            }
-            return;
         }
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
@@ -742,17 +647,17 @@ namespace Garnet.client
             if (!param1.IsEmpty)
             {
                 int len = param1.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
             if (!param2.IsEmpty)
             {
                 int len = param2.Length;
-                totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 arraySize++;
             }
 
-            totalLen += 1 + NumUtils.NumDigits(arraySize) + 2;
+            totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
             CheckLength(totalLen, tcs);
             await InputGateAsync(token);
 
@@ -791,13 +696,13 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(op.Span, ref curr, end);
                     if (!param1.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
+                        RespWriteUtils.TryWriteBulkString(param1.Span, ref curr, end);
                     if (!param2.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
+                        RespWriteUtils.TryWriteBulkString(param2.Span, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -831,6 +736,93 @@ namespace Garnet.client
                 if (Disposed)
                 {
                     DisposeOffset(shortTaskId);
+                    ThrowException(disposeException);
+                }
+                // Console.WriteLine($"Filled {address}-{address + totalLen}");
+                networkWriter.epoch.ProtectAndDrain();
+                networkWriter.DoAggressiveShiftReadOnly();
+                #endregion
+            }
+            finally
+            {
+                networkWriter.epoch.Suspend();
+            }
+            return;
+        }
+
+        void InternalExecuteNoResponse(ref Memory<byte> op, ref ReadOnlySpan<byte> subop, ref Span<byte> param1, ref Span<byte> param2, CancellationToken token = default)
+        {
+            var totalLen = 0;
+            var arraySize = 4;
+
+            totalLen += 1 + NumUtils.CountDigits(arraySize) + 2;
+            // op (NOTE: true length because op already resp formatted)
+            totalLen += op.Length;
+
+            // subop
+            var len = subop.Length;
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
+
+            // param1
+            len = param1.Length;
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
+
+            // param2
+            len = param2.Length;
+            totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
+
+            if (totalLen > networkWriter.PageSize)
+            {
+                var e = new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor.");
+                ThrowException(e);
+            }
+
+            try
+            {
+                networkWriter.epoch.Resume();
+
+                #region reserveSpaceAndWriteIntoNetworkBuffer
+                int taskId;
+                long address;
+                while (true)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!IsConnected)
+                    {
+                        Dispose();
+                        ThrowException(disposeException);
+                    }
+                    (taskId, address) = networkWriter.TryAllocate(totalLen, out var flushEvent, skipTaskIdIncrement: true);
+                    if (address >= 0) break;
+                    try
+                    {
+                        networkWriter.epoch.Suspend();
+                        flushEvent.Wait(token);
+                    }
+                    finally
+                    {
+                        networkWriter.epoch.Resume();
+                    }
+                }
+
+                unsafe
+                {
+                    var curr = (byte*)networkWriter.GetPhysicalAddress(address);
+                    var end = curr + totalLen;
+
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.TryWriteBulkString(subop, ref curr, end);
+                    RespWriteUtils.TryWriteBulkString(param1, ref curr, end);
+                    RespWriteUtils.TryWriteBulkString(param2, ref curr, end);
+
+                    Debug.Assert(curr == end);
+                }
+                #endregion
+
+                #region scheduleSend
+                if (Disposed)
+                {
                     ThrowException(disposeException);
                 }
                 // Console.WriteLine($"Filled {address}-{address + totalLen}");
@@ -857,15 +849,15 @@ namespace Garnet.client
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
-            int totalLen = 1 + NumUtils.NumDigits(arraySize) + 2 + //array header
-                1 + NumUtils.NumDigits(op.Length) + 2 + op.Length + 2;//op header + op data
+            int totalLen = 1 + NumUtils.CountDigits(arraySize) + 2 + //array header
+                1 + NumUtils.CountDigits(op.Length) + 2 + op.Length + 2;//op header + op data
 
             if (isArray)
             {
                 foreach (var arg in args)
                 {
                     int len = Encoding.UTF8.GetByteCount(arg);
-                    totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                    totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 }
             }
 
@@ -907,13 +899,13 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteAsciiBulkString(op, ref curr, end);//Write op data
+                    RespWriteUtils.TryWriteAsciiBulkString(op, ref curr, end);//Write op data
                     if (isArray)//Write arg data
                     {
                         foreach (var arg in args)
-                            RespWriteUtils.WriteUtf8BulkString(arg, ref curr, end);
+                            RespWriteUtils.TryWriteUtf8BulkString(arg, ref curr, end);
                     }
 
                     Debug.Assert(curr == end);
@@ -975,14 +967,14 @@ namespace Garnet.client
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
-            int totalLen = 1 + NumUtils.NumDigits(arraySize) + 2 + respOp.Length;
+            int totalLen = 1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length;
 
             if (isArray)
             {
                 foreach (var arg in args)
                 {
                     int len = arg.Length;
-                    totalLen += 1 + NumUtils.NumDigits(len) + 2 + len + 2;
+                    totalLen += 1 + NumUtils.CountDigits(len) + 2 + len + 2;
                 }
             }
 
@@ -1024,12 +1016,12 @@ namespace Garnet.client
                 {
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
-                    RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
-                    RespWriteUtils.WriteDirect(respOp.Span, ref curr, end);
+                    RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end);
+                    RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end);
                     if (isArray)//Write arg data
                     {
                         foreach (var arg in args)
-                            RespWriteUtils.WriteBulkString(arg.Span, ref curr, end);
+                            RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end);
                     }
                     Debug.Assert(curr == end);
                 }

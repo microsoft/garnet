@@ -109,7 +109,7 @@ namespace Tsavorite.test.statemachine
     {
         readonly TsavoriteKV<K, V, SF, A> store;
         ClientSession<K, V, I, O, C, F, SF, A> session;
-        LockableUnsafeContext<K, V, I, O, C, F, SF, A> luc;
+        TransactionalUnsafeContext<K, V, I, O, C, F, SF, A> luc;
         readonly F f;
         readonly AutoResetEvent ev = new(false);
         readonly AsyncQueue<string> q = new();
@@ -168,7 +168,7 @@ namespace Tsavorite.test.statemachine
                         _ = ev.Set();
                         return;
                     case "getLUC":
-                        luc = session.LockableUnsafeContext;
+                        luc = session.TransactionalUnsafeContext;
                         if (session.IsInPreparePhase())
                         {
                             isProtected = false;
@@ -176,13 +176,13 @@ namespace Tsavorite.test.statemachine
                         else
                         {
                             luc.BeginUnsafe();
-                            luc.BeginLockable();
+                            luc.BeginTransaction();
                             isProtected = true;
                         }
                         _ = ev.Set();
                         break;
                     case "DisposeLUC":
-                        luc.EndLockable();
+                        luc.EndTransaction();
                         luc.EndUnsafe();
                         isProtected = false;
                         _ = ev.Set();

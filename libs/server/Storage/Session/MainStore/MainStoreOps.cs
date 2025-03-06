@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -264,7 +266,7 @@ namespace Garnet.server
                 var objInput = new ObjectInput(header);
 
                 var keyBA = key.ToByteArray();
-                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var objO = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
                 var status = objectContext.Read(ref keyBA, ref objInput, ref objO);
 
                 if (status.IsPending)
@@ -272,7 +274,7 @@ namespace Garnet.server
 
                 if (status.Found)
                 {
-                    output = objO.spanByteAndMemory;
+                    output = objO.SpanByteAndMemory;
                     return GarnetStatus.OK;
                 }
             }
@@ -318,7 +320,7 @@ namespace Garnet.server
                 var input = new ObjectInput(header);
 
                 var keyBA = key.ToByteArray();
-                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var objO = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
                 var status = objectContext.Read(ref keyBA, ref input, ref objO);
 
                 if (status.IsPending)
@@ -326,7 +328,7 @@ namespace Garnet.server
 
                 if (status.Found)
                 {
-                    output = objO.spanByteAndMemory;
+                    output = objO.SpanByteAndMemory;
                     return GarnetStatus.OK;
                 }
             }
@@ -399,6 +401,57 @@ namespace Garnet.server
             }
         }
 
+        internal GarnetStatus MSET_Conditional<TContext>(ref RawStringInput input, ref TContext ctx)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var error = false;
+            var count = input.parseState.Count;
+
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                for (var i = 0; i < count; i += 2)
+                {
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                    txnManager.SaveKeyEntryToLock(srcKey, false, LockType.Exclusive);
+                    txnManager.SaveKeyEntryToLock(srcKey, true, LockType.Exclusive);
+                }
+                txnManager.Run(true);
+            }
+
+            var context = txnManager.TransactionalContext;
+            var objContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                for (var i = 0; i < count; i += 2)
+                {
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                    var status = EXISTS(srcKey, StoreType.All, ref context, ref objContext);
+                    if (status != GarnetStatus.NOTFOUND)
+                    {
+                        count = 0;
+                        error = true;
+                    }
+                }
+
+                for (var i = 0; i < count; i += 2)
+                {
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
+                    var srcVal = input.parseState.GetArgSliceByRef(i + 1);
+                    SET(srcKey, srcVal, ref context);
+                }
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return error ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
         public GarnetStatus SET<TContext>(ArgSlice key, ArgSlice value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
@@ -430,7 +483,7 @@ namespace Garnet.server
 
         public unsafe GarnetStatus SETEX<TContext>(ArgSlice key, ArgSlice value, ArgSlice expiryMs, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), ref context);
+            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ptr)), ref context);
 
         public GarnetStatus SETEX<TContext>(ArgSlice key, ArgSlice value, TimeSpan expiry, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
@@ -548,9 +601,9 @@ namespace Garnet.server
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
+        public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool withEtag)
         {
-            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _);
+            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _, withEtag);
         }
 
         /// <summary>
@@ -560,12 +613,12 @@ namespace Garnet.server
         /// <param name="newKeySlice">The new key name.</param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
         /// <returns></returns>
-        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
+        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result, bool withEtag)
         {
-            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
+            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result, withEtag);
         }
 
-        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
+        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result, bool withEtag)
         {
             RawStringInput input = default;
             var returnStatus = GarnetStatus.NOTFOUND;
@@ -606,7 +659,7 @@ namespace Garnet.server
                         var memoryHandle = o.Memory.Memory.Pin();
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
-                        RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
+                        RespReadUtils.TryReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
 
                         // Find expiration time of the old key
                         var expireSpan = new SpanByteAndMemory();
@@ -618,49 +671,65 @@ namespace Garnet.server
 
                             using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+                            RespReadUtils.TryReadInt64(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                            input = new RawStringInput(RespCommand.SETEXNX);
+                            input = isNX ? new RawStringInput(RespCommand.SETEXNX) : new RawStringInput(RespCommand.SET);
 
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)
                             {
-                                if (isNX)
+                                if (!withEtag && !isNX)
+                                {
+                                    SETEX(newKeySlice, newValSlice, TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                }
+                                else
                                 {
                                     // Move payload forward to make space for RespInputHeader and Metadata
                                     parseState.InitializeWithArgument(newValSlice);
                                     input.parseState = parseState;
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
+                                    if (withEtag)
+                                    {
+                                        input.header.SetWithEtagFlag();
+                                    }
+
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                    returnStatus = GarnetStatus.OK;
-                                }
-                                else
-                                {
-                                    SETEX(newKeySlice, newValSlice, TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                    if (isNX)
+                                    {
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
                                 }
                             }
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
-                                if (isNX)
+                                if (!withEtag && !isNX)
+                                {
+                                    var value = newValSlice.SpanByte;
+                                    SET(ref newKey, ref value, ref context);
+                                }
+                                else
                                 {
                                     // Build parse state
                                     parseState.InitializeWithArgument(newValSlice);
                                     input.parseState = parseState;
 
+                                    if (withEtag)
+                                    {
+                                        input.header.SetWithEtagFlag();
+                                    }
+
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 
-                                    // For SET NX `NOTFOUND` means the operation succeeded
-                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
-                                    returnStatus = GarnetStatus.OK;
-                                }
-                                else
-                                {
-                                    var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                    SET(ref newKey, ref value, ref context);
+                                    if (isNX)
+                                    {
+                                        // For SET NX `NOTFOUND` means the operation succeeded
+                                        result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                        returnStatus = GarnetStatus.OK;
+                                    }
                                 }
                             }
 
@@ -708,7 +777,7 @@ namespace Garnet.server
 
                     if (status == GarnetStatus.OK)
                     {
-                        var valObj = value.garnetObject;
+                        var valObj = value.GarnetObject;
                         byte[] newKeyArray = newKeySlice.ToArray();
 
                         returnStatus = GarnetStatus.OK;
@@ -800,7 +869,7 @@ namespace Garnet.server
         public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
+            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
 
         /// <summary>
         /// Set a timeout on key.
@@ -850,7 +919,7 @@ namespace Garnet.server
                 var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
-                var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var objOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
                 var keyBytes = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
 
@@ -858,7 +927,7 @@ namespace Garnet.server
                     CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
                 if (status.Found) found = true;
 
-                output = objOutput.spanByteAndMemory;
+                output = objOutput.SpanByteAndMemory;
             }
 
             Debug.Assert(output.IsSpanByte);
@@ -936,10 +1005,10 @@ namespace Garnet.server
             var found = false;
 
             // Serialize expiry + expiry options to parse state
-            var expiryLength = NumUtils.NumDigitsInLong(expiry);
+            var expiryLength = NumUtils.CountDigits(expiry);
             var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
             var expirySpan = expirySlice.Span;
-            NumUtils.LongToSpanByte(expiry, expirySpan);
+            NumUtils.WriteInt64(expiry, expirySpan);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
@@ -972,7 +1041,7 @@ namespace Garnet.server
                 var objInput = new ObjectInput(header, ref parseState, arg1: (byte)expireOption, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
-                var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var objOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
                 var keyBytes = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
 
@@ -980,7 +1049,7 @@ namespace Garnet.server
                     CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
                 if (status.Found) found = true;
 
-                output = objOutput.spanByteAndMemory;
+                output = objOutput.SpanByteAndMemory;
             }
 
             scratchBufferManager.RewindScratchBuffer(ref expirySlice);
@@ -1021,7 +1090,7 @@ namespace Garnet.server
                 var header = new RespInputHeader(GarnetObjectType.Persist);
                 var objInput = new ObjectInput(header);
 
-                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = o };
+                var objO = new GarnetObjectStoreOutput { SpanByteAndMemory = o };
                 var _key = key.ToArray();
                 var _status = objectStoreContext.RMW(ref _key, ref objInput, ref objO);
 
@@ -1100,9 +1169,8 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref _output, ref context);
 
             Debug.Assert(_output.IsSpanByte);
-            Debug.Assert(_output.Length == outputBufferLength);
 
-            output = NumUtils.BytesToLong(_output.Length, outputBuffer);
+            output = NumUtils.ReadInt64(_output.Length, outputBuffer);
             return GarnetStatus.OK;
         }
 
@@ -1138,19 +1206,19 @@ namespace Garnet.server
                 status = GET(key.ToArray(), out GarnetObjectStoreOutput output, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    if ((output.garnetObject as SortedSetObject) != null)
+                    if ((output.GarnetObject as SortedSetObject) != null)
                     {
                         keyType = "zset";
                     }
-                    else if ((output.garnetObject as ListObject) != null)
+                    else if ((output.GarnetObject as ListObject) != null)
                     {
                         keyType = "list";
                     }
-                    else if ((output.garnetObject as SetObject) != null)
+                    else if ((output.GarnetObject as SetObject) != null)
                     {
                         keyType = "set";
                     }
-                    else if ((output.garnetObject as HashObject) != null)
+                    else if ((output.GarnetObject as HashObject) != null)
                     {
                         keyType = "hash";
                     }
@@ -1180,7 +1248,7 @@ namespace Garnet.server
                 {
                     memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length
                         Utility.RoundUp(key.SpanByte.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                        objectValue.garnetObject.Size; // Value allocation in heap
+                        objectValue.GarnetObject.Size; // Value allocation in heap
                 }
             }
             else
@@ -1189,6 +1257,287 @@ namespace Garnet.server
             }
 
             return status;
+        }
+
+        /// <summary>
+        /// Computes the Longest Common Subsequence (LCS) of two keys.
+        /// </summary>
+        /// <param name="key1">The first key to compare.</param>
+        /// <param name="key2">The second key to compare.</param>
+        /// <param name="output">The output span to store the result.</param>
+        /// <param name="lenOnly">If true, only the length of the LCS is returned.</param>
+        /// <param name="withIndices">If true, the indices of the LCS in both keys are returned.</param>
+        /// <param name="withMatchLen">If true, the length of each match is returned.</param>
+        /// <param name="minMatchLen">The minimum length of a match to be considered.</param>
+        /// <returns>The status of the operation.</returns>
+        public unsafe GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+        {
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                txnManager.SaveKeyEntryToLock(key1, false, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(key2, false, LockType.Shared);
+                txnManager.Run(true);
+                createTransaction = true;
+            }
+
+            var context = txnManager.TransactionalContext;
+            try
+            {
+                var status = LCSInternal(key1, key2, ref output, ref context, lenOnly, withIndices, withMatchLen, minMatchLen);
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        private unsafe GarnetStatus LCSInternal<TContext>(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, ref TContext context, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            try
+            {
+                ArgSlice val1, val2;
+                var status1 = GET(key1, out val1, ref context);
+                var status2 = GET(key2, out val2, ref context);
+
+                if (lenOnly)
+                {
+                    if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return GarnetStatus.OK;
+                    }
+
+                    var len = ComputeLCSLength(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
+                    while (!RespWriteUtils.TryWriteInt32(len, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else if (withIndices)
+                {
+                    List<LCSMatch> matches;
+                    int len;
+                    if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
+                    {
+                        matches = new List<LCSMatch>();
+                        len = 0;
+                    }
+                    else
+                    {
+                        matches = ComputeLCSWithIndices(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen, out len);
+                    }
+
+                    WriteLCSMatches(matches, withMatchLen, len, ref curr, end, ref output, ref isMemory, ref ptr, ref ptrHandle);
+                }
+                else
+                {
+                    if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return GarnetStatus.OK;
+                    }
+
+                    var lcs = ComputeLCS(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
+                    while (!RespWriteUtils.TryWriteBulkString(lcs, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+            finally
+            {
+                if (isMemory)
+                    ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        private static int ComputeLCSLength(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = GetLcsDpTable(str1, str2);
+
+            return dp[m, n] >= minMatchLen ? dp[m, n] : 0;
+        }
+
+        private static List<LCSMatch> ComputeLCSWithIndices(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen, out int lcsLength)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = GetLcsDpTable(str1, str2);
+
+            lcsLength = dp[m, n];
+
+            var matches = new List<LCSMatch>();
+            // Backtrack to find matches
+            if (dp[m, n] >= minMatchLen)
+            {
+                int i = m, j = n;
+                var currentMatch = new List<(int, int)>();
+
+                while (i > 0 && j > 0)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                    {
+                        currentMatch.Insert(0, (i - 1, j - 1));
+                        i--; j--;
+                    }
+                    else if (dp[i - 1, j] > dp[i, j - 1])
+                        i--;
+                    else
+                        j--;
+                }
+
+                // Convert consecutive matches into LCSMatch objects
+                if (currentMatch.Count > 0)
+                {
+                    int start = 0;
+                    for (int k = 1; k <= currentMatch.Count; k++)
+                    {
+                        if (k == currentMatch.Count ||
+                            currentMatch[k].Item1 != currentMatch[k - 1].Item1 + 1 ||
+                            currentMatch[k].Item2 != currentMatch[k - 1].Item2 + 1)
+                        {
+                            int length = k - start;
+                            if (length >= minMatchLen)
+                            {
+                                matches.Add(new LCSMatch
+                                {
+                                    Start1 = currentMatch[start].Item1,
+                                    Start2 = currentMatch[start].Item2,
+                                    Length = length
+                                });
+                            }
+                            start = k;
+                        }
+                    }
+                }
+            }
+
+            matches.Reverse();
+
+            return matches;
+        }
+
+        private static unsafe void WriteLCSMatches(List<LCSMatch> matches, bool withMatchLen, int lcsLength,
+            ref byte* curr, byte* end, ref SpanByteAndMemory output,
+            ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
+        {
+            while (!RespWriteUtils.TryWriteArrayLength(4, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            // Write "matches" section identifier
+            while (!RespWriteUtils.TryWriteBulkString(CmdStrings.matches, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            // Write matches array
+            while (!RespWriteUtils.TryWriteArrayLength(matches.Count, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            foreach (var match in matches)
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(withMatchLen ? 3 : 2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.TryWriteInt32(match.Start1, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.TryWriteInt32(match.Start1 + match.Length - 1, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.TryWriteInt32(match.Start2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (!RespWriteUtils.TryWriteInt32(match.Start2 + match.Length - 1, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (withMatchLen)
+                {
+                    while (!RespWriteUtils.TryWriteInt32(match.Length, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+
+            // Write "len" section identifier
+            while (!RespWriteUtils.TryWriteBulkString(CmdStrings.len, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+            // Write LCS length
+            while (!RespWriteUtils.TryWriteInt32(lcsLength, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        private static byte[] ComputeLCS(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = GetLcsDpTable(str1, str2);
+
+            // If result is shorter than minMatchLen, return empty array
+            if (dp[m, n] < minMatchLen)
+                return [];
+
+            // Backtrack to build the LCS
+            var result = new byte[dp[m, n]];
+            int index = dp[m, n] - 1;
+            int k = m, l = n;
+
+            while (k > 0 && l > 0)
+            {
+                if (str1[k - 1] == str2[l - 1])
+                {
+                    result[index] = str1[k - 1];
+                    k--; l--; index--;
+                }
+                else if (dp[k - 1, l] > dp[k, l - 1])
+                    k--;
+                else
+                    l--;
+            }
+
+            return result;
+        }
+
+        private static int[,] GetLcsDpTable(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2)
+        {
+            var m = str1.Length;
+            var n = str2.Length;
+            var dp = new int[m + 1, n + 1];
+            for (int i = 1; i <= m; i++)
+            {
+                for (int j = 1; j <= n; j++)
+                {
+                    if (str1[i - 1] == str2[j - 1])
+                        dp[i, j] = dp[i - 1, j - 1] + 1;
+                    else
+                        dp[i, j] = Math.Max(dp[i - 1, j], dp[i, j - 1]);
+                }
+            }
+            return dp;
+        }
+
+        private struct LCSMatch
+        {
+            public int Start1;
+            public int Start2;
+            public int Length;
         }
     }
 }

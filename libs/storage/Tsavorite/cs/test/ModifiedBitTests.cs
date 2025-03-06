@@ -73,14 +73,14 @@ namespace Tsavorite.test.ModifiedBit
                 ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
         }
 
-        void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(TransactionalUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(TransactionalContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
@@ -89,7 +89,7 @@ namespace Tsavorite.test.ModifiedBit
 
         void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session, int key, bool xlock, bool slock, bool modified = false)
         {
-            var luContext = session.LockableUnsafeContext;
+            var luContext = session.TransactionalUnsafeContext;
             luContext.BeginUnsafe();
 
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
@@ -108,11 +108,11 @@ namespace Tsavorite.test.ModifiedBit
             int key = r.Next(NumRecords);
             bContext.ResetModified(key);
 
-            var lContext = session.LockableContext;
-            lContext.BeginLockable();
+            var lContext = session.TransactionalContext;
+            lContext.BeginTransaction();
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
 
-            var keyVec = new[] { new FixedLengthLockableKeyStruct<int>(key, LockType.Exclusive, lContext) };
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Exclusive, lContext) };
 
             lContext.Lock(keyVec);
             AssertLockandModified(lContext, key, xlock: true, slock: false, modified: false);
@@ -127,7 +127,7 @@ namespace Tsavorite.test.ModifiedBit
 
             lContext.Unlock(keyVec);
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
-            lContext.EndLockable();
+            lContext.EndTransaction();
         }
 
         [Test]
@@ -200,11 +200,11 @@ namespace Tsavorite.test.ModifiedBit
             int key = NumRecords - 500;
             int value = 14;
             bContext.ResetModified(key);
-            var luContext = session.LockableUnsafeContext;
+            var luContext = session.TransactionalUnsafeContext;
             luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            luContext.BeginTransaction();
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: false);
-            luContext.EndLockable();
+            luContext.EndTransaction();
             luContext.EndUnsafe();
 
             if (flushToDisk)
@@ -213,9 +213,9 @@ namespace Tsavorite.test.ModifiedBit
             Status status = default;
 
             luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            luContext.BeginTransaction();
 
-            var keyVec = new[] { new FixedLengthLockableKeyStruct<int>(key, LockType.Exclusive, luContext) };
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Exclusive, luContext) };
 
             luContext.Lock(keyVec);
 
@@ -261,7 +261,7 @@ namespace Tsavorite.test.ModifiedBit
 
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
 
-            luContext.EndLockable();
+            luContext.EndTransaction();
             luContext.EndUnsafe();
         }
 
@@ -326,11 +326,11 @@ namespace Tsavorite.test.ModifiedBit
             int key = NumRecords - 500;
             int value = 14;
             bContext.ResetModified(key);
-            var lContext = session.LockableContext;
-            lContext.BeginLockable();
+            var lContext = session.TransactionalContext;
+            lContext.BeginTransaction();
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
 
-            var keyVec = new[] { new FixedLengthLockableKeyStruct<int>(key, LockType.Exclusive, lContext) };
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Exclusive, lContext) };
 
             lContext.Lock(keyVec);
 
@@ -380,7 +380,7 @@ namespace Tsavorite.test.ModifiedBit
             }
 
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
-            lContext.EndLockable();
+            lContext.EndTransaction();
         }
 
         [Test]
@@ -390,16 +390,16 @@ namespace Tsavorite.test.ModifiedBit
             Populate();
             store.Log.FlushAndEvict(wait: true);
 
-            var luContext = session.LockableUnsafeContext;
+            var luContext = session.TransactionalUnsafeContext;
 
             int input = 0, output = 0, key = 200;
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            luContext.BeginTransaction();
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
-            var keyVec = new[] { new FixedLengthLockableKeyStruct<int>(key, LockType.Shared, luContext) };
+            var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Shared, luContext) };
 
             luContext.Lock(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: true, modified: true);
@@ -423,7 +423,7 @@ namespace Tsavorite.test.ModifiedBit
             luContext.Unlock(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
-            luContext.EndLockable();
+            luContext.EndTransaction();
             luContext.EndUnsafe();
         }
     }

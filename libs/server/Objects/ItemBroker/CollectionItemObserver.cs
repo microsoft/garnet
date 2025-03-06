@@ -86,6 +86,31 @@ namespace Garnet.server
             }
         }
 
+        internal bool TryForceUnblock(bool throwError = false)
+        {
+            // If the result is already set or the observer session is disposed
+            // There is no need to set the result
+            if (Status != ObserverStatus.WaitingForResult)
+                return false;
+
+            ObserverStatusLock.EnterWriteLock();
+            try
+            {
+                if (Status != ObserverStatus.WaitingForResult)
+                    return false;
+
+                // Set the result, update the status and release the semaphore
+                Result = throwError ? CollectionItemResult.ForceUnblocked : CollectionItemResult.Empty;
+                Status = ObserverStatus.ResultSet;
+                ResultFoundSemaphore.Release();
+                return true;
+            }
+            finally
+            {
+                ObserverStatusLock.ExitWriteLock();
+            }
+        }
+
         /// <summary>
         /// Safely set the status of the observer to reflect that its calling session was disposed
         /// </summary>

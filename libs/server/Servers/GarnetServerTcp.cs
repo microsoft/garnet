@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -19,20 +20,14 @@ namespace Garnet.server
     public class GarnetServerTcp : GarnetServerBase, IServerHook
     {
         readonly SocketAsyncEventArgs acceptEventArg;
-        readonly Socket servSocket;
+        readonly Socket listenSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
-
-        public IPEndPoint GetEndPoint
-        {
-            get
-            {
-                var ip = string.IsNullOrEmpty(Address) ? IPAddress.Any : IPAddress.Parse(Address);
-                return new IPEndPoint(ip, Port);
-            }
-        }
+        readonly int networkConnectionLimit;
+        readonly string unixSocketPath;
+        readonly UnixFileMode unixSocketPermission;
 
         /// <summary>
         /// Get active consumers
@@ -63,21 +58,38 @@ namespace Garnet.server
         /// <summary>
         /// Constructor for server
         /// </summary>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
+        /// <param name="endpoint">Endpoint bound for listening for connections.</param>
         /// <param name="networkBufferSize"></param>
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
         /// <param name="logger"></param>
-        public GarnetServerTcp(string address, int port, int networkBufferSize = default, IGarnetTlsOptions tlsOptions = null, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(address, port, networkBufferSize, logger)
+        public GarnetServerTcp(
+            EndPoint endpoint,
+            int networkBufferSize = default,
+            IGarnetTlsOptions tlsOptions = null,
+            int networkSendThrottleMax = 8,
+            int networkConnectionLimit = -1,
+            string unixSocketPath = null,
+            UnixFileMode unixSocketPermission = default,
+            ILogger logger = null)
+            : base(endpoint, networkBufferSize, logger)
         {
+            this.networkConnectionLimit = networkConnectionLimit;
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
             this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
-            servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            this.unixSocketPath = unixSocketPath;
+            this.unixSocketPermission = unixSocketPermission;
+
+            listenSocket = endpoint switch
+            {
+                UnixDomainSocketEndPoint unix => new Socket(unix.AddressFamily, SocketType.Stream, ProtocolType.Unspecified),
+
+                _ => new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
+            };
+
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
@@ -88,7 +100,7 @@ namespace Garnet.server
         public override void Dispose()
         {
             base.Dispose();
-            servSocket.Dispose();
+            listenSocket.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
             networkPool?.Dispose();
@@ -99,10 +111,14 @@ namespace Garnet.server
         /// </summary>
         public override void Start()
         {
-            var endPoint = GetEndPoint;
-            servSocket.Bind(endPoint);
-            servSocket.Listen(512);
-            if (!servSocket.AcceptAsync(acceptEventArg))
+            listenSocket.Bind(EndPoint);
+            if (EndPoint is UnixDomainSocketEndPoint && unixSocketPermission != default && !OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(unixSocketPath, unixSocketPermission);
+            }
+
+            listenSocket.Listen(512);
+            if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
         }
 
@@ -114,7 +130,7 @@ namespace Garnet.server
                 {
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
-                } while (!servSocket.AcceptAsync(e));
+                } while (!listenSocket.AcceptAsync(e));
             }
             // socket disposed
             catch (ObjectDisposedException) { }
@@ -128,17 +144,18 @@ namespace Garnet.server
                 return false;
             }
 
-            e.AcceptSocket.NoDelay = true;
+            if (e.AcceptSocket.LocalEndPoint is not UnixDomainSocketEndPoint)
+                e.AcceptSocket.NoDelay = true;
 
             // Ok to create new event args on accept because we assume a connection to be long-running
             string remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();
             logger?.LogDebug("Accepted TCP connection from {remoteEndpoint}", remoteEndpointName);
 
-
             ServerTcpNetworkHandler handler = null;
             if (activeHandlerCount >= 0)
             {
-                if (Interlocked.Increment(ref activeHandlerCount) > 0)
+                var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
+                if (currentActiveHandlerCount > 0 && (networkConnectionLimit == -1 || currentActiveHandlerCount <= networkConnectionLimit))
                 {
                     try
                     {
@@ -147,7 +164,7 @@ namespace Garnet.server
                             throw new Exception("Unable to add handler to dictionary");
 
                         handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
-                        incr_conn_recv();
+                        IncrementConnectionsReceived();
                         return true;
                     }
                     catch (Exception ex)
@@ -156,6 +173,11 @@ namespace Garnet.server
                         Interlocked.Decrement(ref activeHandlerCount);
                         handler?.Dispose();
                     }
+                }
+                else
+                {
+                    Interlocked.Decrement(ref activeHandlerCount);
+                    e.AcceptSocket.Dispose();
                 }
             }
             return true;
@@ -197,7 +219,7 @@ namespace Garnet.server
             if (activeHandlers.TryRemove(session, out _))
             {
                 Interlocked.Decrement(ref activeHandlerCount);
-                incr_conn_disp();
+                IncrementConnectionsDisposed();
                 try
                 {
                     session.Session?.Dispose();

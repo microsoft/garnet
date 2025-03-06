@@ -34,7 +34,7 @@ namespace Garnet.cluster
             // The slot parsing may give errorMessage even if the methods TryParseSlots true.
             if (!slotsParsed)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -42,12 +42,12 @@ namespace Garnet.cluster
             // Try to to add slots
             if (!clusterProvider.clusterManager.TryAddSlots(slots, out var slotIndex) && slotIndex != -1)
             {
-                while (!RespWriteUtils.WriteError($"ERR Slot {slotIndex} is already busy", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Slot {slotIndex} is already busy", ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -76,7 +76,7 @@ namespace Garnet.cluster
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
             if (!slotsParsed)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -84,12 +84,12 @@ namespace Garnet.cluster
             // Try to to add slots
             if (!clusterProvider.clusterManager.TryAddSlots(slots, out var slotIndex) && slotIndex != -1)
             {
-                while (!RespWriteUtils.WriteError($"ERR Slot {slotIndex} is already busy", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Slot {slotIndex} is already busy", ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -114,11 +114,11 @@ namespace Garnet.cluster
 
             var banlist = clusterProvider.clusterManager.GetBanList();
 
-            while (!RespWriteUtils.WriteArrayLength(banlist.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(banlist.Count, ref dcurr, dend))
                 SendAndReset();
             foreach (var replica in banlist)
             {
-                while (!RespWriteUtils.WriteAsciiBulkString(replica, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(replica, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -144,14 +144,14 @@ namespace Garnet.cluster
             var current = clusterProvider.clusterManager.CurrentConfig;
             if (!parseState.TryGetInt(0, out var slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             if (ClusterConfig.OutOfRange(slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -165,13 +165,13 @@ namespace Garnet.cluster
                 try
                 {
                     var keyCount = CountKeysInSlot(slot);
-                    while (!RespWriteUtils.WriteInteger(keyCount, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(keyCount, ref dcurr, dend))
                         SendAndReset();
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "Critical error in count keys");
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -201,7 +201,7 @@ namespace Garnet.cluster
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
             if (!slotsParsed)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -209,12 +209,12 @@ namespace Garnet.cluster
             //Try remove the slots
             if (!clusterProvider.clusterManager.TryRemoveSlots(slots, out var slotIndex) && slotIndex != -1)
             {
-                while (!RespWriteUtils.WriteError($"ERR Slot {slotIndex} is not assigned", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Slot {slotIndex} is not assigned", ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -243,7 +243,7 @@ namespace Garnet.cluster
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
             if (!slotsParsed)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -251,12 +251,12 @@ namespace Garnet.cluster
             //Try remove the slots
             if (!clusterProvider.clusterManager.TryRemoveSlots(slots, out var slotIndex) && slotIndex != -1)
             {
-                while (!RespWriteUtils.WriteError($"ERR Slot {slotIndex} is not assigned", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Slot {slotIndex} is not assigned", ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -281,7 +281,7 @@ namespace Garnet.cluster
 
             if (!parseState.TryGetInt(0, out var slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -291,7 +291,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.DisableObjects)
                 ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -319,7 +319,7 @@ namespace Garnet.cluster
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
             if (!slotsParsed)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -328,7 +328,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.DisableObjects)
                 ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -352,21 +352,21 @@ namespace Garnet.cluster
             var current = clusterProvider.clusterManager.CurrentConfig;
             if (!parseState.TryGetInt(0, out var slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             if (!parseState.TryGetInt(1, out var keyCount))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             if (ClusterConfig.OutOfRange(slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -379,10 +379,10 @@ namespace Garnet.cluster
             {
                 var keys = GetKeysInSlot(slot, keyCount);
                 var keyCountRet = Math.Min(keys.Count, keyCount);
-                while (!RespWriteUtils.WriteArrayLength(keyCountRet, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(keyCountRet, ref dcurr, dend))
                     SendAndReset();
                 for (var i = 0; i < keyCountRet; i++)
-                    while (!RespWriteUtils.WriteBulkString(keys[i], ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(keys[i], ref dcurr, dend))
                         SendAndReset();
             }
 
@@ -410,7 +410,7 @@ namespace Garnet.cluster
             var keySize = sbKey.Length;
 
             int slot = HashSlotUtils.HashSlot(keyPtr, keySize);
-            while (!RespWriteUtils.WriteInteger(slot, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt32(slot, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -434,7 +434,7 @@ namespace Garnet.cluster
 
             if (!parseState.TryGetInt(0, out var slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -443,7 +443,7 @@ namespace Garnet.cluster
                 slotState == SlotState.OFFLINE)
             {
                 var slotStateStr = parseState.GetString(1);
-                while (!RespWriteUtils.WriteError($"ERR Slot state {slotStateStr} not supported.", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR Slot state {slotStateStr} not supported.", ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -458,7 +458,7 @@ namespace Garnet.cluster
             // Check that node id is only provided for options other than STABLE
             if ((slotState == SlotState.STABLE && nodeId is not null) || (slotState != SlotState.STABLE && nodeId is null))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -492,18 +492,18 @@ namespace Garnet.cluster
                 {
                     UnsafeBumpAndWaitForEpochTransition();
 
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -543,7 +543,7 @@ namespace Garnet.cluster
 
             if (slotState == SlotState.INVALID)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_STATE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SLOT_STATE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -558,7 +558,7 @@ namespace Garnet.cluster
             var slotsParsed = TryParseSlots(slotState == SlotState.STABLE ? 1 : 2, out var slots, out var errorMessage, range: true);
             if (!slotsParsed)
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -591,12 +591,12 @@ namespace Garnet.cluster
             {
                 UnsafeBumpAndWaitForEpochTransition();
 
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -620,7 +620,7 @@ namespace Garnet.cluster
             }
 
             var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
-            while (!RespWriteUtils.WriteAsciiDirect(slotsInfo, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiDirect(slotsInfo, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -644,7 +644,7 @@ namespace Garnet.cluster
 
             if (!parseState.TryGetInt(0, out var slot))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -661,7 +661,7 @@ namespace Garnet.cluster
                 SlotState.FAIL => "*",
                 _ => throw new Exception($"Invalid SlotState filetype {state}"),
             };
-            while (!RespWriteUtils.WriteAsciiDirect($"+{slot} {stateStr} {nodeId}\r\n", ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiDirect($"+{slot} {stateStr} {nodeId}\r\n", ref dcurr, dend))
                 SendAndReset();
 
             return true;

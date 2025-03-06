@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -22,6 +24,7 @@ namespace Garnet.test
     {
         GarnetServer server;
         Random r;
+        private TaskFactory taskFactory = new();
 
         [SetUp]
         public void Setup()
@@ -136,6 +139,312 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// Tests RESTORE value that is not string
+        /// </summary>
+        [Test]
+        public void TryRestoreKeyNonStringType()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var payload = new byte[]
+            {
+                0x14, 0xf, 0xf, 0x0, 0x0, 0x0, 0x1, 0x0, 0xc2, 0x86, 0x62, 0x69, 0x6b, 0x65, 0x3a, 0x31, 0x7, 0xc3, 0xbf, 0xb, 0x0, 0xc3, 0xaa, 0x33, 0x68, 0x7b, 0x2a, 0xc3, 0xa6, 0xc3, 0xbf, 0xc3, 0xb9
+            };
+
+            Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", payload));
+        }
+
+        /// <summary>
+        /// Tests RESTORE command on existing key
+        /// </summary>
+        [Test]
+        public void TryRestoreExistingKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            Assert.Throws<RedisServerException>(() => db.KeyRestore("mykey", dump));
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 32 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleRestore32Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383; i++)
+                valueBuilder.Append('a');
+
+            var val = valueBuilder.ToString();
+
+            db.StringSet("mykey", val);
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual(val, value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 14 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleRestore14Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383 - 1; i++)
+                valueBuilder.Append('a');
+
+            var val = valueBuilder.ToString();
+
+            db.StringSet("mykey", val);
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual(val, value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 6 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleRestore6Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump, TimeSpan.FromHours(3));
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual("val", value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that RESTORE command restores payload with 6 bit encoded length without TTL
+        /// </summary>
+        [Test]
+        public void SingleRestore6BitWithoutTtl()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey")!;
+
+            db.KeyDelete("mykey");
+
+            db.KeyRestore("mykey", dump);
+
+            var value = db.StringGet("mykey");
+
+            ClassicAssert.AreEqual("val", value.ToString());
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 6 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleDump6Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mykey", "val");
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
+                 0x00, // value type 
+                 0x03, // length of payload
+                 0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
+                 0x0B, 0x00, // RDB version
+            };
+
+            var crc = new byte[]
+            {
+                 0xDB,
+                 0x82,
+                 0x3C,
+                 0x30,
+                 0x38,
+                 0x78,
+                 0x5A,
+                 0x99
+            };
+
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 14 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleDump14Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383 - 1; i++)
+                valueBuilder.Append('a');
+
+            var value = valueBuilder.ToString();
+
+            db.StringSet("mykey", value);
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
+                0x00, // value type
+                0x7F, 0xFE, // length of payload
+            };
+
+            expectedValue = [.. expectedValue, .. Encoding.UTF8.GetBytes(value)];
+
+            var rdbVersion = new byte[]
+            {
+                0x0B, 0x00, // RDB version
+            };
+
+            expectedValue = [.. expectedValue, .. rdbVersion];
+
+            var crc = new byte[]
+            {
+                0x7C,
+                0x09,
+                0x2D,
+                0x16,
+                0x73,
+                0xAE,
+                0x7C,
+                0xCF
+            };
+
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
+        }
+
+        /// <summary>
+        /// Tests that DUMP command returns payload with 32 bit encoded length
+        /// </summary>
+        [Test]
+        public void SingleDump32Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var valueBuilder = new StringBuilder();
+
+            for (var i = 0; i < 16_383 + 1; i++)
+                valueBuilder.Append('a');
+
+            var value = valueBuilder.ToString();
+
+            db.StringSet("mykey", value);
+
+            var dump = db.KeyDump("mykey");
+
+            var expectedValue = new byte[]
+            {
+                0x00, // value type
+                0x80, 0x00, 0x00, 0x40, 0x00, // length of payload
+            };
+
+            expectedValue = [.. expectedValue, .. Encoding.UTF8.GetBytes(value)];
+
+            var rdbVersion = new byte[]
+            {
+                0x0B, 0x00, // RDB version
+            };
+
+            expectedValue = [.. expectedValue, .. rdbVersion];
+
+            var crc = new byte[]
+            {
+                0x7F,
+                0x73,
+                0x7E,
+                0xA9,
+                0x87,
+                0xD9,
+                0x90,
+                0x14
+            };
+
+            expectedValue = [.. expectedValue, .. crc];
+
+            ClassicAssert.AreEqual(expectedValue, dump);
+        }
+
+        /// <summary>
+        /// Tests DUMP on non string type which is currently not supported
+        /// </summary>
+        [Test]
+        public void TryDumpKeyNonString()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("mykey", "val1");
+            db.SetAdd("mykey", "val2");
+
+            var value = db.KeyDump("mykey");
+
+            ClassicAssert.AreEqual(null, value);
+        }
+
+        /// <summary>
+        /// Try DUMP key that does not exist
+        /// </summary>
+        [Test]
+        public void TryDumpKeyThatDoesNotExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var value = db.KeyDump("mykey");
+
+            ClassicAssert.AreEqual(null, value);
+        }
+
         [Test]
         public void SingleSetGet()
         {
@@ -185,7 +494,10 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             const int length = 15000;
-            KeyValuePair<RedisKey, RedisValue>[] input = new KeyValuePair<RedisKey, RedisValue>[length];
+            var input = new KeyValuePair<RedisKey, RedisValue>[length];
+            var inputNX = new KeyValuePair<RedisKey, RedisValue>[length];
+            var inputXX = new KeyValuePair<RedisKey, RedisValue>[length];
+
             for (int i = 0; i < length; i++)
                 input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
 
@@ -203,7 +515,8 @@ namespace Garnet.test
             result = db.StringSet(input);
             ClassicAssert.IsTrue(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var keys = input.Select(e => e.Key).ToArray();
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
@@ -211,32 +524,79 @@ namespace Garnet.test
 
             // MSET NX - existing values
             for (int i = 0; i < length; i++)
-                input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
+                inputXX[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
 
-            result = db.StringSet(input, When.NotExists);
+            result = db.StringSet(inputXX, When.NotExists);
             ClassicAssert.IsFalse(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
+            // Should not change existing keys
             for (int i = 0; i < length; i++)
                 ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
 
             // MSET NX - non-existing and existing values
             for (int i = 0; i < length; i++)
-                input[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
+                inputNX[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
 
-            result = db.StringSet(input, When.NotExists);
-            ClassicAssert.IsTrue(result);
+            result = db.StringSet(inputNX, When.NotExists);
+            ClassicAssert.IsFalse(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
             {
-                ClassicAssert.AreEqual(i % 2 == 0 ? new RedisValue((int.Parse(input[i].Value) - length).ToString()) :
-                        input[i].Value, value[i]);
+                ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
             }
+
+            // Should not create new keys if any existing keys were also specified
+            var nxKeys = inputNX.Select(x => x.Key).Where(x => !keys.Contains(x)).Take(10).ToArray();
+            value = db.StringGet(nxKeys);
+            for (int i = 0; i < value.Length; i++)
+            {
+                ClassicAssert.IsEmpty(value[i].ToString());
+            }
+        }
+
+        [Test]
+        public void MultiSetNX()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Set keys
+            var response = lightClientRequest.SendCommand("MSETNX key1 5 key2 6");
+            var expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key1 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Verify values
+            response = lightClientRequest.SendCommand("GET key1");
+            expectedResponse = "$1\r\n5\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("GET key2");
+            expectedResponse = "$1\r\n6\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Should not be set even though it was 'before' existing key1.
+            response = lightClientRequest.SendCommand("GET key3");
+            expectedResponse = "$-1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("HSET key4 first 1");
+            expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists even if it's an object.
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key4 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         [Test]
@@ -315,6 +675,26 @@ namespace Garnet.test
             Thread.Sleep(2000);
             retValue = db.StringGet("mykey");
             ClassicAssert.AreEqual(null, retValue);
+        }
+
+        [Test]
+        public void SetExpiryThenExpireAndAppend()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "user:string1";
+            string value1 = "a";
+            string value2 = "ab";
+            var ttl = TimeSpan.FromMilliseconds(100);
+
+            var ok = db.StringSet(key, value1, ttl);
+            ClassicAssert.IsTrue(ok);
+
+            Thread.Sleep(ttl * 2);
+
+            var len = db.StringAppend(key, value2);
+            ClassicAssert.IsTrue(len == 2);
         }
 
         [Test]
@@ -1058,7 +1438,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
             server.Start();
 
             var key = "delKey";
@@ -1090,7 +1470,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1125,13 +1505,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void GarnetObjectStoreDisabledError()
+        {
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var iter = 100;
+            var mykey = "mykey";
+            for (var i = 0; i < iter; i++)
+            {
+                var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
+                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
+            }
+
+            // Ensure connection is still healthy
+            for (var i = 0; i < iter; i++)
+            {
+                var myvalue = "myvalue" + i;
+                var result = db.StringSet(mykey, myvalue);
+                ClassicAssert.IsTrue(result);
+                var returned = (string)db.StringGet(mykey);
+                ClassicAssert.AreEqual(myvalue, returned);
+            }
+        }
+
+        [Test]
         public void MultiKeyDelete([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1199,7 +1609,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1265,7 +1675,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1530,7 +1940,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1846,6 +2256,48 @@ namespace Garnet.test
             ClassicAssert.IsTrue(result);
             string retValue = db.StringGet(key);
             ClassicAssert.AreEqual(origValue, retValue);
+        }
+
+        [Test]
+        public void SingleRenameNXWithEtagSetOldAndNewKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var origValue = "test1";
+            var key = "key1";
+            var newKey = "key2";
+
+            db.Execute("SET", key, origValue, "WITHETAG");
+            db.Execute("SET", newKey, "foo", "WITHETAG");
+
+            var result = db.KeyRename(key, newKey, When.NotExists);
+            ClassicAssert.IsFalse(result);
+        }
+
+        [Test]
+        public void SingleRenameNXWithEtagSetOldKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var origValue = "test1";
+            var key = "key1";
+            var newKey = "key2";
+
+            db.Execute("SET", key, origValue, "WITHETAG");
+
+            var result = db.KeyRename(key, newKey, When.NotExists);
+            ClassicAssert.IsTrue(result);
+
+            string retValue = db.StringGet(newKey);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var oldKeyRes = db.StringGet(key);
+            ClassicAssert.IsTrue(oldKeyRes.IsNull);
+
+            // Since the original key was set with etag, the new key should have an etag attached to it
+            var etagRes = (RedisResult[])db.Execute("GETWITHETAG", newKey);
+            ClassicAssert.AreEqual(0, (long)etagRes[0]);
+            ClassicAssert.AreEqual(origValue, etagRes[1].ToString());
         }
 
         #endregion
@@ -2207,7 +2659,7 @@ namespace Garnet.test
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
-            args[1] = 15;
+            args[1] = 500;
             args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
@@ -3211,6 +3663,8 @@ namespace Garnet.test
             string value = db.StringGet(keyA);
             ClassicAssert.AreEqual(null, value);
 
+            ClassicAssert.AreEqual("OK", db.Execute("SET", keyA, keyA, "KEEPTTL")?.ToString());
+
             value = db.StringGet(keyB);
             ClassicAssert.AreEqual(keyB, value);
         }
@@ -3301,6 +3755,17 @@ namespace Garnet.test
         }
 
         [Test]
+        public void GetRole()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+            var role = server.Role();
+            ClassicAssert.True(role is Role.Master);
+            var master = role as Role.Master;
+            ClassicAssert.AreEqual("master", master.Value);
+        }
+
+        [Test]
         public void AppendTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3387,7 +3852,7 @@ namespace Garnet.test
             // Set up low-memory database
             TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
 
             string firstKey = null, firstValue = null, lastKey = null, lastValue = null;
@@ -3869,6 +4334,79 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        [Description("Basic case - Get name with default name")]
+        public void ClientGetNameBasicTest()
+        {
+            var config = TestUtils.GetConfig();
+            using var redis = ConnectionMultiplexer.Connect(config);
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual(config.ClientName, result);
+        }
+
+        [Test]
+        [Description("Get name after setting a name")]
+        public void ClientGetNameAfterSetNameTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.Execute("CLIENT", "SETNAME", "testname");
+            var result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual("testname", result);
+        }
+
+        [Test]
+        [TestCase("validname", true, Description = "Set valid name")]
+        [TestCase("", false, Description = "Set empty name")]
+        [TestCase(null, false, Description = "Set null name")]
+        [TestCase("name with spaces", false, Description = "Set name with spaces")]
+        public void ClientSetNameTest(string name, bool shouldSucceed)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            if (shouldSucceed)
+            {
+                var result = (string)db.Execute("CLIENT", "SETNAME", name);
+                ClassicAssert.AreEqual("OK", result);
+
+                var getName = (string)db.Execute("CLIENT", "GETNAME");
+                ClassicAssert.AreEqual(name, getName);
+            }
+            else
+            {
+                Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETNAME", name));
+            }
+        }
+
+        [Test]
+        [TestCase("LIB-NAME", "mylib", Description = "Set only library name")]
+        [TestCase("LIB-VER", "1.0.0", Description = "Set only library version")]
+        public void ClientSetInfoSingleOptionTest(string option, string value)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "SETINFO", option, value);
+            ClassicAssert.AreEqual("OK", result);
+
+            var actual = ((string)db.Execute("CLIENT", "INFO")).Split(" ").First(x => x.StartsWith(option, StringComparison.OrdinalIgnoreCase)).Substring(option.Length + 1);
+            ClassicAssert.AreEqual(value, actual);
+        }
+
+        [Test]
+        [Description("Test invalid SETINFO options")]
+        public void ClientSetInfoInvalidOptionsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("CLIENT", "SETINFO", "INVALID-OPTION", "value"));
+        }
+
         /// <summary>
         /// Check that list is non-empty, and has the minimum required fields.
         /// </summary>
@@ -3886,6 +4424,8 @@ namespace Garnet.test
                 AssertField(line, flags, "age");
                 AssertField(line, flags, "flags");
                 AssertField(line, flags, "resp");
+                AssertField(line, flags, "lib-name");
+                AssertField(line, flags, "lib-ver");
             }
 
             // Check that a given flag is set
@@ -4158,6 +4698,26 @@ namespace Garnet.test
             ClassicAssert.AreEqual(newValue, result);
         }
 
+        [Test]
+        public void SetNXCorrectResponse()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Set key
+            var response = lightClientRequest.SendCommand("SETNX key1 2");
+            var expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Setnx command should fail since key exists
+            response = lightClientRequest.SendCommand("SETNX key1 3");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Be sure key wasn't modified
+            response = lightClientRequest.SendCommand("GET key1");
+            expectedResponse = "$1\r\n2\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
         #endregion
 
         #region SUBSTR
@@ -4182,5 +4742,350 @@ namespace Garnet.test
         }
 
         #endregion
+
+        #region LCS
+
+        [Test]
+        [TestCase("abc", "abc", "abc", Description = "Identical strings")]
+        [TestCase("hello", "world", "o", Description = "Different strings with common subsequence")]
+        [TestCase("", "abc", "", Description = "Empty first string")]
+        [TestCase("abc", "", "", Description = "Empty second string")]
+        [TestCase("", "", "", Description = "Both empty strings")]
+        [TestCase("abc", "def", "", Description = "No common subsequence")]
+        [TestCase("A string", "Another string", "A string", Description = "Strings with spaces")]
+        [TestCase("ABCDEF", "ACDF", "ACDF", Description = "Multiple common subsequences")]
+        [TestCase("ABCDEF", "ACEDF", "ACEF", Description = "Multiple common subsequences")]
+        public void LCSBasicTest(string key1Value, string key2Value, string expectedLCS)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = (string)db.Execute("LCS", "key1", "key2");
+            ClassicAssert.AreEqual(expectedLCS, result);
+        }
+
+        [Test]
+        [TestCase("hello", "world", 1, Description = "Basic length check")]
+        [TestCase("", "world", 0, Description = "Empty first string length")]
+        [TestCase("hello", "", 0, Description = "Empty second string length")]
+        [TestCase("", "", 0, Description = "Both empty strings length")]
+        [TestCase("abc", "def", 0, Description = "No common subsequence length")]
+        [TestCase("ABCDEF", "ACEDF", 4, Description = "Multiple common subsequences")]
+        [TestCase("A string", "Another string", 8, Description = "Strings with spaces")]
+        public void LCSWithLenOption(string key1Value, string key2Value, int expectedLength)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = (long)db.Execute("LCS", "key1", "key2", "LEN");
+            ClassicAssert.AreEqual(expectedLength, result);
+        }
+
+        [Test]
+        [TestCase("ABCDEF", "ACEDF", 4, new[] { 5, 4, 2, 0 }, new[] { 5, 4, 2, 0 }, new[] { 4, 2, 1, 0 }, new[] { 4, 2, 1, 0 }, Description = "Multiple matches")]
+        [TestCase("hello", "world", 1, new[] { 4 }, new[] { 4 }, new[] { 1 }, new[] { 1 }, Description = "Basic IDX test")]
+        [TestCase("abc", "def", 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "No matches")]
+        [TestCase("", "", 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
+        [TestCase("abc", "", 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")]
+        [TestCase("Hello World!", "Hello Earth!", 8, new[] { 11, 8, 0 }, new[] { 11, 8, 5 }, new[] { 11, 8, 0 }, new[] { 11, 8, 5 }, Description = "Multiple words with punctuation")]
+        [TestCase("AAABBB", "AAABBB", 6, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
+        [TestCase("    abc", "abc   ", 3, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with spaces")]
+        public void LCSWithIdxOption(string key1Value, string key2Value, int expectedLength,
+            int[] expectedKey1StartPositions, int[] expectedKey1EndPositions,
+            int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = db.Execute("LCS", "key1", "key2", "IDX");
+            var resultDict = result.ToDictionary();
+
+            ClassicAssert.AreEqual(expectedLength, (int)resultDict["len"]);
+
+            if (expectedLength > 0)
+            {
+                var matches = (RedisResult[])resultDict["matches"];
+                for (int i = 0; i < matches.Length; i++)
+                {
+                    var match = (RedisResult[])matches[i];
+                    var positions1 = Array.ConvertAll((RedisValue[])match[0], x => (int)x);
+                    var positions2 = Array.ConvertAll((RedisValue[])match[1], x => (int)x);
+
+                    ClassicAssert.AreEqual(expectedKey1StartPositions[i], positions1[0]);
+                    ClassicAssert.AreEqual(expectedKey1EndPositions[i], positions1[1]);
+                    ClassicAssert.AreEqual(expectedKey2StartPositions[i], positions2[0]);
+                    ClassicAssert.AreEqual(expectedKey2EndPositions[i], positions2[1]);
+                }
+            }
+            else
+            {
+                ClassicAssert.IsEmpty((RedisResult[])resultDict["matches"]);
+            }
+        }
+
+        [Test]
+        [TestCase("ABCDEF", "ACEDF", 2, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Basic MINMATCHLEN test")]
+        [TestCase("hello world12", "hello earth12", 3, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Multiple matches with spaces")]
+        [TestCase("", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
+        [TestCase("abc", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")]
+        [TestCase("abcdef", "abcdef", 1, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
+        [TestCase("AAABBBCCC", "AAACCC", 3, 2, new[] { 6, 0 }, new[] { 8, 2 }, new[] { 3, 0 }, new[] { 5, 2 }, Description = "Repeated characters")]
+        [TestCase("Hello World!", "Hello Earth!", 4, 1, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Words with punctuation")]
+        [TestCase("    abc    ", "abc", 2, 1, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with leading/trailing spaces")]
+        public void LCSWithIdxAndMinMatchLen(string key1Value, string key2Value, int minMatchLen,
+            int expectedMatchCount, int[] expectedKey1StartPositions, int[] expectedKey1EndPositions,
+            int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", minMatchLen);
+            var resultDict = result.ToDictionary();
+            var matches = (RedisResult[])resultDict["matches"];
+
+            ClassicAssert.AreEqual(expectedMatchCount, matches.Length);
+
+            for (int i = 0; i < expectedMatchCount; i++)
+            {
+                var match = (RedisResult[])matches[i];
+                var positions1 = Array.ConvertAll((RedisValue[])match[0], x => (int)x);
+                var positions2 = Array.ConvertAll((RedisValue[])match[1], x => (int)x);
+
+                ClassicAssert.AreEqual(expectedKey1StartPositions[i], positions1[0]);
+                ClassicAssert.AreEqual(expectedKey1EndPositions[i], positions1[1]);
+                ClassicAssert.AreEqual(expectedKey2StartPositions[i], positions2[0]);
+                ClassicAssert.AreEqual(expectedKey2EndPositions[i], positions2[1]);
+            }
+        }
+
+        [Test]
+        [TestCase("ABCDEF", "ACEDF", 0, 4, new[] { 1, 1, 1, 1 }, new[] { 5, 4, 2, 0 }, new[] { 5, 4, 2, 0 }, new[] { 4, 2, 1, 0 }, new[] { 4, 2, 1, 0 }, Description = "Basic WITHMATCHLEN test")]
+        [TestCase("hello world12", "hello earth12", 3, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Multiple matches with lengths")]
+        [TestCase("", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "Empty strings")]
+        [TestCase("abc", "", 0, 0, new int[] { }, new int[] { }, new int[] { }, new int[] { }, new int[] { }, Description = "One empty string")]
+        [TestCase("abcdef", "abcdef", 0, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Identical strings")]
+        [TestCase("AAABBBCCC", "AAACCC", 3, 2, new[] { 3, 3 }, new[] { 6, 0 }, new[] { 8, 2 }, new[] { 3, 0 }, new[] { 5, 2 }, Description = "Repeated characters")]
+        [TestCase("Hello World!", "Hello Earth!", 2, 1, new[] { 6 }, new[] { 0 }, new[] { 5 }, new[] { 0 }, new[] { 5 }, Description = "Words with punctuation")]
+        [TestCase("    abc    ", "abc", 2, 1, new[] { 3 }, new[] { 4 }, new[] { 6 }, new[] { 0 }, new[] { 2 }, Description = "Strings with leading/trailing spaces")]
+        public void LCSWithIdxAndWithMatchLen(string key1Value, string key2Value, int minMatchLen,
+            int expectedMatchCount, int[] expectedMatchLengths, int[] expectedKey1StartPositions,
+            int[] expectedKey1EndPositions, int[] expectedKey2StartPositions, int[] expectedKey2EndPositions)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", key1Value);
+            db.StringSet("key2", key2Value);
+
+            var result = db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", minMatchLen, "WITHMATCHLEN");
+            var resultDict = result.ToDictionary();
+            var matches = (RedisResult[])resultDict["matches"];
+
+            ClassicAssert.AreEqual(expectedMatchCount, matches.Length);
+
+            for (int i = 0; i < expectedMatchCount; i++)
+            {
+                var match = (RedisResult[])matches[i];
+                var positions1 = Array.ConvertAll((RedisValue[])match[0], x => (int)x);
+                var positions2 = Array.ConvertAll((RedisValue[])match[1], x => (int)x);
+
+                ClassicAssert.AreEqual(expectedKey1StartPositions[i], positions1[0]);
+                ClassicAssert.AreEqual(expectedKey1EndPositions[i], positions1[1]);
+                ClassicAssert.AreEqual(expectedKey2StartPositions[i], positions2[0]);
+                ClassicAssert.AreEqual(expectedKey2EndPositions[i], positions2[1]);
+                ClassicAssert.AreEqual(expectedMatchLengths[i], (int)match[2]);
+            }
+        }
+
+        [Test]
+        public void LCSWithInvalidOptions()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", "hello");
+            db.StringSet("key2", "world");
+
+            // Invalid option
+            Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "INVALID"));
+
+            // Invalid MINMATCHLEN value
+            Assert.Throws<RedisServerException>(() => db.Execute("LCS", "key1", "key2", "IDX", "MINMATCHLEN", "abc"));
+        }
+
+        [Test]
+        public void LCSWithNonExistentKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Basic LCS with non-existent keys
+            var result = (string)db.Execute("LCS", "nonexistent1", "nonexistent2");
+            ClassicAssert.AreEqual("", result);
+
+            // LCS LEN with non-existent keys
+            result = db.Execute("LCS", "nonexistent1", "nonexistent2", "LEN").ToString();
+            ClassicAssert.AreEqual("0", result);
+
+            // LCS IDX with non-existent keys
+            var idxResult = db.Execute("LCS", "nonexistent1", "nonexistent2", "IDX");
+            var resultDict = idxResult.ToDictionary();
+            ClassicAssert.AreEqual(0, (int)resultDict["len"]);
+            ClassicAssert.IsEmpty((RedisResult[])resultDict["matches"]);
+        }
+
+        #endregion
+
+        [Test]
+        [TestCase("BLOCKING", "ERROR", true, Description = "Unblock normal client with ERROR")]
+        [TestCase("BLOCKING", "TIMEOUT", true, Description = "Unblock normal client with TIMEOUT")]
+        [TestCase("BLOCKING", null, true, Description = "Unblock normal client without mode")]
+        public async Task ClientUnblockBasicTest(string clientType, string mode, bool expectedResult)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+            Task blockingTask = null;
+            bool isError = false;
+            if (clientType == "BLOCKING")
+            {
+                blockingTask = taskFactory.StartNew(() =>
+                {
+                    var startTime = Stopwatch.GetTimestamp();
+                    var response = blockingClient.SendCommand("BLMPOP 10 1 keyA LEFT");
+                    if (Encoding.ASCII.GetString(response).Substring(0, "-UNBLOCKED".Length) == "-UNBLOCKED")
+                    {
+                        isError = true;
+                    }
+                    var totalTime = Stopwatch.GetElapsedTime(startTime);
+                    ClassicAssert.Less(totalTime.TotalSeconds, 9);
+                });
+            }
+            // Add other mode like XREAD Readis steam here
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000);
+
+            // Unblock from main connection
+            var args = new List<string> { "UNBLOCK", clientId };
+            if (mode != null)
+            {
+                args.Add(mode);
+            }
+            var unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
+            ClassicAssert.AreEqual(expectedResult ? 1 : 0, unblockResult);
+            blockingTask.Wait();
+
+            if (mode == "ERROR")
+            {
+                ClassicAssert.IsTrue(isError);
+            }
+            else
+            {
+                ClassicAssert.IsFalse(isError);
+            }
+
+            // Attempt to unblock again will return 0
+            unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
+            ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        [TestCase(0, Description = "Guarantied concurrent unblock test")]
+        [TestCase(3, Description = "Random chance unblock sucess/failed case")]
+        [TestCase(20, Description = "Probable unblock failed case")]
+        public async Task MultipleClientsUnblockAndAddTest(int numberOfItems)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "blockingList";
+            var value = "testValue";
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            string blockingResult = null;
+            var blockingTask = Task.Run(() =>
+            {
+                var response = blockingClient.SendCommand($"BLMPOP 10 1 {key} LEFT COUNT 30");
+                blockingResult = Encoding.ASCII.GetString(response);
+            });
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000);
+
+            // Start parallel unblock and add tasks
+            var unblockTasks = new List<Task<int>>();
+            var addTasks = new List<Task>();
+            for (int i = 0; i < numberOfItems; i++)
+            {
+                var _i = i;
+                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{_i}")));
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                unblockTasks.Add(Task.Run(() => (int)redis.GetDatabase(0).Execute("CLIENT", "UNBLOCK", clientId, "ERROR")));
+            }
+
+            await Task.WhenAll(unblockTasks);
+            await Task.WhenAll(addTasks);
+            await blockingTask;
+
+            var numberOfItemsReturned = Regex.Matches(blockingResult, value).Count;
+
+            var listLength = db.ListLength(key);
+            ClassicAssert.AreEqual(numberOfItems - numberOfItemsReturned, listLength);
+
+            if (numberOfItemsReturned == 0)
+            {
+                ClassicAssert.IsTrue(blockingResult.StartsWith("-UNBLOCKED"));
+                ClassicAssert.IsTrue(unblockTasks.Any(x => x.Result == 1));
+            }
+            else
+            {
+                ClassicAssert.IsTrue(unblockTasks.All(x => x.Result == 0));
+            }
+        }
+
+        [Test]
+        [TestCase(-1, Description = "Unblock with invalid client ID")]
+        [TestCase(999999, Description = "Unblock with non-existent client ID")]
+        public void ClientUnblockInvalidIdTest(int invalidId)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var unblockResult = (int)mainDB.Execute("CLIENT", "UNBLOCK", invalidId);
+            ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        public void ClientUnblockInvalidModeTest()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
+        }
     }
 }

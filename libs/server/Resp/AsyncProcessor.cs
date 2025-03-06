@@ -50,7 +50,7 @@ namespace Garnet.server
         {
             unsafe
             {
-                while (!RespWriteUtils.WriteError($"ASYNC {asyncStarted}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ASYNC {asyncStarted}", ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -104,11 +104,11 @@ namespace Garnet.server
                                 var o = completedOutputs.Current.Output;
 
                                 // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
-                                while (!RespWriteUtils.WritePushLength(3, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
                                     SendAndReset();
-                                while (!RespWriteUtils.WriteBulkString(CmdStrings.async, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteBulkString(CmdStrings.async, ref dcurr, dend))
                                     SendAndReset();
-                                while (!RespWriteUtils.WriteIntegerAsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteInt32AsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend))
                                     SendAndReset();
                                 if (completedOutputs.Current.Status.Found)
                                 {
@@ -119,7 +119,7 @@ namespace Garnet.server
                                 else
                                 {
                                     sessionMetrics?.incr_total_notfound();
-                                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                                         SendAndReset();
                                 }
                             }

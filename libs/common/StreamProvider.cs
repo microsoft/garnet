@@ -120,8 +120,9 @@ namespace Garnet.common
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
         /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable.</param>
+        /// <param name="readOnly">Open file in read only mode</param>
         /// <returns>StreamProvider instance</returns>
-        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null)
+        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null, bool readOnly = false)
         {
             switch (locationType)
             {
@@ -130,7 +131,7 @@ namespace Garnet.common
                         throw new ArgumentException("Azure Storage connection string is required to read/write to Azure Storage", nameof(connectionString));
                     return new AzureStreamProvider(connectionString);
                 case FileLocationType.Local:
-                    return new LocalFileStreamProvider();
+                    return new LocalFileStreamProvider(readOnly);
                 case FileLocationType.EmbeddedResource:
                     if (resourceAssembly == null)
                         throw new ArgumentException(
@@ -148,20 +149,21 @@ namespace Garnet.common
     internal class AzureStreamProvider : StreamProviderBase
     {
         private readonly string _connectionString;
+        private readonly AzureStorageNamedDeviceFactoryCreator azureStorageNamedDeviceFactoryCreator;
 
         public AzureStreamProvider(string connectionString)
         {
             this._connectionString = connectionString;
+            this.azureStorageNamedDeviceFactoryCreator = new AzureStorageNamedDeviceFactoryCreator(this._connectionString, default);
         }
 
         protected override IDevice GetDevice(string path)
         {
             var fileInfo = new FileInfo(path);
-            INamedDeviceFactory settingsDeviceFactoryCreator = new AzureStorageNamedDeviceFactory(this._connectionString, default);
 
             // Get the container info, if it does not exist it will be created
-            settingsDeviceFactoryCreator.Initialize($"{fileInfo.Directory?.Name}");
-            var settingsDevice = settingsDeviceFactoryCreator.Get(new FileDescriptor("", fileInfo.Name));
+            var settingsDeviceFactory = azureStorageNamedDeviceFactoryCreator.Create($"{fileInfo.Directory?.Name}");
+            var settingsDevice = settingsDeviceFactory.Get(new FileDescriptor("", fileInfo.Name));
             settingsDevice.Initialize(MaxConfigFileSizeAligned, epoch: null, omitSegmentIdFromFilename: false);
             return settingsDevice;
         }
@@ -181,13 +183,21 @@ namespace Garnet.common
     /// </summary>
     internal class LocalFileStreamProvider : StreamProviderBase
     {
+        private readonly bool readOnly;
+        private readonly LocalStorageNamedDeviceFactoryCreator localDeviceFactoryCreator;
+
+        public LocalFileStreamProvider(bool readOnly = false)
+        {
+            this.readOnly = readOnly;
+            this.localDeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator(disableFileBuffering: false, readOnly: readOnly);
+        }
+
         protected override IDevice GetDevice(string path)
         {
             var fileInfo = new FileInfo(path);
 
-            INamedDeviceFactory settingsDeviceFactoryCreator = new LocalStorageNamedDeviceFactory(disableFileBuffering: false);
-            settingsDeviceFactoryCreator.Initialize("");
-            var settingsDevice = settingsDeviceFactoryCreator.Get(new FileDescriptor(fileInfo.DirectoryName, fileInfo.Name));
+            var settingsDeviceFactory = localDeviceFactoryCreator.Create("");
+            var settingsDevice = settingsDeviceFactory.Get(new FileDescriptor(fileInfo.DirectoryName, fileInfo.Name));
             settingsDevice.Initialize(-1, epoch: null, omitSegmentIdFromFilename: true);
             return settingsDevice;
         }

@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Net;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -14,14 +15,9 @@ namespace Garnet.server
     public class ServerOptions
     {
         /// <summary>
-        /// Port to run server on.
+        /// Endpoint to bind server to.
         /// </summary>
-        public int Port = 6379;
-
-        /// <summary>
-        /// IP address to bind server to.
-        /// </summary>
-        public string Address = "127.0.0.1";
+        public EndPoint EndPoint { get; set; } = new IPEndPoint(IPAddress.Loopback, 6379);
 
         /// <summary>
         /// Total log memory used in bytes (rounds down to power of 2).
@@ -97,6 +93,11 @@ namespace Garnet.server
         /// Server bootup should fail if errors happen during bootup of AOF and checkpointing.
         /// </summary>
         public bool FailOnRecoveryError = false;
+
+        /// <summary>
+        /// Skip RDB restore checksum validation
+        /// </summary>
+        public bool SkipRDBRestoreChecksumValidation = false;
 
         /// <summary>
         /// Logger
@@ -228,7 +229,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        protected static long ParseSize(string value)
+        public static long ParseSize(string value)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;

@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using Tsavorite.test.LockableUnsafeContext;
+using Tsavorite.test.TransactionalUnsafeContext;
 using Tsavorite.test.LockTable;
 using static Tsavorite.test.TestUtils;
 
@@ -576,17 +576,17 @@ namespace Tsavorite.test.ReadCacheTests
             CreateChain();
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
-            var luContext = session.LockableUnsafeContext;
+            var luContext = session.TransactionalUnsafeContext;
 
             var keys = new[]
             {
-                new FixedLengthLockableKeyStruct<long>(LowChainKey, LockType.Exclusive, luContext),
-                new FixedLengthLockableKeyStruct<long>(MidChainKey, LockType.Shared, luContext),
-                new FixedLengthLockableKeyStruct<long>(HighChainKey, LockType.Exclusive, luContext)
+                new FixedLengthTransactionalKeyStruct<long>(LowChainKey, LockType.Exclusive, luContext),
+                new FixedLengthTransactionalKeyStruct<long>(MidChainKey, LockType.Shared, luContext),
+                new FixedLengthTransactionalKeyStruct<long>(HighChainKey, LockType.Exclusive, luContext)
             };
 
             luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            luContext.BeginTransaction();
 
             try
             {
@@ -598,7 +598,7 @@ namespace Tsavorite.test.ReadCacheTests
                 store.ReadCache.FlushAndEvict(wait: true);
 
                 int xlocks = 0, slocks = 0;
-                foreach (var idx in LockableUnsafeContextTests.EnumActionKeyIndices(keys, LockableUnsafeContextTests.LockOperationType.Unlock))
+                foreach (var idx in TransactionalUnsafeContextTests.EnumActionKeyIndices(keys, TransactionalUnsafeContextTests.LockOperationType.Unlock))
                 {
                     if (keys[idx].LockType == LockType.Exclusive)
                         ++xlocks;
@@ -607,7 +607,7 @@ namespace Tsavorite.test.ReadCacheTests
                 }
                 AssertTotalLockCounts(xlocks, slocks);
 
-                foreach (var idx in LockableUnsafeContextTests.EnumActionKeyIndices(keys, LockableUnsafeContextTests.LockOperationType.Unlock))
+                foreach (var idx in TransactionalUnsafeContextTests.EnumActionKeyIndices(keys, TransactionalUnsafeContextTests.LockOperationType.Unlock))
                 {
                     ref var key = ref keys[idx];
                     HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key.Key));
@@ -632,7 +632,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
             finally
             {
-                luContext.EndLockable();
+                luContext.EndTransaction();
                 luContext.EndUnsafe();
             }
 

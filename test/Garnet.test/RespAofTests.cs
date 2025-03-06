@@ -196,7 +196,7 @@ namespace Garnet.test
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
 
                 // Issue and wait for DB save
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
 
@@ -229,6 +229,10 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
+                db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
+                db.Execute("SETIFMATCH", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", "1");
+                db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
+                var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");
             }
 
             server.Store.CommitAOF(true);
@@ -243,6 +247,9 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
                 recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                ExpectedEtagTest(db, "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3", 2);
+                recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey4");
+                ClassicAssert.AreEqual("3", recoveredValue.ToString());
             }
         }
 
@@ -573,7 +580,7 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                var server = redis.GetServer(TestUtils.EndPoint);
                 ret = db.StringIncrement("key1", 2);
                 ClassicAssert.AreEqual(2, ret);
 
@@ -688,6 +695,27 @@ namespace Garnet.test
                 string writeKeysVal2 = db.StringGet(writeKey2);
                 ClassicAssert.AreEqual(readVal, writeKeysVal2);
             }
+        }
+
+        private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
+        {
+            RedisResult res = db.Execute("GETWITHETAG", key);
+            if (expectedValue == null)
+            {
+                ClassicAssert.IsTrue(res.IsNull);
+                return;
+            }
+
+            RedisResult[] etagAndVal = (RedisResult[])res;
+            RedisResult etag = etagAndVal[0];
+            RedisResult val = etagAndVal[1];
+
+            if (expected == -1)
+            {
+                ClassicAssert.IsTrue(etag.IsNull);
+            }
+
+            ClassicAssert.AreEqual(expectedValue, val.ToString());
         }
     }
 }

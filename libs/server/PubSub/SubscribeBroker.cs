@@ -2,55 +2,51 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
-    /// Broker used for PUB-SUB to Tsavorite KV store. There is a broker per TsavoriteKV instance.
-    /// A single broker can be used with multiple TsavoriteKVProviders. 
+    /// Broker used for pub/sub
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    /// <typeparam name="TValue"></typeparam>
-    /// <typeparam name="TKeyValueSerializer"></typeparam>
-    public sealed class SubscribeBroker<TKey, TValue, TKeyValueSerializer> : IDisposable
-        where TKeyValueSerializer : IKeySerializer<TKey>
+    public sealed class SubscribeBroker : IDisposable, ILogEntryConsumer
     {
-        private int sid = 0;
-        private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
-        private ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)> prefixSubscriptions;
-        private AsyncQueue<(byte[], byte[])> publishQueue;
-        readonly IKeySerializer<TKey> keySerializer;
+        int sid = 0;
+        bool initialized = false;
+        ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
+        ReadOptimizedConcurrentSet<PatternSubscriptionEntry> patternSubscriptions;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
+        long previousAddress = 0;
         bool disposed = false;
+        readonly int pageSizeBits;
+        readonly ILogger logger;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="keySerializer">Serializer for Prefix Match and serializing Key</param>
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="subscriberRefreshFrequencyMs">Subscriber log refresh frequency</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(IKeySerializer<TKey> keySerializer, string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true)
+        public SubscribeBroker(string logDir, long pageSize, int subscriberRefreshFrequencyMs, bool startFresh = true, ILogger logger = null)
         {
-            this.keySerializer = keySerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
+            pageSizeBits = log.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
+            this.logger = logger;
         }
 
         /// <summary>
@@ -62,67 +58,56 @@ namespace Garnet.server
         {
             if (subscriptions != null)
             {
-                foreach (var subscribedkey in subscriptions.Keys)
+                foreach (var subscribedKey in subscriptions.Keys)
                 {
-                    fixed (byte* keyPtr = &subscribedkey[0])
-                        this.Unsubscribe(keyPtr, (ServerSessionBase)session);
+                    this.Unsubscribe(subscribedKey, (ServerSessionBase)session);
                 }
             }
 
-            if (prefixSubscriptions != null)
+            if (patternSubscriptions != null)
             {
-                foreach (var subscribedkey in prefixSubscriptions.Keys)
+                int index = 0;
+                while (patternSubscriptions.Iterate(ref index, out var entry))
                 {
-                    fixed (byte* keyPtr = &subscribedkey[0])
-                        this.PUnsubscribe(keyPtr, (ServerSessionBase)session);
+                    entry.subscriptions.TryRemove((ServerSessionBase)session);
                 }
             }
         }
 
-        private unsafe int Broadcast(byte[] key, byte* valPtr, int valLength, bool ascii)
+        unsafe int Broadcast(ArgSlice key, ArgSlice value)
         {
-            int numSubscribers = 0;
+            var numSubscribers = 0;
 
-            fixed (byte* ptr = &key[0])
+            if (subscriptions != null)
             {
-                byte* keyPtr = ptr;
-
-                if (subscriptions != null)
+                if (subscriptions.TryGetValue(new ByteArrayWrapper(key), out var sessions))
                 {
-                    bool foundSubscription = subscriptions.TryGetValue(key, out var subscriptionServerSessionDict);
-                    if (foundSubscription)
+                    var index = 0;
+                    while (sessions.Iterate(ref index, out var session))
                     {
-                        foreach (var sub in subscriptionServerSessionDict)
-                        {
-                            byte* keyBytePtr = ptr;
-                            byte* nullBytePtr = null;
-                            byte* valBytePtr = valPtr;
-                            sub.Value.Publish(ref keyBytePtr, key.Length, ref valBytePtr, valLength, ref nullBytePtr, sub.Key);
-                            numSubscribers++;
-                        }
+                        session.Publish(key, value);
+                        numSubscribers++;
                     }
                 }
+            }
 
-                if (prefixSubscriptions != null)
+            if (patternSubscriptions != null)
+            {
+                var index1 = 0;
+                while (patternSubscriptions.Iterate(ref index1, out var entry))
                 {
-                    foreach (var kvp in prefixSubscriptions)
+                    var pattern = entry.pattern;
+                    fixed (byte* patternPtr = pattern.ReadOnlySpan)
                     {
-                        fixed (byte* subscribedPrefixPtr = &kvp.Key[0])
+                        var patternSlice = new ArgSlice(patternPtr, pattern.ReadOnlySpan.Length);
+                        if (Match(key, patternSlice))
                         {
-                            byte* subPrefixPtr = subscribedPrefixPtr;
-                            byte* reqKeyPtr = ptr;
-
-                            bool match = keySerializer.Match(ref keySerializer.ReadKeyByRef(ref reqKeyPtr), ascii,
-                                ref keySerializer.ReadKeyByRef(ref subPrefixPtr), kvp.Value.Item1);
-                            if (match)
+                            var sessions = entry.subscriptions;
+                            var index2 = 0;
+                            while (sessions.Iterate(ref index2, out var session))
                             {
-                                foreach (var sub in kvp.Value.Item2)
-                                {
-                                    byte* keyBytePtr = ptr;
-                                    byte* nullBytePtr = null;
-                                    sub.Value.PrefixPublish(subscribedPrefixPtr, kvp.Key.Length, ref keyBytePtr, key.Length, ref valPtr, valLength, ref nullBytePtr, sub.Key);
-                                    numSubscribers++;
-                                }
+                                session.PatternPublish(patternSlice, key, value);
+                                numSubscribers++;
                             }
                         }
                     }
@@ -131,72 +116,18 @@ namespace Garnet.server
             return numSubscribers;
         }
 
-        private async Task Start(CancellationToken cancellationToken = default)
+        async Task Start(CancellationToken cancellationToken = default)
         {
             try
             {
-                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(ByteArrayComparer.Instance);
-                long truncateUntilAddress = log.BeginAddress;
-
-                using var iter = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
-                var signal = iter.Signal;
+                using var iterator = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                var signal = iterator.Signal;
                 using var registration = cts.Token.Register(signal);
 
                 while (!disposed)
                 {
-                    await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    if (cancellationToken.IsCancellationRequested) break;
-                    while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
-                    {
-                        if (currentAddress >= long.MaxValue) return;
-
-                        byte[] subscriptionKey;
-                        byte[] subscriptionValue;
-                        byte[] ascii;
-
-                        unsafe
-                        {
-                            fixed (byte* subscriptionKeyValueAsciiPtr = &subscriptionKeyValueAscii[0])
-                            {
-                                var keyPtr = subscriptionKeyValueAsciiPtr;
-                                keySerializer.ReadKeyByRef(ref keyPtr);
-                                int subscriptionKeyLength = (int)(keyPtr - subscriptionKeyValueAsciiPtr);
-                                int subscriptionValueLength = subscriptionKeyValueAscii.Length - (subscriptionKeyLength + sizeof(bool));
-                                subscriptionKey = new byte[subscriptionKeyLength];
-                                subscriptionValue = new byte[subscriptionValueLength];
-                                ascii = new byte[sizeof(bool)];
-
-                                fixed (byte* subscriptionKeyPtr = &subscriptionKey[0], subscriptionValuePtr = &subscriptionValue[0], asciiPtr = &ascii[0])
-                                {
-                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr, subscriptionKeyPtr, subscriptionKeyLength, subscriptionKeyLength);
-                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength, subscriptionValuePtr, subscriptionValueLength, subscriptionValueLength);
-                                    Buffer.MemoryCopy(subscriptionKeyValueAsciiPtr + subscriptionKeyLength + subscriptionValueLength, asciiPtr, sizeof(bool), sizeof(bool));
-                                }
-                            }
-                        }
-                        truncateUntilAddress = nextAddress;
-                        if (!uniqueKeys.ContainsKey(subscriptionKey))
-                            uniqueKeys.Add(subscriptionKey, (subscriptionValue, ascii));
-                    }
-
-                    if (truncateUntilAddress > log.BeginAddress)
-                        log.TruncateUntil(truncateUntilAddress);
-
-                    unsafe
-                    {
-                        var enumerator = uniqueKeys.GetEnumerator();
-                        while (enumerator.MoveNext())
-                        {
-                            byte[] keyBytes = enumerator.Current.Key;
-                            byte[] valBytes = enumerator.Current.Value.Item1;
-                            byte[] asciiBytes = enumerator.Current.Value.Item2;
-                            bool ascii = asciiBytes[0] != 0;
-
-                            fixed (byte* valPtr = valBytes)
-                                Broadcast(keyBytes, valPtr, valBytes.Length, ascii);
-                        }
-                        uniqueKeys.Clear();
-                    }
+                    if (cts.Token.IsCancellationRequested) break;
+                    await iterator.ConsumeAllAsync(this, token: cts.Token).ConfigureAwait(false);
                 }
             }
             finally
@@ -205,94 +136,100 @@ namespace Garnet.server
             }
         }
 
+        public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            try
+            {
+                cts.Token.ThrowIfCancellationRequested();
+
+                if (previousAddress > 0 && currentAddress > previousAddress)
+                {
+                    if (
+                        (currentAddress % (1 << pageSizeBits) != 0) || // the skip was to a non-page-boundary
+                        (currentAddress >= previousAddress + payloadLength) // we skipped beyond the expected next address
+                    )
+                    {
+                        logger?.LogWarning("SubscribeBroker: Skipping from {previousAddress} to {currentAddress}", previousAddress, currentAddress);
+                    }
+                }
+
+                var ptr = payloadPtr;
+                var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                ptr += sizeof(int) + key.length;
+                var value = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                _ = Broadcast(key, value);
+                if (nextAddress > log.BeginAddress)
+                    log.TruncateUntil(nextAddress);
+                previousAddress = nextAddress;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at SubscribeBroker.Consume");
+                throw;
+            }
+        }
+
+        void Initialize()
+        {
+            done.Reset();
+            subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
+            patternSubscriptions = new ReadOptimizedConcurrentSet<PatternSubscriptionEntry>();
+            Task.Run(() => Start(cts.Token));
+            initialized = true;
+        }
+
         /// <summary>
         /// Subscribe to a particular Key
         /// </summary>
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe int Subscribe(ref byte* key, ServerSessionBase session)
+        public unsafe bool Subscribe(ArgSlice key, ServerSessionBase session)
         {
-            var start = key;
-            keySerializer.ReadKeyByRef(ref key);
-            var id = Interlocked.Increment(ref sid);
-            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
-            {
-                done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
-                Task.Run(() => Start(cts.Token));
-            }
+            if (!initialized && Interlocked.Increment(ref sid) == 1)
+                Initialize();
             else
-            {
-                while (prefixSubscriptions == null) Thread.Yield();
-            }
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
-            if (subscriptions.TryGetValue(subscriptionKey, out var val))
-                val.TryAdd(id, session);
-            return id;
+                while (!initialized) Thread.Yield();
+
+            var subscriptionKey = ByteArrayWrapper.CopyFrom(key.ReadOnlySpan, false);
+            if (!subscriptions.ContainsKey(subscriptionKey))
+                subscriptions.TryAdd(subscriptionKey, new ReadOptimizedConcurrentSet<ServerSessionBase>());
+
+            return subscriptions[subscriptionKey].TryAdd(session);
         }
 
         /// <summary>
-        /// Subscribe to a particular prefix
+        /// Subscribe to a particular pattern
         /// </summary>
-        /// <param name="prefix">prefix to subscribe to</param>
+        /// <param name="pattern">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
-        /// <param name="ascii">is key ascii?</param>
         /// <returns></returns>
-        public unsafe int PSubscribe(ref byte* prefix, ServerSessionBase session, bool ascii = false)
+        public unsafe bool PatternSubscribe(ArgSlice pattern, ServerSessionBase session)
         {
-            var start = prefix;
-            keySerializer.ReadKeyByRef(ref prefix);
-            var id = Interlocked.Increment(ref sid);
-            if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
-            {
-                done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
-                Task.Run(() => Start(cts.Token));
-            }
+            if (!initialized && Interlocked.Increment(ref sid) == 1)
+                Initialize();
             else
-            {
-                while (prefixSubscriptions == null) Thread.Yield();
-            }
-            var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
-            prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));
-            if (prefixSubscriptions.TryGetValue(subscriptionPrefix, out var val))
-                val.Item2.TryAdd(id, session);
-            return id;
+                while (!initialized) Thread.Yield();
+
+            var subscriptionPattern = ByteArrayWrapper.CopyFrom(pattern.ReadOnlySpan, false);
+            patternSubscriptions.TryAddAndGet(new PatternSubscriptionEntry { pattern = subscriptionPattern, subscriptions = new ReadOptimizedConcurrentSet<ServerSessionBase>() }, out var addedEntry);
+            return addedEntry.subscriptions.TryAdd(session);
         }
 
         /// <summary>
-        /// Unsubscribe to a particular Key
+        /// Unsubscribe to a particular key
         /// </summary>
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool Unsubscribe(byte* key, ServerSessionBase session)
+        public unsafe bool Unsubscribe(ByteArrayWrapper key, ServerSessionBase session)
         {
-            bool ret = false;
-            var start = key;
-            keySerializer.ReadKeyByRef(ref key);
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            if (subscriptions == null) return ret;
-            if (subscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
+            if (subscriptions == null) return false;
+            if (subscriptions.TryGetValue(key, out var sessions))
             {
-                foreach (var sid in subscriptionDict.Keys)
-                {
-                    if (subscriptionDict.TryGetValue(sid, out var _session))
-                    {
-                        if (_session == session)
-                        {
-                            subscriptionDict.TryRemove(sid, out _);
-                            ret = true;
-                            break;
-                        }
-                    }
-                }
+                return sessions.TryRemove(session);
             }
-            return ret;
+            return false;
         }
 
         /// <summary>
@@ -301,45 +238,33 @@ namespace Garnet.server
         /// <param name="key">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe void PUnsubscribe(byte* key, ServerSessionBase session)
+        public unsafe bool PatternUnsubscribe(ByteArrayWrapper key, ServerSessionBase session)
         {
-            var start = key;
-            keySerializer.ReadKeyByRef(ref key);
-            var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
-            if (prefixSubscriptions == null) return;
-            if (prefixSubscriptions.ContainsKey(subscriptionKey))
+            if (patternSubscriptions == null) return false;
+            int index = 0;
+            while (patternSubscriptions.Iterate(ref index, out var entry))
             {
-                if (prefixSubscriptions.TryGetValue(subscriptionKey, out var subscriptionDict))
+                if (entry.pattern.ReadOnlySpan.SequenceEqual(key.ReadOnlySpan))
                 {
-                    foreach (var sid in subscriptionDict.Item2.Keys)
-                    {
-                        if (subscriptionDict.Item2.TryGetValue(sid, out var _session))
-                        {
-                            if (_session == session)
-                            {
-                                subscriptionDict.Item2.TryRemove(sid, out _);
-                                break;
-                            }
-                        }
-                    }
+                    return entry.subscriptions.TryRemove(session);
                 }
             }
+            return false;
         }
-
 
         /// <summary>
         /// List all subscriptions made by a session
         /// </summary>
         /// <param name="session"></param>
         /// <returns></returns>
-        public unsafe List<byte[]> ListAllSubscriptions(ServerSessionBase session)
+        public unsafe List<ByteArrayWrapper> ListAllSubscriptions(ServerSessionBase session)
         {
-            List<byte[]> sessionSubscriptions = new();
+            List<ByteArrayWrapper> sessionSubscriptions = new();
             if (subscriptions != null)
             {
                 foreach (var subscription in subscriptions)
                 {
-                    if (subscription.Value.Values.Contains(session))
+                    if (subscription.Value.Count > 0)
                         sessionSubscriptions.Add(subscription.Key);
                 }
             }
@@ -351,16 +276,17 @@ namespace Garnet.server
         /// </summary>
         /// <param name="session"></param>
         /// <returns></returns>
-        public unsafe List<byte[]> ListAllPSubscriptions(ServerSessionBase session)
+        public unsafe List<ByteArrayWrapper> ListAllPatternSubscriptions(ServerSessionBase session)
         {
-            List<byte[]> sessionPSubscriptions = new();
-            foreach (var psubscription in prefixSubscriptions)
+            List<ByteArrayWrapper> sessionPatternSubscriptions = new();
+            if (patternSubscriptions == null) return sessionPatternSubscriptions;
+            var index = 0;
+            while (patternSubscriptions.Iterate(ref index, out var entry))
             {
-                if (psubscription.Value.Item2.Values.Contains(session))
-                    sessionPSubscriptions.Add(psubscription.Key);
+                if (entry.subscriptions.Count > 0)
+                    sessionPatternSubscriptions.Add(entry.pattern);
             }
-
-            return sessionPSubscriptions;
+            return sessionPatternSubscriptions;
         }
 
         /// <summary>
@@ -368,17 +294,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
-        /// <param name="valueLength">value length that has been updated</param>
-        /// <param name="ascii">whether ascii</param>
-        public unsafe int PublishNow(byte* key, byte* value, int valueLength, bool ascii)
+        /// <returns>Number of subscribers notified</returns>
+        public unsafe int PublishNow(ArgSlice key, ArgSlice value)
         {
-            if (subscriptions == null && prefixSubscriptions == null) return 0;
-
-            var start = key;
-            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
-            var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
-            int numSubscribedSessions = Broadcast(keyBytes, value, valueLength, ascii);
-            return numSubscribedSessions;
+            if (subscriptions == null && patternSubscriptions == null) return 0;
+            return Broadcast(key, value);
         }
 
         /// <summary>
@@ -386,120 +306,46 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
-        /// <param name="valueLength">value length that has been updated</param>
-        /// <param name="ascii">is payload ascii</param>
-        public unsafe void Publish(byte* key, byte* value, int valueLength, bool ascii = false)
+        public unsafe void Publish(ArgSlice key, ArgSlice value)
         {
-            if (subscriptions == null && prefixSubscriptions == null) return;
+            if (subscriptions == null && patternSubscriptions == null) return;
 
-            var start = key;
-            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
-            // TODO: this needs to be a single atomic enqueue
-            byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
-            fixed (byte* logEntryBytePtr = &logEntryBytes[0])
-            {
-                byte* dst = logEntryBytePtr;
-                Buffer.MemoryCopy(start, dst, (key - start), (key - start));
-                dst += (key - start);
-                Buffer.MemoryCopy(value, dst, valueLength, valueLength);
-                dst += valueLength;
-                byte* asciiPtr = (byte*)&ascii;
-                Buffer.MemoryCopy(asciiPtr, dst, sizeof(bool), sizeof(bool));
-            }
-
-            log.Enqueue(logEntryBytes);
+            var keySB = key.SpanByte;
+            var valueSB = value.SpanByte;
+            log.Enqueue(ref keySB, ref valueSB, out _);
         }
 
         /// <summary>
-        /// Retrieves the collection of channels that have active subscriptions.
+        /// Get the number of channels subscribed to
         /// </summary>
-        /// <returns>The collection of channels.</returns>
-        public unsafe void Channels(ref ObjectInput input, ref SpanByteAndMemory output)
+        /// <returns></returns>
+        public List<ByteArrayWrapper> GetChannels()
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            if (subscriptions is null || subscriptions.Count == 0)
+                return [];
+            return [.. subscriptions.Keys];
+        }
 
-            var curr = ptr;
-            var end = curr + output.Length;
+        /// <summary>
+        /// Get the number of channels subscribed to, matching the given pattern
+        /// </summary>
+        /// <param name="pattern"></param>
+        /// <returns></returns>
+        public unsafe List<ByteArrayWrapper> GetChannels(ArgSlice pattern)
+        {
+            if (subscriptions is null || subscriptions.Count == 0)
+                return [];
 
-            try
+            List<ByteArrayWrapper> matches = [];
+            foreach (var key in subscriptions.Keys)
             {
-                if (subscriptions is null || subscriptions.Count == 0)
+                fixed (byte* keyPtr = key.ReadOnlySpan)
                 {
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                if (input.parseState.Count == 0)
-                {
-                    while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    foreach (var key in subscriptions.Keys)
-                    {
-                        while (!RespWriteUtils.WriteBulkString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    return;
-                }
-
-                // Below WriteArrayLength is primarily to move the start of the buffer to the max length that is required to write the array length. The actual length is written in the below line.
-                // This is done to avoid multiple two passes over the subscriptions or new array allocation if we use single pass over the subscriptions
-                var totalArrayHeaderLen = 0;
-                while (!RespWriteUtils.WriteArrayLength(subscriptions.Count, ref curr, end, out var _, out totalArrayHeaderLen))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                var noOfFoundChannels = 0;
-                var pattern = input.parseState.GetArgSliceByRef(0).SpanByte;
-                var patternPtr = pattern.ToPointer() - sizeof(int);
-                *(int*)patternPtr = pattern.Length;
-
-                foreach (var key in subscriptions.Keys)
-                {
-                    fixed (byte* keyPtr = key)
-                    {
-                        var endKeyPtr = keyPtr;
-                        var _patternPtr = patternPtr;
-                        if (keySerializer.Match(ref keySerializer.ReadKeyByRef(ref endKeyPtr), true, ref keySerializer.ReadKeyByRef(ref _patternPtr), true))
-                        {
-                            while (!RespWriteUtils.WriteSimpleString(key.AsSpan().Slice(sizeof(int)), ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            noOfFoundChannels++;
-                        }
-                    }
-                }
-
-                if (noOfFoundChannels == 0)
-                {
-                    curr = ptr;
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                // Below code is to write the actual array length in the buffer
-                // And move the array elements to the start of the new array length if new array length is less than the max array length that we orginally write in the above line
-                var newTotalArrayHeaderLen = 0;
-                var _ptr = ptr;
-                // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
-                _ = RespWriteUtils.WriteArrayLength(noOfFoundChannels, ref _ptr, end, out var _, out newTotalArrayHeaderLen);
-
-                Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
-                if (totalArrayHeaderLen != newTotalArrayHeaderLen)
-                {
-                    var remainingLength = (curr - ptr) - totalArrayHeaderLen;
-                    Buffer.MemoryCopy(ptr + totalArrayHeaderLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
-                    curr = curr - (totalArrayHeaderLen - newTotalArrayHeaderLen);
+                    if (Match(new ArgSlice(keyPtr, key.ReadOnlySpan.Length), pattern))
+                        matches.Add(key);
                 }
             }
-            finally
-            {
-                if (isMemory)
-                    ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            return matches;
         }
 
         /// <summary>
@@ -507,63 +353,19 @@ namespace Garnet.server
         /// </summary>
         /// <returns>The number of pattern subscriptions.</returns>
         public int NumPatternSubscriptions()
-        {
-            return prefixSubscriptions?.Count ?? 0;
-        }
+            => patternSubscriptions?.Count ?? 0;
 
         /// <summary>
-        /// PUBSUB NUMSUB
+        /// Retrieves the number of subscriptions for a given channel.
         /// </summary>
-        /// <param name="output"></param>
+        /// <param name="channel"></param>
         /// <returns></returns>
-        public unsafe void NumSubscriptions(ref ObjectInput input, ref SpanByteAndMemory output)
+        public int NumSubscriptions(ArgSlice channel)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            try
-            {
-                var numOfChannels = input.parseState.Count;
-                if (subscriptions is null || numOfChannels == 0)
-                {
-                    while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                while (!RespWriteUtils.WriteArrayLength(numOfChannels * 2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                var currChannelIdx = 0;
-                while (currChannelIdx < numOfChannels)
-                {
-                    var channelArg = input.parseState.GetArgSliceByRef(currChannelIdx);
-                    var channelSpan = channelArg.SpanByte;
-                    var channelPtr = channelSpan.ToPointer() - sizeof(int);  // Memory would have been already pinned
-                    *(int*)channelPtr = channelSpan.Length;
-
-                    while (!RespWriteUtils.WriteBulkString(channelArg.ReadOnlySpan, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    var channel = new Span<byte>(channelPtr, channelSpan.Length + sizeof(int)).ToArray();
-
-                    subscriptions.TryGetValue(channel, out var subscriptionDict);
-                    while (!RespWriteUtils.WriteInteger(subscriptionDict is null ? 0 : subscriptionDict.Count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    currChannelIdx++;
-                }
-            }
-            finally
-            {
-                if (isMemory)
-                    ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            if (subscriptions is null)
+                return 0;
+            _ = subscriptions.TryGetValue(new ByteArrayWrapper(channel), out var sessions);
+            return sessions?.Count ?? 0;
         }
 
         /// <inheritdoc />
@@ -573,9 +375,12 @@ namespace Garnet.server
             cts.Cancel();
             done.WaitOne();
             subscriptions?.Clear();
-            prefixSubscriptions?.Clear();
+            patternSubscriptions?.Clear();
             log.Dispose();
             device.Dispose();
         }
+
+        unsafe bool Match(ArgSlice key, ArgSlice pattern)
+            => GlobUtils.Match(pattern.ptr, pattern.length, key.ptr, key.length);
     }
 }

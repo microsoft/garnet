@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -21,13 +22,14 @@ namespace Tsavorite.test
         internal const string StressTestCategory = "Stress";
         internal const string TsavoriteKVTestCategory = "TsavoriteKV";
         internal const string ReadTestCategory = "Read";
-        internal const string LockableUnsafeContextTestCategory = "LockableUnsafeContext";
+        internal const string TransactionalUnsafeContextTestCategory = "TransactionalUnsafeContext";
         internal const string ReadCacheTestCategory = "ReadCache";
         internal const string LockTestCategory = "Locking";
         internal const string LockTableTestCategory = "LockTable";
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
         internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
         internal const string RMWTestCategory = "RMW";
+        internal const string IteratorCategory = "Iterator";
         internal const string ModifiedBitTestCategory = "ModifiedBitTest";
         internal const string RevivificationCategory = "Revivification";
 
@@ -197,6 +199,7 @@ namespace Tsavorite.test
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
 
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
+        internal static AzureStorageNamedDeviceFactoryCreator AzureStorageNamedDeviceFactoryCreator = IsRunningAzureTests ? new(AzureEmulatedStorageString) : null;
 
         public enum AllocatorType
         {

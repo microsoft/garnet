@@ -7,27 +7,6 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "ACL_USERS",
-        "Name": "ACL|USERS",
-        "Summary": "Lists all ACL users.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
-      },
-      {
-        "Command": "ACL_SAVE",
-        "Name": "ACL|SAVE",
-        "Summary": "Saves the effective ACL rules in the configured ACL file.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
-      },
-      {
-        "Command": "ACL_LIST",
-        "Name": "ACL|LIST",
-        "Summary": "Dumps the effective rules in ACL file format.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
-      },
-      {
         "Command": "ACL_CAT",
         "Name": "ACL|CAT",
         "Summary": "Lists the ACL categories, or the commands inside a category.",
@@ -44,20 +23,6 @@
         ]
       },
       {
-        "Command": "ACL_LOAD",
-        "Name": "ACL|LOAD",
-        "Summary": "Reloads the rules from the configured ACL file.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
-      },
-      {
-        "Command": "ACL_WHOAMI",
-        "Name": "ACL|WHOAMI",
-        "Summary": "Returns the authenticated username of the current connection.",
-        "Group": "Server",
-        "Complexity": "O(1)"
-      },
-      {
         "Command": "ACL_DELUSER",
         "Name": "ACL|DELUSER",
         "Summary": "Deletes ACL users, and terminates their connections.",
@@ -72,6 +37,43 @@
             "ArgumentFlags": "Multiple"
           }
         ]
+      },
+      {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Summary": "Returns the rules defined for an ACL user.",
+        "Group": "Server",
+        "Complexity": "O(1) amortized time considering the typical user.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "USERNAME",
+            "DisplayText": "username",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "ACL_LIST",
+        "Name": "ACL|LIST",
+        "Summary": "Dumps the effective rules in ACL file format.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_LOAD",
+        "Name": "ACL|LOAD",
+        "Summary": "Reloads the rules from the configured ACL file.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_SAVE",
+        "Name": "ACL|SAVE",
+        "Summary": "Saves the effective ACL rules in the configured ACL file.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
       },
       {
         "Command": "ACL_SETUSER",
@@ -94,6 +96,20 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
+      },
+      {
+        "Command": "ACL_USERS",
+        "Name": "ACL|USERS",
+        "Summary": "Lists all ACL users.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_WHOAMI",
+        "Name": "ACL|WHOAMI",
+        "Summary": "Returns the authenticated username of the current connection.",
+        "Group": "Server",
+        "Complexity": "O(1)"
       }
     ]
   },
@@ -639,6 +655,64 @@
     ]
   },
   {
+    "Command": "BLMPOP",
+    "Name": "BLMPOP",
+    "Summary": "Pops the first element from one of multiple lists. Blocks until an element is available otherwise. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(N\u002BM) where N is the number of provided keys and M is the number of elements returned.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LEFT",
+            "DisplayText": "left",
+            "Type": "PureToken",
+            "Token": "LEFT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RIGHT",
+            "DisplayText": "right",
+            "Type": "PureToken",
+            "Token": "RIGHT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "BLPOP",
     "Name": "BLPOP",
     "Summary": "Removes and returns the first element in a list. Blocks until an element is available otherwise. Deletes the list if the last element was popped.",
@@ -685,12 +759,161 @@
     ]
   },
   {
+    "Command": "BRPOPLPUSH",
+    "Name": "BRPOPLPUSH",
+    "Summary": "Pops an element from a list, pushes it to another list and returns it. Block until an element is available otherwise. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060BLMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "BZMPOP",
+    "Name": "BZMPOP",
+    "Summary": "Removes and returns a member by score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMAX",
+    "Name": "BZPOPMAX",
+    "Summary": "Removes and returns the member with the highest score from one or more sorted sets. Blocks until a member available otherwise.  Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "BZPOPMIN",
+    "Name": "BZPOPMIN",
+    "Summary": "Removes and returns the member with the lowest score from one or more sorted sets. Blocks until a member is available otherwise. Deletes the sorted set if the last element was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "Summary": "A container for client connection commands.",
     "Group": "Connection",
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
+      {
+        "Command": "CLIENT_GETNAME",
+        "Name": "CLIENT|GETNAME",
+        "Summary": "Returns the name of the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLIENT_ID",
+        "Name": "CLIENT|ID",
+        "Summary": "Returns the unique client ID of the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
       {
         "Command": "CLIENT_INFO",
         "Name": "CLIENT|INFO",
@@ -820,19 +1043,20 @@
                         "Token": "NO"
                       }
                     ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
               }
             ]
           }
         ]
-      },
-      {
-        "Command": "CLIENT_ID",
-        "Name": "CLIENT|ID",
-        "Summary": "Returns the unique client ID of the connection.",
-        "Group": "Connection",
-        "Complexity": "O(1)"
       },
       {
         "Command": "CLIENT_LIST",
@@ -887,133 +1111,102 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
-      }
-    ]
-  },
-  {
-    "Command": "CLUSTER",
-    "Name": "CLUSTER",
-    "Summary": "A container for Redis Cluster commands.",
-    "Group": "Cluster",
-    "Complexity": "Depends on subcommand.",
-    "SubCommands": [
-      {
-        "Command": "CLUSTER_NODES",
-        "Name": "CLUSTER|NODES",
-        "Summary": "Returns the cluster configuration for a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of Cluster nodes"
       },
       {
-        "Command": "CLUSTER_SETCONFIGEPOCH",
-        "Name": "CLUSTER|SET-CONFIG-EPOCH",
-        "Summary": "Sets the configuration epoch for a new node.",
-        "Group": "Cluster",
+        "Command": "CLIENT_SETINFO",
+        "Name": "CLIENT|SETINFO",
+        "Summary": "Sets information specific to the client or connection.",
+        "Group": "Connection",
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "CONFIG-EPOCH",
-            "DisplayText": "config-epoch",
-            "Type": "Integer"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_KEYSLOT",
-        "Name": "CLUSTER|KEYSLOT",
-        "Summary": "Returns the hash slot for a key.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the number of bytes in the key",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
-            "Type": "String"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_SLOTS",
-        "Name": "CLUSTER|SLOTS",
-        "Summary": "Returns the mapping of cluster slots to nodes.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of Cluster nodes",
-        "DocFlags": "Deprecated",
-        "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
-      },
-      {
-        "Command": "CLUSTER_DELSLOTSRANGE",
-        "Name": "CLUSTER|DELSLOTSRANGE",
-        "Summary": "Sets hash slot ranges as unbound for a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
-        "Arguments": [
-          {
             "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "RANGE",
-            "Type": "Block",
-            "ArgumentFlags": "Multiple",
+            "Name": "ATTR",
+            "Type": "OneOf",
             "Arguments": [
               {
                 "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "START-SLOT",
-                "DisplayText": "start-slot",
-                "Type": "Integer"
+                "Name": "LIBNAME",
+                "DisplayText": "libname",
+                "Type": "String",
+                "Token": "LIB-NAME"
               },
               {
                 "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "END-SLOT",
-                "DisplayText": "end-slot",
-                "Type": "Integer"
+                "Name": "LIBVER",
+                "DisplayText": "libver",
+                "Type": "String",
+                "Token": "LIB-VER"
               }
             ]
           }
         ]
       },
       {
-        "Command": "CLUSTER_ADDSLOTS",
-        "Name": "CLUSTER|ADDSLOTS",
-        "Summary": "Assigns new hash slots to a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of hash slot arguments",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SLOT",
-            "DisplayText": "slot",
-            "Type": "Integer",
-            "ArgumentFlags": "Multiple"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_REPLICATE",
-        "Name": "CLUSTER|REPLICATE",
-        "Summary": "Configure a node as replica of a master node.",
-        "Group": "Cluster",
+        "Command": "CLIENT_SETNAME",
+        "Name": "CLIENT|SETNAME",
+        "Summary": "Sets the connection name.",
+        "Group": "Connection",
         "Complexity": "O(1)",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "NODE-ID",
-            "DisplayText": "node-id",
+            "Name": "CONNECTION-NAME",
+            "DisplayText": "connection-name",
             "Type": "String"
           }
         ]
       },
       {
-        "Command": "CLUSTER_INFO",
-        "Name": "CLUSTER|INFO",
-        "Summary": "Returns information about the state of a node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)"
-      },
+        "Command": "CLIENT_UNBLOCK",
+        "Name": "CLIENT|UNBLOCK",
+        "Summary": "Unblocks a client blocked by a blocking command from a different connection.",
+        "Group": "Connection",
+        "Complexity": "O(log N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENT-ID",
+            "DisplayText": "client-id",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "UNBLOCK-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TIMEOUT",
+                "DisplayText": "timeout",
+                "Type": "PureToken",
+                "Token": "TIMEOUT"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ERROR",
+                "DisplayText": "error",
+                "Type": "PureToken",
+                "Token": "ERROR"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "CLUSTER",
+    "Name": "CLUSTER",
+    "Summary": "A container for Redis Cluster internal commands.",
+    "Group": "Cluster",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
       {
-        "Command": "CLUSTER_DELSLOTS",
-        "Name": "CLUSTER|DELSLOTS",
-        "Summary": "Sets hash slots as unbound for a node.",
+        "Command": "CLUSTER_ADDSLOTS",
+        "Name": "CLUSTER|ADDSLOTS",
+        "Summary": "Assigns new hash slots to a node.",
         "Group": "Cluster",
         "Complexity": "O(N) where N is the total number of hash slot arguments",
         "Arguments": [
@@ -1056,11 +1249,102 @@
         ]
       },
       {
-        "Command": "CLUSTER_SHARDS",
-        "Name": "CLUSTER|SHARDS",
-        "Summary": "Returns the mapping of cluster slots to shards.",
+        "Command": "CLUSTER_BUMPEPOCH",
+        "Name": "CLUSTER|BUMPEPOCH",
+        "Summary": "Advances the cluster config epoch.",
         "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of cluster nodes"
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_COUNTKEYSINSLOT",
+        "Name": "CLUSTER|COUNTKEYSINSLOT",
+        "Summary": "Returns the number of keys in a hash slot.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_DELSLOTS",
+        "Name": "CLUSTER|DELSLOTS",
+        "Summary": "Sets hash slots as unbound for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of hash slot arguments",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_DELSLOTSRANGE",
+        "Name": "CLUSTER|DELSLOTSRANGE",
+        "Summary": "Sets hash slot ranges as unbound for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RANGE",
+            "Type": "Block",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "START-SLOT",
+                "DisplayText": "start-slot",
+                "Type": "Integer"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "END-SLOT",
+                "DisplayText": "end-slot",
+                "Type": "Integer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_FAILOVER",
+        "Name": "CLUSTER|FAILOVER",
+        "Summary": "Forces a replica to perform a manual failover of its master.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "OPTIONS",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "FORCE",
+                "DisplayText": "force",
+                "Type": "PureToken",
+                "Token": "FORCE"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TAKEOVER",
+                "DisplayText": "takeover",
+                "Type": "PureToken",
+                "Token": "TAKEOVER"
+              }
+            ]
+          }
+        ]
       },
       {
         "Command": "CLUSTER_FORGET",
@@ -1078,31 +1362,52 @@
         ]
       },
       {
-        "Command": "CLUSTER_BUMPEPOCH",
-        "Name": "CLUSTER|BUMPEPOCH",
-        "Summary": "Advances the cluster config epoch.",
+        "Command": "CLUSTER_GETKEYSINSLOT",
+        "Name": "CLUSTER|GETKEYSINSLOT",
+        "Summary": "Returns the key names in a hash slot.",
         "Group": "Cluster",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER_MYID",
-        "Name": "CLUSTER|MYID",
-        "Summary": "Returns the ID of a node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER_COUNTKEYSINSLOT",
-        "Name": "CLUSTER|COUNTKEYSINSLOT",
-        "Summary": "Returns the number of keys in a hash slot.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
+        "Complexity": "O(N) where N is the number of requested keys",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SLOT",
             "DisplayText": "slot",
             "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_HELP",
+        "Name": "CLUSTER|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_INFO",
+        "Name": "CLUSTER|INFO",
+        "Summary": "Returns information about the state of a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_KEYSLOT",
+        "Name": "CLUSTER|KEYSLOT",
+        "Summary": "Returns the hash slot for a key.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of bytes in the key",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "String"
           }
         ]
       },
@@ -1131,6 +1436,57 @@
             "DisplayText": "cluster-bus-port",
             "Type": "Integer",
             "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_MYID",
+        "Name": "CLUSTER|MYID",
+        "Summary": "Returns the ID of a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_NODES",
+        "Name": "CLUSTER|NODES",
+        "Summary": "Returns the cluster configuration for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of Cluster nodes"
+      },
+      {
+        "Command": "CLUSTER_PUBLISH",
+        "Name": "CLUSTER|PUBLISH",
+        "Summary": "Processes a forwarded published message from any node in the cluster",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_REPLICAS",
+        "Name": "CLUSTER|REPLICAS",
+        "Summary": "Lists the replica nodes of a master node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of replicas.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_REPLICATE",
+        "Name": "CLUSTER|REPLICATE",
+        "Summary": "Configure a node as replica of a master node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
+            "Type": "String"
           }
         ]
       },
@@ -1166,22 +1522,16 @@
         ]
       },
       {
-        "Command": "CLUSTER_GETKEYSINSLOT",
-        "Name": "CLUSTER|GETKEYSINSLOT",
-        "Summary": "Returns the key names in a hash slot.",
+        "Command": "CLUSTER_SETCONFIGEPOCH",
+        "Name": "CLUSTER|SET-CONFIG-EPOCH",
+        "Summary": "Sets the configuration epoch for a new node.",
         "Group": "Cluster",
-        "Complexity": "O(N) where N is the number of requested keys",
+        "Complexity": "O(1)",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SLOT",
-            "DisplayText": "slot",
-            "Type": "Integer"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "COUNT",
-            "DisplayText": "count",
+            "Name": "CONFIG-EPOCH",
+            "DisplayText": "config-epoch",
             "Type": "Integer"
           }
         ]
@@ -1237,57 +1587,27 @@
         ]
       },
       {
-        "Command": "CLUSTER_HELP",
-        "Name": "CLUSTER|HELP",
-        "Summary": "Returns helpful text about the different subcommands.",
+        "Command": "CLUSTER_SHARDS",
+        "Name": "CLUSTER|SHARDS",
+        "Summary": "Returns the mapping of cluster slots to shards.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of cluster nodes"
+      },
+      {
+        "Command": "CLUSTER_SLOTS",
+        "Name": "CLUSTER|SLOTS",
+        "Summary": "Returns the mapping of cluster slots to nodes.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of Cluster nodes",
+        "DocFlags": "Deprecated",
+        "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
+      },
+      {
+        "Command": "CLUSTER_SPUBLISH",
+        "Name": "CLUSTER|SPUBLISH",
+        "Summary": "Processes a forwarded published message from a node in the same shard",
         "Group": "Cluster",
         "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER_REPLICAS",
-        "Name": "CLUSTER|REPLICAS",
-        "Summary": "Lists the replica nodes of a master node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the number of replicas.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "NODE-ID",
-            "DisplayText": "node-id",
-            "Type": "String"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_FAILOVER",
-        "Name": "CLUSTER|FAILOVER",
-        "Summary": "Forces a replica to perform a manual failover of its master.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "OPTIONS",
-            "Type": "OneOf",
-            "ArgumentFlags": "Optional",
-            "Arguments": [
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "FORCE",
-                "DisplayText": "force",
-                "Type": "PureToken",
-                "Token": "FORCE"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "TAKEOVER",
-                "DisplayText": "takeover",
-                "Type": "PureToken",
-                "Token": "TAKEOVER"
-              }
-            ]
-          }
-        ]
       }
     ]
   },
@@ -1316,6 +1636,50 @@
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COMMAND-NAME",
             "DisplayText": "command-name",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_GETKEYS",
+        "Name": "COMMAND|GETKEYS",
+        "Summary": "Extracts the key names from an arbitrary command.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of arguments to the command",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_GETKEYSANDFLAGS",
+        "Name": "COMMAND|GETKEYSANDFLAGS",
+        "Summary": "Extracts the key names and access flags for an arbitrary command.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of arguments to the command",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ARG",
+            "DisplayText": "arg",
             "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
@@ -1452,6 +1816,14 @@
     "Complexity": "O(1)"
   },
   {
+    "Command": "DEBUG",
+    "Name": "DEBUG",
+    "Summary": "A container for debugging commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "DocFlags": "SysCmd"
+  },
+  {
     "Command": "DECR",
     "Name": "DECR",
     "Summary": "Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
@@ -1512,6 +1884,22 @@
     "Summary": "Discards a transaction.",
     "Group": "Transactions",
     "Complexity": "O(N), when N is the number of queued commands"
+  },
+  {
+    "Command": "DUMP",
+    "Name": "DUMP",
+    "Summary": "Returns a serialized representation of the value stored at a key.",
+    "Group": "Generic",
+    "Complexity": "O(1) to access the key and additional O(N*M) to serialize it, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
   },
   {
     "Command": "ECHO",
@@ -1679,6 +2067,80 @@
             "Token": "LT"
           }
         ]
+      }
+    ]
+  },
+  {
+    "Command": "EXPIREAT",
+    "Name": "EXPIREAT",
+    "Summary": "Sets the expiration time of a key to a Unix timestamp.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-SECONDS",
+        "DisplayText": "unix-time-seconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "EXPIRETIME",
+    "Name": "EXPIRETIME",
+    "Summary": "Returns the expiration time of a key as a Unix timestamp.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
       }
     ]
   },
@@ -2551,6 +3013,28 @@
     ]
   },
   {
+    "Command": "GETIFNOTMATCH",
+    "Name": "GETIFNOTMATCH",
+    "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Summary": "Returns a substring of the string stored at a key.",
@@ -2601,6 +3085,28 @@
         "Type": "String"
       }
     ]
+  },
+  {
+    "Command": "GETWITHETAG",
+    "Name": "GETWITHETAG",
+    "Summary": "Gets the ETag and value for the key",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "HCOLLECT",
+    "Name": "HCOLLECT",
+    "Summary": "Manually trigger deletion of expired fields from memory",
+    "Group": "Hash"
   },
   {
     "Command": "HDEL",
@@ -2696,6 +3202,201 @@
         "Name": "FIELD",
         "DisplayText": "field",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRE",
+    "Name": "HEXPIRE",
+    "Summary": "Set expiry for hash field using relative time to expire (seconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIREAT",
+    "Name": "HEXPIREAT",
+    "Summary": "Set expiry for hash field using an absolute Unix timestamp (seconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-SECONDS",
+        "DisplayText": "unix-time-seconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRETIME",
+    "Name": "HEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in seconds.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   },
@@ -2887,6 +3588,275 @@
     ]
   },
   {
+    "Command": "HPERSIST",
+    "Name": "HPERSIST",
+    "Summary": "Removes the expiration time for each specified field",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRE",
+    "Name": "HPEXPIRE",
+    "Summary": "Set expiry for hash field using relative time to expire (milliseconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIREAT",
+    "Name": "HPEXPIREAT",
+    "Summary": "Set expiry for hash field using an absolute Unix timestamp (milliseconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-MILLISECONDS",
+        "DisplayText": "unix-time-milliseconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRETIME",
+    "Name": "HPEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in msec.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "Summary": "Returns the TTL in milliseconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "HRANDFIELD",
     "Name": "HRANDFIELD",
     "Summary": "Returns one or more random fields from a hash.",
@@ -2958,6 +3928,14 @@
         "DisplayText": "count",
         "Type": "Integer",
         "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOVALUES",
+        "DisplayText": "novalues",
+        "Type": "PureToken",
+        "Token": "NOVALUES",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -3049,6 +4027,43 @@
     ]
   },
   {
+    "Command": "HTTL",
+    "Name": "HTTL",
+    "Summary": "Returns the TTL in seconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "HVALS",
     "Name": "HVALS",
     "Summary": "Returns all values in a hash.",
@@ -3099,6 +4114,28 @@
         "Name": "INCREMENT",
         "DisplayText": "increment",
         "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "INCRBYFLOAT",
+    "Name": "INCRBYFLOAT",
+    "Summary": "Increment the floating point value of a key by a number. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INCREMENT",
+        "DisplayText": "increment",
+        "Type": "Double"
       }
     ]
   },
@@ -3185,6 +4222,61 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
+      }
+    ]
+  },
+  {
+    "Command": "LCS",
+    "Name": "LCS",
+    "Summary": "Finds the longest common substring.",
+    "Group": "String",
+    "Complexity": "O(N*M) where N and M are the lengths of s1 and s2, respectively",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY1",
+        "DisplayText": "key1",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY2",
+        "DisplayText": "key2",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LEN",
+        "DisplayText": "len",
+        "Type": "PureToken",
+        "Token": "LEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "IDX",
+        "DisplayText": "idx",
+        "Type": "PureToken",
+        "Token": "IDX",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN-MATCH-LEN",
+        "DisplayText": "min-match-len",
+        "Type": "Integer",
+        "Token": "MINMATCHLEN",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHMATCHLEN",
+        "DisplayText": "withmatchlen",
+        "Type": "PureToken",
+        "Token": "WITHMATCHLEN",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -3411,6 +4503,52 @@
         "Name": "COUNT",
         "DisplayText": "count",
         "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "LPOS",
+    "Name": "LPOS",
+    "Summary": "Returns the index of matching elements in a list.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of elements in the list, for the average case. When searching for elements near the head or the tail of the list, or when the MAXLEN option is provided, the command may run in constant time.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "RANK",
+        "DisplayText": "rank",
+        "Type": "Integer",
+        "Token": "RANK",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUM-MATCHES",
+        "DisplayText": "num-matches",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LEN",
+        "DisplayText": "len",
+        "Type": "Integer",
+        "Token": "MAXLEN",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -3917,6 +5055,80 @@
     ]
   },
   {
+    "Command": "PEXPIREAT",
+    "Name": "PEXPIREAT",
+    "Summary": "Sets the expiration time of a key to a Unix milliseconds timestamp.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-MILLISECONDS",
+        "DisplayText": "unix-time-milliseconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "PEXPIRETIME",
+    "Name": "PEXPIRETIME",
+    "Summary": "Returns the expiration time of a key as a Unix milliseconds timestamp.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "PFADD",
     "Name": "PFADD",
     "Summary": "Adds elements to a HyperLogLog key. Creates the key if it doesn\u0027t exist.",
@@ -4087,13 +5299,6 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "PUBSUB_NUMPAT",
-        "Name": "PUBSUB|NUMPAT",
-        "Summary": "Returns a count of unique pattern subscriptions.",
-        "Group": "PubSub",
-        "Complexity": "O(1)"
-      },
-      {
         "Command": "PUBSUB_CHANNELS",
         "Name": "PUBSUB|CHANNELS",
         "Summary": "Returns the active channels.",
@@ -4108,6 +5313,13 @@
             "ArgumentFlags": "Optional"
           }
         ]
+      },
+      {
+        "Command": "PUBSUB_NUMPAT",
+        "Name": "PUBSUB|NUMPAT",
+        "Summary": "Returns a count of unique pattern subscriptions.",
+        "Group": "PubSub",
+        "Complexity": "O(1)"
       },
       {
         "Command": "PUBSUB_NUMSUB",
@@ -4140,6 +5352,42 @@
         "DisplayText": "pattern",
         "Type": "Pattern",
         "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "PURGEBP",
+    "Name": "PURGEBP",
+    "Summary": "Purge cluster buffer pool for manager type.",
+    "Group": "Cluster",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MANAGERTYPE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIGRATIONMANAGER",
+            "DisplayText": "migrationmanager",
+            "Type": "PureToken",
+            "Token": "MIGRATIONMANAGER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "REPLICATIONMANAGER",
+            "DisplayText": "replicationmanager",
+            "Type": "PureToken",
+            "Token": "REPLICATIONMANAGER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SERVERLISTENER",
+            "DisplayText": "serverlistener",
+            "Type": "PureToken",
+            "Token": "SERVERLISTENER"
+          }
+        ]
       }
     ]
   },
@@ -4294,6 +5542,45 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHETAG",
+        "DisplayText": "WITHETAG",
+        "Type": "PureToken",
+        "Token": "WITHETAG",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "RENAMENX",
+    "Name": "RENAMENX",
+    "Summary": "Renames a key and overwrites the destination if the newkey does not exist.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "NEWKEY",
+        "DisplayText": "newkey",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHETAG",
+        "DisplayText": "WITHETAG",
+        "Type": "PureToken",
+        "Token": "WITHETAG",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -4352,6 +5639,73 @@
         ]
       }
     ]
+  },
+  {
+    "Command": "RESTORE",
+    "Name": "RESTORE",
+    "Summary": "Creates a key from the serialized representation of a value.",
+    "Group": "Generic",
+    "Complexity": "O(1) to create the new key and additional O(N*M) to reconstruct the serialized value, where N is the number of Redis objects composing the value and M their average size. For small string values the time complexity is thus O(1)\u002BO(1*M) where M is small, so simply O(1). However for sorted set values the complexity is O(N*M*log(N)) because inserting values into sorted sets is O(log(N)).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TTL",
+        "DisplayText": "ttl",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SERIALIZED-VALUE",
+        "DisplayText": "serialized-value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REPLACE",
+        "DisplayText": "replace",
+        "Type": "PureToken",
+        "Token": "REPLACE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ABSTTL",
+        "DisplayText": "absttl",
+        "Type": "PureToken",
+        "Token": "ABSTTL",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer",
+        "Token": "IDLETIME",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FREQUENCY",
+        "DisplayText": "frequency",
+        "Type": "Integer",
+        "Token": "FREQ",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ROLE",
+    "Name": "ROLE",
+    "Summary": "Returns the replication role.",
+    "Group": "Server",
+    "Complexity": "O(1)"
   },
   {
     "Command": "RPOP",
@@ -4560,7 +5914,71 @@
     "Name": "SCRIPT",
     "Summary": "A container for Lua scripts management commands.",
     "Group": "Scripting",
-    "Complexity": "Depends on subcommand."
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "SCRIPT_EXISTS",
+        "Name": "SCRIPT|EXISTS",
+        "Summary": "Determines whether server-side Lua scripts exist in the script cache.",
+        "Group": "Scripting",
+        "Complexity": "O(N) with N being the number of scripts to check (so checking a single script is an O(1) operation).",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SHA1",
+            "DisplayText": "sha1",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "SCRIPT_FLUSH",
+        "Name": "SCRIPT|FLUSH",
+        "Summary": "Removes all server-side Lua scripts from the script cache.",
+        "Group": "Scripting",
+        "Complexity": "O(N) with N being the number of scripts in cache",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "FLUSH-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ASYNC",
+                "DisplayText": "async",
+                "Type": "PureToken",
+                "Token": "ASYNC"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "SYNC",
+                "DisplayText": "sync",
+                "Type": "PureToken",
+                "Token": "SYNC"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "SCRIPT_LOAD",
+        "Name": "SCRIPT|LOAD",
+        "Summary": "Loads a server-side Lua script to the script cache.",
+        "Group": "Scripting",
+        "Complexity": "O(N) with N being the length in bytes of the script body.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SCRIPT",
+            "DisplayText": "script",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
   },
   {
     "Command": "SDIFF",
@@ -4725,6 +6143,14 @@
         "ArgumentFlags": "Optional"
       },
       {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHETAG",
+        "DisplayText": "WITHETAG",
+        "Type": "PureToken",
+        "Token": "WITHETAG",
+        "ArgumentFlags": "Optional"
+      },
+      {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "EXPIRATION",
         "Type": "OneOf",
@@ -4828,6 +6254,120 @@
     ]
   },
   {
+    "Command": "SETIFGREATER",
+    "Name": "SETIFGREATER",
+    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request is greater than the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was greater than 0.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
+      }
+    ]
+  },
+  {
+    "Command": "SETIFMATCH",
+    "Name": "SETIFMATCH",
+    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request matches the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was 0.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOGET",
+        "DisplayText": "noget",
+        "Type": "PureToken",
+        "Token": "NOGET"
+      }
+    ]
+  },
+  {
     "Command": "SETNX",
     "Name": "SETNX",
     "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
@@ -4893,6 +6433,37 @@
         "Type": "Key",
         "ArgumentFlags": "Multiple",
         "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SINTERCARD",
+    "Name": "SINTERCARD",
+    "Summary": "Returns the number of members of the intersect of multiple sets.",
+    "Group": "Set",
+    "Complexity": "O(N*M) worst case where N is the cardinality of the smallest set and M is the number of sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LIMIT",
+        "DisplayText": "limit",
+        "Type": "Integer",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -5001,6 +6572,52 @@
     ]
   },
   {
+    "Command": "SLOWLOG",
+    "Name": "SLOWLOG",
+    "Summary": "A container for slow log commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "SLOWLOG_GET",
+        "Name": "SLOWLOG|GET",
+        "Summary": "Returns the slow log\u0027s entries.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries returned",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "SLOWLOG_HELP",
+        "Name": "SLOWLOG|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_LEN",
+        "Name": "SLOWLOG|LEN",
+        "Summary": "Returns the number of entries in the slow log.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "SLOWLOG_RESET",
+        "Name": "SLOWLOG|RESET",
+        "Summary": "Clears all entries from the slow log.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of entries in the slowlog"
+      }
+    ]
+  },
+  {
     "Command": "SMEMBERS",
     "Name": "SMEMBERS",
     "Summary": "Returns all members of a set.",
@@ -5092,6 +6709,27 @@
     ]
   },
   {
+    "Command": "SPUBLISH",
+    "Name": "SPUBLISH",
+    "Summary": "Post a message to a shard channel",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of clients subscribed to the receiving shard channel.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "SRANDMEMBER",
     "Name": "SRANDMEMBER",
     "Summary": "Get one or multiple random members from a set",
@@ -5172,6 +6810,22 @@
         "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SSUBSCRIBE",
+    "Name": "SSUBSCRIBE",
+    "Summary": "Listens for messages published to shard channels.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of shard channels to subscribe to.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHARDCHANNEL",
+        "DisplayText": "shardchannel",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
       }
     ]
   },
@@ -5638,6 +7292,174 @@
     ]
   },
   {
+    "Command": "ZINTER",
+    "Name": "ZINTER",
+    "Summary": "Returns the intersect of multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(N*K)\u002BO(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZINTERCARD",
+    "Name": "ZINTERCARD",
+    "Summary": "Returns the number of members of the intersect of multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(N*K) worst case with N being the smallest input sorted set, K being the number of input sorted sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "LIMIT",
+        "DisplayText": "limit",
+        "Type": "Integer",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZINTERSTORE",
+    "Name": "ZINTERSTORE",
+    "Summary": "Stores the intersect of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(N*K)\u002BO(M*log(M)) worst case with N being the smallest input sorted set, K being the number of input sorted sets and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZLEXCOUNT",
     "Name": "ZLEXCOUNT",
     "Summary": "Returns the number of members in a sorted set within a lexicographical range.",
@@ -5662,6 +7484,58 @@
         "Name": "MAX",
         "DisplayText": "max",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "ZMPOP",
+    "Name": "ZMPOP",
+    "Summary": "Returns the highest- or lowest-scoring members from one or more sorted sets after removing them. Deletes the sorted set if the last member was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(K) \u002B O(M*log(N)) where K is the number of provided keys, N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -5860,6 +7734,57 @@
     ]
   },
   {
+    "Command": "ZRANGEBYLEX",
+    "Name": "ZRANGEBYLEX",
+    "Summary": "Returns members in a sorted set within a lexicographical range.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYLEX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZRANGEBYSCORE",
     "Name": "ZRANGEBYSCORE",
     "Summary": "Returns members in a sorted set within a range of scores.",
@@ -5893,6 +7818,92 @@
         "DisplayText": "withscores",
         "Type": "PureToken",
         "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZRANGESTORE",
+    "Name": "ZRANGESTORE",
+    "Summary": "Stores a range of members from sorted set in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements stored into the destination key.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DST",
+        "DisplayText": "dst",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SRC",
+        "DisplayText": "src",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "SORTBY",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYSCORE",
+            "DisplayText": "byscore",
+            "Type": "PureToken",
+            "Token": "BYSCORE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYLEX",
+            "DisplayText": "bylex",
+            "Type": "PureToken",
+            "Token": "BYLEX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REV",
+        "DisplayText": "rev",
+        "Type": "PureToken",
+        "Token": "REV",
         "ArgumentFlags": "Optional"
       },
       {
@@ -6094,6 +8105,57 @@
     ]
   },
   {
+    "Command": "ZREVRANGEBYLEX",
+    "Name": "ZREVRANGEBYLEX",
+    "Summary": "Returns members in a sorted set within a lexicographical range in reverse order.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYLEX\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZREVRANGEBYSCORE",
     "Name": "ZREVRANGEBYSCORE",
     "Summary": "Returns members in a sorted set within a range of scores in reverse order.",
@@ -6239,6 +8301,143 @@
         "Name": "MEMBER",
         "DisplayText": "member",
         "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "ZUNION",
+    "Name": "ZUNION",
+    "Summary": "Returns the union of multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(N)\u002BO(M*log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZUNIONSTORE",
+    "Name": "ZUNIONSTORE",
+    "Summary": "Stores the union of multiple sorted sets in a key.",
+    "Group": "SortedSet",
+    "Complexity": "O(N)\u002BO(M log(M)) with N being the sum of the sizes of the input sorted sets, and M being the number of elements in the resulting sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WEIGHT",
+        "DisplayText": "weight",
+        "Type": "Integer",
+        "Token": "WEIGHTS",
+        "ArgumentFlags": "Optional, Multiple"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AGGREGATE",
+        "Type": "OneOf",
+        "Token": "AGGREGATE",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SUM",
+            "DisplayText": "sum",
+            "Type": "PureToken",
+            "Token": "SUM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MIN",
+            "DisplayText": "min",
+            "Type": "PureToken",
+            "Token": "MIN"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MAX",
+            "DisplayText": "max",
+            "Type": "PureToken",
+            "Token": "MAX"
+          }
+        ]
       }
     ]
   }

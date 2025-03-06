@@ -47,7 +47,7 @@ namespace Garnet.cluster
                     throw new GarnetException($"This node {currentConfig.LocalNodeId} is not a replica", LogLevel.Warning, clientResponse: false);
                 }
 
-                if (clusterProvider.serverOptions.MainMemoryReplication)
+                if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     // If the incoming AOF chunk fits in the space between previousAddress and currentAddress (ReplicationOffset),
                     // an enqueue will result in an offset mismatch. So, we have to first reset the AOF to point to currentAddress.

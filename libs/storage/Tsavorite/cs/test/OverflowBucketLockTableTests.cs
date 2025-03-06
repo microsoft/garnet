@@ -133,7 +133,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
-            FixedLengthLockableKeyStruct<TKey> keyStruct = new()
+            FixedLengthTransactionalKeyStruct<TKey> keyStruct = new()
             {
                 Key = key,
                 KeyHash = store.storeFunctions.GetKeyHashCode64(ref key),
@@ -144,7 +144,7 @@ namespace Tsavorite.test.LockTable
         }
 
 
-        internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref FixedLengthLockableKeyStruct<TKey> key, bool expectedX, bool expectedS)
+        internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref FixedLengthTransactionalKeyStruct<TKey> key, bool expectedX, bool expectedS)
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
@@ -175,9 +175,9 @@ namespace Tsavorite.test.LockTable
             ClassicAssert.AreEqual(expectedS, scount);
         }
 
-        internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => AssertBucketLockCount(store, ref key, expectedX, expectedS);
+        internal void AssertBucketLockCount(ref FixedLengthTransactionalKeyStruct<long> key, long expectedX, long expectedS) => AssertBucketLockCount(store, ref key, expectedX, expectedS);
 
-        internal static unsafe void AssertBucketLockCount<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS)
+        internal static unsafe void AssertBucketLockCount<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, ref FixedLengthTransactionalKeyStruct<long> key, long expectedX, long expectedS)
             where TStoreFunctions : IStoreFunctions<long, long>
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
@@ -303,9 +303,9 @@ namespace Tsavorite.test.LockTable
             AssertTotalLockCounts(0, 0);
         }
 
-        FixedLengthLockableKeyStruct<long>[] CreateKeys(Random rng, int numKeys, int numRecords)
+        FixedLengthTransactionalKeyStruct<long>[] CreateKeys(Random rng, int numKeys, int numRecords)
         {
-            FixedLengthLockableKeyStruct<long> createKey()
+            FixedLengthTransactionalKeyStruct<long> createKey()
             {
                 long key = rng.Next(numKeys);
                 var keyHash = store.GetKeyHash(ref key);
@@ -320,7 +320,7 @@ namespace Tsavorite.test.LockTable
             return Enumerable.Range(0, numRecords).Select(ii => createKey()).ToArray();
         }
 
-        void AssertSorted(FixedLengthLockableKeyStruct<long>[] keys, int count)
+        void AssertSorted(FixedLengthTransactionalKeyStruct<long>[] keys, int count)
         {
             long prevCode = default;
             long lastXcode = default;
@@ -396,7 +396,7 @@ namespace Tsavorite.test.LockTable
 
                 // maxNumKeys < 0 means use random number of keys
                 int numKeys = maxNumKeys < 0 ? rng.Next(1, -maxNumKeys) : maxNumKeys;
-                var threadStructs = new FixedLengthLockableKeyStruct<long>[numKeys];
+                var threadStructs = new FixedLengthTransactionalKeyStruct<long>[numKeys];
 
                 long getNextKey()
                 {

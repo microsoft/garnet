@@ -1169,6 +1169,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Category("LMOVE")]
         public void CanDoBasicLMove()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1193,12 +1194,24 @@ namespace Garnet.test
             ClassicAssert.AreEqual(key1Values[0], result);
 
             var members = db.ListRange(key2);
-            ClassicAssert.AreEqual(key1Values.Union(key2Values).ToArray(), members);
+            var keys = key1Values.Union(key2Values).ToArray();
+            ClassicAssert.AreEqual(keys, members);
+
+            result = db.ListMove(key2, key2, ListSide.Right, ListSide.Right);
+            ClassicAssert.AreEqual(key2Values[0], result);
+
+            members = db.ListRange(key2);
+            ClassicAssert.AreEqual(keys, members);
+
+            result = db.ListMove(key2, key2, ListSide.Left, ListSide.Left);
+            ClassicAssert.AreEqual(key1Values[0], result);
+
+            members = db.ListRange(key2);
+            ClassicAssert.AreEqual(keys, members);
 
             var exists = db.KeyExists(key1);
             ClassicAssert.IsFalse(exists);
         }
-
 
         [Test]
         public void CanDoLPopMultipleValues()
@@ -1389,6 +1402,22 @@ namespace Garnet.test
 
             exception = Assert.Throws<RedisServerException>(() => db.Execute("LMPOP", "1", "one", "LEFT", "COUNT"));
             ClassicAssert.AreEqual("ERR syntax error", exception.Message);
+        }
+
+        // Issue 945
+        [Test]
+        public void CanHandleLowerCaseBefore()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommands("RPUSH mylist a", "PING", 1, 1);
+            lightClientRequest.SendCommands("RPUSH mylist c", "PING", 1, 1);
+            lightClientRequest.SendCommands("LINSERT mylist before c b", "PING", 1, 1);
+
+            var response = lightClientRequest.SendCommands("LRANGE mylist 0 -1", "PING", 4, 1);
+            var expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]

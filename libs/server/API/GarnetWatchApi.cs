@@ -49,6 +49,14 @@ namespace Garnet.server
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.GET(key, out value);
         }
+
+        /// <inheritdoc />
+        public GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+        {
+            garnetApi.WATCH(key1, StoreType.Object);
+            garnetApi.WATCH(key2, StoreType.Object);
+            return garnetApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
+        }
         #endregion
 
         #region GETRANGE
@@ -109,6 +117,13 @@ namespace Garnet.server
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.SortedSetLength(key, ref input, out output);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCount(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetCount(key, minScore, maxScore, out numElements);
         }
 
         /// <inheritdoc />
@@ -185,6 +200,16 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SortedSetUnion(keys, weights, aggregateType, out pairs);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
@@ -196,6 +221,26 @@ namespace Garnet.server
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.SortedSetScan(key, cursor, match, count, out items);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SortedSetIntersect(keys, weights, aggregateType, out pairs);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SortedSetIntersectLength(keys, limit, out count);
         }
 
         #endregion
@@ -311,6 +356,15 @@ namespace Garnet.server
                 garnetApi.WATCH(key, StoreType.Object);
             }
             return garnetApi.SetDiff(keys, out output);
+        }
+
+        public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetIntersectLength(keys, limit, out count);
         }
         #endregion
 
@@ -431,6 +485,13 @@ namespace Garnet.server
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashScan(key, cursor, match, count, out items);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
         }
 
         #endregion

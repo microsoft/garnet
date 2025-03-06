@@ -12,6 +12,9 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
 
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Check for changes
@@ -27,7 +30,7 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
     - name: Apply filter
-      uses: dorny/paths-filter@v3
+      uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36   #v3  for security reasons have pinned tag (commit SHA) for 3rd party
       id: filter
       with:
         filters: |
@@ -121,6 +124,10 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
+        run: |
+          sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
+        if: ${{ matrix.os == 'ubuntu-latest' }}
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
         if: ${{ matrix.os == 'ubuntu-latest' }}

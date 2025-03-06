@@ -20,6 +20,7 @@ namespace Tsavorite.core
         private readonly bool deleteOnClose;
         private readonly bool disableFileBuffering;
         private readonly bool osReadBuffering;
+        private readonly bool readOnly;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
         private readonly SectorAlignedBufferPool pool;
 
@@ -40,7 +41,8 @@ namespace Tsavorite.core
         /// <param name="capacity">The maximal number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="osReadBuffering">Enable OS read buffering</param>
-        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false)
+        /// <param name="readOnly">Open file in readOnly mode</param>
+        public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
             pool = new(1, 1);
@@ -55,6 +57,7 @@ namespace Tsavorite.core
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.osReadBuffering = osReadBuffering;
+            this.readOnly = readOnly;
             logHandles = new();
             if (recoverDevice)
                 RecoverFiles();
@@ -420,7 +423,7 @@ namespace Tsavorite.core
 
             var logReadHandle = new FileStream(
                 GetSegmentName(segmentId), FileMode.OpenOrCreate,
-                FileAccess.Read, FileShare.ReadWrite, 512, fo);
+                FileAccess.Read, readOnly ? FileShare.Read : FileShare.ReadWrite, 512, fo);
 
             return logReadHandle;
         }

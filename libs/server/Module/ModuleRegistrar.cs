@@ -48,16 +48,13 @@ namespace Garnet.server
         internal uint Version;
         internal bool Initialized;
 
-        private readonly ModuleRegistrar moduleRegistrar;
         private readonly CustomCommandManager customCommandManager;
 
-        internal ModuleLoadContext(ModuleRegistrar moduleRegistrar, CustomCommandManager customCommandManager, ILogger logger)
+        internal ModuleLoadContext(CustomCommandManager customCommandManager, ILogger logger)
         {
-            Debug.Assert(moduleRegistrar != null);
             Debug.Assert(customCommandManager != null);
 
             Initialized = false;
-            this.moduleRegistrar = moduleRegistrar;
             this.customCommandManager = customCommandManager;
             Logger = logger;
         }
@@ -79,7 +76,7 @@ namespace Garnet.server
             Name = name;
             Version = version;
 
-            if (!moduleRegistrar.TryAdd(this))
+            if (!customCommandManager.TryAddModule(this))
                 return ModuleActionStatus.AlreadyExists;
 
             Initialized = true;
@@ -152,7 +149,7 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(name) || factory == null || command == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, type, factory, command, commandInfo, commandDocs);
+            customCommandManager.Register(name, type, factory, commandInfo, commandDocs, command);
 
             return ModuleActionStatus.Success;
         }
@@ -177,17 +174,26 @@ namespace Garnet.server
 
     public sealed class ModuleRegistrar
     {
-        private static readonly Lazy<ModuleRegistrar> lazy = new Lazy<ModuleRegistrar>(() => new ModuleRegistrar());
+        private static readonly Lazy<ModuleRegistrar> lazy = new(() => new ModuleRegistrar());
 
         public static ModuleRegistrar Instance { get { return lazy.Value; } }
 
         private ModuleRegistrar()
         {
-            modules = new();
+            moduleConstructors = new();
         }
 
-        private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
+        private readonly ConcurrentDictionary<string, ConstructorInfo> moduleConstructors;
 
+        /// <summary>
+        /// Load module from a specified assembly and register it with the custom command managers
+        /// </summary>
+        /// <param name="customCommandManager">Custom command manager instance</param>
+        /// <param name="loadedAssembly">Loaded assembly containing module</param>
+        /// <param name="moduleArgs">Module arguments</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="errorMessage">Error message</param>
+        /// <returns>True if module loaded successfully</returns>
         public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
@@ -210,47 +216,40 @@ namespace Garnet.server
                 return false;
             }
 
-            // Check that type has empty constructor
             var moduleType = loadedTypes[0];
-            if (moduleType.GetConstructor(Type.EmptyTypes) == null)
+
+            // Uniquely identify the module by assembly and type name
+            var moduleAssemblyAnyTypeName = $"{loadedAssembly.FullName}:{moduleType.FullName!}";
+
+            // Check if module was previously loaded
+            if (!moduleConstructors.TryGetValue(moduleAssemblyAnyTypeName, out var moduleConstructor))
             {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
-                return false;
+                // Check that type has empty constructor
+                moduleConstructor = moduleType.GetConstructor(Type.EmptyTypes);
+
+                if (moduleConstructor == null)
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
+                    return false;
+                }
+
+                moduleConstructors.TryAdd(moduleAssemblyAnyTypeName, moduleConstructor);
             }
 
-            var instance = (ModuleBase)Activator.CreateInstance(moduleType);
-            if (instance == null)
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
-                return false;
-            }
-
-            var moduleLoadContext = new ModuleLoadContext(this, customCommandManager, logger);
+            // Instantiate module using constructor info
+            ModuleBase module;
             try
             {
-                instance.OnLoad(moduleLoadContext, moduleArgs);
+                module = (ModuleBase)moduleConstructor.Invoke([]);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                logger?.LogError(ex, "Error loading module");
-                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
                 return false;
             }
 
-            if (!moduleLoadContext.Initialized)
-            {
-                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
-                logger?.LogError("Module {0} failed to initialize", moduleLoadContext.Name);
-                return false;
-            }
-
-            logger?.LogInformation("Module {0} version {1} loaded", moduleLoadContext.Name, moduleLoadContext.Version);
-            return true;
-        }
-
-        internal bool TryAdd(ModuleLoadContext moduleLoadContext)
-        {
-            return modules.TryAdd(moduleLoadContext.Name, moduleLoadContext);
+            // Register module with custom command manager
+            return customCommandManager.RegisterModule(module, moduleArgs, logger, out errorMessage);
         }
     }
 }

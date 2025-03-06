@@ -5,9 +5,9 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
-using NLua;
 
 namespace Garnet.server
 {
@@ -42,6 +42,12 @@ namespace Garnet.server
         /// Reset scratch buffer - loses all ArgSlice instances created on the scratch buffer
         /// </summary>
         public void Reset() => scratchBufferOffset = 0;
+
+        /// <summary>
+        /// Return the full buffer managed by this <see cref="ScratchBufferManager"/>.
+        /// </summary>
+        public Span<byte> FullBuffer()
+        => scratchBuffer;
 
         /// <summary>
         /// Rewind (pop) the last entry of scratch buffer (rewinding the current scratch buffer offset),
@@ -120,9 +126,9 @@ namespace Garnet.server
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.WriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
+            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
-            success = RespWriteUtils.WriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
+            success = RespWriteUtils.TryWriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
 
             scratchBufferOffset += length;
@@ -142,7 +148,7 @@ namespace Garnet.server
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.WriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
+            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
 
             scratchBufferOffset += length;
@@ -218,95 +224,62 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Format specified command with arguments, as a RESP command. Lua state
-        /// can be specified to handle Lua tables as arguments.
+        /// Start a RESP array to hold a command and arguments.
+        /// 
+        /// Fill it with <paramref name="argCount"/> calls to <see cref="WriteNullArgument"/> and/or <see cref="WriteArgument(ReadOnlySpan{byte})"/>.
         /// </summary>
-        public ArgSlice FormatCommandAsResp(string cmd, object[] args, Lua state)
+        public void StartCommand(ReadOnlySpan<byte> cmd, int argCount)
         {
             if (scratchBuffer == null)
                 ExpandScratchBuffer(64);
 
-            scratchBufferOffset += 10; // Reserve space for the array length if it is larger than expected
-            int commandStartOffset = scratchBufferOffset;
-            byte* ptr = scratchBufferHead + scratchBufferOffset;
+            var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.WriteArrayLength(args.Length + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
 
-            while (!RespWriteUtils.WriteAsciiBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
                 ExpandScratchBuffer(scratchBuffer.Length + 1);
                 ptr = scratchBufferHead + scratchBufferOffset;
             }
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
+        }
 
-            int count = 1;
-            foreach (var item in args)
+        /// <summary>
+        /// Use to fill a RESP array with arguments after a call to <see cref="StartCommand(ReadOnlySpan{byte}, int)"/>.
+        /// </summary>
+        public void WriteNullArgument()
+        {
+            var ptr = scratchBufferHead + scratchBufferOffset;
+
+            while (!RespWriteUtils.TryWriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                if (item is string str)
-                {
-                    count++;
-                    while (!RespWriteUtils.WriteAsciiBulkString(str, ref ptr, scratchBufferHead + scratchBuffer.Length))
-                    {
-                        ExpandScratchBuffer(scratchBuffer.Length + 1);
-                        ptr = scratchBufferHead + scratchBufferOffset;
-                    }
-                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
-                }
-                else if (item is LuaTable t)
-                {
-                    var d = state.GetTableDict(t);
-                    foreach (var value in d.Values)
-                    {
-                        count++;
-                        while (!RespWriteUtils.WriteAsciiBulkString(Convert.ToString(value), ref ptr, scratchBufferHead + scratchBuffer.Length))
-                        {
-                            ExpandScratchBuffer(scratchBuffer.Length + 1);
-                            ptr = scratchBufferHead + scratchBufferOffset;
-                        }
-                        scratchBufferOffset = (int)(ptr - scratchBufferHead);
-                    }
-                    t.Dispose();
-                }
-                else if (item is long i)
-                {
-                    count++;
-                    while (!RespWriteUtils.WriteIntegerAsBulkString((int)i, ref ptr, scratchBufferHead + scratchBuffer.Length))
-                    {
-                        ExpandScratchBuffer(scratchBuffer.Length + 1);
-                        ptr = scratchBufferHead + scratchBufferOffset;
-                    }
-                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
-                }
-                else
-                {
-                    count++;
-                    while (!RespWriteUtils.WriteAsciiBulkString(Convert.ToString(item), ref ptr, scratchBufferHead + scratchBuffer.Length))
-                    {
-                        ExpandScratchBuffer(scratchBuffer.Length + 1);
-                        ptr = scratchBufferHead + scratchBufferOffset;
-                    }
-                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
-                }
-            }
-            if (count != args.Length + 1)
-            {
-                int extraSpace = NumUtils.NumDigits(count) - NumUtils.NumDigits(args.Length + 1);
-                if (commandStartOffset < extraSpace)
-                    throw new InvalidOperationException("Invalid number of arguments");
-                commandStartOffset -= extraSpace;
-                var head = scratchBufferHead + commandStartOffset;
-                // There should be space as we have reserved it
-                _ = RespWriteUtils.WriteArrayLength(count, ref head, scratchBufferHead + scratchBuffer.Length);
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            var retVal = new ArgSlice(scratchBufferHead + commandStartOffset, scratchBufferOffset - commandStartOffset);
-            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
-            return retVal;
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+        }
+
+        /// <summary>
+        /// Use to fill a RESP array with arguments after a call to <see cref="StartCommand(ReadOnlySpan{byte}, int)"/>.
+        /// </summary>
+        public void WriteArgument(ReadOnlySpan<byte> arg)
+        {
+            var ptr = scratchBufferHead + scratchBufferOffset;
+
+            while (!RespWriteUtils.TryWriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         /// <summary>
@@ -317,7 +290,7 @@ namespace Garnet.server
         /// <param name="slice"></param>
         /// <returns></returns>
         static int GetRespFormattedStringLength(ArgSlice slice)
-            => 1 + NumUtils.NumDigits(slice.Length) + 2 + slice.Length + 2;
+            => 1 + NumUtils.CountDigits(slice.Length) + 2 + slice.Length + 2;
 
         void ExpandScratchBufferIfNeeded(int newLength)
         {
@@ -325,15 +298,19 @@ namespace Garnet.server
                 ExpandScratchBuffer(scratchBufferOffset + newLength);
         }
 
-        void ExpandScratchBuffer(int newLength)
+        void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
-            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref _scratchBuffer[0]);
-            if (scratchBufferOffset > 0)
-                new ReadOnlySpan<byte>(scratchBufferHead, scratchBufferOffset).CopyTo(new Span<byte>(_scratchBufferHead, scratchBufferOffset));
+            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));
+
+            var copyLength = copyLengthOverride ?? scratchBufferOffset;
+            if (copyLength > 0)
+            {
+                new ReadOnlySpan<byte>(scratchBufferHead, copyLength).CopyTo(new Span<byte>(_scratchBufferHead, copyLength));
+            }
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
         }
@@ -350,6 +327,25 @@ namespace Garnet.server
         public ArgSlice GetSliceFromTail(int length)
         {
             return new ArgSlice(scratchBufferHead + scratchBufferOffset - length, length);
+        }
+
+        /// <summary>
+        /// Force backing buffer to grow.
+        /// 
+        /// <paramref name="copyLengthOverride"/> provides a way to force a chunk at the start of the
+        /// previous buffer be copied into the new buffer, even if this <see cref="ScratchBufferManager"/>
+        /// doesn't consider that chunk in use.
+        /// </summary>
+        public void GrowBuffer(int? copyLengthOverride = null)
+        {
+            if (scratchBuffer == null)
+            {
+                ExpandScratchBuffer(64);
+            }
+            else
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1, copyLengthOverride);
+            }
         }
     }
 }

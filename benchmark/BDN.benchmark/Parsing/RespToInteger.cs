@@ -20,7 +20,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadSignedLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadSignedLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }
@@ -32,7 +32,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.Read64Int(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadInt64(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }
@@ -44,7 +44,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadIntWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadInt32WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }
@@ -56,7 +56,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadLongWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadInt64WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }
@@ -68,7 +68,7 @@ namespace BDN.benchmark.Parsing
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadULongWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.TryReadUInt64WithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }

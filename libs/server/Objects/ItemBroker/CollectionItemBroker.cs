@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -35,7 +34,7 @@ namespace Garnet.server
         private readonly Lazy<AsyncQueue<BrokerEventBase>> brokerEventsQueueLazy = new();
         private readonly Lazy<ConcurrentDictionary<int, CollectionItemObserver>> sessionIdToObserverLazy = new();
         private readonly Lazy<Dictionary<byte[], Queue<CollectionItemObserver>>> keysToObserversLazy =
-            new(() => new Dictionary<byte[], Queue<CollectionItemObserver>>(new ByteArrayComparer()));
+            new(() => new Dictionary<byte[], Queue<CollectionItemObserver>>(ByteArrayComparer.Instance));
 
         // Cancellation token for the main loop
         private readonly CancellationTokenSource cts = new();
@@ -48,17 +47,29 @@ namespace Garnet.server
         private bool isStarted = false;
 
         /// <summary>
+        /// Tries to get the observer associated with the given session ID.
+        /// </summary>
+        /// <param name="sessionId">The ID of the session to retrieve the observer for.</param>
+        /// <param name="observer">When this method returns, contains the observer associated with the specified session ID, if the session ID is found; otherwise, null. This parameter is passed uninitialized.</param>
+        /// <returns>true if the observer is found; otherwise, false.</returns>
+        internal bool TryGetObserver(int sessionId, out CollectionItemObserver observer)
+        {
+            return SessionIdToObserver.TryGetValue(sessionId, out observer);
+        }
+
+        /// <summary>
         /// Asynchronously wait for item from collection object
         /// </summary>
         /// <param name="command">RESP command</param>
         /// <param name="keys">Keys of objects to observe</param>
         /// <param name="session">Calling session instance</param>
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
-            RespServerSession session, double timeoutInSeconds)
+            RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs = null)
         {
-            var observer = new CollectionItemObserver(session, command);
+            var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await this.GetCollectionItemAsync(observer, keys, timeoutInSeconds);
         }
 
@@ -125,6 +136,7 @@ namespace Garnet.server
             }
             catch (OperationCanceledException)
             {
+                // Session is disposed
             }
 
             SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
@@ -223,12 +235,12 @@ namespace Garnet.server
                     // If the key already has a non-empty observer queue, it does not have an item to retrieve
                     // Otherwise, try to retrieve next available item
                     if ((KeysToObservers.ContainsKey(key) && KeysToObservers[key].Count > 0) ||
-                        !TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
-                            out _, out var nextItem)) continue;
+                        !TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
+                            out _, out var result)) continue;
 
                     // An item was found - set the observer result and return
                     SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(new CollectionItemResult(key, nextItem));
+                    observer.HandleSetResult(result);
                     return;
                 }
 
@@ -279,8 +291,8 @@ namespace Garnet.server
                     }
 
                     // Try to get next available item from object stored in key
-                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
-                            out var currCount, out var nextItem))
+                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
+                            out var currCount, out var result))
                     {
                         // If unsuccessful getting next item but there is at least one item in the collection,
                         // continue to next observer in the queue, otherwise return
@@ -292,7 +304,7 @@ namespace Garnet.server
                     observers.TryDequeue(out observer);
 
                     SessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(new CollectionItemResult(key, nextItem));
+                    observer.HandleSetResult(result);
 
                     return true;
                 }
@@ -383,46 +395,57 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Try to get next available item from sorted set object
+        /// Try to get next available item from sorted set object based on command type
+        /// BZPOPMIN and BZPOPMAX share same implementation since Dictionary.First() and Last() 
+        /// handle the ordering automatically based on sorted set scores
         /// </summary>
-        /// <param name="sortedSetObj">Sorted set object</param>
-        /// <param name="command">RESP command</param>
-        /// <param name="nextItem">Item retrieved</param>
-        /// <returns>True if found available item</returns>
-        private static bool TryGetNextSetObject(SortedSetObject sortedSetObj, RespCommand command, out byte[] nextItem)
+        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
         {
-            nextItem = default;
+            result = default;
 
-            // If object has no items, return
             if (sortedSetObj.Dictionary.Count == 0) return false;
 
-            // Get the next object according to operation type
             switch (command)
             {
+                case RespCommand.BZPOPMIN:
+                case RespCommand.BZPOPMAX:
+                    var element = sortedSetObj.PopMinOrMax(command == RespCommand.BZPOPMAX);
+                    result = new CollectionItemResult(key, element.Score, element.Element);
+                    return true;
+
+                case RespCommand.BZMPOP:
+                    var lowScoresFirst = *(bool*)cmdArgs[0].ptr;
+                    var popCount = *(int*)cmdArgs[1].ptr;
+                    popCount = Math.Min(popCount, sortedSetObj.Dictionary.Count);
+
+                    var scores = new double[popCount];
+                    var items = new byte[popCount][];
+
+                    for (int i = 0; i < popCount; i++)
+                    {
+                        var popResult = sortedSetObj.PopMinOrMax(!lowScoresFirst);
+                        scores[i] = popResult.Score;
+                        items[i] = popResult.Element;
+                    }
+
+                    result = new CollectionItemResult(key, scores, items);
+                    return true;
+
                 default:
                     return false;
             }
         }
 
-        /// <summary>
-        /// Try to get next available item from object
-        /// </summary>
-        /// <param name="key">Key of object</param>
-        /// <param name="storageSession">Current storage session</param>
-        /// <param name="command">RESP command</param>
-        /// <param name="cmdArgs">Additional command arguments</param>
-        /// <param name="currCount">Collection size</param>
-        /// <param name="nextItem">Retrieved item</param>
-        /// <returns>True if found available item</returns>
-        private bool TryGetNextItem(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out byte[] nextItem)
+        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
-            nextItem = default;
+            result = default;
             var createTransaction = false;
 
             var objectType = command switch
             {
-                RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMOVE => GarnetObjectType.List,
+                RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMOVE or RespCommand.BLMPOP => GarnetObjectType.List,
+                RespCommand.BZPOPMIN or RespCommand.BZPOPMAX or RespCommand.BZMPOP => GarnetObjectType.SortedSet,
                 _ => throw new NotSupportedException()
             };
 
@@ -462,21 +485,25 @@ namespace Garnet.server
                 {
                     arrDstKey = dstKey.ToArray();
                     var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectTransactionalContext);
-                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
+                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.GarnetObject;
                 }
 
                 // Check for type match between the observer and the actual object type
                 // If types match, get next item based on item type
-                switch (osObject.garnetObject)
+                switch (osObject.GarnetObject)
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
                         if (objectType != GarnetObjectType.List) return false;
+                        if (currCount == 0) return false;
+
                         switch (command)
                         {
                             case RespCommand.BLPOP:
                             case RespCommand.BRPOP:
-                                return TryGetNextListItem(listObj, command, out nextItem);
+                                var isSuccessful = TryGetNextListItem(listObj, command, out var nextItem);
+                                result = new CollectionItemResult(key, nextItem);
+                                return isSuccessful;
                             case RespCommand.BLMOVE:
                                 ListObject dstList;
                                 var newObj = false;
@@ -491,8 +518,9 @@ namespace Garnet.server
                                 }
                                 else return false;
 
-                                var isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
+                                isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
                                     (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
+                                result = new CollectionItemResult(key, nextItem);
 
                                 if (isSuccessful && newObj)
                                 {
@@ -501,13 +529,31 @@ namespace Garnet.server
                                 }
 
                                 return isSuccessful;
+                            case RespCommand.BLMPOP:
+                                var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
+                                var popCount = *(int*)(cmdArgs[1].ptr);
+                                popCount = Math.Min(popCount, listObj.LnkList.Count);
+
+                                var items = new byte[popCount][];
+                                for (var i = 0; i < popCount; i++)
+                                {
+                                    var _ = TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]); // Return can be ignored because it is guaranteed to return true
+                                }
+
+                                result = new CollectionItemResult(key, items);
+                                return true;
                             default:
                                 return false;
                         }
                     case SortedSetObject setObj:
                         currCount = setObj.Dictionary.Count;
-                        if (objectType != GarnetObjectType.SortedSet) return false;
-                        return TryGetNextSetObject(setObj, command, out nextItem);
+                        if (objectType != GarnetObjectType.SortedSet)
+                            return false;
+                        if (currCount == 0)
+                            return false;
+
+                        return TryGetNextSetObjects(key, setObj, command, cmdArgs, out result);
+
                     default:
                         return false;
                 }

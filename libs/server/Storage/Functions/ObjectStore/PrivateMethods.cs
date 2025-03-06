@@ -85,7 +85,7 @@ namespace Garnet.server
         {
             byte* curr = dst.SpanByte.ToPointer();
             byte* end = curr + dst.SpanByte.Length;
-            if (RespWriteUtils.WriteInteger(number, ref curr, end, out var integerLen, out int totalLen))
+            if (RespWriteUtils.TryWriteInt64(number, ref curr, end, out var integerLen, out int totalLen))
             {
                 dst.SpanByte.Length = (int)(curr - dst.SpanByte.ToPointer());
                 return;
@@ -99,7 +99,7 @@ namespace Garnet.server
             {
                 byte* cc = ptr;
                 *cc++ = (byte)':';
-                NumUtils.LongToBytes(number, (int)integerLen, ref cc);
+                NumUtils.WriteInt64(number, (int)integerLen, ref cc);
                 *cc++ = (byte)'\r';
                 *cc++ = (byte)'\n';
             }
@@ -122,8 +122,8 @@ namespace Garnet.server
 
         static bool EvaluateObjectExpireInPlace(ExpireOption optionType, bool expiryExists, long expiration, ref IGarnetObject value, ref GarnetObjectStoreOutput output)
         {
-            Debug.Assert(output.spanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            var o = (ObjectOutputHeader*)output.spanByteAndMemory.SpanByte.ToPointer();
+            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
+            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             if (expiryExists)
             {
                 switch (optionType)
@@ -184,9 +184,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private CustomObjectFunctions GetCustomObjectCommand(ref ObjectInput input, GarnetObjectType type)
         {
-            var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
             var cmdId = input.header.SubId;
-            var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
+            var customObjectCommand = functionsState.GetCustomObjectSubCommandFunctions((byte)type, cmdId);
             return customObjectCommand;
         }
 

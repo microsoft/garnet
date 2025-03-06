@@ -36,7 +36,7 @@ namespace Garnet.cluster
                     var failoverOptionStr = parseState.GetString(0);
 
                     // On failure set the invalid flag, write error and continue parsing to drain rest of parameters if any
-                    while (!RespWriteUtils.WriteError($"ERR Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError($"ERR Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -46,7 +46,7 @@ namespace Garnet.cluster
                 {
                     if (!parseState.TryGetInt(1, out var failoverTimeoutSeconds))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -68,14 +68,14 @@ namespace Garnet.cluster
                     {
                         if (!clusterProvider.failoverManager.TryStartReplicaFailover(failoverOption, failoverTimeout))
                         {
-                            while (!RespWriteUtils.WriteError($"ERR failed to start failover for primary({current.GetLocalNodePrimaryAddress()})", ref dcurr, dend))
+                            while (!RespWriteUtils.TryWriteError($"ERR failed to start failover for primary({current.GetLocalNodePrimaryAddress()})", ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Node is not configured as a {NodeRole.REPLICA}", ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError($"ERR Node is not configured as a {NodeRole.REPLICA}", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -84,13 +84,13 @@ namespace Garnet.cluster
             else
             {
                 // Return error if AOF is not enabled
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             // Finally return +OK if operation completed without any errors            
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -123,7 +123,7 @@ namespace Garnet.cluster
                 clusterProvider.clusterManager.TryResetReplica();
             }
             UnsafeBumpAndWaitForEpochTransition();
-            while (!RespWriteUtils.WriteInteger(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt64(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -146,13 +146,13 @@ namespace Garnet.cluster
 
             if (!parseState.TryGetLong(0, out var primaryReplicationOffset))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             var rOffset = clusterProvider.replicationManager.WaitForReplicationOffset(primaryReplicationOffset).GetAwaiter().GetResult();
-            while (!RespWriteUtils.WriteInteger(rOffset, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt64(rOffset, ref dcurr, dend))
                 SendAndReset();
 
             return true;

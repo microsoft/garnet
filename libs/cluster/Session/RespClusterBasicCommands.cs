@@ -32,12 +32,12 @@ namespace Garnet.cluster
             // Process BUMPEPOCH
             if (clusterProvider.clusterManager.TryBumpClusterEpoch())
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_UPDATE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_UPDATE, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -68,7 +68,7 @@ namespace Garnet.cluster
                 // [Optional] Parse expiry in seconds 
                 if (!parseState.TryGetInt(1, out expirySeconds))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -77,14 +77,14 @@ namespace Garnet.cluster
             logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeId, expirySeconds);
             if (!clusterProvider.clusterManager.TryRemoveWorker(nodeId, expirySeconds, out var errorMessage))
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
                 // Terminate any outstanding migration tasks
                 _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeId);
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -108,7 +108,7 @@ namespace Garnet.cluster
             }
 
             var clusterInfo = clusterProvider.clusterManager.GetInfo();
-            while (!RespWriteUtils.WriteAsciiBulkString(clusterInfo, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterInfo, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -131,11 +131,11 @@ namespace Garnet.cluster
             }
 
             var clusterCommands = ClusterCommandInfo.GetClusterCommands();
-            while (!RespWriteUtils.WriteArrayLength(clusterCommands.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(clusterCommands.Count, ref dcurr, dend))
                 SendAndReset();
             foreach (var command in clusterCommands)
             {
-                while (!RespWriteUtils.WriteSimpleString(command, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -161,7 +161,7 @@ namespace Garnet.cluster
             var ipAddress = parseState.GetString(0);
             if (!parseState.TryGetInt(1, out var port))
             {
-                while (!RespWriteUtils.WriteError(
+                while (!RespWriteUtils.TryWriteError(
                            Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrInvalidPort,
                            parseState.GetString(1))), ref dcurr, dend))
                     SendAndReset();
@@ -170,7 +170,7 @@ namespace Garnet.cluster
 
             logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipAddress, port);
             clusterProvider.clusterManager.RunMeetTask(ipAddress, port);
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -192,7 +192,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -216,7 +216,7 @@ namespace Garnet.cluster
 
             var current = clusterProvider.clusterManager.CurrentConfig;
             var parentId = current.LocalNodeRole == NodeRole.PRIMARY ? current.LocalNodeId : current.LocalNodePrimaryId;
-            while (!RespWriteUtils.WriteAsciiBulkString(parentId, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(parentId, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -241,8 +241,8 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var (host, port) = current.GetEndpointFromNodeId(nodeId);
-            while (!RespWriteUtils.WriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
+            var endpoint = current.GetEndpointFromNodeId(nodeId);
+            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -264,7 +264,7 @@ namespace Garnet.cluster
             }
 
             var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo(clusterProvider);
-            while (!RespWriteUtils.WriteAsciiBulkString(nodes, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(nodes, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -286,28 +286,28 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (!parseState.TryGetInt(0, out var configEpoch))
+            if (!parseState.TryGetLong(0, out var configEpoch))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
+            if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 1)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
                 if (!clusterProvider.clusterManager.TrySetLocalConfigEpoch(configEpoch, out var errorMessage))
                 {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -332,7 +332,7 @@ namespace Garnet.cluster
             }
 
             var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo();
-            while (!RespWriteUtils.WriteAsciiDirect(shardsInfo, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiDirect(shardsInfo, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -394,13 +394,13 @@ namespace Garnet.cluster
             {
                 var configByteArray = current.ToByteArray();
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
-                while (!RespWriteUtils.WriteBulkString(configByteArray, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(configByteArray, ref dcurr, dend))
                     SendAndReset();
                 lastSentConfig = current;
             }
             else
             {
-                while (!RespWriteUtils.WriteBulkString([], ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString([], ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -436,7 +436,7 @@ namespace Garnet.cluster
             {
                 if (!parseState.TryGetInt(1, out expirySeconds))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -445,9 +445,37 @@ namespace Garnet.cluster
             var resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
             if (!soft) clusterProvider.FlushDB(true);
 
-            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
                 SendAndReset();
 
+            return true;
+        }
+
+        /// <summary>
+        /// Implement CLUSTER PUBLISH command
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterPublish(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            //  CLUSTER PUBLISH|SPUBLISH channel message
+            // Expecting exactly 2 arguments
+            if (parseState.Count != 2)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            if (clusterProvider.storeWrapper.subscribeBroker == null)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
             return true;
         }
     }

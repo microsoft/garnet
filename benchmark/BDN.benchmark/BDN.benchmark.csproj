@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
-		<PackageReference Include="NLua" />
+		<PackageReference Include="KeraLua" />
 	</ItemGroup>
 
   <ItemGroup>
@@ -18,11 +18,11 @@
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\playground\GarnetJSON\GarnetJSON.csproj" />
+    <ProjectReference Include="..\..\playground\NoOpModule\NoOpModule.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\playground\Embedded.perftest\EmbeddedRespServer.cs" Link="Utils\EmbeddedRespServer.cs" />
-    <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="Utils\DummyNetworkSender.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="Custom\MyDictObject.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="Custom\MyDictSet.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="Custom\MyDictGet.cs" />

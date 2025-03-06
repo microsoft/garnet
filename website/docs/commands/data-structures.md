@@ -218,6 +218,241 @@ Returns all values in the hash stored at **key**.
 
 ---
 
+### HEXPIRE
+
+#### Syntax
+
+```bash
+    HEXPIRE key seconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Sets a timeout on one or more fields of a hash key. After the timeout has expired, the fields will automatically be deleted. The timeout is specified in seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HEXPIREAT
+
+#### Syntax
+
+```bash
+    HEXPIREAT key unix-time-seconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Sets an absolute expiration time (Unix timestamp in seconds) for one or more hash fields. After the timestamp has passed, the fields will automatically be deleted.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HPEXPIRE
+
+#### Syntax
+
+```bash
+    HPEXPIRE key milliseconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Similar to HEXPIRE but the timeout is specified in milliseconds instead of seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HPEXPIREAT
+
+#### Syntax
+
+```bash
+    HPEXPIREAT key unix-time-milliseconds [NX | XX | GT | LT] FIELDS numfields field [field ...]
+```
+
+Similar to HEXPIREAT but uses Unix timestamp in milliseconds instead of seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on fields that have no existing expiry
+* **XX:** Only set expiry on fields that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was set
+* 0 if the field doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### HTTL
+
+#### Syntax
+
+```bash
+    HTTL key FIELDS numfields field [field ...]
+```
+
+Returns the remaining time to live in seconds for one or more hash fields that have a timeout set.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* TTL in seconds if the field exists and has an expiry set
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HPTTL
+
+#### Syntax
+
+```bash
+    HPTTL key FIELDS numfields field [field ...]
+```
+
+Similar to HTTL but returns the remaining time to live in milliseconds instead of seconds.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* TTL in milliseconds if the field exists and has an expiry set
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HEXPIRETIME
+
+#### Syntax
+
+```bash
+    HEXPIRETIME key FIELDS numfields field [field ...]
+```
+
+Returns the absolute Unix timestamp (in seconds) at which the specified hash fields will expire.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* Unix timestamp in seconds when the field will expire
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HPEXPIRETIME
+
+#### Syntax
+
+```bash
+    HPEXPIRETIME key FIELDS numfields field [field ...]
+```
+
+Similar to HEXPIRETIME but returns the expiry timestamp in milliseconds instead of seconds.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* Unix timestamp in milliseconds when the field will expire
+* -1 if the field exists but has no expiry set
+* -2 if the field does not exist
+
+---
+
+### HPERSIST
+
+#### Syntax
+
+```bash
+    HPERSIST key FIELDS numfields field [field ...]
+```
+
+Removes the expiration from the specified hash fields, making them persistent.
+
+#### Resp Reply
+
+Array reply: For each field, returns:
+
+* 1 if the timeout was removed
+* 0 if the field exists but has no timeout
+* -1 if the field does not exist
+
+---
+
+### HCOLLECT
+
+#### Syntax
+
+```bash
+    HCOLLECT key [key ...]
+```
+
+Manualy trigger cleanup of expired field from memory for a given Hash set key.
+
+Use `*` as the key to collect it from all hash keys.
+
+#### Resp Reply
+
+Simple reply: OK response
+Error reply: ERR HCOLLECT scan already in progress
+
+---
+
 ## List
 
 ### BLMOVE
@@ -229,6 +464,34 @@ Returns all values in the hash stored at **key**.
 ```
 
 BLMOVE is the blocking variant of [LMOVE](#lmove-lmove). When source contains elements, this command behaves exactly like LMOVE. When used inside a MULTI/EXEC block, this command behaves exactly like LMOVE. When source is empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+---
+
+### BRPOPLPUSH
+
+#### Syntax
+
+```bash
+BRPOPLPUSH source destination timeout
+```
+
+The BRPOPLPUSH command removes the last element from the list stored at source, and pushes the element to the list stored at destination. It then returns the element to the caller.
+
+#### Resp Reply
+
+Bulk string reply: the element being popped and pushed.
+
+---
+
+### BLMPOP
+
+#### Syntax
+
+```bash
+    BLMPOP timeout numkeys key [key ...] <LEFT | RIGHT> [COUNT count]
+```
+
+BLMPOP is the blocking variant of [LMPOP](#lmpop). When any of the lists contains elements, this command behaves exactly like LMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like LMPOP. When all lists are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
 
 ---
 
@@ -674,6 +937,21 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTERCARD
+
+#### Syntax
+
+```bash
+    SINTERCARD numkeys [key ...] [LIMIT limit]
+```
+
+Returns the number of members in the resulting set from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+The optional `LIMIT` argument specifies an upper bound on the number of intersecting members to count.
+
+---
+
 ### SDIFF
 
 #### Syntax
@@ -792,6 +1070,43 @@ An error is returned when **key** exists but does not hold a sorted set.
 
 The score value should be the string representation of a numeric value, and accepts double precision floating point numbers. It is possible to provide a negative value to decrement the score.
 
+---
+
+### ZINTER
+
+#### Syntax
+
+```bash
+    ZINTER numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM|MIN|MAX>] [WITHSCORES]
+```
+
+Computes the intersection of the sorted sets given by the specified keys and returns the result. It is possible to specify multiple keys.
+
+The result is a new sorted set with the same elements as the input sets, but with scores equal to the sum of the scores of the elements in the input sets.
+
+---
+
+### ZINTERCARD
+
+#### Syntax
+
+```bash
+    ZINTERCARD numkeys key [key ...] [LIMIT limit]
+```
+
+Returns the number of elements in the intersection of the sorted sets given by the specified keys.
+
+---
+
+### ZINTERSTORE
+
+#### Syntax
+
+```bash
+    ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM|MIN|MAX>]
+```
+
+Computes the intersection of the sorted sets given by the specified keys and stores the result in the destination key.
 
 ---
 
@@ -825,6 +1140,82 @@ Returns one of the following:
 
 _Nil reply:_ if the member does not exist in the sorted set.\
 _Array reply:_ a list of string **member** scores as double-precision floating point numbers.
+
+---
+
+### BZMPOP
+
+#### Syntax
+
+```bash
+    BZMPOP timeout numkeys key [key ...] <MIN | MAX> [COUNT count]
+```
+
+BZMPOP is the blocking variant of [ZMPOP](#zmpop). When any of the sorted sets contains elements, this command behaves exactly like ZMPOP. When used inside a MULTI/EXEC block, this command behaves exactly like ZMPOP. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+- **MIN**: Remove elements starting with the lowest scores
+- **MAX**: Remove elements starting with the highest scores
+- **COUNT**: Specifies how many elements to pop (default is 1)
+
+#### Resp Reply
+
+One of the following:
+
+* Null reply: when no element could be popped.
+* Array reply: a two-element array with the first element being the name of the key from which elements were popped, and the second element is an array of the popped elements. Every entry in the elements array is also an array that contains the member and its score.
+---
+
+### BZPOPMAX
+
+#### Syntax
+
+```bash
+    BZPOPMAX key [key ...] timeout
+```
+
+BZPOPMAX is the blocking variant of [ZPOPMAX](#zpopmax). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMAX. When used inside a MULTI/EXEC block, this command behaves exactly like ZPOPMAX. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+#### Resp Reply
+
+One of the following:
+
+* Null reply: when no element could be popped and the timeout expired.
+* Array reply: the keyname, popped member, and its score.
+
+---
+
+### BZPOPMIN
+
+#### Syntax
+
+```bash
+    BZPOPMIN key [key ...] timeout
+```
+
+BZPOPMIN is the blocking variant of [ZPOPMIN](#zpopmin). When any of the sorted sets contains elements, this command behaves exactly like ZPOPMIN. When used inside a MULTI/EXEC block, this command behaves exactly like ZPOPMIN. When all sorted sets are empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+#### Resp Reply
+
+One of the following:
+
+* Null reply: when no element could be popped and the timeout expired.
+* Array reply: the keyname, popped member, and its score.
+
+---
+
+### ZMPOP
+
+#### Syntax
+
+```bash
+    ZMPOP numkeys key [key ...] <MIN | MAX> [COUNT count]
+```
+
+Removes and returns one or more members with the lowest scores (default) or highest scores from the sorted set or sorted sets.
+
+- MIN: Remove elements starting with the lowest scores
+- MAX: Remove elements starting with the highest scores
+- COUNT: Specifies how many elements to pop (default is 1)
 
 ---
 
@@ -962,6 +1353,22 @@ The meaning of min and max are the same of the [ZRANGEBYLEX](#zrangebylex) comma
 
 ---
 
+### ZREVRANGEBYLEX
+
+#### Syntax
+
+```bash
+ZREVRANGEBYLEX key max min [LIMIT offset count]
+```
+
+The ZREVRANGEBYLEX command returns a range of members in a sorted set, by lexicographical order, ordered from higher to lower strings.
+
+#### Resp Reply
+
+Array reply: list of elements in the specified range.
+
+---
+
 ### ZREMRANGEBYSCORE
 
 #### Syntax
@@ -1065,6 +1472,54 @@ The **match** parameter allows to apply a filter to elements after they have bee
 Returns the score of member in the sorted set at **key**.
 
 If member does not exist in the sorted set, or **key** does not exist, nil is returned.
+
+---
+
+### ZRANGESTORE
+
+#### Syntax
+
+```bash
+    ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count]
+```
+
+Stores the specified range of elements in the sorted set stored at **src** into the sorted set stored at **dst**.
+
+---
+
+### ZUNION
+
+#### Syntax
+
+```bash
+    ZUNION numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>] [WITHSCORES]
+```
+
+Returns the union of the input sorted sets specified by the keys. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Array reply: the result of the union with, optionally, their scores when WITHSCORES is used.
+
+---
+
+### ZUNIONSTORE
+
+#### Syntax
+
+```bash
+    ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE <SUM | MIN | MAX>] 
+```
+
+Computes the union of the input sorted sets specified by the keys and stores the result in destination. The total number of input keys is specified by numkeys.
+
+Keys that do not exist are considered to be empty sets.
+
+#### Resp Reply
+
+Integer reply: the number of members in the resulting sorted set at destination.
 
 ---
 
@@ -1210,4 +1665,3 @@ This command is like [GEOSEARCH](#geosearch), but stores the result in destinati
 Integer reply: the number of elements in the resulting set
 
 ---
-

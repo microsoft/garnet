@@ -128,17 +128,17 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
         {
-            fixed (byte* _output = output.SpanByte.AsSpan())
-            {
-                removeKey = false;
+            sizeChange = 0;
 
+            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
+            {
                 if (input.header.type != GarnetObjectType.List)
                 {
                     // Indicates an incorrect type of key
-                    output.Length = 0;
-                    sizeChange = 0;
+                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                    output.SpanByteAndMemory.Length = 0;
                     return true;
                 }
 
@@ -147,41 +147,41 @@ namespace Garnet.server
                 {
                     case ListOperation.LPUSH:
                     case ListOperation.LPUSHX:
-                        ListPush(ref input, _output, true);
+                        ListPush(ref input, outputSpan, true);
                         break;
                     case ListOperation.LPOP:
-                        ListPop(ref input, ref output, true);
+                        ListPop(ref input, ref output.SpanByteAndMemory, true);
                         break;
                     case ListOperation.RPUSH:
                     case ListOperation.RPUSHX:
-                        ListPush(ref input, _output, false);
+                        ListPush(ref input, outputSpan, false);
                         break;
                     case ListOperation.RPOP:
-                        ListPop(ref input, ref output, false);
+                        ListPop(ref input, ref output.SpanByteAndMemory, false);
                         break;
                     case ListOperation.LLEN:
-                        ListLength(_output);
+                        ListLength(outputSpan);
                         break;
                     case ListOperation.LTRIM:
-                        ListTrim(ref input, _output);
+                        ListTrim(ref input, outputSpan);
                         break;
                     case ListOperation.LRANGE:
-                        ListRange(ref input, ref output);
+                        ListRange(ref input, ref output.SpanByteAndMemory);
                         break;
                     case ListOperation.LINDEX:
-                        ListIndex(ref input, ref output);
+                        ListIndex(ref input, ref output.SpanByteAndMemory);
                         break;
                     case ListOperation.LINSERT:
-                        ListInsert(ref input, _output);
+                        ListInsert(ref input, outputSpan);
                         break;
                     case ListOperation.LREM:
-                        ListRemove(ref input, _output);
+                        ListRemove(ref input, outputSpan);
                         break;
                     case ListOperation.LSET:
-                        ListSet(ref input, ref output);
+                        ListSet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case ListOperation.LPOS:
-                        ListPosition(ref input, ref output);
+                        ListPosition(ref input, ref output.SpanByteAndMemory);
                         break;
 
                     default:
@@ -191,7 +191,9 @@ namespace Garnet.server
                 sizeChange = this.Size - previousSize;
             }
 
-            removeKey = list.Count == 0;
+            if (list.Count == 0)
+                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+
             return true;
         }
 

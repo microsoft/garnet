@@ -116,7 +116,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
             var input = new ObjectInput(header, count);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
@@ -237,7 +237,7 @@ namespace Garnet.server
                 }
                 else if (statusOp == GarnetStatus.OK)
                 {
-                    if (sourceList.garnetObject is not ListObject srcListObject)
+                    if (sourceList.GarnetObject is not ListObject srcListObject)
                         return GarnetStatus.WRONGTYPE;
 
                     if (srcListObject.LnkList.Count == 0)
@@ -252,13 +252,22 @@ namespace Garnet.server
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                         {
-                            destinationList.garnetObject = new ListObject();
+                            destinationList.GarnetObject = new ListObject();
                         }
 
-                        if (destinationList.garnetObject is not ListObject listObject)
+                        if (destinationList.GarnetObject is not ListObject listObject)
                             return GarnetStatus.WRONGTYPE;
 
                         dstListObject = listObject;
+                    }
+                    else // sameKey
+                    {
+                        if (sourceDirection == destinationDirection)
+                        {
+                            element = (sourceDirection == OperationDirection.Right) ?
+                                        srcListObject.LnkList.Last.Value : srcListObject.LnkList.First.Value;
+                            return GarnetStatus.OK;
+                        }
                     }
 
                     // Right pop (removelast) from source
@@ -299,9 +308,9 @@ namespace Garnet.server
                     else
                     {
                         // When the source and the destination key is the same the operation is done only in the sourceList
-                        if (sourceDirection == OperationDirection.Right && destinationDirection == OperationDirection.Left)
+                        if (destinationDirection == OperationDirection.Left)
                             srcListObject.LnkList.AddFirst(element);
-                        else if (sourceDirection == OperationDirection.Left && destinationDirection == OperationDirection.Right)
+                        else if (destinationDirection == OperationDirection.Right)
                             srcListObject.LnkList.AddLast(element);
                         newListValue = srcListObject;
                         ((ListObject)newListValue).UpdateSize(element);

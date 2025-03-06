@@ -73,6 +73,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value)
             => storageSession.GET(key, out value, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus LCS(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+            => storageSession.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
         #endregion
 
         #region GETEX
@@ -162,6 +166,12 @@ namespace Garnet.server
 
         #endregion
 
+        #region MSETNX
+        /// <inheritdoc />
+        public GarnetStatus MSET_Conditional(ref RawStringInput input) =>
+            storageSession.MSET_Conditional(ref input, ref context);
+        #endregion
+
         #region APPEND
 
         /// <inheritdoc />
@@ -176,12 +186,12 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All)
-            => storageSession.RENAME(oldKey, newKey, storeType);
+        public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, bool withEtag = false, StoreType storeType = StoreType.All)
+            => storageSession.RENAME(oldKey, newKey, storeType, withEtag);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All)
-            => storageSession.RENAMENX(oldKey, newKey, storeType, out result);
+        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All)
+            => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
         #endregion
 
         #region EXISTS

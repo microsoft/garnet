@@ -23,7 +23,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Basic (non-lockable) sessions must do Ephemeral locking.
+    /// Basic (non-transactional) sessions must do Ephemeral locking.
     /// </summary>
     /// <remarks>
     /// This struct contains no data fields; SessionFunctionsWrapper redirects with its ClientSession.
