@@ -846,13 +846,13 @@ namespace Garnet.server
                 if (storeType is StoreType.Main or StoreType.All)
                 {
                     storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
-                    if (clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
                 }
 
                 if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
                 {
                     objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
-                    if (clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
                 }
             }
             else
@@ -860,13 +860,13 @@ namespace Garnet.server
                 if (storeType is StoreType.Main or StoreType.All)
                 {
                     storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
                 }
 
                 if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
                 {
                     objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
                 }
             }
 
