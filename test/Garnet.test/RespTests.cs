@@ -1505,6 +1505,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void GarnetObjectStoreDisabledError()
+        {
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var iter = 100;
+            var mykey = "mykey";
+            for (var i = 0; i < iter; i++)
+            {
+                var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
+                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
+            }
+
+            // Ensure connection is still healthy
+            for (var i = 0; i < iter; i++)
+            {
+                var myvalue = "myvalue" + i;
+                var result = db.StringSet(mykey, myvalue);
+                ClassicAssert.IsTrue(result);
+                var returned = (string)db.StringGet(mykey);
+                ClassicAssert.AreEqual(myvalue, returned);
+            }
+        }
+
+        [Test]
         public void MultiKeyDelete([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)

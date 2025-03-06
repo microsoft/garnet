@@ -13,6 +13,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using CommandLine;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
@@ -573,18 +574,27 @@ namespace Garnet
         public IList<string> UnparsedArguments { get; set; }
 
         /// <summary>
+        /// Logger instance used for runtime option validation
+        /// </summary>
+        public ILogger runtimeLogger { get; set; }
+
+        /// <summary>
         /// Check the validity of all options with an explicit ValidationAttribute
         /// </summary>
         /// <param name="invalidOptions">List of invalid options</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if all property values are valid</returns>
-        public bool IsValid(out List<string> invalidOptions, ILogger logger)
+        public bool IsValid(out List<string> invalidOptions, ILogger logger = null)
         {
-            invalidOptions = new List<string>();
-            bool isValid = true;
+            invalidOptions = [];
+            var isValid = true;
 
-            foreach (PropertyInfo prop in typeof(Options).GetProperties())
+            this.runtimeLogger = logger;
+            foreach (var prop in typeof(Options).GetProperties())
             {
+                if (prop.Name.Equals("runtimeLogger"))
+                    continue;
+
                 // Ignore if property is not decorated with the OptionsAttribute or the ValidationAttribute
                 var validationAttr = prop.GetCustomAttributes(typeof(ValidationAttribute)).FirstOrDefault();
                 if (!Attribute.IsDefined(prop, typeof(OptionAttribute)) || validationAttr == null)
@@ -631,19 +641,9 @@ namespace Garnet
             }
             else
             {
-                IPAddress address;
-                if (string.IsNullOrEmpty(Address))
-                {
-                    address = IPAddress.Any;
-                }
-                else
-                {
-                    if (Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
-                        address = IPAddress.Loopback;
-                    else
-                        address = IPAddress.Parse(Address);
-                }
-                endpoint = new IPEndPoint(address, Port);
+                endpoint = Format.TryCreateEndpoint(Address, Port, useForBind: false).Result;
+                if (endpoint == null)
+                    throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
             }
 
             // Unix file permission octal to UnixFileMode
