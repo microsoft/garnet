@@ -543,14 +543,14 @@ namespace Garnet.test
                     ["string"] = ["byte", "char", "dump", "find", "format", "gmatch", "gsub", "len", "lower", "match", "rep", "reverse", "sub", "upper"],
                     ["cjson"] = ["encode", "decode"],
                     ["bit"] = ["tobit", "tohex", "bnot", "bor", "band", "bxor", "lshift", "rshift", "arshift", "rol", "ror", "bswap"],
-                    //["cmsgpack"] = ["pack", "unpack"],
+                    ["cmsgpack"] = ["pack", "unpack"],
                     ["math"] = ["abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor", "fmod", "frexp", "huge", "ldexp", "log", "log10", "max", "min", "modf", "pi", "pow", "rad", "random", "randomseed", "sin", "sinh", "sqrt", "tan", "tanh"],
                     ["table"] = ["concat", "insert", "maxn", "remove", "sort"],
                     //["struct"] = ["pack", "unpack", "size"],
                     ["os"] = ["clock"]
                 };
 
-            // Check the supported global
+            // Check the supported globals
             {
                 using var allRunner =
                     new LuaRunner(

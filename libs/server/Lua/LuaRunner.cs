@@ -266,6 +266,7 @@ local cjson = {
     decode = garnet_cjson_decode;
 }
 
+-- define bit for (optional) inclusion into sandbox_env
 local bit = {
     tobit = garnet_bit_tobit;
     tohex = garnet_bit_tohex;
@@ -279,6 +280,12 @@ local bit = {
     rol = function(...) return garnet_bitop(7, ...); end;
     ror = function(...) return garnet_bitop(8, ...); end;
     bswap = garnet_bit_bswap;
+}
+
+-- define cmsgpack for (optional) inclusion into sandbox_env
+local cmsgpack = {
+    pack = garnet_cmsgpack_pack;
+    unpack = garnet_cmsgpack_unpack;
 }
 
 -- unpack moved after Lua 5.1, this provides Redis compat
@@ -639,6 +646,8 @@ end
             // This implements bnot, bor, band, xor, etc. but isn't directly exposed
             state.Register("garnet_bitop\0"u8, &LuaRunnerTrampolines.Bitop);
             state.Register("garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
+            state.Register("garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
+            state.Register("garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
 
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
@@ -790,7 +799,7 @@ end
                     return false;
                 }
 
-                return true;
+                return functionRegistryIndex != -1;
             }
             finally
             {
@@ -1455,7 +1464,7 @@ end
                     _ => "ror",
                 };
 
-            if(luaArgCount < 2)
+            if (luaArgCount < 2)
             {
                 return state.RaiseError($"bad argument to {binOpName}");
             }
@@ -1937,6 +1946,818 @@ end
         }
 
         /// <summary>
+        /// Entry point for cmsgpack.pack from a Lua script.
+        /// </summary>
+        public int CMsgPackPack(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+
+            if (numLuaArgs == 0)
+            {
+                return state.RaiseError("bad argument to pack");
+            }
+
+            // Redis concatenates all the message packs together if there are multiple
+            //
+            // Somewhat odd, but we match that behavior
+
+            // TODO: Shared buffer?
+            var ret = new List<byte>();
+
+            // We go in reverse order so we can reuse stack positions
+            //
+            // Since the common case is 1 item, this mostly doesn't matter
+            for (var argIx = numLuaArgs; argIx >= 1; argIx--)
+            {
+                var subRet = new List<byte>();
+                Encode(subRet, ref state);
+                ret.InsertRange(0, subRet);
+            }
+
+            // After all encoding, stack should be empty
+            state.ExpectLuaStackEmpty();
+
+            var retArr = ret.ToArray();
+            state.PushBuffer(retArr);
+
+            return 1;
+
+            // Encode a single item at the top of the stack, and remove it
+            static void Encode(List<byte> intoBytes, ref LuaStateWrapper state)
+            {
+                var type = state.Type(state.StackTop);
+                switch (type)
+                {
+                    case LuaType.Boolean: EncodeBool(intoBytes, ref state); break;
+                    case LuaType.Number: EncodeNumber(intoBytes, ref state); break;
+                    case LuaType.String: EncodeBytes(intoBytes, ref state); break;
+                    case LuaType.Table: EncodeTable(intoBytes, ref state); break;
+
+                    // Everything else maps to null, NOT an error
+                    case LuaType.Function:
+                    case LuaType.LightUserData:
+                    case LuaType.Nil:
+                    case LuaType.None:
+                    case LuaType.Thread:
+                    case LuaType.UserData:
+                    default: EncodeNull(intoBytes, ref state); break;
+                }
+            }
+
+            // Encode a null-ish value at top of the stack, and remove it
+            static void EncodeNull(List<byte> intoBytes, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
+
+                intoBytes.Add(0xC0);
+
+                state.Pop(1);
+            }
+
+            // Encode a boolean at top of the stack, and remove it
+            static void EncodeBool(List<byte> intoBytes, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Boolean, "Expected boolean");
+
+                if (state.ToBoolean(state.StackTop))
+                {
+                    intoBytes.Add(0xC3);
+                }
+                else
+                {
+                    intoBytes.Add(0xC2);
+                }
+
+                state.Pop(1);
+            }
+
+            // Encode a number at top of the stack, and remove it
+            static void EncodeNumber(List<byte> intoBytes, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Number, "Expected number");
+
+                var numRaw = state.CheckNumber(state.StackTop);
+                var isInt = numRaw == (long)numRaw;
+
+                if (isInt)
+                {
+                    EncodeInteger(intoBytes, (long)numRaw);
+                }
+                else
+                {
+                    EncodeFloatingPoint(intoBytes, numRaw);
+                }
+
+                state.Pop(1);
+            }
+
+            // Encode an integer
+            static void EncodeInteger(List<byte> intoBytes, long value)
+            {
+                // positive 7-bit fixint
+                if ((byte)(value & 0b0111_1111) == value)
+                {
+                    intoBytes.Add((byte)value);
+                    return;
+                }
+
+                // negative 5-bit fixint
+                if ((sbyte)(value | 0b1110_0000) == value)
+                {
+                    intoBytes.Add((byte)value);
+                    return;
+                }
+
+                // 8-bit int
+                if (value is >= sbyte.MinValue and <= sbyte.MaxValue)
+                {
+                    intoBytes.Add(0xD0);
+                    intoBytes.Add((byte)value);
+                    return;
+                }
+
+                // 8-bit uint
+                if (value is >= byte.MinValue and <= byte.MaxValue)
+                {
+                    intoBytes.Add(0xCC);
+                    intoBytes.Add((byte)value);
+                    return;
+                }
+
+                // 16-bit int
+                if (value is >= short.MinValue and <= short.MaxValue)
+                {
+                    intoBytes.Add(0xD1);
+
+                    Span<byte> buff = stackalloc byte[2];
+
+                    BinaryPrimitives.WriteInt16BigEndian(buff, (short)value);
+                    intoBytes.AddRange(buff);
+                    return;
+                }
+
+                // 16-bit uint
+                if (value is >= ushort.MinValue and <= ushort.MaxValue)
+                {
+                    intoBytes.Add(0xCD);
+
+                    Span<byte> buff = stackalloc byte[2];
+
+                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)value);
+                    intoBytes.AddRange(buff);
+                    return;
+                }
+
+                // 32-bit int
+                if (value is >= int.MinValue and <= int.MaxValue)
+                {
+                    intoBytes.Add(0xD2);
+
+                    Span<byte> buff = stackalloc byte[4];
+
+                    BinaryPrimitives.WriteInt32BigEndian(buff, (int)value);
+                    intoBytes.AddRange(buff);
+                    return;
+                }
+
+                // 32-bit uint
+                if (value is >= uint.MinValue and <= uint.MaxValue)
+                {
+                    intoBytes.Add(0xCE);
+
+                    Span<byte> buff = stackalloc byte[4];
+
+                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)value);
+                    intoBytes.AddRange(buff);
+                    return;
+                }
+
+                // 64-bit uint
+                if (value > uint.MaxValue)
+                {
+                    intoBytes.Add(0xCF);
+
+                    Span<byte> buff = stackalloc byte[8];
+
+                    BinaryPrimitives.WriteUInt64BigEndian(buff, (ulong)value);
+                    intoBytes.AddRange(buff);
+                    return;
+                }
+
+                // 64-bit int
+                {
+                    intoBytes.Add(0xD3);
+
+                    Span<byte> buff = stackalloc byte[8];
+
+                    BinaryPrimitives.WriteInt64BigEndian(buff, value);
+                    intoBytes.AddRange(buff);
+                }
+            }
+
+            // Encode a floating point value
+            static void EncodeFloatingPoint(List<byte> intoBytes, double value)
+            {
+                // While Redis has code that attempts to pack doubles into floats
+                // it doesn't appear to do anything, so just always write a double
+
+                intoBytes.Add(0xCB);
+
+                Span<byte> buff = stackalloc byte[8];
+                BinaryPrimitives.WriteDoubleBigEndian(buff, value);
+
+                intoBytes.AddRange(buff);
+            }
+
+            // Encodes a string as at the top of stack, and remove it
+            static void EncodeBytes(List<byte> intoBytes, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.String, "Expected string");
+
+                _ = state.CheckBuffer(state.StackTop, out var data);
+
+                if (data.Length < 32)
+                {
+                    intoBytes.Add((byte)(0xA0 | data.Length));
+                    intoBytes.AddRange(data);
+                }
+                else if (data.Length <= byte.MaxValue)
+                {
+                    intoBytes.Add(0xD9);
+                    intoBytes.Add((byte)data.Length);
+                    intoBytes.AddRange(data);
+                }
+                else if (data.Length <= ushort.MaxValue)
+                {
+                    intoBytes.Add(0xDA);
+
+                    Span<byte> buff = stackalloc byte[2];
+                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)data.Length);
+
+                    intoBytes.AddRange(buff);
+                    intoBytes.AddRange(data);
+                }
+                else
+                {
+                    intoBytes.Add(0xDB);
+
+                    Span<byte> buff = stackalloc byte[4];
+                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)data.Length);
+
+                    intoBytes.AddRange(buff);
+                    intoBytes.AddRange(data);
+                }
+
+                state.Pop(1);
+            }
+
+            // Encode a table at the top of the stack, and remove it
+            static void EncodeTable(List<byte> intoBytes, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table");
+
+                // Space for key and value
+                state.ForceMinimumStackCapacity(2);
+
+                var tableIx = state.StackTop;
+
+                // A zero-length table is serialized as an array
+                var isArray = true;
+                var count = 0;
+                var max = 0;
+
+                // Measure the table and figure out if we're creating a map or an array
+                state.PushNil();
+                while (state.Next(tableIx) != 0)
+                {
+                    count++;
+
+                    // Remove value
+                    state.Pop(1);
+
+                    double keyAsNum;
+                    if (state.Type(tableIx + 1) != LuaType.Number || (keyAsNum = state.CheckNumber(tableIx + 1)) <= 0 || keyAsNum != (int)keyAsNum)
+                    {
+                        isArray = false;
+                    }
+                    else
+                    {
+                        if (keyAsNum > max)
+                        {
+                            max = (int)keyAsNum;
+                        }
+                    }
+                }
+
+                if (isArray && count == max)
+                {
+                    EncodeArray(intoBytes, count, ref state);
+                }
+                else
+                {
+                    EncodeMap(intoBytes, count, ref state);
+                }
+            }
+
+            // Encode a table on the top of the stack into an array, and remove it
+            static void EncodeArray(List<byte> intoBytes, int count, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table");
+                Debug.Assert(count >= 0, "Array should have positive length");
+
+                // Reserve space for value
+                state.ForceMinimumStackCapacity(1);
+
+                var tableIx = state.StackTop;
+
+                // Encode length
+                if (count <= 15)
+                {
+                    intoBytes.Add((byte)(0b1001_0000 | count));
+                }
+                else if (count <= ushort.MaxValue)
+                {
+                    intoBytes.Add(0xDC);
+
+                    Span<byte> buff = stackalloc byte[2];
+                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)count);
+
+                    intoBytes.AddRange(buff);
+                }
+                else
+                {
+                    intoBytes.Add(0xDD);
+
+                    Span<byte> buff = stackalloc byte[4];
+                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)count);
+
+                    intoBytes.AddRange(buff);
+                }
+
+                // Write each element out
+                for (var ix = 1; ix <= count; ix++)
+                {
+                    _ = state.RawGetInteger(null, tableIx, ix);
+                    Encode(intoBytes, ref state);
+                }
+
+                state.Pop(1);
+            }
+
+            // Encode a table on the top of the stack into a map, and remove it
+            static void EncodeMap(List<byte> intoBytes, int count, ref LuaStateWrapper state)
+            {
+                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table");
+                Debug.Assert(count >= 0, "Map should have positive length");
+
+                // Reserve space for key, value, and copy of key
+                state.ForceMinimumStackCapacity(2);
+
+                var tableIx = state.StackTop;
+
+                // Encode length
+                if (count <= 15)
+                {
+                    intoBytes.Add((byte)(0b1000_0000 | count));
+                }
+                else if (count <= ushort.MaxValue)
+                {
+                    intoBytes.Add(0xDE);
+
+                    Span<byte> buff = stackalloc byte[2];
+                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)count);
+
+                    intoBytes.AddRange(buff);
+                }
+                else
+                {
+                    intoBytes.Add(0xDF);
+
+                    Span<byte> buff = stackalloc byte[4];
+                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)count);
+
+                    intoBytes.AddRange(buff);
+                }
+
+                state.PushNil();
+                while (state.Next(tableIx) != 0)
+                {
+                    // Make a copy of the key
+                    state.PushValue(tableIx + 1);
+
+                    // Write the key
+                    Encode(intoBytes, ref state);
+
+                    // Write the value
+                    Encode(intoBytes, ref state);
+                }
+
+                state.Pop(1);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for cmsgpack.unpack from a Lua script.
+        /// </summary>
+        public int CMsgPackUnpack(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+
+            if (numLuaArgs == 0)
+            {
+                return state.RaiseError("bad argument to unpack");
+            }
+
+            _ = state.CheckBuffer(1, out var data);
+
+            var decodedCount = 0;
+            while (!data.IsEmpty)
+            {
+                // Reserve space for the result
+                state.ForceMinimumStackCapacity(1);
+
+                try
+                {
+                    Decode(ref data, ref state);
+                    decodedCount++;
+                }
+                catch (Exception e)
+                {
+                    // Best effort at matching Redis behavior
+                    return state.RaiseError($"Missing bytes in input. {e.Message}");
+                }
+            }
+
+            return decodedCount;
+
+            // Decode a msg pack
+            static void Decode(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var sigil = data[0];
+                data = data[1..];
+
+                switch (sigil)
+                {
+                    case 0xC0: DecodeNull(ref data, ref state); return;
+                    case 0xC2: DecodeBoolean(false, ref data, ref state); return;
+                    case 0xC3: DecodeBoolean(true, ref data, ref state); return;
+                    // 7-bit positive integers handled below
+                    // 5-bit negative integers handled below
+                    case 0xCC: DecodeUInt8(ref data, ref state); return;
+                    case 0xCD: DecodeUInt16(ref data, ref state); return;
+                    case 0xCE: DecodeUInt32(ref data, ref state); return;
+                    case 0xCF: DecodeUInt64(ref data, ref state); return;
+                    case 0xD0: DecodeInt8(ref data, ref state); return;
+                    case 0xD1: DecodeInt16(ref data, ref state); return;
+                    case 0xD2: DecodeInt32(ref data, ref state); return;
+                    case 0xD3: DecodeInt64(ref data, ref state); return;
+                    case 0xCA: DecodeSingle(ref data, ref state); return;
+                    case 0xCB: DecodeDouble(ref data, ref state); return;
+                    // <= 31 byte strings handled below
+                    case 0xD9: DecodeSmallString(ref data, ref state); return;
+                    case 0xDA: DecodeMidString(ref data, ref state); return;
+                    case 0xDB: DecodeLargeString(ref data, ref state); return;
+                    // We treat bins as strings
+                    case 0xC4: goto case 0xD9;
+                    case 0xC5: goto case 0xDA;
+                    case 0xC6: goto case 0xDB;
+                    // <= 15 element arrays are handled below
+                    case 0xDC: DecodeMidArray(ref data, ref state); return;
+                    case 0xDD: DecodeLargeArray(ref data, ref state); return;
+                    // <= 15 pair maps are handled below
+                    case 0xDE: DecodeMidMap(ref data, ref state); return;
+                    case 0xDF: DecodeLargeMap(ref data, ref state); return;
+
+                    default:
+                        if ((sigil & 0b1000_0000) == 0)
+                        {
+                            DecodeTinyUInt(sigil, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1110_0000) == 0b1110_0000)
+                        {
+                            DecodeTinyInt(sigil, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1110_0000) == 0b1010_0000)
+                        {
+                            DecodeTinyString(sigil, ref data, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1111_0000) == 0b1001_0000)
+                        {
+                            DecodeSmallArray(sigil, ref data, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1111_0000) == 0b1000_0000)
+                        {
+                            DecodeSmallMap(sigil, ref data, ref state);
+                            return;
+                        }
+
+                        _ = state.RaiseError($"Unexpected MsgPack sigil {sigil}/x{sigil:X2}/b{sigil:B8}");
+                        return;
+                }
+            }
+
+            // Decode a null push it to the stack
+            static void DecodeNull(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNil();
+            }
+
+            // Decode a boolean and push it to the stack
+            static void DecodeBoolean(bool b, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushBoolean(b);
+            }
+
+            // Decode a byte, moving past it in data and pushing it to the stack
+            static void DecodeUInt8(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(data[0]);
+                data = data[1..];
+            }
+
+            // Decode a positive 7-bit value, pushing it to the stack
+            static void DecodeTinyUInt(byte sigil, ref LuaStateWrapper state)
+            {
+                state.PushNumber(sigil);
+            }
+
+            // Decode a ushort, moving past it in data and pushing it to the stack
+            static void DecodeUInt16(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadUInt16BigEndian(data));
+                data = data[2..];
+            }
+
+            // Decode a uint, moving past it in data and pushing it to the stack
+            static void DecodeUInt32(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadUInt32BigEndian(data));
+                data = data[4..];
+            }
+
+            // Decode a ulong, moving past it in data and pushing it to the stack
+            static void DecodeUInt64(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadUInt64BigEndian(data));
+                data = data[8..];
+            }
+
+            // Decode a negative 5-bit value, pushing it to the stack
+            static void DecodeTinyInt(byte sigil, ref LuaStateWrapper state)
+            {
+                var signExtended = (int)(0xFFFF_FF00 | sigil);
+                state.PushNumber(signExtended);
+            }
+
+            // Decode a sbyte, moving past it in data and pushing it to the stack
+            static void DecodeInt8(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber((sbyte)data[0]);
+                data = data[1..];
+            }
+
+            // Decode a short, moving past it in data and pushing it to the stack
+            static void DecodeInt16(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadInt16BigEndian(data));
+                data = data[2..];
+            }
+
+            // Decode a int, moving past it in data and pushing it to the stack
+            static void DecodeInt32(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadInt32BigEndian(data));
+                data = data[4..];
+            }
+
+            // Decode a long, moving past it in data and pushing it to the stack
+            static void DecodeInt64(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadInt64BigEndian(data));
+                data = data[8..];
+            }
+
+            // Decode a float, moving past it in data and pushing it to the stack
+            static void DecodeSingle(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadSingleBigEndian(data));
+                data = data[4..];
+            }
+
+            // Decode a double, moving past it in data and pushing it to the stack
+            static void DecodeDouble(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadDoubleBigEndian(data));
+                data = data[8..];
+            }
+
+            // Decode a string size <= 31, moving past it in data and pushing it to the stack
+            static void DecodeTinyString(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = sigil & 0b0001_1111;
+                var str = data[..len];
+
+                state.PushBuffer(str);
+                data = data[len..];
+            }
+
+            // Decode a string size <= 255, moving past it in data and pushing it to the stack
+            static void DecodeSmallString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = data[0];
+                data = data[1..];
+
+                var str = data[..len];
+
+                state.PushBuffer(str);
+
+                data = data[str.Length..];
+            }
+
+            // Decode a string size <= 65,535, moving past it in data and pushing it to the stack
+            static void DecodeMidString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = BinaryPrimitives.ReadUInt16BigEndian(data);
+                data = data[2..];
+
+                var str = data[..(int)len];
+
+                state.PushBuffer(str);
+
+                data = data[str.Length..];
+            }
+
+            // Decode a string size <= 4,294,967,295, moving past it in data and pushing it to the stack
+            static void DecodeLargeString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = BinaryPrimitives.ReadUInt32BigEndian(data);
+                data = data[4..];
+
+                if ((int)len < 0)
+                {
+                    _ = state.RaiseError($"String length is too long: {len}");
+                    return;
+                }
+
+                var str = data[..(int)len];
+
+                state.PushBuffer(str);
+
+                data = data[str.Length..];
+            }
+
+            // Decode an array with <= 15 items, moving past it in data and pushing it to the stack
+            static void DecodeSmallArray(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary item
+                state.ForceMinimumStackCapacity(1);
+
+                var len = sigil & 0b0000_1111;
+
+                state.CreateTable(len, 0);
+                var arrayIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the element onto the stack
+                    Decode(ref data, ref state);
+                    state.RawSetInteger(arrayIndex, i);
+                }
+            }
+
+            // Decode an array with <= 65,535 items, moving past it in data and pushing it to the stack
+            static void DecodeMidArray(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary item
+                state.ForceMinimumStackCapacity(1);
+
+                var len = BinaryPrimitives.ReadUInt16BigEndian(data);
+                data = data[2..];
+
+                state.CreateTable(len, 0);
+                var arrayIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the element onto the stack
+                    Decode(ref data, ref state);
+                    state.RawSetInteger(arrayIndex, i);
+                }
+            }
+
+            // Decode an array with <= 4,294,967,295 items, moving past it in data and pushing it to the stack
+            static void DecodeLargeArray(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary item
+                state.ForceMinimumStackCapacity(1);
+
+                var len = BinaryPrimitives.ReadUInt32BigEndian(data);
+                data = data[4..];
+
+                if ((int)len < 0)
+                {
+                    _ = state.RaiseError($"Array length is too long: {len}");
+                    return;
+                }
+
+                state.CreateTable((int)len, 0);
+                var arrayIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the element onto the stack
+                    Decode(ref data, ref state);
+                    state.RawSetInteger(arrayIndex, i);
+                }
+            }
+
+            // Decode an map with <= 15 key-value pairs, moving past it in data and pushing it to the stack
+            static void DecodeSmallMap(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var len = sigil & 0b0000_1111;
+
+                state.CreateTable(0, len);
+                var mapIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the key onto the stack
+                    Decode(ref data, ref state);
+
+                    // Push the value onto the stack
+                    Decode(ref data, ref state);
+
+                    state.RawSet(mapIndex);
+                }
+            }
+
+            // Decode a map with <= 65,535 key-value pairs, moving past it in data and pushing it to the stack
+            static void DecodeMidMap(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var len = BinaryPrimitives.ReadUInt16BigEndian(data);
+                data = data[2..];
+
+                state.CreateTable(0, len);
+                var mapIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the key onto the stack
+                    Decode(ref data, ref state);
+
+                    // Push the value onto the stack
+                    Decode(ref data, ref state);
+
+                    state.RawSet(mapIndex);
+                }
+            }
+
+            // Decode a map with <= 4,294,967,295 key-value pairs, moving past it in data and pushing it to the stack
+            static void DecodeLargeMap(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var len = BinaryPrimitives.ReadUInt32BigEndian(data);
+                data = data[4..];
+
+                if ((int)len < 0)
+                {
+                    _ = state.RaiseError($"Map length is too long: {len}");
+                    return;
+                }
+
+                state.CreateTable(0, (int)len);
+                var mapIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the key onto the stack
+                    Decode(ref data, ref state);
+
+                    // Push the value onto the stack
+                    Decode(ref data, ref state);
+
+                    state.RawSet(mapIndex);
+                }
+            }
+        }
+
+        /// <summary>
         /// Entry point for redis.setresp(...) from a Lua script.
         /// </summary>
         public int SetResp(nint luaStatePtr)
@@ -2404,7 +3225,7 @@ end
         {
             var respEnd = respPtr + respLen;
 
-            var ret = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+            var ret = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
             if (respPtr != respEnd)
             {
@@ -2414,7 +3235,7 @@ end
             return ret;
         }
 
-        private unsafe int ProcessSingleResp3Term(byte respProtocolVersion, ref byte* respPtr, byte* respEnd)
+        private unsafe int ProcessSingleRespTerm(byte respProtocolVersion, ref byte* respPtr, byte* respEnd)
         {
             var indicator = (char)*respPtr;
 
@@ -2516,7 +3337,7 @@ end
                             for (var itemIx = 0; itemIx < arrayItemCount; itemIx++)
                             {
                                 // Pushes the item to the top of the stack
-                                _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                                _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                                 // Store the item into the table
                                 state.RawSetInteger(curTop + 1, itemIx + 1);
@@ -2546,10 +3367,10 @@ end
                         for (var pair = 0; pair < mapPairCount; pair++)
                         {
                             // Read key
-                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                            _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Read value
-                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                            _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Set t[k] = v
                             state.RawSet(curTop + 3);
@@ -2602,7 +3423,7 @@ end
                         for (var pair = 0; pair < setItemCount; pair++)
                         {
                             // Read value, which we use as a key
-                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                            _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Unconditionally the value under the key is true
                             state.PushBoolean(true);
@@ -3541,7 +4362,34 @@ end
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var buf);
 
-                while (!RespWriteUtils.TryWriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
+                // Strings can be veeeerrrrry large, so we can't use the short helpers
+                // Thus we write the full string directly
+                while (!RespWriteUtils.TryWriteBulkStringLength(buf, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // Repeat while we have bytes left to write
+                while (!buf.IsEmpty)
+                {
+                    // Copy bytes over
+                    var destSpace = resp.BufferEnd - resp.BufferCur;
+                    var copyLen = (int)(destSpace < buf.Length ? destSpace : buf.Length);
+                    buf.Slice(0, copyLen).CopyTo(new Span<byte>(resp.BufferCur, copyLen));
+
+                    // Advance
+                    resp.BufferCur += copyLen;
+                    
+                    // Flush if we filled the buffer
+                    if (destSpace == copyLen)
+                    {
+                        resp.SendAndReset();
+                    }
+
+                    // Move past the data we wrote out
+                    buf = buf.Slice(copyLen);
+                }
+
+                // End the string
+                while (!RespWriteUtils.TryWriteNewLine(ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 runner.state.Pop(1);
@@ -4192,5 +5040,19 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int BitBswap(nint luaState)
         => CallbackContext.BitBswap(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cmsgpack.pack.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CMsgPackPack(nint luaState)
+        => CallbackContext.CMsgPackPack(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cmsgpack.unpack.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CMsgPackUnpack(nint luaState)
+        => CallbackContext.CMsgPackUnpack(luaState);
     }
 }
