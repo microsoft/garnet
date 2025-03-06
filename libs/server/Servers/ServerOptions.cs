@@ -15,11 +15,6 @@ namespace Garnet.server
     public class ServerOptions
     {
         /// <summary>
-        /// Endpoint to bind server to.
-        /// </summary>
-        public EndPoint EndPoint { get; set; } = new IPEndPoint(IPAddress.Loopback, 6379);
-
-        /// <summary>
         /// Endpoints to bind server to.
         /// </summary>
         public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];

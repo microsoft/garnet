@@ -50,7 +50,7 @@ namespace Garnet.cluster
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
-            if (opts.EndPoint is not IPEndPoint endpoint)
+            if (opts.EndPoints[0] is not IPEndPoint endpoint)
                 throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented.");
 
             var address = clusterProvider.storeWrapper.GetIp();
