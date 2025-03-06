@@ -118,7 +118,7 @@ namespace Tsavorite.core
             systemState.Word = nextState.Word;
 
             // Release waiters for new phase
-            waitForTransitionOut?.Release(int.MaxValue);
+            _ = waitForTransitionOut?.Release(int.MaxValue);
 
             // Write new semaphore
             waitForTransitionOut = new SemaphoreSlim(0);
@@ -136,7 +136,7 @@ namespace Tsavorite.core
             {
                 epoch.Suspend();
             }
-            waitingList.Add(waitForTransitionIn);
+            AddToWaitingList(waitForTransitionIn);
         }
 
         /// <summary>
