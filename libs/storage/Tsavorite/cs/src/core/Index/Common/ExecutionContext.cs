@@ -29,6 +29,7 @@ namespace Tsavorite.core
             public readonly AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
             internal RevivificationStats RevivificationStats = new();
+            public bool isAcquiredLockable;
 
             public TsavoriteExecutionContext(int sessionID)
             {
@@ -37,6 +38,7 @@ namespace Tsavorite.core
                 readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
                 ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
                 pendingReads = new AsyncCountDown();
+                isAcquiredLockable = false;
             }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;

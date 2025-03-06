@@ -19,7 +19,7 @@ namespace Tsavorite.core
             epoch.ProtectAndDrain();
 
             // Fast path: check if we are in unchanged REST phase
-            if (SystemState.Equal(sessionFunctions.Ctx.SessionState, stateMachineDriver.SystemState))
+            if (sessionFunctions.Ctx.SessionState.Phase == Phase.REST && SystemState.Equal(sessionFunctions.Ctx.SessionState, stateMachineDriver.SystemState))
                 return;
 
             while (true)
@@ -27,18 +27,18 @@ namespace Tsavorite.core
                 // Grab current system state into session state under epoch protection
                 sessionFunctions.Ctx.SessionState = stateMachineDriver.SystemState;
 
-                //   If a thread is in PREPARE/PREPARE_GROW phase AND all multi-key ops have drained (NumActiveLockingSessions == 0):
-                //      Then the thread will SPIN during Refresh until it is in (IN_PROGRESS, v+1).
+                //   If a session is in PREPARE/PREPARE_GROW phase AND is not currently in a transaction
+                //      Then the session will SPIN during Refresh until it is in (IN_PROGRESS, v+1).
                 //
-                //   That way no thread can work in the PREPARE/PREPARE_GROW phase while any thread works in IN_PROGRESS phase.
-                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) if all threads
-                //   have reached PREPARE/PREPARE_GROW and all multi-key ops have drained.
+                //   That way no session can work in the PREPARE/PREPARE_GROW phase while any session works in IN_PROGRESS phase.
+                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) only if all sessions
+                //   have reached PREPARE/PREPARE_GROW and all transactions have concluded (i.e., NumActiveLockingSessions == 0).
                 //   See HybridLogCheckpointSMTask and IndexResizeSMTask for state machine progress condition.
                 //
                 //   Also, ClientSession.AcquireLockable() ensures that no new multi-key ops are started in
                 //   the PREPARE/PREPARE_GROW phase.
                 if ((sessionFunctions.Ctx.phase == Phase.PREPARE || sessionFunctions.Ctx.phase == Phase.PREPARE_GROW)
-                    && hlogBase.NumActiveLockingSessions == 0)
+                    && !sessionFunctions.Ctx.isAcquiredLockable)
                 {
                     epoch.ProtectAndDrain();
                     _ = Thread.Yield();
