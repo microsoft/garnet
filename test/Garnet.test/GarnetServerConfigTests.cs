@@ -164,7 +164,7 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.AreEqual("127.0.0.1", options.Address);
+            ClassicAssert.AreEqual("127.0.0.1", options.Address.First());
             ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
             ClassicAssert.AreEqual(6379, options.Port);
             ClassicAssert.AreEqual("20gb", options.MemorySize);

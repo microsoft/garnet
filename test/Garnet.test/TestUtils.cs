@@ -302,7 +302,7 @@ namespace Garnet.test
                 EnableStorageTier = logCheckpointDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = endpoint ?? EndPoint,
+                EndPoints = [endpoint ?? EndPoint],
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
@@ -500,7 +500,7 @@ namespace Garnet.test
 
                 ClassicAssert.IsNotNull(opts);
 
-                if (opts.EndPoint is IPEndPoint ipEndpoint)
+                if (opts.EndPoints[0] is IPEndPoint ipEndpoint)
                 {
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
@@ -610,7 +610,7 @@ namespace Garnet.test
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = endpoint,
+                EndPoints = [endpoint],
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,

@@ -175,7 +175,7 @@ namespace Garnet
                 Console.WriteLine($"""
                     {red}    _________
                        /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
-                       '. \   / .'      {normal}Listening on: {opts.EndPoint}{red}
+                       '. \   / .'      {normal}Listening on: {opts.EndPoints[0]}{red}
                          '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
                            '.'
                     {normal}
@@ -185,7 +185,7 @@ namespace Garnet
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
-            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoint);
+            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoints[0]);
             logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
 
             // Flush initialization logs from memory logger
@@ -248,14 +248,14 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            if (opts.EndPoint is UnixDomainSocketEndPoint)
+            if (opts.EndPoints[0] is UnixDomainSocketEndPoint)
             {
                 // Delete existing unix socket file, if it exists.
                 File.Delete(opts.UnixSocketPath);
             }
 
             // Create Garnet TCP server if none was provided.
-            this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+            this.server ??= new GarnetServerTcp(opts.EndPoints[0], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
 
             storeWrapper = new StoreWrapper(version, RedisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
