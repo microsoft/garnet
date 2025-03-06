@@ -312,6 +312,8 @@ namespace Tsavorite.core
             s.Release();
         }
 
+        public SemaphoreSlim GetCheckpointSemaphore() => checkpointSemaphore;
+
         /// <summary>
         /// Public facing persistence API
         /// </summary>

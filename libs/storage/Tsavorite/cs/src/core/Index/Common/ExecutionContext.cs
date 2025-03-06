@@ -14,24 +14,32 @@ namespace Tsavorite.core
     {
         internal sealed class TsavoriteExecutionContext<TInput, TOutput, TContext>
         {
-            internal int sessionID;
-            internal string sessionName;
+            internal readonly int sessionID;
 
             // Control automatic Read copy operations. These flags override flags specified at the TsavoriteKV level, but may be overridden on the individual Read() operations
             internal ReadCopyOptions ReadCopyOptions;
 
-            internal long version;
-            public Phase phase;
+            public SystemState SessionState;
+            internal long version => SessionState.Version;
+            public Phase phase => SessionState.Phase;
 
-            public bool[] markers;
             public long totalPending;
-            public Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
-            public AsyncCountDown pendingReads;
-            public AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
+            public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
+            public readonly AsyncCountDown pendingReads;
+            public readonly AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
-            public ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> threadStateMachine;
-
             internal RevivificationStats RevivificationStats = new();
+            public bool isAcquiredLockable;
+
+            public TsavoriteExecutionContext(int sessionID)
+            {
+                SessionState = SystemState.Make(Phase.REST, 1);
+                this.sessionID = sessionID;
+                readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
+                ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
+                pendingReads = new AsyncCountDown();
+                isAcquiredLockable = false;
+            }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
@@ -85,8 +93,6 @@ namespace Tsavorite.core
             }
 
             public bool InNewVersion => phase < Phase.REST;
-
-            public TsavoriteExecutionContext<TInput, TOutput, TContext> prevCtx;
         }
     }
 }
