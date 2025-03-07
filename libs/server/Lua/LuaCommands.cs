@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -26,6 +24,11 @@ namespace Garnet.server
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("EVALSHA");
+            }
+
+            if (!parseState.TryGetInt(1, out var n) || (n < 0) || (n > count - 2))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             ref var digest = ref parseState.GetArgSliceByRef(0);
@@ -99,6 +102,11 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("EVAL");
             }
 
+            if (!parseState.TryGetInt(1, out var n) || (n < 0) || (n > count - 2))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
             ref var script = ref parseState.GetArgSliceByRef(0);
 
             // that this is stack allocated is load bearing - if it moves, things will break
@@ -162,7 +170,7 @@ namespace Garnet.server
                     exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
                 }
 
-                while (!RespWriteUtils.TryWriteArrayItem(exists, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
                     SendAndReset();
             }
 
