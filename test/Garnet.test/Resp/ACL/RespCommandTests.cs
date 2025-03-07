@@ -7046,7 +7046,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoSwapDbAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("SWAPDB", ["1", "0"]);
+                string val = await client.ExecuteForStringResultAsync("SWAPDB", ["0", "0"]);
                 ClassicAssert.AreEqual("OK", val);
             }
         }
