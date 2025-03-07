@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using Azure.Storage.Blobs.Models;
 using Garnet.common;
 using Tsavorite.core;
 

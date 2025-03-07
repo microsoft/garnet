@@ -2539,6 +2539,7 @@ namespace Garnet.server
         /// <summary>
         /// Parses the command from the given input buffer.
         /// </summary>
+        /// <param name="writeErrorOnFailure">If true, when a parsing error occurs an error response will written.</param>
         /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

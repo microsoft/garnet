@@ -9,7 +9,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Azure.Storage.Blobs.Models;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;

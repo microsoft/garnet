@@ -454,6 +454,13 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
+        /// RESP version of the session currently executing.
+        /// 
+        /// Will be 2 or 3.
+        /// </summary>
+        public byte RespVersion { get; }
+
+        /// <summary>
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
@@ -478,13 +485,6 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public int SerializedLength => parseState.GetSerializedLength();
-
-        /// <summary>
-        /// RESP version of the session currently executing.
-        /// 
-        /// Will be 2 or 3.
-        /// </summary>
-        public byte RespVersion { get; }
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
