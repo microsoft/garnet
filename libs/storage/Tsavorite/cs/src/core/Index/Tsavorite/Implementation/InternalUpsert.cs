@@ -80,10 +80,10 @@ namespace Tsavorite.core
                     switch (latchDestination)
                     {
                         case LatchDestination.CreateNewRecord:
-                            if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                            if (stackCtx.recSrc.HasMainLogSrc)
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
                             goto CreateNewRecord;
+
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
                             break;
@@ -136,11 +136,10 @@ namespace Tsavorite.core
                     // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
                     goto CreateNewRecord;
                 }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // Safe Read-Only Region: Create a record in the mutable region, but set srcRecordInfo in case we are eliding.
-                    if (stackCtx.recSrc.HasMainLogSrc)
-                        srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                     goto CreateNewRecord;
                 }
 
