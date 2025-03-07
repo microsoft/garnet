@@ -524,20 +524,20 @@ namespace Garnet.cluster
 
         private void GetNodeInfo(ushort workerId, ConnectionInfo info, StringBuilder nodeInfoStringBuilder)
         {
-            nodeInfoStringBuilder
+            _ = nodeInfoStringBuilder
                 .Append(workers[workerId].Nodeid).Append(' ')
                 .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
                 .Append('@').Append(workers[workerId].Port + 10000).Append(',').Append(workers[workerId].hostname).Append(' ')
                 .Append(workerId == 1 ? "myself," : "")
                 .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(' ')
-                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-").Append(' ')
+                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : '-').Append(' ')
                 .Append(info.ping).Append(' ')
                 .Append(info.pong).Append(' ')
                 .Append(workers[workerId].ConfigEpoch).Append(' ')
                 .Append(info.connected || workerId == 1 ? "connected" : "disconnected");
             AppendSlotRange(nodeInfoStringBuilder, workerId);
             AppendSpecialStates(nodeInfoStringBuilder, workerId);
-            nodeInfoStringBuilder.Append('\n');
+            _ = nodeInfoStringBuilder.Append('\n');
         }
 
         private void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
