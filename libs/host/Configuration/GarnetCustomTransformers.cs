@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Garnet
 {
@@ -62,6 +63,27 @@ namespace Garnet
         public bool TransformBack(string input, out string output, out string errorMessage)
         {
             throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Transforms an array of type T to an object of type T by taking only the first element in the array
+    /// </summary>
+    /// <typeparam name="T">The type of the array</typeparam>
+    internal class ArrayToFirstItemTransformer<T> : IGarnetCustomTransformer<T[], T>
+    {
+        public bool Transform(T[] input, out T output, out string errorMessage)
+        {
+            errorMessage = null;
+            output = input == null || input.Length == 0 ? default : input.First();
+            return true;
+        }
+
+        public bool TransformBack(T input, out T[] output, out string errorMessage)
+        {
+            errorMessage = null;
+            output = [input];
+            return true;
         }
     }
 
