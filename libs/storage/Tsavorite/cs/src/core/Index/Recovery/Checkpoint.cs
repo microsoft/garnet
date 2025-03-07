@@ -74,12 +74,6 @@ namespace Tsavorite.core
             checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
         }
 
-        internal bool ObtainCurrentTailAddress(ref long location)
-        {
-            var tailAddress = hlogBase.GetTailAddress();
-            return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
-        }
-
         internal void InitializeIndexCheckpoint(Guid indexToken)
         {
             _indexCheckpoint.Initialize(indexToken, state[resizeInfo.version].size, checkpointManager);
@@ -88,7 +82,6 @@ namespace Tsavorite.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-            _hybridLogCheckpoint.info.manualLockingActive = hlogBase.NumActiveLockingSessions > 0;
         }
 
         internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<TKey, TValue, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)

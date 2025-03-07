@@ -302,7 +302,6 @@ namespace Garnet
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-            kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
             if (opts.EnableCluster)
             {
@@ -330,7 +329,6 @@ namespace Garnet
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-                objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
                 if (opts.EnableCluster)
                     objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(
