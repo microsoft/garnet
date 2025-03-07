@@ -47,7 +47,7 @@ namespace Garnet.server
         public readonly StoreWrapper StoreWrapper;
 
         /// <inheritdoc/>
-        public abstract bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db);
+        public abstract ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
 
         /// <inheritdoc/>
         public abstract bool TryPauseCheckpoints(int dbId);
@@ -119,7 +119,7 @@ namespace Garnet.server
         public abstract GarnetDatabase[] GetDatabasesSnapshot();
 
         /// <inheritdoc/>
-        public abstract bool TryGetDatabase(int dbId, out GarnetDatabase db);
+        public abstract ref GarnetDatabase TryGetDatabase(int dbId, out bool found);
 
         /// <inheritdoc/>
         public abstract void FlushDatabase(bool unsafeTruncateLog, int dbId = 0);

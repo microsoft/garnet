@@ -78,7 +78,7 @@ namespace Garnet.server
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
+        public GarnetServerTcp TcpServer => server as GarnetServerTcp;
 
         /// <summary>
         /// Access control list governing all commands

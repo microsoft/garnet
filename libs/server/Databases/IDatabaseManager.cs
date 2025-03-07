@@ -61,9 +61,10 @@ namespace Garnet.server
         /// Try to get or add a new database
         /// </summary>
         /// <param name="dbId">Database ID</param>
-        /// <param name="db">Database</param>
-        /// <returns>True if database was retrieved or added successfully</returns>
-        public bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db);
+        /// <param name="success">Database was found or added successfully</param>
+        /// <param name="added">True if database was added</param>
+        /// <returns>Reference to retrieved or added database</returns>
+        public ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
@@ -201,9 +202,9 @@ namespace Garnet.server
         /// Get database DB ID
         /// </summary>
         /// <param name="dbId">DB Id</param>
-        /// <param name="db">Database</param>
-        /// <returns>True if database found</returns>
-        public bool TryGetDatabase(int dbId, out GarnetDatabase db);
+        /// <param name="found">True if database was found</param>
+        /// <returns>Reference to database</returns>
+        public ref GarnetDatabase TryGetDatabase(int dbId, out bool found);
 
         /// <summary>
         /// Flush database with specified ID

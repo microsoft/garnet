@@ -102,6 +102,8 @@ namespace Garnet.server
         readonly bool allowMultiDb;
         internal ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
+        GarnetDatabaseSession activeDatabaseSession;
+
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
@@ -266,7 +268,7 @@ namespace Garnet.server
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
-            return new GarnetDatabaseSession(dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
+            return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
         }
 
         internal void SetUserHandle(UserHandle userHandle)
@@ -1307,8 +1309,8 @@ namespace Garnet.server
         {
             if (!allowMultiDb) return false;
 
-            if (!databaseSessions.TryGetOrSet(dbId, () => CreateDatabaseSession(dbId), out var dbSession, out _))
-                return false;
+            ref var dbSession = ref TryGetOrSetDatabaseSession(dbId, out var success);
+            if (!success) return false;
 
             SwitchActiveDatabaseSession(dbId, ref dbSession);
             return true;
@@ -1319,24 +1321,66 @@ namespace Garnet.server
             if (!allowMultiDb) return false;
             if (dbId1 == dbId2) return true;
 
-            if (!databaseSessions.TryGetOrSet(dbId1, () => CreateDatabaseSession(dbId2), out var dbSession1, out _) ||
-                !databaseSessions.TryGetOrSet(dbId2, () => CreateDatabaseSession(dbId1), out var dbSession2, out _))
-                return false;
+            ref var dbSession1 = ref TryGetOrSetDatabaseSession(dbId1, out var success, dbId2);
+            if (!success) return false;
+            ref var dbSession2 = ref TryGetOrSetDatabaseSession(dbId2, out success, dbId1);
+            if (!success) return false;
 
+            var tmp = dbSession1;
             databaseSessions.Map[dbId1] = dbSession2;
-            databaseSessions.Map[dbId2] = dbSession1;
+            databaseSessions.Map[dbId2] = tmp;
 
             if (activeDbId == dbId1)
-                SwitchActiveDatabaseSession(dbId1, ref dbSession2);
+                SwitchActiveDatabaseSession(dbId1, ref databaseSessions.Map[dbId1]);
             else if (activeDbId == dbId2)
-                SwitchActiveDatabaseSession(dbId2, ref dbSession1);
+                SwitchActiveDatabaseSession(dbId2, ref databaseSessions.Map[dbId2]);
 
             return true;
+        }
+
+        private ref GarnetDatabaseSession TryGetOrSetDatabaseSession(int dbId, out bool success, int dbIdForSessionCreation = -1)
+        {
+            success = false;
+            if (dbIdForSessionCreation == -1)
+                dbIdForSessionCreation = dbId;
+
+            var databaseSessionsMapSize = databaseSessions.ActualSize;
+            var databaseSessionsMapSnapshot = databaseSessions.Map;
+
+            if (dbId >= 0 && dbId < databaseSessionsMapSize && !databaseSessionsMapSnapshot[dbId].IsDefault())
+            {
+                success = true;
+                return ref databaseSessionsMapSnapshot[dbId];
+            }
+
+            databaseSessions.mapLock.WriteLock();
+
+            try
+            {
+                if (dbId >= 0 && dbId < databaseSessionsMapSize && !databaseSessionsMapSnapshot[dbId].IsDefault())
+                {
+                    success = true;
+                    return ref databaseSessionsMapSnapshot[dbId];
+                }
+
+                var dbSession = CreateDatabaseSession(dbIdForSessionCreation);
+                if (!databaseSessions.TrySetValueUnsafe(dbId, ref dbSession, false))
+                    return ref GarnetDatabaseSession.Empty;
+
+                success = true;
+                databaseSessionsMapSnapshot = databaseSessions.Map;
+                return ref databaseSessionsMapSnapshot[dbId];
+            }
+            finally
+            {
+                databaseSessions.mapLock.WriteUnlock();
+            }
         }
 
         private void SwitchActiveDatabaseSession(int dbId, ref GarnetDatabaseSession dbSession)
         {
             this.activeDbId = dbId;
+            this.activeDatabaseSession = dbSession;
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;

@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -43,8 +44,11 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db2.KeyExists(db1Key1));
             ClassicAssert.IsFalse(db2.KeyExists(db1Key2));
 
-            db2.StringSet(db2Key2, "db2:value2");
+            db2.StringSet(db2Key1, "db2:value2");
             db2.SetAdd(db2Key2, [new RedisValue("db2:val2"), new RedisValue("db2:val2")]);
+
+            ClassicAssert.IsTrue(db2.KeyExists(db2Key1));
+            ClassicAssert.IsTrue(db2.KeyExists(db2Key2));
 
             ClassicAssert.IsFalse(db1.KeyExists(db2Key1));
             ClassicAssert.IsFalse(db1.KeyExists(db2Key2));
@@ -368,6 +372,41 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseMultiSessionSwapDatabasesErrorTestLC()
+        {
+            // Ensure that SWAPDB returns an error when multiple clients are connected.
+            var db1Key1 = "db1:key1";
+            var db2Key1 = "db2:key1";
+
+            using var lightClientRequest1 = TestUtils.CreateRequest(); // Session for DB 0 context
+            using var lightClientRequest2 = TestUtils.CreateRequest(); // Session for DB 1 context
+
+            // Add data to DB 0
+            var response = lightClientRequest1.SendCommand($"SET {db1Key1} db1:value1");
+            var expectedResponse = "+OK\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Add data to DB 1
+            response = lightClientRequest2.SendCommand($"SELECT 1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest2.SendCommand($"SET {db2Key1} db2:value1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Swap DB 0 AND DB 1 (from DB 0 context)
+            response = lightClientRequest1.SendCommand($"SWAPDB 0 1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DBSWAP_UNSUPPORTED)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        [Ignore("SWAPDB is currently disallowed for more than one client session. This test should be enabled once that changes.")]
         public void MultiDatabaseMultiSessionSwapDatabasesTestLC()
         {
             var db1Key1 = "db1:key1";
@@ -402,6 +441,11 @@ namespace Garnet.test
 
             response = lightClientRequest2.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
             expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest2.SendCommand($"GET {db2Key1}", 2);
+            expectedResponse = "$10\r\ndb2:value1\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
@@ -827,7 +871,7 @@ namespace Garnet.test
                 }
 
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave + 2));
+                Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave));
 
                 // Verify DB 0 was not saved
                 lastSaveStr = db1.Execute("LASTSAVE").ToString();
@@ -843,6 +887,10 @@ namespace Garnet.test
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
+                var lastSave = 0L;
+                string lastSaveStr;
+                bool parsed;
+
                 // Verify that data was not recovered for DB 0
                 var db1 = redis.GetDatabase(0);
 
@@ -879,13 +927,9 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(backgroundSave ? "Background saving started" : "OK", res.ToString());
 
                 // Verify DB 0 was saved by checking LASTSAVE
-                var lastSave = 0L;
-                string lastSaveStr;
-                bool parsed;
                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 while (!cts.IsCancellationRequested)
                 {
-                    // Verify DB 1 was saved by checking LASTSAVE
                     lastSaveStr = db1.Execute("LASTSAVE").ToString();
                     parsed = long.TryParse(lastSaveStr, out lastSave);
                     ClassicAssert.IsTrue(parsed);
@@ -894,15 +938,16 @@ namespace Garnet.test
                     Task.Delay(TimeSpan.FromMilliseconds(100), cts.Token);
                 }
 
+                var prevLastSave = expectedLastSave;
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave + 2));
+                Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave));
 
                 // Verify DB 1 was not saved
-                Thread.Sleep(TimeSpan.FromSeconds(1));
+                Thread.Sleep(TimeSpan.FromSeconds(2));
                 lastSaveStr = db1.Execute("LASTSAVE", "1").ToString();
                 parsed = long.TryParse(lastSaveStr, out lastSave);
                 ClassicAssert.IsTrue(parsed);
-                ClassicAssert.AreEqual(0, lastSave);
+                Assert.That(lastSave, Is.InRange(prevLastSave - 2, prevLastSave));
             }
 
             // Restart server

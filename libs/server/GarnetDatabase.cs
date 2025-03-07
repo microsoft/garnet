@@ -14,7 +14,7 @@ namespace Garnet.server
     /// <summary>
     /// Represents a logical database in Garnet
     /// </summary>
-    public struct GarnetDatabase : IDisposable
+    public struct GarnetDatabase : IDefaultChecker, IDisposable
     {
         /// <summary>
         /// Default size for version map
@@ -146,5 +146,10 @@ namespace Garnet.server
 
             disposed = true;
         }
+
+        /// <summary>
+        /// Instance of empty database
+        /// </summary>
+        internal static GarnetDatabase Empty;
     }
 }

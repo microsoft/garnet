@@ -290,7 +290,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DBSWAP_UNSUPPORTED, ref dcurr, dend))
                         SendAndReset();
                 }
             }

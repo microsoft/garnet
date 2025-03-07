@@ -37,12 +37,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TryGetOrAddDatabase(int dbId, out GarnetDatabase db)
+        public override ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            db = DefaultDatabase;
-            return true;
+            success = true;
+            added = false;
+            return ref DefaultDatabase;
         }
 
         public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
@@ -294,12 +295,12 @@ namespace Garnet.server
         public override GarnetDatabase[] GetDatabasesSnapshot() => [DefaultDatabase];
 
         /// <inheritdoc/>
-        public override bool TryGetDatabase(int dbId, out GarnetDatabase db)
+        public override ref GarnetDatabase TryGetDatabase(int dbId, out bool found)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            db = DefaultDatabase;
-            return true;
+            found = true;
+            return ref DefaultDatabase;
         }
 
         /// <inheritdoc/>

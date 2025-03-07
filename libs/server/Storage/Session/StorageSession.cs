@@ -73,7 +73,7 @@ namespace Garnet.server
 
             var functions = new MainSessionFunctions(functionsState);
 
-            var dbFound = storeWrapper.databaseManager.TryGetDatabase(dbId, out var db);
+            ref var db = ref storeWrapper.databaseManager.TryGetDatabase(dbId, out var dbFound);
             Debug.Assert(dbFound);
 
             var session = db.MainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);

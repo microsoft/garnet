@@ -16,8 +16,13 @@ namespace Garnet.server
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
-    internal struct GarnetDatabaseSession : IDisposable
+    internal struct GarnetDatabaseSession : IDefaultChecker, IDisposable
     {
+        /// <summary>
+        /// Database ID
+        /// </summary>
+        public int Id;
+
         /// <summary>
         /// Storage session 
         /// </summary>
@@ -35,8 +40,9 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabaseSession(StorageSession storageSession, BasicGarnetApi garnetApi, LockableGarnetApi lockableGarnetApi)
+        public GarnetDatabaseSession(int id, StorageSession storageSession, BasicGarnetApi garnetApi, LockableGarnetApi lockableGarnetApi)
         {
+            this.Id = id;
             this.StorageSession = storageSession;
             this.GarnetApi = garnetApi;
             this.LockableGarnetApi = lockableGarnetApi;
@@ -51,5 +57,12 @@ namespace Garnet.server
 
             disposed = true;
         }
+
+        public bool IsDefault() => StorageSession == null;
+
+        /// <summary>
+        /// Instance of empty database session
+        /// </summary>
+        internal static GarnetDatabaseSession Empty;
     }
 }
