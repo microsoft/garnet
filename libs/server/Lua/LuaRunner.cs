@@ -4381,7 +4381,7 @@ end
 
                     // Advance
                     resp.BufferCur += copyLen;
-                    
+
                     // Flush if we filled the buffer
                     if (destSpace == copyLen)
                     {

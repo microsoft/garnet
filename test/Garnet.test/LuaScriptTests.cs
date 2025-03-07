@@ -2413,7 +2413,7 @@ return count";
             {
                 var keyStr = val.ToString("X4");
 
-                bigMapBytes.AddRange([0xA6, (byte)'f', (byte)'_', (byte)keyStr[0], (byte)keyStr[1], (byte)keyStr[2], (byte)keyStr[3], 4 ]);
+                bigMapBytes.AddRange([0xA6, (byte)'f', (byte)'_', (byte)keyStr[0], (byte)keyStr[1], (byte)keyStr[2], (byte)keyStr[3], 4]);
             }
             var bigMapRes = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(bigMapBytes.ToArray())}).f_0123");
             ClassicAssert.AreEqual(4, bigMapRes);
@@ -2422,7 +2422,7 @@ return count";
             ClassicAssert.AreEqual(6, nestedResp);
 
             var multiResp = (int[])db.ScriptEvaluate($"local a, b, c, d, e = cmsgpack.unpack({ToLuaString(0x01, 0x02, 0x03, 0x04, 0b1001_0001, 0x05)}); return {{e[1], d, c, b, a}}");
-            ClassicAssert.True(multiResp.SequenceEqual([5, 4, 3, 2, 1 ]));
+            ClassicAssert.True(multiResp.SequenceEqual([5, 4, 3, 2, 1]));
 
             // Helper for encoding a byte array into something that can be passed to Lua
             static string ToLuaString(params ReadOnlySpan<byte> data)
@@ -2452,7 +2452,7 @@ return count";
             ClassicAssert.True(packRes.SequenceEqual(new byte[] { 0x01, 0x00, 0x02, 0x00 }));
 
             var unpackRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\\01\\00\\02\\00') }");
-            ClassicAssert.True(unpackRes.SequenceEqual([1, 2, 5 ]));
+            ClassicAssert.True(unpackRes.SequenceEqual([1, 2, 5]));
 
             var sizeRes = (int)db.ScriptEvaluate("return struct.size('HH')");
             ClassicAssert.AreEqual(4, sizeRes);
