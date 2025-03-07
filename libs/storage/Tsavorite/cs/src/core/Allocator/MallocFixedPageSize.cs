@@ -468,9 +468,9 @@ namespace Tsavorite.core
                 Allocate();
             }
 
-            int numRecords = (int)numBytesToRead / RecordSize;
-            int recordsCountInLastLevel = numRecords & PageSizeMask;
-            int numCompleteLevels = numRecords >> PageSizeBits;
+            ulong numRecords = numBytesToRead / (ulong)RecordSize;
+            int recordsCountInLastLevel = checked((int)numRecords) & PageSizeMask;
+            int numCompleteLevels = checked((int)(numRecords >> PageSizeBits));
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
 
             recoveryCountdown = new CountdownWrapper(numLevels, isAsync);
