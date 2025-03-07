@@ -208,6 +208,19 @@ namespace Garnet.server
         /// This should be used for all PushInteger calls into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PushNumber(double number)
+        {
+            AssertLuaStackNotFull();
+
+            NativeMethods.PushNumber(state, number);
+
+            UpdateStackTop(1);
+        }
+
+        /// <summary>
+        /// This should be used for all PushInteger calls into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void PushInteger(long number)
         {
             AssertLuaStackNotFull();
@@ -414,6 +427,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// This should be used for all SetGlobals into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        internal void SetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
+        {
+            AssertLuaStackNotEmpty();
+
+            NativeMethods.SetGlobal(state, nullTerminatedGlobalName);
+
+            UpdateStackTop(-1);
+        }
+
+        /// <summary>
         /// This should be used for all LoadBuffers into Lua.
         /// 
         /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
@@ -514,6 +541,46 @@ namespace Garnet.server
         internal void PushConstantString(int constStringRegistryIndex)
         => RawGetInteger(LuaType.String, (int)LuaRegistry.Index, constStringRegistryIndex);
 
+        /// <summary>
+        /// This should be used for all Nexts into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int Next(int tableIndex)
+        {
+            AssertLuaStackIndexInBounds(tableIndex);
+
+            // Will always remove 1 key, and _may_ push 2 new values for a net growth of 1
+            AssertLuaStackNotFull(1);
+
+            var ret = NativeMethods.Next(state, tableIndex);
+
+            if (ret == 0)
+            {
+                // Removed key, so net negative one
+                UpdateStackTop(-1);
+                return ret;
+            }
+
+
+            UpdateStackTop(1);
+
+            return ret;
+        }
+
+        /// <summary>
+        /// This should be used for all PushValues into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PushValue(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+            AssertLuaStackNotFull();
+
+            NativeMethods.PushValue(state, stackIndex);
+
+            UpdateStackTop(1);
+        }
+
         // Rarely used
 
         /// <summary>
@@ -613,6 +680,15 @@ namespace Garnet.server
         private readonly void AssertLuaStackNotFull(int probe = 1)
         {
             Debug.Assert((StackTop + probe) <= curStackSize, "Lua stack should have been grown before pushing");
+        }
+
+        /// <summary>
+        /// Check that there's space to push some number of elements.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private readonly void AssertLuaStackNotEmpty()
+        {
+            Debug.Assert(StackTop > 0, "Lua stack should not be empty when called");
         }
     }
 

@@ -220,9 +220,12 @@ namespace Garnet.test
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
+            LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
-            int slowLogThreshold = 0)
+            int slowLogThreshold = 0,
+            TextWriter logTo = null
+        )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -302,10 +305,10 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
-                SlowLogThreshold = slowLogThreshold,
+                SlowLogThreshold = slowLogThreshold
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -337,20 +340,26 @@ namespace Garnet.test
                 }
             }
 
-            if (useTestLogger)
+            ILoggerFactory loggerFactory = null;
+            if (useTestLogger || logTo != null)
             {
-                var loggerFactory = LoggerFactory.Create(builder =>
+                loggerFactory = LoggerFactory.Create(builder =>
                 {
-                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
-                    builder.SetMinimumLevel(LogLevel.Trace);
-                });
+                    if (useTestLogger)
+                    {
+                        _ = builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
+                    }
 
-                return new GarnetServer(opts, loggerFactory);
+                    if (logTo != null)
+                    {
+                        _ = builder.AddProvider(new NUnitLoggerProvider(logTo, logLevel: LogLevel.Trace));
+                    }
+
+                    _ = builder.SetMinimumLevel(LogLevel.Trace);
+                });
             }
-            else
-            {
-                return new GarnetServer(opts);
-            }
+
+            return new GarnetServer(opts, loggerFactory);
         }
 
         /// <summary>
@@ -511,6 +520,7 @@ namespace Garnet.test
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
+            LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             string unixSocketPath = null)
         {
             if (useAzureStorage)
@@ -614,7 +624,7 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = 1
