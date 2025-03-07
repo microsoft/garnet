@@ -95,21 +95,30 @@ namespace Garnet
                 if (!TryChangeType(value, typeof(string), optType, out var newVal))
                 {
                     // If unsuccessful and if underlying option type is an array, try to deserialize array by elements
-                    // Split the values in the serialized array
-                    var values = value.Split(' ');
-
-                    // Instantiate a new array
-                    var elemType = optType.GenericTypeArguments.First();
-                    newVal = Array.CreateInstance(elemType, values.Length);
-
-                    // Try deserializing and setting array elements
-                    for (var i = 0; i < values.Length; i++)
+                    if (optType.IsArray)
                     {
-                        if (!TryChangeType(values[i], typeof(string), elemType, out var elem))
-                            throw new RedisSerializationException(
-                                $"Unable to deserialize {nameof(RedisOptions)} object. Unable to convert object of type {typeof(string)} to object of type {elemType}. (Line: {lineCount}; Key: {key}; Property: {prop.Name}).");
+                        // Split the values in the serialized array
+                        var values = value.Split(' ');
 
-                        ((Array)newVal).SetValue(elem, i);
+                        // Instantiate a new array
+                        var elemType = optType.GetElementType();
+                        newVal = Array.CreateInstance(elemType, values.Length);
+
+                        // Try deserializing and setting array elements
+                        for (var i = 0; i < values.Length; i++)
+                        {
+                            if (!TryChangeType(values[i], typeof(string), elemType, out var elem))
+                                throw new RedisSerializationException(
+                                    $"Unable to deserialize {nameof(RedisOptions)} object. Unable to convert object of type {typeof(string)} to object of type {elemType}. (Line: {lineCount}; Key: {key}; Property: {prop.Name}).");
+
+
+                            ((Array)newVal).SetValue(elem, i);
+                        }
+                    }
+                    else
+                    {
+                        throw new RedisSerializationException(
+                            $"Unable to deserialize {nameof(RedisOptions)} object. Unable to convert object of type {typeof(string)} to object of type {optType}. (Line: {lineCount}; Key: {key}; Property: {prop.Name}).");
                     }
                 }
 

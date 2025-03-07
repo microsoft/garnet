@@ -357,17 +357,15 @@ namespace Garnet
         /// <returns></returns>
         protected override ValidationResult IsValid(object value, ValidationContext validationContext)
         {
-            if (TryInitialValidation<string[]>(value, validationContext, out var initValidationResult, out var ipAddresses))
+            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddresses))
                 return initValidationResult;
 
             var logger = ((Options)validationContext.ObjectInstance).runtimeLogger;
-            foreach (var ipAddress in ipAddresses)
-            {
-                if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) || Format.TryCreateEndpoint(ipAddress, 0, useForBind: false, logger: logger).Result != null)
-                    continue;
 
+            if (!Format.TryParseAddressList(ipAddresses, 0, out var endpoints, out var errorHostnameOrAddress, useForBind: false, logger: logger))
+            {
                 var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
-                var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {ipAddress}";
+                var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {errorHostnameOrAddress}";
                 return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
