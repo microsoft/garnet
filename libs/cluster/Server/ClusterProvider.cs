@@ -88,8 +88,8 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
-            => new ClusterSession(this, txnManager, authenticator, user, garnetSessionMetrics, basicGarnetApi, networkSender, logger);
+        public IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+            => new ClusterSession(this, txnManager, authenticator, userHandle, garnetSessionMetrics, basicGarnetApi, networkSender, logger);
 
         /// <inheritdoc />
         public void UpdateClusterAuth(string clusterUsername, string clusterPassword)
@@ -179,7 +179,7 @@ namespace Garnet.cluster
                 _ = replicationManager.SafeTruncateAof(CheckpointCoveredAofAddress);
             else
             {
-                if (serverOptions.MainMemoryReplication)
+                if (serverOptions.FastAofTruncate)
                     storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
                 else
                 {
@@ -263,7 +263,7 @@ namespace Garnet.cluster
             if (!serverOptions.EnableCluster)
             {
                 return (replicationManager.ReplicationOffset, default);
-            };
+            }
 
             return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
         }

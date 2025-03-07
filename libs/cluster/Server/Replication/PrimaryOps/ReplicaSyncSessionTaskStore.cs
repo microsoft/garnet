@@ -16,8 +16,11 @@ namespace Garnet.cluster
         int numSessions;
         SingleWriterMultiReaderLock _lock;
         readonly ILogger logger;
-
         private bool _disposed;
+
+        public ReplicaSyncSession[] GetSessions() => sessions;
+
+        public int GetNumSessions() => numSessions;
 
         public ReplicaSyncSessionTaskStore(StoreWrapper storeWrapper, ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -28,13 +31,16 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
+        /// <summary>
+        /// Dispose this Replica Sync Session Task Store
+        /// </summary>
         public void Dispose()
         {
             try
             {
                 _lock.WriteLock();
                 _disposed = true;
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
                     s.Dispose();
@@ -48,17 +54,81 @@ namespace Garnet.cluster
             }
         }
 
-        public bool TryAddReplicaSyncSession(string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
+        /// <summary>
+        /// Check if the session is the first in the array
+        /// NOTE: used for leader task spawn in AttachSync
+        /// </summary>
+        /// <param name="session"></param>
+        /// <returns></returns>
+        public bool IsFirst(ReplicaSyncSession session)
         {
-            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, remoteNodeId, remote_primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
-            bool success = false;
+            try
+            {
+                _lock.ReadLock();
+                if (_disposed) return false;
+                return numSessions > 0 && sessions[0] == session;
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Add a new replica sync session
+        /// </summary>
+        /// <param name="session"></param>
+        /// <returns></returns>
+        public bool TryAddReplicaSyncSession(ReplicaSyncSession session)
+        {
             try
             {
                 _lock.WriteLock();
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.remoteNodeId == retSession.remoteNodeId)
+                    if (s.replicaNodeId == session.replicaSyncMetadata.originNodeId)
+                    {
+                        logger?.LogError("Error syncSession for {replicaNodeId} already exists", session.replicaNodeId);
+                        return false;
+                    }
+                }
+
+                GrowSessionArray();
+                sessions[numSessions++] = session;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(TryAddReplicaSyncSession)}");
+                return false;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Add a new replica sync session
+        /// </summary>
+        /// <param name="replicaNodeId"></param>
+        /// <param name="replicaAssignedPrimaryId"></param>
+        /// <param name="replicaCheckpointEntry"></param>
+        /// <param name="replicaAofBeginAddress"></param>
+        /// <param name="replicaAofTailAddress"></param>
+        /// <returns></returns>
+        public bool TryAddReplicaSyncSession(string replicaNodeId, string replicaAssignedPrimaryId, CheckpointEntry replicaCheckpointEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
+        {
+            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, replicaSyncMetadata: null, timeout: default, token: default, replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
+            var success = false;
+            try
+            {
+                _lock.WriteLock();
+                for (var i = 0; i < numSessions; i++)
+                {
+                    var s = sessions[i];
+                    if (s.replicaNodeId == retSession.replicaNodeId)
                     {
                         success = false;
                         return false;
@@ -84,16 +154,6 @@ namespace Garnet.cluster
             }
         }
 
-        private void GrowSessionArray()
-        {
-            if (numSessions == sessions.Length)
-            {
-                var _sessions = new ReplicaSyncSession[sessions.Length << 1];
-                Array.Copy(sessions, _sessions, sessions.Length);
-                sessions = _sessions;
-            }
-        }
-
         public bool TryRemove(string remoteNodeId)
         {
             try
@@ -103,7 +163,7 @@ namespace Garnet.cluster
                 for (int i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (s.remoteNodeId == remoteNodeId)
+                    if (s.replicaNodeId == remoteNodeId)
                     {
                         sessions[i] = null;
                         if (i < numSessions - 1)
@@ -126,6 +186,68 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Get session associated with replica sync session
+        /// </summary>
+        /// <param name="remoteNodeId"></param>
+        /// <param name="session"></param>
+        /// <returns></returns>
+        public bool TryGetSession(string remoteNodeId, out ReplicaSyncSession session)
+        {
+            session = null;
+            try
+            {
+                _lock.ReadLock();
+                if (_disposed) return false;
+
+                for (var i = 0; i < numSessions; i++)
+                {
+                    session = sessions[i];
+                    if (session.replicaNodeId == remoteNodeId)
+                        return true;
+                }
+                return false;
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
+
+        /// <summary>
+        /// Clear references to task store
+        /// </summary>
+        /// <returns></returns>
+        public void Clear()
+        {
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return;
+                for (var i = 0; i < numSessions; i++)
+                {
+                    var s = sessions[i];
+                    sessions[i] = null;
+                }
+                numSessions = 0;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        private void GrowSessionArray()
+        {
+            if (numSessions == sessions.Length)
+            {
+                var _sessions = new ReplicaSyncSession[sessions.Length << 1];
+                Array.Copy(sessions, _sessions, sessions.Length);
+                sessions = _sessions;
+            }
+        }
+
         private void ShrinkSessionArray()
         {
             //Shrink the array if it got too big but avoid often shrinking/growing
@@ -136,28 +258,6 @@ namespace Garnet.cluster
                 Array.Copy(sessions, _sessions, sessions.Length >> 2);
                 sessions = _sessions;
                 Array.Clear(oldSessions);
-            }
-        }
-
-        public bool TryGetSession(string remoteNodeId, out ReplicaSyncSession session)
-        {
-            session = null;
-            try
-            {
-                _lock.ReadLock();
-                if (_disposed) return false;
-
-                for (int i = 0; i < numSessions; i++)
-                {
-                    session = sessions[i];
-                    if (session.remoteNodeId == remoteNodeId)
-                        return true;
-                }
-                return false;
-            }
-            finally
-            {
-                _lock.ReadUnlock();
             }
         }
     }

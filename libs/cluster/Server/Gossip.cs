@@ -161,7 +161,12 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    gsn = new GarnetServerNode(clusterProvider, new IPEndPoint(IPAddress.Parse(address), port), tlsOptions?.TlsClientOptions, logger: logger);
+                    var endpoint = await Format.TryCreateEndpoint(address, port, useForBind: true, logger: logger);
+                    if (endpoint == null)
+                    {
+                        logger?.LogError("Could not parse endpoint {address} {port}", address, port);
+                    }
+                    gsn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, logger: logger);
                     created = true;
                 }
 

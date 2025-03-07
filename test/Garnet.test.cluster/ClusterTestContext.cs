@@ -65,9 +65,10 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
+            var timeoutSeconds = 5;
+            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
-            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(15)))
+            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
         }
 
@@ -89,18 +90,27 @@ namespace Garnet.test.cluster
         /// <param name="pageSize"></param>
         /// <param name="segmentSize"></param>
         /// <param name="enableAOF"></param>
-        /// <param name="mainMemoryReplication"></param>
-        /// <param name="onDemandCheckpoint"></param>
-        /// <param name="aofMemorySize"></param>
-        /// <param name="commitFrequencyMs"></param>
-        /// <param name="disableStorageTier"></param>
-        /// <param name="enableIncrementalSnapshots"></param>
-        /// <param name="fastCommit"></param>
-        /// <param name="useAcl"></param>
-        /// <param name="clusterCreds"></param>
+        /// <param name="FastAofTruncate"></param>
+        /// <param name="OnDemandCheckpoint"></param>
+        /// <param name="AofMemorySize"></param>
+        /// <param name="CommitFrequencyMs"></param>
+        /// <param name="DisableStorageTier"></param>
+        /// <param name="EnableIncrementalSnapshots"></param>
+        /// <param name="FastCommit"></param>
         /// <param name="timeout"></param>
         /// <param name="useTLS"></param>
+        /// <param name="useAcl"></param>
         /// <param name="certificates"></param>
+        /// <param name="clusterCreds"></param>
+        /// <param name="authenticationSettings"></param>
+        /// <param name="disablePubSub"></param>
+        /// <param name="metricsSamplingFrequency"></param>
+        /// <param name="enableLua"></param>
+        /// <param name="asyncReplay"></param>
+        /// <param name="enableDisklessSync"></param>
+        /// <param name="luaMemoryMode"></param>
+        /// <param name="luaMemoryLimit"></param>
+        /// <param name="useHostname"></param>
         public void CreateInstances(
             int shards,
             bool cleanClusterConfig = true,
@@ -111,13 +121,13 @@ namespace Garnet.test.cluster
             string pageSize = default,
             string segmentSize = "1g",
             bool enableAOF = false,
-            bool mainMemoryReplication = false,
-            bool onDemandCheckpoint = false,
-            string aofMemorySize = "64m",
-            int commitFrequencyMs = 0,
-            bool disableStorageTier = false,
-            bool enableIncrementalSnapshots = false,
-            bool fastCommit = true,
+            bool FastAofTruncate = false,
+            bool OnDemandCheckpoint = false,
+            string AofMemorySize = "64m",
+            int CommitFrequencyMs = 0,
+            bool DisableStorageTier = false,
+            bool EnableIncrementalSnapshots = false,
+            bool FastCommit = true,
             int timeout = -1,
             bool useTLS = false,
             bool useAcl = false,
@@ -128,11 +138,14 @@ namespace Garnet.test.cluster
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
+            bool enableDisklessSync = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            bool useHostname = false)
         {
-            TestUtils.EndPoint = new IPEndPoint(IPAddress.Loopback, 7000);
-            endpoints = TestUtils.GetShardEndPoints(shards, IPAddress.Loopback, 7000);
+            var ipAddress = IPAddress.Loopback;
+            TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
+            endpoints = TestUtils.GetShardEndPoints(shards, useHostname ? IPAddress.Any : ipAddress, 7000);
 
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
@@ -149,13 +162,13 @@ namespace Garnet.test.cluster
                 MemorySize: memorySize,
                 PageSize: pageSize,
                 SegmentSize: segmentSize,
-                MainMemoryReplication: mainMemoryReplication,
-                AofMemorySize: aofMemorySize,
-                CommitFrequencyMs: commitFrequencyMs,
-                DisableStorageTier: disableStorageTier,
-                OnDemandCheckpoint: onDemandCheckpoint,
-                EnableIncrementalSnapshots: enableIncrementalSnapshots,
-                FastCommit: fastCommit,
+                FastAofTruncate: FastAofTruncate,
+                AofMemorySize: AofMemorySize,
+                CommitFrequencyMs: CommitFrequencyMs,
+                DisableStorageTier: DisableStorageTier,
+                OnDemandCheckpoint: OnDemandCheckpoint,
+                EnableIncrementalSnapshots: EnableIncrementalSnapshots,
+                FastCommit: FastCommit,
                 useAcl: useAcl,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
@@ -165,11 +178,14 @@ namespace Garnet.test.cluster
                 metricsSamplingFrequency: metricsSamplingFrequency,
                 enableLua: enableLua,
                 asyncReplay: asyncReplay,
+                enableDisklessSync: enableDisklessSync,
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit);
 
             foreach (var node in nodes)
                 node.Start();
+
+            endpoints = TestUtils.GetShardEndPoints(shards, ipAddress, 7000);
         }
 
         /// <summary>
@@ -184,7 +200,7 @@ namespace Garnet.test.cluster
         /// <param name="PageSize"></param>
         /// <param name="SegmentSize"></param>
         /// <param name="enableAOF"></param>
-        /// <param name="MainMemoryReplication"></param>
+        /// <param name="FastAofTruncate"></param>
         /// <param name="OnDemandCheckpoint"></param>
         /// <param name="AofMemorySize"></param>
         /// <param name="CommitFrequencyMs"></param>
@@ -195,6 +211,7 @@ namespace Garnet.test.cluster
         /// <param name="gossipDelay"></param>
         /// <param name="useTLS"></param>
         /// <param name="useAcl"></param>
+        /// <param name="asyncReplay"></param>
         /// <param name="clusterCreds"></param>
         /// <param name="certificates"></param>
         /// <returns></returns>
@@ -209,7 +226,7 @@ namespace Garnet.test.cluster
             string PageSize = default,
             string SegmentSize = "1g",
             bool enableAOF = false,
-            bool MainMemoryReplication = false,
+            bool FastAofTruncate = false,
             bool OnDemandCheckpoint = false,
             string AofMemorySize = "64m",
             int CommitFrequencyMs = 0,
@@ -241,7 +258,7 @@ namespace Garnet.test.cluster
                 memorySize: MemorySize,
                 pageSize: PageSize,
                 segmentSize: SegmentSize,
-                mainMemoryReplication: MainMemoryReplication,
+                fastAofTruncate: FastAofTruncate,
                 aofMemorySize: AofMemorySize,
                 commitFrequencyMs: CommitFrequencyMs,
                 disableStorageTier: DisableStorageTier,
@@ -390,9 +407,11 @@ namespace Garnet.test.cluster
                 while (kvPairsObj.ContainsKey(key))
                     key = clusterTestUtils.RandomStr(keyLength);
                 kvPairsObj.Add(key, value);
-
+                int count;
                 if (!set)
-                    clusterTestUtils.Lpush(primaryIndex, key, value, logger);
+                {
+                    count = clusterTestUtils.Lpush(primaryIndex, key, value, logger);
+                }
                 else
                     clusterTestUtils.Sadd(primaryIndex, key, value, logger);
 
@@ -454,30 +473,30 @@ namespace Garnet.test.cluster
                 while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out _, out _, out responseState, logger: logger);
-                    ClusterTestUtils.BackOff(cancellationToken: cts.Token);
+                    ClusterTestUtils.BackOff(cancellationToken: cts.Token, msg: $"{clusterTestUtils.GetEndPoint(primaryIndex)} > {clusterTestUtils.GetEndPoint(replicaIndex)}");
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
             }
         }
 
-        public void ValidateNodeObjects(ref Dictionary<string, List<int>> kvPairsObj, int nodeIndex, bool set = false)
+        public void ValidateNodeObjects(ref Dictionary<string, List<int>> kvPairsObj, int replicaIndex, bool set = false)
         {
             foreach (var key in kvPairsObj.Keys)
             {
                 var elements = kvPairsObj[key];
                 List<int> result;
                 if (!set)
-                    result = clusterTestUtils.Lrange(nodeIndex, key, logger);
+                    result = clusterTestUtils.Lrange(replicaIndex, key, logger);
                 else
-                    result = clusterTestUtils.Smembers(nodeIndex, key, logger);
+                    result = clusterTestUtils.Smembers(replicaIndex, key, logger);
 
                 while (result.Count == 0)
                 {
                     if (!set)
-                        result = clusterTestUtils.Lrange(nodeIndex, key, logger);
+                        result = clusterTestUtils.Lrange(replicaIndex, key, logger);
                     else
-                        result = clusterTestUtils.Smembers(nodeIndex, key, logger);
+                        result = clusterTestUtils.Smembers(replicaIndex, key, logger);
                     ClusterTestUtils.BackOff(cancellationToken: cts.Token);
                 }
                 if (!set)

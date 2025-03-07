@@ -208,14 +208,12 @@ namespace Garnet.common
             var totalBufferCount = 0;
             for (var i = 0; i < numLevels; i++)
             {
-                if (pool[i] == null || pool[i].items.Count == 0) continue;
-                totalBufferCount += pool[i].items.Count;
-                bufferStats += $"<{pool[i].items.Count}:{Format.MemoryBytes(minAllocationSize << i)}>";
+                var items = pool[i] == null || pool[i].items.IsEmpty ? 0 : pool[i].items.Count;
+                totalBufferCount += items;
+                bufferStats += $",{items}={Format.MemoryBytes(minAllocationSize << i)}";
             }
 
-            if (totalBufferCount > 0)
-                stats += $",totalBufferCount={totalBufferCount},[" + bufferStats + "]";
-
+            stats += $",totalBufferCount={totalBufferCount}" + bufferStats;
             return stats;
         }
 

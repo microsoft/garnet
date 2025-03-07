@@ -72,6 +72,8 @@ namespace Garnet.test
         }
         internal static string AzureTestDirectory => TestContext.CurrentContext.Test.MethodName;
         internal const string AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
+        internal static AzureStorageNamedDeviceFactoryCreator AzureStorageNamedDeviceFactoryCreator =
+            IsRunningAzureTests ? new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, null) : null;
 
         public const string certFile = "testcert.pfx";
         public const string certPassword = "placeholder";
@@ -217,6 +219,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            TimeSpan? luaTimeout = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0)
@@ -286,8 +289,8 @@ namespace Garnet.test
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
-                      () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
-                    : () => new LocalStorageNamedDeviceFactory(logger: logger),
+                        logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
+                        : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
                 AuthSettings = authenticationSettings,
                 ExtensionBinPaths = extensionBinPaths,
                 ExtensionAllowUnsignedAssemblies = extensionAllowUnsignedAssemblies,
@@ -299,7 +302,7 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
@@ -386,7 +389,7 @@ namespace Garnet.test
             string MemorySize = default,
             string PageSize = default,
             string SegmentSize = "1g",
-            bool MainMemoryReplication = false,
+            bool FastAofTruncate = false,
             string AofMemorySize = "64m",
             bool OnDemandCheckpoint = false,
             int CommitFrequencyMs = 0,
@@ -403,15 +406,16 @@ namespace Garnet.test
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
+            bool enableDisklessSync = false,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            GarnetServer[] nodes = new GarnetServer[endpoints.Count];
-            for (int i = 0; i < nodes.Length; i++)
+            var nodes = new GarnetServer[endpoints.Count];
+            for (var i = 0; i < nodes.Length; i++)
             {
-                IPEndPoint endpoint = (IPEndPoint)endpoints[i];
+                var endpoint = (IPEndPoint)endpoints[i];
 
                 var opts = GetGarnetServerOptions(
                     checkpointDir,
@@ -430,7 +434,7 @@ namespace Garnet.test
                     memorySize: MemorySize,
                     pageSize: PageSize,
                     segmentSize: SegmentSize,
-                    mainMemoryReplication: MainMemoryReplication,
+                    fastAofTruncate: FastAofTruncate,
                     aofMemorySize: AofMemorySize,
                     onDemandCheckpoint: OnDemandCheckpoint,
                     commitFrequencyMs: CommitFrequencyMs,
@@ -447,6 +451,7 @@ namespace Garnet.test
                     metricsSamplingFrequency: metricsSamplingFrequency,
                     enableLua: enableLua,
                     asyncReplay: asyncReplay,
+                    enableDisklessSync: enableDisklessSync,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit);
 
@@ -454,7 +459,7 @@ namespace Garnet.test
 
                 if (opts.EndPoint is IPEndPoint ipEndpoint)
                 {
-                    int iter = 0;
+                    var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
                     {
                         ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
@@ -485,7 +490,7 @@ namespace Garnet.test
             string memorySize = default,
             string pageSize = default,
             string segmentSize = "1g",
-            bool mainMemoryReplication = false,
+            bool fastAofTruncate = false,
             string aofMemorySize = "64m",
             bool onDemandCheckpoint = false,
             int commitFrequencyMs = 0,
@@ -501,9 +506,11 @@ namespace Garnet.test
             int metricsSamplingFrequency = 0,
             bool enableLua = false,
             bool asyncReplay = false,
+            bool enableDisklessSync = false,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
+            TimeSpan? luaTimeout = null,
             string unixSocketPath = null)
         {
             if (useAzureStorage)
@@ -595,9 +602,9 @@ namespace Garnet.test
                     logger: logger)
                 : null,
                 DeviceFactoryCreator = useAzureStorage ?
-                    () => new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, logger)
-                    : () => new LocalStorageNamedDeviceFactory(logger: logger),
-                MainMemoryReplication = mainMemoryReplication,
+                    logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
+                    : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
+                FastAofTruncate = fastAofTruncate,
                 AofMemorySize = aofMemorySize,
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
@@ -607,8 +614,10 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit) : null,
-                UnixSocketPath = unixSocketPath
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan) : null,
+                UnixSocketPath = unixSocketPath,
+                ReplicaDisklessSync = enableDisklessSync,
+                ReplicaDisklessSyncDelay = 1
             };
 
             if (lowMemory)
@@ -753,10 +762,26 @@ namespace Garnet.test
             return new LightClientRequest(EndPoint, 0, onReceive, sslOptions, countResponseType);
         }
 
+        public static string GetHostName(ILogger logger = null)
+        {
+            try
+            {
+                var serverName = Environment.MachineName; // host name sans domain
+                var fqhn = Dns.GetHostEntry(serverName).HostName; // fully qualified hostname
+                return fqhn;
+            }
+            catch (SocketException ex)
+            {
+                logger?.LogError(ex, "GetHostName threw an error");
+            }
+
+            return "";
+        }
+
         public static EndPointCollection GetShardEndPoints(int shards, IPAddress address, int port)
         {
             EndPointCollection endPoints = [];
-            for (int i = 0; i < shards; i++)
+            for (var i = 0; i < shards; i++)
                 endPoints.Add(address, port + i);
             return endPoints;
         }
