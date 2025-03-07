@@ -33,10 +33,6 @@ namespace Tsavorite.core
         ///     <term>RETRY_LATER</term>
         ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later</term>
         ///     </item>
-        ///     <item>
-        ///     <term>CPR_SHIFT_DETECTED</term>
-        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
-        ///     </item>
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -88,8 +84,6 @@ namespace Tsavorite.core
                     var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
-                        case LatchDestination.Retry:
-                            goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();

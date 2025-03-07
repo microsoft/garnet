@@ -668,11 +668,11 @@ namespace Garnet.server
 
                     if (!indexMaxedOut)
                         indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                            () => store.IndexSize, () => store.GrowIndex());
+                            () => store.IndexSize, async () => await store.GrowIndexAsync());
 
                     if (!objectStoreIndexMaxedOut)
                         objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, objectStore.OverflowBucketAllocations,
-                            () => objectStore.IndexSize, () => objectStore.GrowIndex());
+                            () => objectStore.IndexSize, async () => await objectStore.GrowIndexAsync());
                 }
             }
             catch (Exception ex)
