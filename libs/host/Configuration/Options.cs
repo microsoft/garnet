@@ -40,8 +40,8 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Separator = ' ', Required = false, HelpText = "IP address to bind server to (default: any)")]
-        public IEnumerable<string> Address { get; set; }
+        [Option("bind", Required = false, HelpText = "IP address to bind server to (default: any)")]
+        public string Address { get; set; }
 
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -663,8 +663,7 @@ namespace Garnet
             }
             else
             {
-                endpoints = Address.SelectMany(Address => Format.TryCreateEndpoint(Address, Port, useForBind: false).Result).ToArray();
-                if (endpoints.Length == 0)
+                if (!Format.TryParseAddressList(Address, Port, out endpoints, out _) || endpoints.Length == 0)
                     throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
             }
 

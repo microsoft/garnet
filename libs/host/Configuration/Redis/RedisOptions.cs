@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 
 namespace Garnet
 {
@@ -19,13 +18,14 @@ namespace Garnet
     /// </summary>
     internal class RedisOptions
     {
+        private const string BindWarning = "Only first IP address specified in bind option is used. All other addresses are ignored.";
         private const string TlsPortWarning = "tls-port option is used only to determine if TLS is enabled. The port value is otherwise ignored.";
         private const string TlsCertFileWarning = @"When using tls-cert-file make sure to first convert your certificate format to .pfx. 
 Specify your passphrase in the tls-key-file-pass option (or via the cert-password command line argument), if applicable. 
 Specify your subject name via the cert-subject-name command line argument, if applicable.";
 
-        [RedisOption("bind", nameof(Options.Address))]
-        public Option<IEnumerable<string>> Bind { get; set; }
+        [RedisOption("bind", nameof(Options.Address), BindWarning, typeof(ArrayToFirstItemTransformer<string>))]
+        public Option<string[]> Bind { get; set; }
 
         [RedisOption("enable-debug-command", nameof(Options.EnableDebugCommand))]
         public Option<RedisConnectionProtectionOption> EnableDebugCommand { get; set; }
