@@ -92,10 +92,10 @@ namespace Tsavorite.core
                         case LatchDestination.Retry:
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
-                            if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                            if (stackCtx.recSrc.HasMainLogSrc)
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
                             goto CreateNewRecord;
+
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
                             break;
@@ -163,7 +163,7 @@ namespace Tsavorite.core
                     status = OperationStatus.RETRY_LATER;
                     goto LatchRelease;
                 }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // Safe Read-Only Region: CopyUpdate to create a record in the mutable region.
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -325,7 +325,7 @@ namespace Tsavorite.core
                     if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
                         break;      // Normal Processing; V+1 thread encountered a record in V+1
 
-                    if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                    if (stackCtx.recSrc.HasMainLogSrc)
                         return LatchDestination.CreateNewRecord;    // Record is in memory so force creation of a (V+1) record
                     break;  // Normal Processing; the record is below HeadAddress so the operation will go pending
 
