@@ -2442,6 +2442,23 @@ return count";
         }
 
         [Test]
+        public void Struct()
+        {
+            // Redis struct.pack/unpack/size is a subset of Lua's string.pack/unpack/packsize; so just testing for basic functionality
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var packRes = (byte[])db.ScriptEvaluate("return struct.pack('HH', 1, 2)");
+            ClassicAssert.True(packRes.SequenceEqual(new byte[] { 0x01, 0x00, 0x02, 0x00 }));
+
+            var unpackRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\\01\\00\\02\\00') }");
+            ClassicAssert.True(unpackRes.SequenceEqual([1, 2, 5 ]));
+
+            var sizeRes = (int)db.ScriptEvaluate("return struct.size('HH')");
+            ClassicAssert.AreEqual(4, sizeRes);
+        }
+
+        [Test]
         [Ignore("Long running, disabled by default")]
         public void StressTimeouts()
         {

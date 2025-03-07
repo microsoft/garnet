@@ -288,6 +288,13 @@ local cmsgpack = {
     unpack = garnet_cmsgpack_unpack;
 }
 
+-- define struct for (optional) inclusion into sandbox_env
+local struct = {
+    pack = string.pack;
+    unpack = string.unpack;
+    size = string.packsize;
+}
+
 -- unpack moved after Lua 5.1, this provides Redis compat
 local unpack = table.unpack
 
