@@ -193,6 +193,13 @@ namespace Garnet.server
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
         private static partial int lua_next(lua_State luaState, int tableIndex);
 
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_rotate
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial void lua_rotate(lua_State luaState, int stackIndex, int n);
+
         // GC Transition suppressed - only do this after auditing the Lua method and confirming constant-ish, fast, runtime w/o allocations
 
         /// <summary>
@@ -663,6 +670,15 @@ namespace Garnet.server
         /// </summary>
         internal static void SetTop(lua_State lua_State, int top)
         => lua_settop(lua_State, top);
+
+        /// <summary>
+        /// Rotates elements above (and including) <paramref name="stackIndex"/> in <paramref name="n"/> steps in
+        /// the direction of the top of the stack.
+        /// 
+        /// <paramref name="n"/> can be negative.
+        /// </summary>
+        internal static void Rotate(lua_State luaState, int stackIndex, int n)
+        => lua_rotate(luaState, stackIndex, n);
 
         /// <summary>
         /// Raise an error, using the top of the stack as an error item.

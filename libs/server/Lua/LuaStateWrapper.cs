@@ -7,7 +7,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -617,6 +616,20 @@ namespace Garnet.server
             NativeMethods.PushValue(state, stackIndex);
 
             UpdateStackTop(1);
+        }
+
+        /// <summary>
+        /// This should be used for all Removes into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Remove(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+
+            NativeMethods.Rotate(state, stackIndex, -1);
+            NativeMethods.Pop(state, 1);
+
+            UpdateStackTop(-1);
         }
 
         // Rarely used

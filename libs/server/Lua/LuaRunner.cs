@@ -1846,7 +1846,7 @@ end
             try
             {
                 var parsed = JsonNode.Parse(buff);
-                Decode(parsed, ref state);
+                Decode(this, parsed);
 
                 return 1;
             }
@@ -1859,92 +1859,98 @@ end
             }
 
             // Convert the JsonNode into a Lua value on the stack
-            static void Decode(JsonNode node, ref LuaStateWrapper state)
+            static void Decode(LuaRunner self, JsonNode node)
             {
                 if (node is JsonValue v)
                 {
-                    DecodeValue(v, ref state);
+                    DecodeValue(self, v);
                 }
                 else if (node is JsonArray a)
                 {
-                    DecodeArray(a, ref state);
+                    DecodeArray(self, a);
                 }
                 else if (node is JsonObject o)
                 {
-                    DecodeObject(o, ref state);
+                    DecodeObject(self, o);
                 }
                 else
                 {
-                    _ = state.RaiseError($"Unexpected json node type: {node.GetType().Name}");
+                    _ = self.state.RaiseError($"Unexpected json node type: {node.GetType().Name}");
                 }
             }
 
             // Convert the JsonValue int to a Lua string, nil, or number on the stack
-            static void DecodeValue(JsonValue value, ref LuaStateWrapper state)
+            static void DecodeValue(LuaRunner self, JsonValue value)
             {
                 // Reserve space for the value
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
                 switch (value.GetValueKind())
                 {
-                    case JsonValueKind.Null: state.PushNil(); break;
-                    case JsonValueKind.True: state.PushBoolean(true); break;
-                    case JsonValueKind.False: state.PushBoolean(false); break;
-                    case JsonValueKind.Number: state.PushNumber(value.GetValue<double>()); break;
+                    case JsonValueKind.Null: self.state.PushNil(); break;
+                    case JsonValueKind.True: self.state.PushBoolean(true); break;
+                    case JsonValueKind.False: self.state.PushBoolean(false); break;
+                    case JsonValueKind.Number: self.state.PushNumber(value.GetValue<double>()); break;
                     case JsonValueKind.String:
                         var str = value.GetValue<string>();
 
-                        // TODO: reuseable buffer?
-                        state.PushBuffer(Encoding.UTF8.GetBytes(str));
+                        self.scratchBufferManager.Reset();
+                        var buf = self.scratchBufferManager.UTF8EncodeString(str);
+
+                        self.state.PushBuffer(buf);
                         break;
                     case JsonValueKind.Undefined:
                     case JsonValueKind.Object:
                     case JsonValueKind.Array:
                     default:
-                        _ = state.RaiseError($"Unexpected json value kind: {value.GetValueKind()}");
+                        _ = self.state.RaiseError($"Unexpected json value kind: {value.GetValueKind()}");
                         break;
                 }
             }
 
             // Convert the JsonArray into a Lua table on the stack
-            static void DecodeArray(JsonArray arr, ref LuaStateWrapper state)
+            static void DecodeArray(LuaRunner self, JsonArray arr)
             {
                 // Reserve space for the table
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
-                state.CreateTable(arr.Count, 0);
+                self.state.CreateTable(arr.Count, 0);
 
-                var tableIndex = state.StackTop;
+                var tableIndex = self.state.StackTop;
 
                 var storeAtIx = 1;
                 foreach (var item in arr)
                 {
                     // Places item on the stack
-                    Decode(item, ref state);
+                    Decode(self, item);
 
                     // Save into the table
-                    state.RawSetInteger(tableIndex, storeAtIx);
+                    self.state.RawSetInteger(tableIndex, storeAtIx);
                     storeAtIx++;
                 }
             }
 
             // Convert the JsonObject into a Lua table on the stack
-            static void DecodeObject(JsonObject obj, ref LuaStateWrapper state)
+            static void DecodeObject(LuaRunner self, JsonObject obj)
             {
                 // Reserve space for table and key
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
-                state.CreateTable(0, obj.Count);
+                self.state.CreateTable(0, obj.Count);
 
-                var tableIndex = state.StackTop;
+                var tableIndex = self.state.StackTop;
 
                 foreach (var (key, value) in obj)
                 {
-                    // TODO: reuseable buffer?
-                    state.PushBuffer(Encoding.UTF8.GetBytes(key));
-                    Decode(value, ref state);
+                    // Decode key to string
+                    self.scratchBufferManager.Reset();
+                    var buf = self.scratchBufferManager.UTF8EncodeString(key);
+                    self.state.PushBuffer(buf);
 
-                    state.RawSet(tableIndex);
+                    // Decode value
+                    Decode(self, value);
+
+                    self.state.RawSet(tableIndex);
                 }
             }
         }
@@ -1967,37 +1973,33 @@ end
             //
             // Somewhat odd, but we match that behavior
 
-            // TODO: Shared buffer?
-            var ret = new List<byte>();
+            scratchBufferManager.Reset();
 
-            // We go in reverse order so we can reuse stack positions
-            //
-            // Since the common case is 1 item, this mostly doesn't matter
-            for (var argIx = numLuaArgs; argIx >= 1; argIx--)
+            for (var argIx = 1; argIx <= numLuaArgs; argIx++)
             {
-                var subRet = new List<byte>();
-                Encode(subRet, ref state);
-                ret.InsertRange(0, subRet);
+                // Because each encode removes the encoded value
+                // we always encode the argument at position 1
+                Encode(this, 1);
             }
 
             // After all encoding, stack should be empty
             state.ExpectLuaStackEmpty();
 
-            var retArr = ret.ToArray();
-            state.PushBuffer(retArr);
+            var ret = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
+            state.PushBuffer(ret);
 
             return 1;
 
             // Encode a single item at the top of the stack, and remove it
-            static void Encode(List<byte> intoBytes, ref LuaStateWrapper state)
+            static void Encode(LuaRunner self, int stackIndex)
             {
-                var type = state.Type(state.StackTop);
+                var type = self.state.Type(stackIndex);
                 switch (type)
                 {
-                    case LuaType.Boolean: EncodeBool(intoBytes, ref state); break;
-                    case LuaType.Number: EncodeNumber(intoBytes, ref state); break;
-                    case LuaType.String: EncodeBytes(intoBytes, ref state); break;
-                    case LuaType.Table: EncodeTable(intoBytes, ref state); break;
+                    case LuaType.Boolean: EncodeBool(self, stackIndex); break;
+                    case LuaType.Number: EncodeNumber(self, stackIndex); break;
+                    case LuaType.String: EncodeBytes(self, stackIndex); break;
+                    case LuaType.Table: EncodeTable(self, stackIndex); break;
 
                     // Everything else maps to null, NOT an error
                     case LuaType.Function:
@@ -2006,243 +2008,248 @@ end
                     case LuaType.None:
                     case LuaType.Thread:
                     case LuaType.UserData:
-                    default: EncodeNull(intoBytes, ref state); break;
+                    default: EncodeNull(self, stackIndex); break;
                 }
             }
 
-            // Encode a null-ish value at top of the stack, and remove it
-            static void EncodeNull(List<byte> intoBytes, ref LuaStateWrapper state)
+            // Encode a null-ish value at stackIndex, and remove it
+            static void EncodeNull(LuaRunner self, int stackIndex)
             {
-                Debug.Assert(state.Type(state.StackTop) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
+                Debug.Assert(self.state.Type(stackIndex) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
 
-                intoBytes.Add(0xC0);
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = 0xC0;
+                self.scratchBufferManager.MoveOffset(1);
 
-                state.Pop(1);
+                self.state.Remove(stackIndex);
             }
 
-            // Encode a boolean at top of the stack, and remove it
-            static void EncodeBool(List<byte> intoBytes, ref LuaStateWrapper state)
+            // Encode a boolean at stackIndex, and remove it
+            static void EncodeBool(LuaRunner self, int stackIndex)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Boolean, "Expected boolean");
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Boolean, "Expected boolean");
 
-                if (state.ToBoolean(state.StackTop))
-                {
-                    intoBytes.Add(0xC3);
-                }
-                else
-                {
-                    intoBytes.Add(0xC2);
-                }
+                var value = (byte)(self.state.ToBoolean(stackIndex) ? 0xC3 : 0xC2);
 
-                state.Pop(1);
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = value;
+                self.scratchBufferManager.MoveOffset(1);
+
+                self.state.Remove(stackIndex);
             }
 
-            // Encode a number at top of the stack, and remove it
-            static void EncodeNumber(List<byte> intoBytes, ref LuaStateWrapper state)
+            // Encode a number at stackIndex, and remove it
+            static void EncodeNumber(LuaRunner self, int stackIndex)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Number, "Expected number");
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
-                var numRaw = state.CheckNumber(state.StackTop);
+                var numRaw = self.state.CheckNumber(stackIndex);
                 var isInt = numRaw == (long)numRaw;
 
                 if (isInt)
                 {
-                    EncodeInteger(intoBytes, (long)numRaw);
+                    EncodeInteger(self, (long)numRaw);
                 }
                 else
                 {
-                    EncodeFloatingPoint(intoBytes, numRaw);
+                    EncodeFloatingPoint(self, numRaw);
                 }
 
-                state.Pop(1);
+                self.state.Remove(stackIndex);
             }
 
             // Encode an integer
-            static void EncodeInteger(List<byte> intoBytes, long value)
+            static void EncodeInteger(LuaRunner self, long value)
             {
                 // positive 7-bit fixint
                 if ((byte)(value & 0b0111_1111) == value)
                 {
-                    intoBytes.Add((byte)value);
+                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(1);
+
                     return;
                 }
 
                 // negative 5-bit fixint
                 if ((sbyte)(value | 0b1110_0000) == value)
                 {
-                    intoBytes.Add((byte)value);
+                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(1);
                     return;
                 }
 
                 // 8-bit int
                 if (value is >= sbyte.MinValue and <= sbyte.MaxValue)
                 {
-                    intoBytes.Add(0xD0);
-                    intoBytes.Add((byte)value);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2).Span;
+
+                    into[0] = 0xD0;
+                    into[1] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(2);
                     return;
                 }
 
                 // 8-bit uint
                 if (value is >= byte.MinValue and <= byte.MaxValue)
                 {
-                    intoBytes.Add(0xCC);
-                    intoBytes.Add((byte)value);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2).Span;
+
+                    into[0] = 0xCC;
+                    into[1] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(2);
                     return;
                 }
 
                 // 16-bit int
                 if (value is >= short.MinValue and <= short.MaxValue)
                 {
-                    intoBytes.Add(0xD1);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
 
-                    Span<byte> buff = stackalloc byte[2];
-
-                    BinaryPrimitives.WriteInt16BigEndian(buff, (short)value);
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xD1;
+                    BinaryPrimitives.WriteInt16BigEndian(into[1..], (short)value);
+                    self.scratchBufferManager.MoveOffset(3);
                     return;
                 }
 
                 // 16-bit uint
                 if (value is >= ushort.MinValue and <= ushort.MaxValue)
                 {
-                    intoBytes.Add(0xCD);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
 
-                    Span<byte> buff = stackalloc byte[2];
-
-                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)value);
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xCD;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)value);
+                    self.scratchBufferManager.MoveOffset(3);
                     return;
                 }
 
                 // 32-bit int
                 if (value is >= int.MinValue and <= int.MaxValue)
                 {
-                    intoBytes.Add(0xD2);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
 
-                    Span<byte> buff = stackalloc byte[4];
-
-                    BinaryPrimitives.WriteInt32BigEndian(buff, (int)value);
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xD2;
+                    BinaryPrimitives.WriteInt32BigEndian(into[1..], (int)value);
+                    self.scratchBufferManager.MoveOffset(5);
                     return;
                 }
 
                 // 32-bit uint
                 if (value is >= uint.MinValue and <= uint.MaxValue)
                 {
-                    intoBytes.Add(0xCE);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
 
-                    Span<byte> buff = stackalloc byte[4];
-
-                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)value);
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xCE;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)value);
+                    self.scratchBufferManager.MoveOffset(5);
                     return;
                 }
 
                 // 64-bit uint
                 if (value > uint.MaxValue)
                 {
-                    intoBytes.Add(0xCF);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
 
-                    Span<byte> buff = stackalloc byte[8];
-
-                    BinaryPrimitives.WriteUInt64BigEndian(buff, (ulong)value);
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xCF;
+                    BinaryPrimitives.WriteUInt64BigEndian(into[1..], (ulong)value);
+                    self.scratchBufferManager.MoveOffset(9);
                     return;
                 }
 
                 // 64-bit int
                 {
-                    intoBytes.Add(0xD3);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
 
-                    Span<byte> buff = stackalloc byte[8];
-
-                    BinaryPrimitives.WriteInt64BigEndian(buff, value);
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xD3;
+                    BinaryPrimitives.WriteInt64BigEndian(into[1..], value);
+                    self.scratchBufferManager.MoveOffset(9);
                 }
             }
 
             // Encode a floating point value
-            static void EncodeFloatingPoint(List<byte> intoBytes, double value)
+            static void EncodeFloatingPoint(LuaRunner self, double value)
             {
                 // While Redis has code that attempts to pack doubles into floats
-                // it doesn't appear to do anything, so just always write a double
+                // it doesn't appear to do anything, so we just always write a double
 
-                intoBytes.Add(0xCB);
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
 
-                Span<byte> buff = stackalloc byte[8];
-                BinaryPrimitives.WriteDoubleBigEndian(buff, value);
-
-                intoBytes.AddRange(buff);
+                into[0] = 0xCB;
+                BinaryPrimitives.WriteDoubleBigEndian(into[1..], value);
+                self.scratchBufferManager.MoveOffset(9);
             }
 
-            // Encodes a string as at the top of stack, and remove it
-            static void EncodeBytes(List<byte> intoBytes, ref LuaStateWrapper state)
+            // Encodes a string as at stackIndex, and remove it
+            static void EncodeBytes(LuaRunner self, int stackIndex)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.String, "Expected string");
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
 
-                _ = state.CheckBuffer(state.StackTop, out var data);
+                _ = self.state.CheckBuffer(stackIndex, out var data);
 
                 if (data.Length < 32)
                 {
-                    intoBytes.Add((byte)(0xA0 | data.Length));
-                    intoBytes.AddRange(data);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1 + data.Length).Span;
+
+                    into[0] = (byte)(0xA0 | data.Length);
+                    data.CopyTo(into[1..]);
+                    self.scratchBufferManager.MoveOffset(1 + data.Length);
                 }
                 else if (data.Length <= byte.MaxValue)
                 {
-                    intoBytes.Add(0xD9);
-                    intoBytes.Add((byte)data.Length);
-                    intoBytes.AddRange(data);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2 + data.Length).Span;
+
+                    into[0] = 0xD9;
+                    into[1] = (byte)data.Length;
+                    data.CopyTo(into[2..]);
+                    self.scratchBufferManager.MoveOffset(2 + data.Length);
                 }
                 else if (data.Length <= ushort.MaxValue)
                 {
-                    intoBytes.Add(0xDA);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3 + data.Length).Span;
 
-                    Span<byte> buff = stackalloc byte[2];
-                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)data.Length);
-
-                    intoBytes.AddRange(buff);
-                    intoBytes.AddRange(data);
+                    into[0] = 0xDA;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)data.Length);
+                    data.CopyTo(into[3..]);
+                    self.scratchBufferManager.MoveOffset(3 + data.Length);
                 }
                 else
                 {
-                    intoBytes.Add(0xDB);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5 + data.Length).Span;
 
-                    Span<byte> buff = stackalloc byte[4];
-                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)data.Length);
-
-                    intoBytes.AddRange(buff);
-                    intoBytes.AddRange(data);
+                    into[0] = 0xDB;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)data.Length);
+                    data.CopyTo(into[5..]);
+                    self.scratchBufferManager.MoveOffset(5 + data.Length);
                 }
 
-                state.Pop(1);
+                self.state.Remove(stackIndex);
             }
 
-            // Encode a table at the top of the stack, and remove it
-            static void EncodeTable(List<byte> intoBytes, ref LuaStateWrapper state)
+            // Encode a table at stackIndex, and remove it
+            static void EncodeTable(LuaRunner self, int stackIndex)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table");
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
 
                 // Space for key and value
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
-                var tableIx = state.StackTop;
+                var tableIndex = stackIndex;
 
                 // A zero-length table is serialized as an array
                 var isArray = true;
                 var count = 0;
                 var max = 0;
 
+                var keyIndex = self.state.StackTop + 1;
+
                 // Measure the table and figure out if we're creating a map or an array
-                state.PushNil();
-                while (state.Next(tableIx) != 0)
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
                 {
                     count++;
 
                     // Remove value
-                    state.Pop(1);
+                    self.state.Pop(1);
 
                     double keyAsNum;
-                    if (state.Type(tableIx + 1) != LuaType.Number || (keyAsNum = state.CheckNumber(tableIx + 1)) <= 0 || keyAsNum != (int)keyAsNum)
+                    if (self.state.Type(keyIndex) != LuaType.Number || (keyAsNum = self.state.CheckNumber(keyIndex)) <= 0 || keyAsNum != (int)keyAsNum)
                     {
                         isArray = false;
                     }
@@ -2257,108 +2264,113 @@ end
 
                 if (isArray && count == max)
                 {
-                    EncodeArray(intoBytes, count, ref state);
+                    EncodeArray(self, stackIndex, count);
                 }
                 else
                 {
-                    EncodeMap(intoBytes, count, ref state);
+                    EncodeMap(self, stackIndex, count);
                 }
             }
 
-            // Encode a table on the top of the stack into an array, and remove it
-            static void EncodeArray(List<byte> intoBytes, int count, ref LuaStateWrapper state)
+            // Encode a table at stackIndex into an array, and remove it
+            static void EncodeArray(LuaRunner self, int stackIndex, int count)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table");
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
                 Debug.Assert(count >= 0, "Array should have positive length");
 
                 // Reserve space for value
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
-                var tableIx = state.StackTop;
+                var tableIndex = stackIndex;
+                var valueIndex = tableIndex + 1;
 
                 // Encode length
                 if (count <= 15)
                 {
-                    intoBytes.Add((byte)(0b1001_0000 | count));
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1).Span;
+                    into[0] = (byte)(0b1001_0000 | count);
+                    self.scratchBufferManager.MoveOffset(1);
                 }
                 else if (count <= ushort.MaxValue)
                 {
-                    intoBytes.Add(0xDC);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
 
-                    Span<byte> buff = stackalloc byte[2];
-                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)count);
-
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xDC;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)count);
+                    self.scratchBufferManager.MoveOffset(3);
                 }
                 else
                 {
-                    intoBytes.Add(0xDD);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
 
-                    Span<byte> buff = stackalloc byte[4];
-                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)count);
-
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xDD;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)count);
+                    self.scratchBufferManager.MoveOffset(5);
                 }
 
                 // Write each element out
                 for (var ix = 1; ix <= count; ix++)
                 {
-                    _ = state.RawGetInteger(null, tableIx, ix);
-                    Encode(intoBytes, ref state);
+                    _ = self.state.RawGetInteger(null, tableIndex, ix);
+                    Encode(self, valueIndex);
                 }
 
-                state.Pop(1);
+                self.state.Remove(tableIndex);
             }
 
-            // Encode a table on the top of the stack into a map, and remove it
-            static void EncodeMap(List<byte> intoBytes, int count, ref LuaStateWrapper state)
+            // Encode a table at stackIndex into a map, and remove it
+            static void EncodeMap(LuaRunner self, int stackIndex, int count)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table");
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
                 Debug.Assert(count >= 0, "Map should have positive length");
 
                 // Reserve space for key, value, and copy of key
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
-                var tableIx = state.StackTop;
+                var tableIndex = stackIndex;
+                var keyIndex = self.state.StackTop + 1;
+                var valueIndex = keyIndex + 1;
+                var keyCopyIndex = valueIndex + 1;
 
                 // Encode length
                 if (count <= 15)
                 {
-                    intoBytes.Add((byte)(0b1000_0000 | count));
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1).Span;
+
+                    into[0] = (byte)(0b1000_0000 | count);
+                    self.scratchBufferManager.MoveOffset(1);
                 }
                 else if (count <= ushort.MaxValue)
                 {
-                    intoBytes.Add(0xDE);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
 
-                    Span<byte> buff = stackalloc byte[2];
-                    BinaryPrimitives.WriteUInt16BigEndian(buff, (ushort)count);
-
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xDE;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)count);
+                    self.scratchBufferManager.MoveOffset(3);
                 }
                 else
                 {
-                    intoBytes.Add(0xDF);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
 
-                    Span<byte> buff = stackalloc byte[4];
-                    BinaryPrimitives.WriteUInt32BigEndian(buff, (uint)count);
-
-                    intoBytes.AddRange(buff);
+                    into[0] = 0xDF;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)count);
+                    self.scratchBufferManager.MoveOffset(5);
                 }
 
-                state.PushNil();
-                while (state.Next(tableIx) != 0)
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
                 {
                     // Make a copy of the key
-                    state.PushValue(tableIx + 1);
+                    self.state.PushValue(keyIndex);
 
                     // Write the key
-                    Encode(intoBytes, ref state);
+                    Encode(self, keyCopyIndex);
 
                     // Write the value
-                    Encode(intoBytes, ref state);
+                    Encode(self, valueIndex);
                 }
 
-                state.Pop(1);
+                self.state.Remove(tableIndex);
             }
         }
 
