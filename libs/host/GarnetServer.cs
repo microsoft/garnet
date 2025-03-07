@@ -30,6 +30,11 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        /// <summary>
+        /// Resp protocol version
+        /// </summary>
+        internal const string RedisProtocolVersion = "7.2.5";
+
         static readonly string version = GetVersion();
         static string GetVersion()
         {
@@ -59,11 +64,6 @@ namespace Garnet
         /// Store and associated information used by this Garnet server
         /// </summary>
         protected StoreWrapper storeWrapper;
-
-        /// <summary>
-        /// Resp protocol version
-        /// </summary>
-        readonly string redisProtocolVersion = "7.2.5";
 
         /// <summary>
         /// Metrics API
@@ -254,7 +254,7 @@ namespace Garnet
             // Create Garnet TCP server if none was provided.
             this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
+            storeWrapper = new StoreWrapper(version, RedisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
