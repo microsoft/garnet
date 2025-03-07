@@ -247,4 +247,4 @@ Note that diskless replication does not take an actual checkpoint.
 Hence every time a full sync is performed, the AOF is not automatically truncated (unless FAT flag is used).
 This happens to ensure durability in the event of a failure which will not be possible if the AOF gets truncated without a persitent checkpoint.
 However, the store version gets incremented to ensure consistency across different instances that may be fully synced at different times.
-Users can still utilize SAVE/BGSAVE commands or --aof-size-limit to periodically take a checkpoint and safely truncates the AOF.
+Users can still utilize SAVE/BGSAVE commands or --aof-size-limit to periodically take a checkpoint and safely truncate the AOF.
