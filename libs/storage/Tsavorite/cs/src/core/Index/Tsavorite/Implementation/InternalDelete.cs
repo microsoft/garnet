@@ -91,6 +91,8 @@ namespace Tsavorite.core
                         case LatchDestination.Retry:
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
+                            if (stackCtx.recSrc.HasMainLogSrc)
+                                srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                             goto CreateNewRecord;
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
@@ -176,7 +178,7 @@ namespace Tsavorite.core
                     // Could not delete in place for some reason - create new record.
                     goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                else if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // If we already have a deleted record, there's nothing to do.
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
