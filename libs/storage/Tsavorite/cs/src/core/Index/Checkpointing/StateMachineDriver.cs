@@ -29,10 +29,10 @@ namespace Tsavorite.core
 
         public SystemState SystemState => SystemState.Copy(ref systemState);
 
-        public StateMachineDriver(LightEpoch epoch, SystemState initialState, ILogger logger = null)
+        public StateMachineDriver(LightEpoch epoch, ILogger logger = null)
         {
             this.epoch = epoch;
-            this.systemState = initialState;
+            this.systemState = SystemState.Make(Phase.REST, 1);
             this.waitingList = [];
             this.logger = logger;
         }

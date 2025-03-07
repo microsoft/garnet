@@ -227,6 +227,7 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
+            opts.Initialize(loggerFactory);
             CreateMainStore(clusterFactory, out var checkpointDir);
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
@@ -324,7 +325,7 @@ namespace Garnet
             objectStoreSizeTracker = null;
             if (!opts.DisableObjects)
             {
-                objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
+                objKvSettings = opts.GetObjectStoreSettings(loggerFactory,
                     out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
                 // Run checkpoint on its own thread to control p99
