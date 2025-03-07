@@ -540,14 +540,15 @@ namespace Garnet.test
             var exportedFuncs =
                 new Dictionary<string, List<string>>
                 {
-                    ["string"] = ["byte", "char", "dump", "find", "format", "gmatch", "gsub", "len", "lower", "match", "rep", "reverse", "sub", "upper"],
-                    ["cjson"] = ["encode", "decode"],
                     ["bit"] = ["tobit", "tohex", "bnot", "bor", "band", "bxor", "lshift", "rshift", "arshift", "rol", "ror", "bswap"],
+                    ["cjson"] = ["encode", "decode"],
                     ["cmsgpack"] = ["pack", "unpack"],
                     ["math"] = ["abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor", "fmod", "frexp", "huge", "ldexp", "log", "log10", "max", "min", "modf", "pi", "pow", "rad", "random", "randomseed", "sin", "sinh", "sqrt", "tan", "tanh"],
-                    ["table"] = ["concat", "insert", "maxn", "remove", "sort"],
+                    ["os"] = ["clock"],
+                    ["redis"] = ["call", "pcall", "error_reply", "status_reply", "sha1hex", "log", "LOG_DEBUG", "LOG_VERBOSE", "LOG_NOTICE", "LOG_WARNING", "setresp", "set_repl", "REPL_ALL", "REPL_AOF", "REPL_REPLICA", "REPL_SLAVE", "REPL_NONE", "replicate_commands", "breakpoint", "debug", "acl_check_cmd", "REDIS_VERSION", "REDIS_VERSION_NUM"],
+                    ["string"] = ["byte", "char", "dump", "find", "format", "gmatch", "gsub", "len", "lower", "match", "rep", "reverse", "sub", "upper"],
                     ["struct"] = ["pack", "unpack", "size"],
-                    ["os"] = ["clock"]
+                    ["table"] = ["concat", "insert", "maxn", "remove", "sort"],
                 };
 
             // Check the supported globals

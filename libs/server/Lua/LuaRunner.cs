@@ -295,6 +295,70 @@ local struct = {
     size = string.packsize;
 }
 
+-- define redis for (optional, but almost always) inclusion into sandbox_env
+local garnetCallRef = garnet_call
+local pCallRef = pcall
+local redis = {
+    status_reply = function(text)
+        return text
+    end,
+
+    error_reply = function(text)
+        return { err = 'ERR ' .. text }
+    end,
+
+    call = garnetCallRef,
+
+    pcall = function(...)
+        local success, errOrRes = pCallRef(garnetCallRef, ...)
+        if success then
+            return errOrRes
+        end
+
+        return { err = errOrRes }
+    end,
+
+    sha1hex = garnet_sha1hex,
+
+    LOG_DEBUG = 0,
+    LOG_VERBOSE = 1,
+    LOG_NOTICE = 2,
+    LOG_WARNING = 3,
+
+    log = garnet_log,
+
+    REPL_ALL = 3,
+    REPL_AOF = 1,
+    REPL_REPLICA = 2,
+    REPL_SLAVE = 2,
+    REPL_NONE = 0,
+
+    set_repl = function(...)
+        -- this is a giant footgun, straight up not implementing it
+        error('ERR redis.set_repl is not supported in Garnet', 0)
+    end,
+
+    replicate_commands = function(...)
+        return true
+    end,
+
+    breakpoint = function(...)
+        -- this is giant and weird, not implementing
+        error('ERR redis.breakpoint is not supported in Garnet', 0)
+    end,
+
+    debug = function(...)
+        -- this is giant and weird, not implementing
+        error('ERR redis.debug is not supported in Garnet', 0)
+    end,
+
+    acl_check_cmd = garnet_acl_check_cmd,
+    setresp = garnet_setresp,
+
+    REDIS_VERSION = garnet_REDIS_VERSION,
+    REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
+}
+
 -- unpack moved after Lua 5.1, this provides Redis compat
 local unpack = table.unpack
 
@@ -411,75 +475,6 @@ function reset_keys_and_argv(fromKey, fromArgv)
 end
 -- responsible for sandboxing user provided code
 function load_sandboxed(source)
-    -- move into a local to avoid global lookup
-    local garnetCallRef = garnet_call
-    local pCallRef = pcall
-    local sha1hexRef = garnet_sha1hex
-    local logRef = garnet_log
-    local aclCheckCmdRef = garnet_acl_check_cmd
-    local setRespRef = garnet_setresp
-
-    sandbox_env.redis = {
-        status_reply = function(text)
-            return text
-        end,
-
-        error_reply = function(text)
-            return { err = 'ERR ' .. text }
-        end,
-
-        call = garnetCallRef,
-
-        pcall = function(...)
-            local success, errOrRes = pCallRef(garnetCallRef, ...)
-            if success then
-                return errOrRes
-            end
-
-            return { err = errOrRes }
-        end,
-
-        sha1hex = sha1hexRef,
-
-        LOG_DEBUG = 0,
-        LOG_VERBOSE = 1,
-        LOG_NOTICE = 2,
-        LOG_WARNING = 3,
-
-        log = logRef,
-
-        REPL_ALL = 3,
-        REPL_AOF = 1,
-        REPL_REPLICA = 2,
-        REPL_SLAVE = 2,
-        REPL_NONE = 0,
-
-        set_repl = function(...)
-            -- this is a giant footgun, straight up not implementing it
-            error('ERR redis.set_repl is not supported in Garnet', 0)
-        end,
-
-        replicate_commands = function(...)
-            return true
-        end,
-
-        breakpoint = function(...)
-            -- this is giant and weird, not implementing
-            error('ERR redis.breakpoint is not supported in Garnet', 0)
-        end,
-
-        debug = function(...)
-            -- this is giant and weird, not implementing
-            error('ERR redis.debug is not supported in Garnet', 0)
-        end,
-
-        acl_check_cmd = aclCheckCmdRef,
-        setresp = setRespRef,
-
-        REDIS_VERSION = garnet_REDIS_VERSION,
-        REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
-    }
-
     recursively_readonly_table(sandbox_env)
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
@@ -525,7 +520,11 @@ end
             "cjson",
             "cmsgpack",
             "os.clock",
+            // Note struct is actually implemented by Lua 5.4's string.pack/unpack/size
             "struct",
+
+            // Interface force communicating back with Garnet
+            "redis",
         ];
 
         private static LoaderBlockCache CachedLoaderBlock;
@@ -650,11 +649,28 @@ end
             state.Register("garnet_cjson_decode\0"u8, &LuaRunnerTrampolines.CJsonDecode);
             state.Register("garnet_bit_tobit\0"u8, &LuaRunnerTrampolines.BitToBit);
             state.Register("garnet_bit_tohex\0"u8, &LuaRunnerTrampolines.BitToHex);
-            // This implements bnot, bor, band, xor, etc. but isn't directly exposed
+            // garnet_bitop implements bnot, bor, band, xor, etc. but isn't directly exposed
             state.Register("garnet_bitop\0"u8, &LuaRunnerTrampolines.Bitop);
             state.Register("garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
             state.Register("garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
             state.Register("garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
+            state.Register("garnet_call\0"u8, garnetCall);
+            state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
+            state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
+            state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
+            state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
+
+            var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
+            state.PushBuffer(redisVersionBytes);
+            state.SetGlobal("garnet_REDIS_VERSION\0"u8);
+
+            var redisVersionParsed = Version.Parse(redisVersion);
+            var redisVersionNum =
+                ((byte)redisVersionParsed.Major << 16) |
+                ((byte)redisVersionParsed.Minor << 8) |
+                ((byte)redisVersionParsed.Build << 0);
+            state.PushInteger(redisVersionNum);
+            state.SetGlobal("garnet_REDIS_VERSION_NUM\0"u8);
 
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
@@ -692,25 +708,6 @@ end
 
                 throw new GarnetException($"Could not initialize Lua sandbox state: {errMsg}");
             }
-
-            // Register functions provided by .NET in global namespace
-            state.Register("garnet_call\0"u8, garnetCall);
-            state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
-            state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
-            state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
-            state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
-
-            var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
-            state.PushBuffer(redisVersionBytes);
-            state.SetGlobal("garnet_REDIS_VERSION\0"u8);
-
-            var redisVersionParsed = Version.Parse(redisVersion);
-            var redisVersionNum =
-                ((byte)redisVersionParsed.Major << 16) |
-                ((byte)redisVersionParsed.Minor << 8) |
-                ((byte)redisVersionParsed.Build << 0);
-            state.PushInteger(redisVersionNum);
-            state.SetGlobal("garnet_REDIS_VERSION_NUM\0"u8);
 
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
