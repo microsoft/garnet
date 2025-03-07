@@ -163,7 +163,7 @@ namespace Tsavorite.core
                     status = OperationStatus.RETRY_LATER;
                     goto LatchRelease;
                 }
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // Safe Read-Only Region: CopyUpdate to create a record in the mutable region.
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
