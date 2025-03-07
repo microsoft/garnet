@@ -814,14 +814,14 @@ namespace Tsavorite.test.recovery
             if (deviceMode == DeviceMode.Local)
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
+                    new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
             }
             else
             {
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                    TestUtils.AzureStorageNamedDeviceFactoryCreator,
                     new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 

@@ -371,8 +371,11 @@ namespace Garnet.server
                     Environment.Exit(-1);
                 }
 
-                // The session is no longer usable, dispose it
-                networkSender.DisposeNetworkSender(true);
+                if (ex.DisposeSession)
+                {
+                    // The session is no longer usable, dispose it
+                    networkSender.DisposeNetworkSender(true);
+                }
             }
             catch (Exception ex)
             {
@@ -866,6 +869,7 @@ namespace Garnet.server
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

@@ -134,7 +134,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GETBIT:
-                    var offset = input.parseState.GetLong(0);
+                    var offset = input.arg1;
                     var oldValSet = BitmapManager.GetBit(offset, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
@@ -207,11 +207,21 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer() + functionsState.etagState.etagSkippedStart, value.Length - functionsState.etagState.etagSkippedStart);
+                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs,
+                                                value.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                                value.Length - functionsState.etagState.etagSkippedStart);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
                         CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                    return;
+
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    var retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO,
+                                                value.ToPointer() + functionsState.etagState.etagSkippedStart,
+                                                value.Length - functionsState.etagState.etagSkippedStart);
+                    CopyRespNumber(retValue_RO, ref dst);
                     return;
 
                 case RespCommand.PFCOUNT:
@@ -663,7 +673,7 @@ namespace Garnet.server
             int desiredLength = 4;
             ReadOnlySpan<byte> etagTruncatedVal;
             // get etag to write, default etag 0 for when no etag
-            long etag = hasEtagInVal ? value.GetEtagInPayload() : EtagConstants.BaseEtag;
+            long etag = hasEtagInVal ? value.GetEtagInPayload() : EtagConstants.NoETag;
             // remove the length of the ETAG
             var etagAccountedValueLength = valueLength - etagSkippedStart;
             if (hasEtagInVal)
@@ -756,15 +766,23 @@ namespace Garnet.server
             // Get secondary command. Legal commands: GET, SET & INCRBY.
             var cmd = RespCommand.NONE;
             var sbCmd = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-            if (sbCmd.EqualsUpperCaseSpanIgnoringCase("GET"u8))
+            if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 cmd = RespCommand.GET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("SET"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SET))
                 cmd = RespCommand.SET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INCRBY))
                 cmd = RespCommand.INCRBY;
 
-            var encodingArg = input.parseState.GetString(currTokenIdx++);
-            var offsetArg = input.parseState.GetString(currTokenIdx++);
+            var bitfieldEncodingParsed = input.parseState.TryGetBitfieldEncoding(
+                                                currTokenIdx++, out var bitCount, out var isSigned);
+            Debug.Assert(bitfieldEncodingParsed);
+            var sign = isSigned ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+
+            // Calculate number offset from bitCount if offsetArg starts with #
+            var offsetParsed = input.parseState.TryGetBitfieldOffset(currTokenIdx++, out var offset, out var multiplyOffset);
+            Debug.Assert(offsetParsed);
+            if (multiplyOffset)
+                offset *= bitCount;
 
             long value = default;
             if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
@@ -780,14 +798,9 @@ namespace Garnet.server
                 overflowType = (byte)overflowTypeValue;
             }
 
-            var sign = encodingArg[0] == 'i' ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
             // Number of bits in signed number
-            var bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
             // At most 64 bits can fit into encoding info
             var typeInfo = (byte)(sign | bitCount);
-
-            // Calculate number offset from bitCount if offsetArg starts with #
-            var offset = offsetArg[0] == '#' ? long.Parse(offsetArg.AsSpan(1)) * bitCount : long.Parse(offsetArg);
 
             return new BitFieldCmdArgs(cmd, typeInfo, offset, value, overflowType);
         }

@@ -12,7 +12,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
-using Garnet.cluster;
 using Garnet.common;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -63,7 +62,7 @@ namespace Garnet.test.cluster
         public NodeNetInfo[] nnInfo;
     }
 
-    public enum Role
+    public enum NodeRole
     {
         PRIMARY,
         REPLICA
@@ -75,7 +74,7 @@ namespace Garnet.test.cluster
         public string nodeid;
         public string address;
         public int port;
-        public Role role;
+        public NodeRole role;
         public long replicationOffset;
     }
 
@@ -98,6 +97,13 @@ namespace Garnet.test.cluster
         OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS,
         PRIMARY_SYNC_IN_PROGRESS,
         PRIMARY_FAILOVER_STATE,
+    }
+
+    public enum StoreInfoItem
+    {
+        CurrentVersion,
+        LastCheckpointedVersion,
+        RecoveredVersion
     }
 
     public static class EndpointExtensions
@@ -280,7 +286,7 @@ namespace Garnet.test.cluster
                     endpoints[i].Address.ToString(),
                     endpoints[i].Port,
                     i + 1 + (!isPrimary ? 1 : 0),
-                    isPrimary ? NodeRole.PRIMARY : NodeRole.REPLICA,
+                    isPrimary ? Garnet.cluster.NodeRole.PRIMARY : Garnet.cluster.NodeRole.REPLICA,
                     primaryId,
                     hostname,
                     isPrimary && i < slotRanges.Length ? slotRanges[i] : null);
@@ -379,7 +385,7 @@ namespace Garnet.test.cluster
                                     nodeid = GetNodeIdFromNode(i, logger),
                                     address = endpoint.Address.ToString(),
                                     port = endpoint.Port,
-                                    role = Role.PRIMARY,
+                                    role = NodeRole.PRIMARY,
                                     replicationOffset = 0
                                 }
                             }
@@ -443,7 +449,7 @@ namespace Garnet.test.cluster
                             nodeid = GetNodeIdFromNode(i, logger),
                             address = GetAddressFromNodeIndex(i),
                             port = GetPortFromNodeIndex(i),
-                            role = Role.REPLICA,
+                            role = NodeRole.REPLICA,
                             replicationOffset = 0
                         }
                     );
@@ -1146,6 +1152,24 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void Meet(int sourceNodeIndex, int meetNodeIndex, string hostname, ILogger logger = null)
+            => Meet((IPEndPoint)endpoints[sourceNodeIndex], (IPEndPoint)endpoints[meetNodeIndex], hostname, logger);
+
+        public void Meet(IPEndPoint source, IPEndPoint target, string hostname, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(source);
+                var resp = server.Execute("cluster", "meet", $"{hostname}", $"{target.Port}");
+                ClassicAssert.AreEqual((string)resp, "OK");
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred");
+                Assert.Fail(ex.Message);
+            }
+        }
+
         public string[] BanList(int sourceNodeIndex, ILogger logger = null)
             => BanList((IPEndPoint)endpoints[sourceNodeIndex], logger);
 
@@ -1276,6 +1300,14 @@ namespace Garnet.test.cluster
             }
         }
 
+        public bool IsKnown(int nodeIndex, int knownNodeIndex, ILogger logger = null)
+        {
+            var toKnowNodeId = ClusterNodes(knownNodeIndex).Nodes.First().NodeId;
+            var nodeConfig = ClusterNodes(nodeIndex);
+
+            return nodeConfig.Nodes.Any(x => x.NodeId.Equals(toKnowNodeId, StringComparison.OrdinalIgnoreCase));
+        }
+
         public void WaitUntilNodeIsKnown(int nodeIndex, int toKnowNode, ILogger logger = null)
         {
             var toKnowNodeId = ClusterNodes(toKnowNode).Nodes.First().NodeId;
@@ -1290,7 +1322,7 @@ namespace Garnet.test.cluster
             while (true)
             {
                 var configs = new List<ClusterConfiguration>();
-                for (int i = 0; i < endpoints.Count; i++)
+                for (var i = 0; i < endpoints.Count; i++)
                 {
                     if (i == nodeIndex) continue;
                     configs.Add(ClusterNodes(i, logger));
@@ -2105,7 +2137,7 @@ namespace Garnet.test.cluster
                             nodeid = (string)node[1],
                             port = (int)node[3],
                             address = (string)node[5],
-                            role = Enum.Parse<Role>((string)node[7]),
+                            role = Enum.Parse<NodeRole>((string)node[7]),
                             replicationOffset = (long)node[9]
                         };
                         shardInfo.nodes.Add(nodeInfo);
@@ -2370,7 +2402,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void Lpush(int nodeIndex, string key, List<int> elements, ILogger logger = null)
+        public int Lpush(int nodeIndex, string key, List<int> elements, ILogger logger = null)
         {
             try
             {
@@ -2381,11 +2413,13 @@ namespace Garnet.test.cluster
 
                 var result = (int)server.Execute("LPUSH", args);
                 ClassicAssert.AreEqual(elements.Count, result);
+                return result;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "lpush error");
                 Assert.Fail(ex.Message);
+                return -1;
             }
         }
 
@@ -2531,6 +2565,24 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occurred; GetConnectedReplicas");
                 Assert.Fail(ex.Message);
                 return 0;
+            }
+        }
+
+        public Role RoleCommand(int nodeIndex, ILogger logger = null)
+            => RoleCommand(endpoints[nodeIndex].ToIPEndPoint(), logger);
+
+        public Role RoleCommand(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                return server.Role();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{command}", nameof(NodeRole));
+                Assert.Fail(ex.Message);
+                return null;
             }
         }
 
@@ -2686,6 +2738,47 @@ namespace Garnet.test.cluster
             return items;
         }
 
+        public int GetStoreCurrentVersion(int nodeIndex, bool isMainStore, ILogger logger = null)
+        {
+            var result = GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), [StoreInfoItem.CurrentVersion], isMainStore, logger);
+            ClassicAssert.AreEqual(1, result.Count);
+            return int.Parse(result[0].Item2);
+        }
+
+        public List<(StoreInfoItem, string)> GetStoreInfo(int nodeIndex, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+            => GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), infoItems, isMainStore, logger);
+
+        private List<(StoreInfoItem, string)> GetStoreInfo(IPEndPoint endPoint, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+        {
+            var fields = new List<(StoreInfoItem, string)>();
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var result = server.InfoRawAsync(isMainStore ? "store" : "objectstore").Result;
+                var data = result.Split('\n');
+                foreach (var line in data)
+                {
+                    if (line.StartsWith('#'))
+                        continue;
+                    var field = line.Trim().Split(':');
+
+                    if (!Enum.TryParse(field[0], ignoreCase: true, out StoreInfoItem type))
+                        continue;
+
+                    if (infoItems.Contains(type))
+                        fields.Add((type, field[1]));
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; GetReplicationInfo");
+                Assert.Fail(ex.Message);
+            }
+
+            return fields;
+        }
+
+
         public string GetInfo(int nodeIndex, string section, string segment, ILogger logger = null)
             => GetInfo(endpoints[nodeIndex].ToIPEndPoint(), section, segment, logger);
 
@@ -2713,15 +2806,19 @@ namespace Garnet.test.cluster
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
         {
             long primaryReplicationOffset;
+            long secondaryReplicationOffset1;
             while (true)
             {
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
-                var secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
+                secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
                     break;
-                BackOff(cancellationToken: context.cts.Token);
+
+                var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger);
+                var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, isMainStore: true, logger);
+                BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]: {primaryMainStoreVersion},{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]: {replicaMainStoreVersion},{secondaryReplicationOffset1}");
             }
-            logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
+            logger?.LogInformation("[{primaryEndpoint}]{primaryReplicationOffset} ?? [{endpoints[secondaryEndpoint}]{secondaryReplicationOffset1}", endpoints[primaryIndex], primaryReplicationOffset, endpoints[secondaryIndex], secondaryReplicationOffset1);
         }
 
         public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)

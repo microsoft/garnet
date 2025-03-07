@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.Intrinsics.X86;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -98,6 +99,17 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.StringGetBit(key, 7999));
             ClassicAssert.IsFalse(db.StringGetBit(key, 8999));
             ClassicAssert.IsTrue(db.StringGetBit(key, 9999));
+
+            try
+            {
+                db.Execute("SETBIT", key, "-1", "1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
         }
 
         [Test, Order(2)]
@@ -111,6 +123,17 @@ namespace Garnet.test
             for (long i = 0; i < (1 << 5); i++)
             {
                 ClassicAssert.IsFalse(db.StringGetBit(key, i));
+            }
+
+            try
+            {
+                db.Execute("GETBIT", key, "-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
             }
         }
 
@@ -237,25 +260,60 @@ namespace Garnet.test
 
         [Test, Order(6)]
         [Category("BITCOUNT")]
-        public void BitmapSimpleBitCountTest()
+        [TestCase(0, TestName = "BitmapSimpleBitCountTest(Hardware accelerated)")]
+        [TestCase(1, TestName = "BitmapSimpleBitCountTest(Avx2 disabled)")]
+        [TestCase(2, TestName = "BitmapSimpleBitCountTest(Software fallback)")]
+        public void BitmapSimpleBitCountTest(int acceleration)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var configOptions = TestUtils.GetConfig();
 
-            int maxBitmapLen = 1 << 12;
-            int iter = 1024;
-            long expectedCount = 0;
-            string key = "SimpleBitCountTest";
-
-            for (int i = 0; i < iter; i++)
+            if (acceleration == 0)
             {
-                long offset = r.Next(1, maxBitmapLen);
-                bool set = !db.StringSetBit(key, offset, true);
-                expectedCount += set ? 1 : 0;
+                SimpleBitCountTest();
+            }
+            else
+            {
+                Dictionary<string, string> env = [];
+
+                if (acceleration == 1)
+                {
+                    if (!Avx2.IsSupported && Ssse3.IsSupported)
+                        Assert.Ignore("Already tested by main path");
+
+                    env.Add("DOTNET_EnableAVX2", "0");
+                }
+                else
+                {
+                    if (!Avx2.IsSupported && !Ssse3.IsSupported)
+                        Assert.Ignore("Already tested by main path");
+
+                    env.Add("DOTNET_EnableHWIntrinsic", "0");
+                }
+
+                using var p = new GarnetServerTestProcess(out configOptions, env);
+
+                SimpleBitCountTest();
             }
 
-            long count = db.StringBitCount(key);
-            ClassicAssert.AreEqual(expectedCount, count);
+            void SimpleBitCountTest()
+            {
+                using var redis = ConnectionMultiplexer.Connect(configOptions);
+                var db = redis.GetDatabase(0);
+                var maxBitmapLen = 1 << 12;
+                var iter = 1024;
+                var expectedCount = 0;
+                var key = "SimpleBitCountTest";
+
+                for (var i = 0; i < iter; i++)
+                {
+                    var offset = r.Next(1, maxBitmapLen);
+                    var set = !db.StringSetBit(key, offset, true);
+                    expectedCount += set ? 1 : 0;
+                }
+
+                var count = db.StringBitCount(key);
+                ClassicAssert.AreEqual(expectedCount, count);
+            }
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
@@ -2484,6 +2542,167 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(offset, pos);
                 else
                     ClassicAssert.AreEqual(-1, pos);
+            }
+        }
+
+        [Test, Order(40)]
+        [Category("BITFIELD")]
+        public void BitmapBitfieldBoundaryTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var bit = db.StringSetBit(key, offset: 0, bit: true);
+            ClassicAssert.AreEqual(expected: false, actual: bit);
+            bit = db.StringSetBit(key, offset: 8, bit: true);
+            ClassicAssert.AreEqual(expected: false, actual: bit);
+
+            var ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 0, 1);
+            ClassicAssert.AreEqual(1, ((string[])ret).Length);
+            ClassicAssert.AreEqual("128", ret[0].ToString());
+
+            ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 0, 128);
+            ClassicAssert.AreEqual(1, ((string[])ret).Length);
+            ClassicAssert.AreEqual("1", ret[0].ToString());
+
+            ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 8, 1);
+            ClassicAssert.AreEqual(1, ((string[])ret).Length);
+            ClassicAssert.AreEqual("128", ret[0].ToString());
+
+            var result = (byte[])db.StringGet(key);
+            ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x01 }, actual: result);
+
+            ret = db.Execute("BITFIELD", (RedisKey)key, "SET", "u8", 8, 128, "GET", "u8", 8);
+            ClassicAssert.AreEqual(2, ((string[])ret).Length);
+            ClassicAssert.AreEqual("1", ret[0].ToString());
+            ClassicAssert.AreEqual("128", ret[1].ToString());
+
+            result = (byte[])db.StringGet(key);
+            ClassicAssert.AreEqual(expected: new byte[] { 0x80, 0x80 }, actual: result);
+        }
+
+        [Order(41)]
+        [Test]
+        [Category("BITFIELD")]
+        public void BitmapBitFieldInvalidOptionsTest([Values(RespCommand.BITFIELD, RespCommand.BITFIELD_RO)] RespCommand testCmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "BitmapBitFieldInvalidOptionsTest";
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u64", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i-1", "0");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u8", @"""");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "i16", "#");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "32", "1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                       ex.Message);
+            }
+
+            try
+            {
+                db.Execute(testCmd.ToString(), key, "GET", "u32", @"-1");
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                       ex.Message);
+            }
+
+            if (testCmd == RespCommand.BITFIELD)
+            {
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "SET", "i32", "0");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR value is not an integer or out of range.",
+                                           ex.Message);
+                }
+
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "OVERFLOW", "NONE");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR Invalid OVERFLOW type specified",
+                                           ex.Message);
+                }
+            }
+            else
+            {
+                try
+                {
+                    db.Execute(testCmd.ToString(), key, "SET", "i64", "0");
+                    Assert.Fail("Should be unreachable, arguments are incorrect");
+                }
+                catch (RedisServerException ex)
+                {
+                    ClassicAssert.AreEqual("ERR syntax error",
+                                           ex.Message);
+                }
             }
         }
     }

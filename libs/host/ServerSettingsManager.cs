@@ -11,7 +11,6 @@ using CommandLine;
 using CommandLine.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet
 {
@@ -30,20 +29,18 @@ namespace Garnet
         /// then overridden by any options specified in the command line arguments (if any).
         /// </summary>
         /// <param name="args">Command line arguments</param>
-        /// <param name="logger">Logger</param>
         /// <param name="options">Options object containing parsed configuration settings</param>
         /// <param name="invalidOptions">List of Options properties that did not pass validation</param>
         /// <param name="exitGracefully">True if should exit gracefully when parse is unsuccessful</param>
+        /// <param name="silentMode">If true, help text will not be printed to console when parse is unsuccessful</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if parsing succeeded</returns>
-        internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, out bool exitGracefully, ILogger logger = null)
+        internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, out bool exitGracefully, bool silentMode = false, ILogger logger = null)
         {
-            if (logger == null)
-                logger = NullLogger.Instance;
-
             options = null;
-            invalidOptions = new List<string>();
+            invalidOptions = [];
 
-            if (args == null) args = [];
+            args ??= [];
 
             // Initialize command line parser
             var parser = new Parser(settings =>
@@ -55,7 +52,7 @@ namespace Garnet
 
             // Create an Options object and initialize it with default options,
             // then override them with options deserialized from ConfigImportPath (if specified)
-            Options initOptions = new Options();
+            var initOptions = new Options();
 
             // Initialize options with defaults
             var importSuccessful = TryImportServerOptions(DefaultOptionsEmbeddedFileName,
@@ -67,7 +64,7 @@ namespace Garnet
 
             var consolidatedArgs = ConsolidateFlagArguments(args);
             // Parse command line arguments
-            if (!parser.TryParseArguments<Options>(consolidatedArgs, argNameToDefaultValue, out var cmdLineOptions, out exitGracefully))
+            if (!parser.TryParseArguments<Options>(consolidatedArgs, argNameToDefaultValue, out var cmdLineOptions, out exitGracefully, silentMode: silentMode))
                 return false;
 
             // Check if any arguments were not parsed
@@ -80,7 +77,7 @@ namespace Garnet
                 {
                     for (var i = dashDashIdx + 1; i < consolidatedArgs.Length; i++)
                     {
-                        unparsedArguments.Remove(consolidatedArgs[i]);
+                        _ = unparsedArguments.Remove(consolidatedArgs[i]);
                     }
                 }
 
@@ -118,7 +115,7 @@ Please check the syntax of your command. For detailed usage information run with
 
             // Re-parse command line arguments after initializing Options object with initialization function
             // In order to override options specified in the command line arguments
-            if (!parser.TryParseArguments(consolidatedArgs, argNameToDefaultValue, out options, out exitGracefully, () => initOptions))
+            if (!parser.TryParseArguments(consolidatedArgs, argNameToDefaultValue, out options, out exitGracefully, () => initOptions, silentMode))
                 return false;
 
             // Validate options
@@ -179,8 +176,9 @@ Please check the syntax of your command. For detailed usage information run with
         /// <param name="obj">Parsed object, default(T) if parse unsuccessful</param>
         /// <param name="exitGracefully">True if should exit gracefully when parse is unsuccessful</param>
         /// <param name="factory">Optional T factory for object initialization</param>
+        /// <param name="silentMode">If true, help messages will not be printed to console.</param>
         /// <returns>True if parse successful</returns>
-        private static bool TryParseArguments<T>(this Parser parser, string[] args, IDictionary<string, object> argNameToDefaultValue, out T obj, out bool exitGracefully, Func<T> factory = null) where T : new()
+        private static bool TryParseArguments<T>(this Parser parser, string[] args, IDictionary<string, object> argNameToDefaultValue, out T obj, out bool exitGracefully, Func<T> factory = null, bool silentMode = false) where T : new()
         {
             var result = parser.ParseArguments(factory ?? (() => new T()), args);
             var tmpExitGracefully = true;
@@ -188,6 +186,9 @@ Please check the syntax of your command. For detailed usage information run with
             obj = result.MapResult(parsed => parsed,
                 notParsed =>
                 {
+                    if (silentMode)
+                        return default;
+
                     var errors = notParsed.ToList();
                     if (errors.IsVersion()) // Check if error is version request
                     {
