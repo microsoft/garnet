@@ -495,18 +495,13 @@ namespace Garnet.server
         /// <summary>
         /// Append a checkpoint commit to the AOF
         /// </summary>
-        /// <param name="isMainStore"></param>
+        /// <param name="entryType"></param>
         /// <param name="version"></param>
-        /// <param name="streaming"></param>
-        public void EnqueueCommit(bool isMainStore, long version, bool streaming = false)
+        public void EnqueueCommit(AofEntryType entryType, long version)
         {
-            var opType = streaming ?
-                isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit :
-                isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit;
-
             AofHeader header = new()
             {
-                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
+                opType = entryType,
                 storeVersion = version,
                 sessionID = -1
             };
@@ -849,18 +844,30 @@ namespace Garnet.server
             if (full)
             {
                 if (storeType is StoreType.Main or StoreType.All)
+                {
                     storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
+                }
 
                 if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
                     objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                }
             }
             else
             {
                 if (storeType is StoreType.Main or StoreType.All)
+                {
                     storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
+                }
 
                 if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
                     objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                }
             }
 
             // If cluster is enabled the replication manager is responsible for truncating AOF
