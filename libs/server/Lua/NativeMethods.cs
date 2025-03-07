@@ -179,6 +179,13 @@ namespace Garnet.server
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
         private static partial int lua_error(lua_State luaState);
 
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_next
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial int lua_next(lua_State luaState, int tableIndex);
+
         // GC Transition suppressed - only do this after auditing the Lua method and confirming constant-ish, fast, runtime w/o allocations
 
         /// <summary>
@@ -214,14 +221,24 @@ namespace Garnet.server
         private static partial void lua_pushnil(lua_State L);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_pushinteger
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_pushnumber
+        /// 
+        /// Does some very small writes, and stack size is pre-validated, so suppressing GC transition.
+        /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushnumber
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
+        private static partial void lua_pushinteger(lua_State L, long num);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_pushnumber
         /// 
         /// Does some very small writes, and stack size is pre-validated, so suppressing GC transition.
         /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushinteger
         /// </summary>
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
-        private static partial void lua_pushinteger(lua_State L, long num);
+        private static partial void lua_pushnumber(lua_State L, double num);
 
         /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_pushboolean
@@ -293,6 +310,16 @@ namespace Garnet.server
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_sethook(lua_State luaState, lua_Hook func, int mask, int count);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_pushvalue
+        /// 
+        /// Constant time copy into already allocated space.
+        /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_pushvalue
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
+        private static partial void lua_pushvalue(lua_State luaState, int stackIndex);
 
         // Helper methods for using the pinvokes defined above
 
@@ -395,12 +422,20 @@ namespace Garnet.server
         => lua_pushnil(luaState);
 
         /// <summary>
-        /// Pushes a double onto the stack.
+        /// Pushes an integer onto the stack.
         /// 
         /// Suppresses GC transition.
         /// </summary>
         internal static void PushInteger(lua_State luaState, long num)
         => lua_pushinteger(luaState, num);
+
+        /// <summary>
+        /// Pushes a double onto the stack.
+        /// 
+        /// Suppresses GC transition.
+        /// </summary>
+        internal static void PushNumber(lua_State luaState, double num)
+        => lua_pushnumber(luaState, num);
 
         /// <summary>
         /// Pushes a boolean onto the stack.
@@ -584,6 +619,20 @@ namespace Garnet.server
                 lua_setglobal(luaState, (nint)ptr);
             }
         }
+
+        /// <summary>
+        /// Pops a key from the stack, and either:
+        ///   - pushes the next key and the next value (in that order) from the table at <paramref name="tableIndex"/> and returns non-zero
+        ///   - returns zero
+        /// </summary>
+        internal static int Next(lua_State luaState, int tableIndex)
+        => lua_next(luaState, tableIndex);
+
+        /// <summary>
+        /// Push a copy of the value at <paramref name="stackIndex" /> onto the stack.
+        /// </summary>
+        internal static void PushValue(lua_State luaState, int stackIndex)
+        => lua_pushvalue(luaState, stackIndex);
 
         /// <summary>
         /// Sets the index of the top elements on the stack.
