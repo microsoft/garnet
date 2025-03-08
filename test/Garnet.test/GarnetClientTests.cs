@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
@@ -10,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
