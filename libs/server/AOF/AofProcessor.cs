@@ -210,11 +210,10 @@ namespace Garnet.server
                     break;
                 case AofEntryType.MainStoreCheckpointStartCommit:
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                        _ = storeWrapper.TakeCheckpoint(false, StoreType.Main, logger);
+                        _ = storeWrapper.TakeCheckpoint(false, logger);
                     break;
                 case AofEntryType.ObjectStoreCheckpointStartCommit:
-                    if (asReplica && header.storeVersion > storeWrapper.objectStore.CurrentVersion)
-                        _ = storeWrapper.TakeCheckpoint(false, StoreType.Object, logger);
+                    // With unified checkpoint, we do not need to take object store checkpoint separately
                     break;
                 case AofEntryType.MainStoreCheckpointEndCommit:
                 case AofEntryType.ObjectStoreCheckpointEndCommit:

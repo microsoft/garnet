@@ -318,6 +318,21 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Whether we can take an incremental snapshot checkpoint given current state of the store
+        /// </summary>
+        /// <param name="checkpointType"></param>
+        /// <returns></returns>
+        public bool CanTakeIncrementalCheckpoint(CheckpointType checkpointType, out Guid guid)
+        {
+            guid = _lastSnapshotCheckpoint.info.guid;
+            return
+                checkpointType == CheckpointType.Snapshot
+                && guid != default
+                && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
+                && !hlog.HasObjectLog;
+        }
+
+        /// <summary>
         /// Take log-only checkpoint
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>

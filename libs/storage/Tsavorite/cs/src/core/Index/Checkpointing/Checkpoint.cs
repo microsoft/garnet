@@ -5,7 +5,7 @@ using System;
 
 namespace Tsavorite.core
 {
-    static class Checkpoint
+    public static class Checkpoint
     {
         #region Single-store APIs
         public static IStateMachine Full<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, CheckpointType checkpointType, long targetVersion, out Guid guid)
@@ -174,7 +174,7 @@ namespace Tsavorite.core
         public static IStateMachine IncrementalHybridLogOnly<TKey1, TValue1, TStoreFunctions1, TAllocator1, TKey2, TValue2, TStoreFunctions2, TAllocator2>(
             TsavoriteKV<TKey1, TValue1, TStoreFunctions1, TAllocator1> store1,
             TsavoriteKV<TKey2, TValue2, TStoreFunctions2, TAllocator2> store2,
-            CheckpointType checkpointType, long targetVersion, Guid guid)
+            long targetVersion, Guid guid)
             where TStoreFunctions1 : IStoreFunctions<TKey1, TValue1>
             where TAllocator1 : IAllocator<TKey1, TValue1, TStoreFunctions1>
             where TStoreFunctions2 : IStoreFunctions<TKey2, TValue2>
