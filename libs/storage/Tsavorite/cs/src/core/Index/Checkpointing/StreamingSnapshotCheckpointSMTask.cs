@@ -35,7 +35,6 @@ namespace Tsavorite.core
                     store._lastSnapshotCheckpoint.Dispose();
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
-                    store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.nextVersion = targetVersion == -1 ? next.Version + 1 : targetVersion;
                     store.StreamingSnapshotScanPhase1();
                     break;
