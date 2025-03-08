@@ -12,7 +12,7 @@ namespace Garnet.server
 {
     class GarnetInfoMetrics
     {
-        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues<InfoMetricsType>()
+        public static readonly InfoMetricsType[] defaultInfo = [.. Enum.GetValues<InfoMetricsType>()
             .Where(e => e switch
             {
                 InfoMetricsType.STOREHASHTABLE => false,
@@ -20,8 +20,7 @@ namespace Garnet.server
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
                 _ => true
-            })
-            .ToArray();
+            })];
 
         MetricsItem[] serverInfo = null;
         MetricsItem[] memoryInfo = null;

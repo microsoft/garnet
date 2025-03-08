@@ -1034,10 +1034,9 @@ namespace Garnet.server
 
                 if (validLimit)
                 {
-                    elementsInLex = elementsInLex
+                    elementsInLex = [.. elementsInLex
                                         .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)
-                                        .ToList();
+                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
@@ -1086,10 +1085,9 @@ namespace Garnet.server
             if (doReverse) scoredElements.Reverse();
             if (validLimit)
             {
-                scoredElements = scoredElements
+                scoredElements = [.. scoredElements
                                  .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)
-                                 .ToList();
+                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)];
             }
 
             if (rem)

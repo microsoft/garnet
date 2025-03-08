@@ -794,7 +794,7 @@ namespace Garnet.test.cluster
                 address = ((IPEndPoint)server.EndPoint).Address.ToString();
                 port = ((IPEndPoint)server.EndPoint).Port;
                 slot = ClusterTestUtils.HashSlot(key);
-                return ("OK", ((RedisResult[])result).Select(x => (string)x).ToList());
+                return ("OK", [.. ((RedisResult[])result).Select(x => (string)x)]);
             }
             catch (Exception e)
             {

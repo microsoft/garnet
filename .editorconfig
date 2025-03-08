@@ -69,6 +69,7 @@ file_header_template = Copyright (c) Microsoft Corporation.\nLicensed under the 
 dotnet_sort_system_directives_first = true
 dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
 dotnet_style_predefined_type_for_member_access = true:suggestion
+dotnet_style_prefer_collection_expression = true:suggestion
 
 # avoid this. unless absolutely necessary
 dotnet_style_qualification_for_field = false:suggestion
