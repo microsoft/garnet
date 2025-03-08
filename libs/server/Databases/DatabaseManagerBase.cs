@@ -202,18 +202,34 @@ namespace Garnet.server
             if (full)
             {
                 if (storeType is StoreType.Main or StoreType.All)
+                {
                     storeCheckpointResult = await db.MainStore.TakeFullCheckpointAsync(checkpointType);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, db.MainStore.CurrentVersion);
+                }
 
                 if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
                     objectStoreCheckpointResult = await db.ObjectStore.TakeFullCheckpointAsync(checkpointType);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, db.ObjectStore.CurrentVersion);
+                }
             }
             else
             {
                 if (storeType is StoreType.Main or StoreType.All)
+                {
                     storeCheckpointResult = await db.MainStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, db.MainStore.CurrentVersion);
+                }
 
                 if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
                     objectStoreCheckpointResult = await db.ObjectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, db.ObjectStore.CurrentVersion);
+                }
             }
 
             // If cluster is enabled the replication manager is responsible for truncating AOF

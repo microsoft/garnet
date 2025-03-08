@@ -342,8 +342,8 @@ namespace Garnet
             objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
                 out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
-                // Run checkpoint on its own thread to control p99
-                objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
+            // Run checkpoint on its own thread to control p99
+            objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
 
             var baseName = Path.Combine(checkpointDir, "ObjectStore", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
