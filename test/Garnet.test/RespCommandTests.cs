@@ -427,6 +427,7 @@ namespace Garnet.test
                 RespCommand.ASYNC,
                 RespCommand.PING,
                 RespCommand.SELECT,
+                RespCommand.SWAPDB,
                 RespCommand.ECHO,
                 RespCommand.MONITOR,
                 RespCommand.MODULE_LOADCS,

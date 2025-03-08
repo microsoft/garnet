@@ -97,6 +97,9 @@ Specify your subject name via the cert-subject-name command line argument, if ap
 
         [RedisOption("slowlog-max-len", nameof(Options.SlowLogMaxEntries))]
         public Option<int> SlowLogMaxLen { get; set; }
+
+        [RedisOption("databases", nameof(Options.MaxDatabases))]
+        public Option<int> Databases { get; set; }
     }
 
     /// <summary>
