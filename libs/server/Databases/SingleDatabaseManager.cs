@@ -27,7 +27,7 @@ namespace Garnet.server
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
             {
-                defaultDatabase = createDatabaseDelegate(0, out _, out _);
+                defaultDatabase = createDatabaseDelegate(0);
             }
         }
 

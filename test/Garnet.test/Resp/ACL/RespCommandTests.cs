@@ -7054,8 +7054,19 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoSwapDbAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("SWAPDB", ["0", "0"]);
-                ClassicAssert.AreEqual("OK", val);
+                try
+                {
+                    // Currently SWAPDB does not support calling the command when multiple clients are connected to the server.
+                    await client.ExecuteForStringResultAsync("SWAPDB", ["0", "1"]);
+                    Assert.Fail("Shouldn't reach here, calling SWAPDB should fail.");
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message == Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH))
+                        throw;
+
+                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DBSWAP_UNSUPPORTED), ex.Message);
+                }
             }
         }
 

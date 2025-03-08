@@ -46,16 +46,6 @@ namespace Garnet.server
         // Reusable array for storing database IDs for checkpointing
         int[] dbIdsToCheckpoint;
 
-        // Path of serialization for the DB IDs file used when committing / recovering to / from AOF
-        readonly string aofParentDir;
-
-        readonly string aofDirBaseName;
-
-        // Path of serialization for the DB IDs file used when committing / recovering to / from a checkpoint
-        readonly string checkpointParentDir;
-
-        readonly string checkpointDirBaseName;
-
         public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate,
             StoreWrapper storeWrapper, bool createDefaultDatabase = true) : base(createDatabaseDelegate, storeWrapper)
         {
@@ -68,18 +58,7 @@ namespace Garnet.server
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
             {
-                var db = createDatabaseDelegate(0, out var storeCheckpointDir, out var aofDir);
-
-                var checkpointDirInfo = new DirectoryInfo(storeCheckpointDir);
-                checkpointDirBaseName = checkpointDirInfo.Name;
-                checkpointParentDir = checkpointDirInfo.Parent!.FullName;
-
-                if (aofDir != null)
-                {
-                    var aofDirInfo = new DirectoryInfo(aofDir);
-                    aofDirBaseName = aofDirInfo.Name;
-                    aofParentDir = aofDirInfo.Parent!.FullName;
-                }
+                var db = createDatabaseDelegate(0);
 
                 // Set new database in map
                 if (!TryAddDatabase(0, ref db))
@@ -105,6 +84,9 @@ namespace Garnet.server
             if (replicaRecover)
                 throw new GarnetException(
                     $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpoint)} with {nameof(replicaRecover)} == true.");
+
+            var checkpointParentDir = StoreWrapper.serverOptions.MainStoreCheckpointBaseDirectory;
+            var checkpointDirBaseName = StoreWrapper.serverOptions.GetCheckpointDirectoryName(0);
 
             int[] dbIdsToRecover;
             try
@@ -367,6 +349,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void RecoverAOF()
         {
+            var aofParentDir = StoreWrapper.serverOptions.AppendOnlyFileBaseDirectory;
+            var aofDirBaseName = StoreWrapper.serverOptions.GetAppendOnlyFileDirectoryName(0);
+
             int[] dbIdsToRecover;
             try
             {
@@ -662,7 +647,7 @@ namespace Garnet.server
                     return ref databasesMapSnapshot[dbId];
                 }
 
-                var db = CreateDatabaseDelegate(dbId, out _, out _);
+                var db = CreateDatabaseDelegate(dbId);
                 if (!databases.TrySetValueUnsafe(dbId, ref db, false))
                     return ref GarnetDatabase.Empty;
             }

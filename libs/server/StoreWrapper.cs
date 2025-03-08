@@ -112,7 +112,7 @@ namespace Garnet.server
         /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
-        public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId, out string storeCheckpointDir, out string aofDir);
+        public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
 
         /// <summary>
         /// Number of active databases

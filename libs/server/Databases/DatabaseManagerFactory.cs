@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.IO;
 using System.Linq;
 
 namespace Garnet.server
@@ -35,23 +34,21 @@ namespace Garnet.server
                 return false;
 
             // If there are multiple databases to recover, create a multi database manager, otherwise create a single database manager.
-            using (createDatabaseDelegate(0, out var checkpointDir, out var aofDir))
+            using (createDatabaseDelegate(0))
             {
                 // Check if there are multiple databases to recover from checkpoint
-                var checkpointDirInfo = new DirectoryInfo(checkpointDir);
-                var checkpointDirBaseName = checkpointDirInfo.Name;
-                var checkpointParentDir = checkpointDirInfo.Parent!.FullName;
+                var checkpointParentDir = serverOptions.MainStoreCheckpointBaseDirectory;
+                var checkpointDirBaseName = serverOptions.GetCheckpointDirectoryName(0);
 
                 if (MultiDatabaseManager.TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName,
                         out var dbIds) && dbIds.Any(id => id != 0))
                     return true;
 
                 // Check if there are multiple databases to recover from AOF
-                if (aofDir != null)
+                if (serverOptions.EnableAOF)
                 {
-                    var aofDirInfo = new DirectoryInfo(aofDir);
-                    var aofDirBaseName = aofDirInfo.Name;
-                    var aofParentDir = aofDirInfo.Parent!.FullName;
+                    var aofParentDir = serverOptions.AppendOnlyFileBaseDirectory;
+                    var aofDirBaseName = serverOptions.GetAppendOnlyFileDirectoryName(0);
 
                     if (MultiDatabaseManager.TryGetSavedDatabaseIds(aofParentDir, aofDirBaseName,
                             out dbIds) && dbIds.Any(id => id != 0))

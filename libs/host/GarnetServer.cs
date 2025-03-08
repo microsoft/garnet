@@ -223,8 +223,8 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
-            StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId, out string storeCheckpointDir, out string aofDir) =>
-                CreateDatabase(dbId, opts, clusterFactory, customCommandManager, out storeCheckpointDir, out aofDir);
+            StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId) =>
+                CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true, logger);
@@ -276,12 +276,11 @@ namespace Garnet
         }
 
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
-            CustomCommandManager customCommandManager, out string storeCheckpointDir, out string aofDir)
+            CustomCommandManager customCommandManager)
         {
-            var store = CreateMainStore(dbId, clusterFactory, out var checkpointDir, out storeCheckpointDir);
-            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, checkpointDir,
-                out var objectStoreSizeTracker);
-            var (aofDevice, aof) = CreateAOF(dbId, out aofDir);
+            var store = CreateMainStore(dbId, clusterFactory);
+            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, out var objectStoreSizeTracker);
+            var (aofDevice, aof) = CreateAOF(dbId);
             return new GarnetDatabase(dbId, store, objectStore, objectStoreSizeTracker, aofDevice, aof,
                 serverOptions.AdjustedIndexMaxCacheLines == 0,
                 serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0);
@@ -311,18 +310,15 @@ namespace Garnet
             }
         }
 
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory, out string checkpointDir, out string mainStoreCheckpointDir)
+        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory)
         {
             kvSettings = opts.GetSettings(loggerFactory, out logFactory);
-
-            checkpointDir = (opts.CheckpointDir ?? opts.LogDir) ?? string.Empty;
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
 
-            var baseName = Path.Combine(checkpointDir, "Store", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            var baseName = opts.GetMainStoreCheckpointDirectory(dbId);
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
-            mainStoreCheckpointDir = baseName;
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
@@ -333,7 +329,7 @@ namespace Garnet
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string checkpointDir, out CacheSizeTracker objectStoreSizeTracker)
+        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager, out CacheSizeTracker objectStoreSizeTracker)
         {
             objectStoreSizeTracker = null;
             if (opts.DisableObjects)
@@ -345,7 +341,7 @@ namespace Garnet
             // Run checkpoint on its own thread to control p99
             objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
 
-            var baseName = Path.Combine(checkpointDir, "ObjectStore", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            var baseName = opts.GetObjectStoreCheckpointDirectory(dbId);
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             objKvSettings.CheckpointManager = opts.EnableCluster ?
@@ -367,16 +363,14 @@ namespace Garnet
 
         }
 
-        private (IDevice, TsavoriteLog) CreateAOF(int dbId, out string aofDir)
+        private (IDevice, TsavoriteLog) CreateAOF(int dbId)
         {
-            aofDir = null;
-
             if (opts.EnableAOF)
             {
                 if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                     throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
 
-                opts.GetAofSettings(dbId, out var aofSettings, out aofDir);
+                opts.GetAofSettings(dbId, out var aofSettings);
                 var aofDevice = aofSettings.LogDevice;
                 var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
                 if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)

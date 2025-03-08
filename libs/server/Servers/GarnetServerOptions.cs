@@ -457,6 +457,64 @@ namespace Garnet.server
         public bool AllowMultiDb => !EnableCluster && MaxDatabases > 1;
 
         /// <summary>
+        /// Gets the base directory for storing checkpoints
+        /// </summary>
+        public string CheckpointBaseDirectory => (CheckpointDir ?? LogDir) ?? string.Empty;
+
+        /// <summary>
+        /// Gets the base directory for storing main-store checkpoints
+        /// </summary>
+        public string MainStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "Store");
+
+        /// <summary>
+        /// Gets the base directory for storing object-store checkpoints
+        /// </summary>
+        public string ObjectStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "ObjectStore");
+
+        /// <summary>
+        /// Get the directory name for database checkpoints
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory name</returns>
+        public string GetCheckpointDirectoryName(int dbId) => $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}";
+
+        /// <summary>
+        /// Get the directory for main-store database checkpoints
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory</returns>
+        public string GetMainStoreCheckpointDirectory(int dbId) =>
+            Path.Combine(MainStoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
+
+        /// <summary>
+        /// Get the directory for object-store database checkpoints
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory</returns>
+        public string GetObjectStoreCheckpointDirectory(int dbId) =>
+            Path.Combine(ObjectStoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
+
+        /// <summary>
+        /// Gets the base directory for storing AOF commits
+        /// </summary>
+        public string AppendOnlyFileBaseDirectory => CheckpointDir ?? string.Empty;
+
+        /// <summary>
+        /// Get the directory name for database AOF commits
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory name</returns>
+        public string GetAppendOnlyFileDirectoryName(int dbId) => $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}";
+
+        /// <summary>
+        /// Get the directory for database AOF commits
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory</returns>
+        public string GetAppendOnlyFileDirectory(int dbId) =>
+            Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -742,8 +800,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">DB ID</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        /// <param name="aofDir"></param>
-        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings, out string aofDir)
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
@@ -762,7 +819,7 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
 
-            aofDir = Path.Combine(CheckpointDir ?? string.Empty, $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}");
+            var aofDir = GetAppendOnlyFileDirectory(dbId);
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(aofDir),
@@ -855,20 +912,8 @@ namespace Garnet.server
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
 
-            return GetInitializedDeviceFactory(CheckpointDir)
-                .Get(new FileDescriptor($"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}", "aof.log"));
-        }
-
-        /// <summary>
-        /// Get device for logging database IDs
-        /// </summary>
-        /// <returns></returns>
-        public IDevice GetDatabaseIdsDevice()
-        {
-            if (MaxDatabases == 1) return new NullDevice();
-
-            return GetInitializedDeviceFactory(CheckpointDir)
-                .Get(new FileDescriptor($"databases", "ids.dat"));
+            return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), "aof.log"));
         }
     }
 }
