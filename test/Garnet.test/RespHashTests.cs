@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
-using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 

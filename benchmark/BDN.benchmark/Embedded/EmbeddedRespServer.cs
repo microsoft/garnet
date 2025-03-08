@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using Garnet;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Embedded.server
 {

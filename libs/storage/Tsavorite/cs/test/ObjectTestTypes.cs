@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
