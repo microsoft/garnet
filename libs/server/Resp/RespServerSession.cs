@@ -1330,6 +1330,9 @@ namespace Garnet.server
             databaseSessions.Map[dbId1] = dbSession2;
             databaseSessions.Map[dbId2] = tmp;
 
+            databaseSessions.Map[dbId1].Id = dbId1;
+            databaseSessions.Map[dbId2].Id = dbId2;
+
             if (activeDbId == dbId1)
                 SwitchActiveDatabaseSession(dbId1, ref databaseSessions.Map[dbId1]);
             else if (activeDbId == dbId2)
