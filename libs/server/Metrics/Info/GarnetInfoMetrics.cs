@@ -206,7 +206,6 @@ namespace Garnet.server
                 [
                     new("CurrentVersion", storeWrapper.store.CurrentVersion.ToString()),
                     new("LastCheckpointedVersion", storeWrapper.store.LastCheckpointedVersion.ToString()),
-                    new("RecoveredVersion", storeWrapper.store.RecoveredVersion.ToString()),
                     new("SystemState", storeWrapper.store.SystemState.ToString()),
                     new("IndexSize", storeWrapper.store.IndexSize.ToString()),
                     new("LogDir", storeWrapper.serverOptions.LogDir),
@@ -233,7 +232,6 @@ namespace Garnet.server
                 [
                     new("CurrentVersion", storeWrapper.objectStore.CurrentVersion.ToString()),
                     new("LastCheckpointedVersion", storeWrapper.objectStore.LastCheckpointedVersion.ToString()),
-                    new("RecoveredVersion", storeWrapper.objectStore.RecoveredVersion.ToString()),
                     new("SystemState", storeWrapper.objectStore.SystemState.ToString()),
                     new("IndexSize", storeWrapper.objectStore.IndexSize.ToString()),
                     new("LogDir", storeWrapper.serverOptions.LogDir),

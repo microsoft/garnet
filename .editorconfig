@@ -43,6 +43,9 @@ dotnet_diagnostic.CA1866.severity = warning
 dotnet_diagnostic.CA1867.severity = warning
 
 # Usage rules
+# Treat unnecessary usings as warnings
+dotnet_diagnostic.IDE0005.severity = warning
+
 # CA2254: Template should be a static expression
 dotnet_diagnostic.CA2254.severity = warning
 

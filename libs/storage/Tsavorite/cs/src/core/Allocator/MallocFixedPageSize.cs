@@ -312,6 +312,8 @@ namespace Tsavorite.core
             s.Release();
         }
 
+        public SemaphoreSlim GetCheckpointSemaphore() => checkpointSemaphore;
+
         /// <summary>
         /// Public facing persistence API
         /// </summary>
@@ -468,7 +470,7 @@ namespace Tsavorite.core
                 Allocate();
             }
 
-            int numRecords = (int)numBytesToRead / RecordSize;
+            int numRecords = (int)(numBytesToRead / (ulong)RecordSize);
             int recordsCountInLastLevel = numRecords & PageSizeMask;
             int numCompleteLevels = numRecords >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);

@@ -6,8 +6,9 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Tsavorite.core;
 
-namespace Tsavorite.core
+namespace Tsavorite.test
 {
     /// <summary>
     /// The current state of a state-machine operation such as a checkpoint.
@@ -112,7 +113,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Compare the current <see cref="SystemState"/> to <paramref name="obj"/> for equality if obj is also a <see cref="SystemState"/>
+        /// Compare the current <see cref="VersionSchemeState"/> to <paramref name="obj"/> for equality if obj is also a <see cref="VersionSchemeState"/>
         /// </summary>
         public override bool Equals(object obj)
         {
@@ -126,7 +127,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Compare the current <see cref="SystemState"/> to <paramref name="other"/> for equality
+        /// Compare the current <see cref="VersionSchemeState"/> to <paramref name="other"/> for equality
         /// </summary>
         private bool Equals(VersionSchemeState other)
         {
