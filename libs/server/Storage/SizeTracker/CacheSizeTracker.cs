@@ -27,7 +27,7 @@ namespace Garnet.server
 
         int isStarted = 0;
         private const int deltaFraction = 10; // 10% of target size
-        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
+        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
 
         internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
 
@@ -117,6 +117,16 @@ namespace Garnet.server
             // readCacheTracker could be null if read cache is not enabled or heap size limit is set
             // just for the main log
             this.readCacheTracker?.IncrementSize(size);
+        }
+
+        /// <summary>
+        /// If tracker has not started, prevent it from starting
+        /// </summary>
+        /// <returns>True if tracker hasn't previously started</returns>
+        public bool TryPreventStart()
+        {
+            var prevStarted = Interlocked.CompareExchange(ref isStarted, 1, 0);
+            return prevStarted == 0;
         }
     }
 }

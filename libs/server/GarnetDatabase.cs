@@ -140,8 +140,12 @@ namespace Garnet.server
 
             if (ObjectStoreSizeTracker != null)
             {
-                while (!ObjectStoreSizeTracker.Stopped)
-                    Thread.Yield();
+                // If tracker has previously started, wait for it to stop
+                if (!ObjectStoreSizeTracker.TryPreventStart())
+                {
+                    while (!ObjectStoreSizeTracker.Stopped)
+                        Thread.Yield();
+                }
             }
 
             disposed = true;
