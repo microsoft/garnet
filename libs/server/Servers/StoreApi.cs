@@ -49,6 +49,6 @@ namespace Garnet.server
         /// that will safely truncate the log on disk after the checkpoint.
         /// </summary>
         public void FlushDB(int dbId = 0, bool unsafeTruncateLog = false) =>
-            storeWrapper.databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
+            storeWrapper.FlushDatabase(unsafeTruncateLog, dbId);
     }
 }

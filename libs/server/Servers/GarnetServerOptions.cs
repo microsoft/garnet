@@ -453,6 +453,11 @@ namespace Garnet.server
         public int MaxDatabases = 16;
 
         /// <summary>
+        /// Allow more than one logical database in server
+        /// </summary>
+        public bool AllowMultiDb => !EnableCluster && MaxDatabases > 1;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)

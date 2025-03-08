@@ -934,8 +934,9 @@ namespace Garnet.server
                 }
             }
 
-            ref var db = ref storeWrapper.databaseManager.TryGetOrAddDatabase(dbId, out var success, out _);
-            Debug.Assert(success);
+            var dbFound = storeWrapper.TryGetOrAddDatabase(dbId, out var db, out _);
+            Debug.Assert(dbFound);
+
             var seconds = db.LastSaveTime.ToUnixTimeSeconds();
             while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
                 SendAndReset();

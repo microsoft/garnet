@@ -230,7 +230,7 @@ namespace Garnet.server
             var dbSession = CreateDatabaseSession(0);
             var maxDbs = storeWrapper.serverOptions.MaxDatabases;
             activeDbId = 0;
-            allowMultiDb = !storeWrapper.serverOptions.EnableCluster && maxDbs > 1;
+            allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
 
             databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
             if (!databaseSessions.TrySetValue(0, ref dbSession))

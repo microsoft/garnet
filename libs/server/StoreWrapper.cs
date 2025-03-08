@@ -12,7 +12,6 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
-using Garnet.server.Databases;
 using Garnet.server.Lua;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -125,7 +124,8 @@ namespace Garnet.server
         /// </summary>
         internal readonly LuaTimeoutManager luaTimeoutManager;
 
-        internal readonly IDatabaseManager databaseManager;
+        private IDatabaseManager databaseManager;
+        SingleWriterMultiReaderLock databaseManagerLock;
 
         internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
@@ -303,6 +303,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Take checkpoint of all active databases
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
+            CancellationToken token = default) => databaseManager.TakeCheckpoint(background, storeType, logger, token);
+
+        /// <summary>
         /// Recover checkpoint
         /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
@@ -326,14 +337,105 @@ namespace Garnet.server
         /// <param name="version"></param>
         /// <param name="dbId"></param>
         /// <param name="diskless"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false) =>
+        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.EnqueueCommit)} with DB ID: {dbId}");
+
             this.databaseManager.EnqueueCommit(isMainStore, version, dbId, diskless);
+        }
+
+        internal FunctionsState CreateFunctionsState(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.CreateFunctionsState)} with DB ID: {dbId}");
+
+            return databaseManager.CreateFunctionsState(dbId);
+        }
 
         /// <summary>
         /// Reset
         /// </summary>
         /// <param name="dbId">Database ID</param>
-        public void Reset(int dbId = 0) => databaseManager.Reset(dbId);
+        public void Reset(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.Reset)} with DB ID: {dbId}");
+
+            databaseManager.Reset(dbId);
+        }
+
+        /// <summary>
+        /// Resets the revivification stats.
+        /// </summary>
+        public void ResetRevivificationStats() => databaseManager.ResetRevivificationStats();
+
+        /// <summary>
+        /// Get a snapshot of all active databases
+        /// </summary>
+        /// <returns>Array of active databases</returns>
+        public GarnetDatabase[] GetDatabasesSnapshot() => databaseManager.GetDatabasesSnapshot();
+
+        /// <summary>
+        /// Get database DB ID
+        /// </summary>
+        /// <param name="dbId">DB Id</param>
+        /// <param name="database">Retrieved database</param>
+        /// <returns>True if database was found</returns>
+        public bool TryGetDatabase(int dbId, out GarnetDatabase database)
+        {
+
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+            {
+                database = GarnetDatabase.Empty;
+                return false;
+            }
+
+            database = databaseManager.TryGetDatabase(dbId, out var success);
+            return success;
+        }
+
+        /// <summary>
+        /// Try to get or add a new database
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <param name="database">Retrieved or added database</param>
+        /// <param name="added">True if database was added</param>
+        /// <returns>True if database was found or added</returns>
+        public bool TryGetOrAddDatabase(int dbId, out GarnetDatabase database, out bool added)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+            {
+                database = GarnetDatabase.Empty;
+                added = false;
+                return false;
+            }
+
+            database = databaseManager.TryGetOrAddDatabase(dbId, out var success, out added);
+            return success;
+        }
+
+        /// <summary>
+        /// Flush database with specified ID
+        /// </summary>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
+        /// <param name="dbId">Database ID</param>
+        public void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.FlushDatabase)} with DB ID: {dbId}");
+
+            databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
+        }
+
+        /// <summary>
+        /// Flush all active databases 
+        /// </summary>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
+        public void FlushAllDatabases(bool unsafeTruncateLog)
+        {
+            databaseManager.FlushAllDatabases(unsafeTruncateLog);
+        }
 
         /// <summary>
         /// Try to swap between two database instances
@@ -341,7 +443,12 @@ namespace Garnet.server
         /// <param name="dbId1">First database ID</param>
         /// <param name="dbId2">Second database ID</param>
         /// <returns>True if swap successful</returns>
-        public bool TrySwapDatabases(int dbId1, int dbId2) => this.databaseManager.TrySwapDatabases(dbId1, dbId2);
+        public bool TrySwapDatabases(int dbId1, int dbId2)
+        {
+            if (databaseManager is SingleDatabaseManager) return false;
+
+            return this.databaseManager.TrySwapDatabases(dbId1, dbId2);
+        }
 
         async Task AutoCheckpointBasedOnAofSizeLimit(long aofSizeLimit, CancellationToken token = default, ILogger logger = null)
         {
@@ -505,6 +612,9 @@ namespace Garnet.server
                 return;
             }
 
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
+
             await databaseManager.CommitToAofAsync(dbId, token);
         }
 
@@ -523,6 +633,9 @@ namespace Garnet.server
             {
                 return databaseManager.TakeCheckpoint(background, storeType, logger, token);
             }
+
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
 
             return databaseManager.TakeCheckpoint(background, dbId, storeType, logger, token);
         }
@@ -609,14 +722,24 @@ namespace Garnet.server
         /// <param name="dbId">ID of database to lock</param>
         /// <returns>True if lock acquired</returns>
         public bool TryPauseCheckpoints(int dbId = 0)
-            => databaseManager.TryPauseCheckpoints(dbId);
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TryPauseCheckpoints)} with DB ID: {dbId}");
+
+            return databaseManager.TryPauseCheckpoints(dbId);
+        }
 
         /// <summary>
         /// Release checkpoint task lock
         /// </summary>
         /// <param name="dbId">ID of database to unlock</param>
         public void ResumeCheckpoints(int dbId = 0)
-            => databaseManager.ResumeCheckpoints(dbId);
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.ResumeCheckpoints)} with DB ID: {dbId}");
+
+            databaseManager.ResumeCheckpoints(dbId);
+        }
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -624,8 +747,13 @@ namespace Garnet.server
         /// <param name="entryTime"></param>
         /// <param name="dbId"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0) =>
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
+
             await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId);
+        }
 
         public bool HasKeysInSlots(List<int> slots)
         {
@@ -666,6 +794,28 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+        private bool CheckMultiDatabaseCompatibility()
+        {
+            if (databaseManager is MultiDatabaseManager)
+                return true;
+
+            if (!serverOptions.AllowMultiDb)
+                return false;
+
+            databaseManagerLock.WriteLock();
+            try
+            {
+                if (databaseManager is SingleDatabaseManager singleDatabaseManager)
+                    databaseManager = new MultiDatabaseManager(singleDatabaseManager);
+
+                return true;
+            }
+            finally
+            {
+                databaseManagerLock.WriteUnlock();
+            }
         }
     }
 }

@@ -69,11 +69,11 @@ namespace Garnet.server
 
             parseState.Initialize();
 
-            functionsState = storeWrapper.databaseManager.CreateFunctionsState(dbId);
+            functionsState = storeWrapper.CreateFunctionsState(dbId);
 
             var functions = new MainSessionFunctions(functionsState);
 
-            ref var db = ref storeWrapper.databaseManager.TryGetDatabase(dbId, out var dbFound);
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
 
             var session = db.MainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);

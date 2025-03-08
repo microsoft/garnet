@@ -201,14 +201,14 @@ namespace Garnet.server
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.store.CurrentVersion)
-                            storeWrapper.databaseManager.TakeCheckpoint(false, StoreType.Main, logger: logger);
+                            storeWrapper.TakeCheckpoint(false, StoreType.Main, logger: logger);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointCommit:
                     if (asReplica)
                     {
                         if (header.storeVersion > storeWrapper.objectStore.CurrentVersion)
-                            storeWrapper.databaseManager.TakeCheckpoint(false, StoreType.Object, logger: logger);
+                            storeWrapper.TakeCheckpoint(false, StoreType.Object, logger: logger);
                     }
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointCommit:

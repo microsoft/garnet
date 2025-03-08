@@ -141,7 +141,7 @@ namespace Garnet.server
         /// <summary>
         /// Delegate for creating a new logical database
         /// </summary>
-        protected readonly StoreWrapper.DatabaseCreatorDelegate CreateDatabaseDelegate;
+        public readonly StoreWrapper.DatabaseCreatorDelegate CreateDatabaseDelegate;
 
         /// <summary>
         /// The main logger instance associated with the database manager.

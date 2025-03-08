@@ -93,6 +93,12 @@ namespace Garnet.server
             CopyDatabases(src, enableAof);
         }
 
+        public MultiDatabaseManager(SingleDatabaseManager src) :
+            this(src.CreateDatabaseDelegate, src.StoreWrapper, false)
+        {
+            CopyDatabases(src, src.StoreWrapper.serverOptions.EnableAOF);
+        }
+
         /// <inheritdoc/>
         public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
@@ -105,7 +111,6 @@ namespace Garnet.server
             {
                 if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out dbIdsToRecover))
                     return;
-
             }
             catch (Exception ex)
             {
@@ -803,6 +808,37 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Retrieves saved database IDs from parent checkpoint / AOF path
+        /// e.g. if path contains directories: baseName, baseName_1, baseName_2, baseName_10
+        /// DB IDs 0,1,2,10 will be returned
+        /// </summary>
+        /// <param name="path">Parent path</param>
+        /// <param name="baseName">Base name of directories containing database-specific checkpoints / AOFs</param>
+        /// <param name="dbIds">DB IDs extracted from parent path</param>
+        /// <returns>True if successful</returns>
+        internal static bool TryGetSavedDatabaseIds(string path, string baseName, out int[] dbIds)
+        {
+            dbIds = default;
+            if (!Directory.Exists(path)) return false;
+
+            var dirs = Directory.GetDirectories(path, $"{baseName}*", SearchOption.TopDirectoryOnly);
+            dbIds = new int[dirs.Length];
+            for (var i = 0; i < dirs.Length; i++)
+            {
+                var dirName = new DirectoryInfo(dirs[i]).Name;
+                var sepIdx = dirName.IndexOf('_');
+                var dbId = 0;
+
+                if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out dbId))
+                    continue;
+
+                dbIds[i] = dbId;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Try to add a new database
         /// </summary>
         /// <param name="dbId">Database ID</param>
@@ -871,37 +907,6 @@ namespace Garnet.server
             {
                 databasesLock.WriteUnlock();
             }
-        }
-
-        /// <summary>
-        /// Retrieves saved database IDs from parent checkpoint / AOF path
-        /// e.g. if path contains directories: baseName, baseName_1, baseName_2, baseName_10
-        /// DB IDs 0,1,2,10 will be returned
-        /// </summary>
-        /// <param name="path">Parent path</param>
-        /// <param name="baseName">Base name of directories containing database-specific checkpoints / AOFs</param>
-        /// <param name="dbIds">DB IDs extracted from parent path</param>
-        /// <returns>True if successful</returns>
-        private bool TryGetSavedDatabaseIds(string path, string baseName, out int[] dbIds)
-        {
-            dbIds = default;
-            if (!Directory.Exists(path)) return false;
-
-            var dirs = Directory.GetDirectories(path, $"{baseName}*", SearchOption.TopDirectoryOnly);
-            dbIds = new int[dirs.Length];
-            for (var i = 0; i < dirs.Length; i++)
-            {
-                var dirName = new DirectoryInfo(dirs[i]).Name;
-                var sepIdx = dirName.IndexOf('_');
-                var dbId = 0;
-
-                if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out dbId))
-                    continue;
-
-                dbIds[i] = dbId;
-            }
-
-            return true;
         }
 
         /// <summary>

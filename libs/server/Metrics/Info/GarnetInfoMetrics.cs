@@ -78,7 +78,7 @@ namespace Garnet.server
 
             var aof_log_memory_size = -1L;
 
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
             var disableObj = storeWrapper.serverOptions.DisableObjects;
 
             foreach (var db in databases)
@@ -218,7 +218,7 @@ namespace Garnet.server
 
         private void PopulateStoreStats(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
             for (var i = 0; i < databases.Length; i++)
             {
@@ -256,7 +256,7 @@ namespace Garnet.server
 
         private void PopulateObjectStoreStats(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
             for (var i = 0; i < databases.Length; i++)
             {
@@ -294,7 +294,7 @@ namespace Garnet.server
 
         private void PopulateStoreHashDistribution(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
             var sb = new StringBuilder();
             foreach (var db in databases)
@@ -308,7 +308,7 @@ namespace Garnet.server
 
         private void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
             var sb = new StringBuilder();
             foreach (var db in databases)
@@ -322,7 +322,7 @@ namespace Garnet.server
 
         private void PopulateStoreRevivInfo(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
             var sb = new StringBuilder();
             foreach (var db in databases)
@@ -336,7 +336,7 @@ namespace Garnet.server
 
         private void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
             var sb = new StringBuilder();
             foreach (var db in databases)
             {
@@ -349,7 +349,7 @@ namespace Garnet.server
 
         private void PopulatePersistenceInfo(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.databaseManager.GetDatabasesSnapshot();
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
             for (var i = 0; i < databases.Length; i++)
             {

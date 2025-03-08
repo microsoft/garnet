@@ -1682,10 +1682,10 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.FLUSHDB:
-                    storeWrapper.databaseManager.FlushDatabase(unsafeTruncateLog, activeDbId);
+                    storeWrapper.FlushDatabase(unsafeTruncateLog, activeDbId);
                     break;
                 case RespCommand.FLUSHALL:
-                    storeWrapper.databaseManager.FlushAllDatabases(unsafeTruncateLog);
+                    storeWrapper.FlushAllDatabases(unsafeTruncateLog);
                     break;
             }
         }

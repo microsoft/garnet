@@ -110,8 +110,8 @@ namespace Garnet.server
             MainStore = srcDb.MainStore;
             ObjectStore = srcDb.ObjectStore;
             ObjectStoreSizeTracker = srcDb.ObjectStoreSizeTracker;
-            AofDevice = enableAof ? AofDevice : null;
-            AppendOnlyFile = enableAof ? AppendOnlyFile : null;
+            AofDevice = enableAof ? srcDb.AofDevice : null;
+            AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             MainStoreIndexMaxedOut = srcDb.MainStoreIndexMaxedOut;
             ObjectStoreIndexMaxedOut = srcDb.ObjectStoreIndexMaxedOut;
         }
