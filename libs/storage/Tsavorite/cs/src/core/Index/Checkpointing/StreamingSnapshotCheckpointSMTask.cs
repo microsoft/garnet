@@ -31,6 +31,7 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._lastSnapshotCheckpoint.Dispose();
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
@@ -40,6 +41,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.WAIT_FLUSH:
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     var finalLogicalAddress = store.hlogBase.GetTailAddress();
                     store.StreamingSnapshotScanPhase2(finalLogicalAddress);
                     break;
