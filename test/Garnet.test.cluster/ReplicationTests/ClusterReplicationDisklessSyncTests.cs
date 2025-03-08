@@ -236,7 +236,9 @@ namespace Garnet.test.cluster
             // Validate db version
             var primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
             var replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
-            ClassicAssert.AreEqual(2, primaryVersion);
+
+            var expectedVersion1 = disableObjects ? 2 : 3;
+            ClassicAssert.AreEqual(expectedVersion1, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
 
             // Reset and re-attach replica as primary
@@ -258,9 +260,10 @@ namespace Garnet.test.cluster
             primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
             replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
             var replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
-            ClassicAssert.AreEqual(3, primaryVersion);
+            var expectedVersion2 = disableObjects ? 3 : 5;
+            ClassicAssert.AreEqual(expectedVersion2, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
-            ClassicAssert.AreEqual(2, replicaOneVersion);
+            ClassicAssert.AreEqual(expectedVersion1, replicaOneVersion);
 
             // Re-attach first replica
             _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
@@ -271,7 +274,8 @@ namespace Garnet.test.cluster
             primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
             replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
             replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
-            ClassicAssert.AreEqual(4, primaryVersion);
+            var expectedVersion3 = disableObjects ? 4 : 7;
+            ClassicAssert.AreEqual(expectedVersion3, primaryVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaOneVersion);
             ClassicAssert.AreEqual(primaryVersion, replicaTwoVersion);
         }
