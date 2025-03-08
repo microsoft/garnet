@@ -624,7 +624,7 @@
         "Command": "CLUSTER_BANLIST",
         "Name": "CLUSTER|BANLIST",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -742,7 +742,7 @@
       {
         "Command": "CLUSTER_HELP",
         "Name": "CLUSTER|HELP",
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Slow, Garnet"
       },
@@ -790,7 +790,7 @@
         "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -805,7 +805,7 @@
         "Command": "CLUSTER_MYPARENTID",
         "Name": "CLUSTER|MYPARENTID",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Garnet"
       },
@@ -916,7 +916,7 @@
         "Command": "CLUSTER_SLOTSTATE",
         "Name": "CLUSTER|SLOTSTATE",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -2579,6 +2579,7 @@
       {
         "Command": "LATENCY_HELP",
         "Name": "LATENCY|HELP",
+        "Arity": 2,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Slow, Garnet"
       },

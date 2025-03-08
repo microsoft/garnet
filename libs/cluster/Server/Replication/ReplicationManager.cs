@@ -156,7 +156,10 @@ namespace Garnet.cluster
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            storeWrapper.EnqueueCommit(isMainStore, newVersion, diskless: clusterProvider.serverOptions.ReplicaDisklessSync);
+            var entryType = clusterProvider.serverOptions.ReplicaDisklessSync ?
+                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointStartCommit : AofEntryType.ObjectStoreStreamingCheckpointStartCommit) :
+                (isMainStore ? AofEntryType.MainStoreCheckpointStartCommit : AofEntryType.ObjectStoreCheckpointStartCommit);
+            storeWrapper.EnqueueCommit(entryType, newVersion);
         }
 
         /// <summary>

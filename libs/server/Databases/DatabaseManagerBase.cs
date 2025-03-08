@@ -9,6 +9,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using static System.Formats.Asn1.AsnWriter;
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
@@ -113,7 +114,7 @@ namespace Garnet.server
         public abstract void ResetRevivificationStats();
 
         /// <inheritdoc/>
-        public abstract void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false);
+        public abstract void EnqueueCommit(AofEntryType entryType, long version, int dbId = 0);
 
         /// <inheritdoc/>
         public abstract GarnetDatabase[] GetDatabasesSnapshot();
@@ -339,17 +340,13 @@ namespace Garnet.server
             }
         }
 
-        protected void EnqueueDatabaseCommit(ref GarnetDatabase db, bool isMainStore, long version, bool streaming)
+        protected void EnqueueDatabaseCommit(ref GarnetDatabase db, AofEntryType entryType, long version)
         {
             if (db.AppendOnlyFile == null) return;
 
-            var opType = streaming ?
-                isMainStore ? AofEntryType.MainStoreStreamingCheckpointCommit : AofEntryType.ObjectStoreStreamingCheckpointCommit :
-                isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit;
-
             AofHeader header = new()
             {
-                opType = opType,
+                opType = entryType,
                 storeVersion = version,
                 sessionID = -1
             };
@@ -507,7 +504,7 @@ namespace Garnet.server
                 var dbMainStore = DefaultDatabase.MainStore;
                 if (GrowIndexIfNeeded(StoreType.Main,
                         StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                        () => dbMainStore.IndexSize, () => dbMainStore.GrowIndex()))
+                        () => dbMainStore.IndexSize, async () => await dbMainStore.GrowIndexAsync()))
                 {
                     db.MainStoreIndexMaxedOut = true;
                 }
@@ -523,7 +520,7 @@ namespace Garnet.server
                 if (GrowIndexIfNeeded(StoreType.Object,
                         StoreWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
                         dbObjectStore.OverflowBucketAllocations,
-                        () => dbObjectStore.IndexSize, () => dbObjectStore.GrowIndex()))
+                        () => dbObjectStore.IndexSize, async () => await dbObjectStore.GrowIndexAsync()))
                 {
                     db.ObjectStoreIndexMaxedOut = true;
                 }

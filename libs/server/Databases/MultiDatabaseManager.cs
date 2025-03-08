@@ -549,13 +549,13 @@ namespace Garnet.server
             }
         }
 
-        public override void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false)
+        public override void EnqueueCommit(AofEntryType entryType, long version, int dbId = 0)
         {
             ref var db = ref TryGetOrAddDatabase(dbId, out var success, out _);
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            EnqueueDatabaseCommit(ref db, isMainStore, version, diskless);
+            EnqueueDatabaseCommit(ref db, entryType, version);
         }
 
         /// <inheritdoc/>

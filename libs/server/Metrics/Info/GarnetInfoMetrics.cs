@@ -234,7 +234,6 @@ namespace Garnet.server
         [
             new($"db{db.Id}.CurrentVersion", db.MainStore.CurrentVersion.ToString()),
             new($"db{db.Id}.LastCheckpointedVersion", db.MainStore.LastCheckpointedVersion.ToString()),
-            new($"db{db.Id}.RecoveredVersion", db.MainStore.RecoveredVersion.ToString()),
             new($"db{db.Id}.SystemState", db.MainStore.SystemState.ToString()),
             new($"db{db.Id}.IndexSize", db.MainStore.IndexSize.ToString()),
             new($"db{db.Id}.LogDir", storeWrapper.serverOptions.LogDir),
@@ -272,7 +271,6 @@ namespace Garnet.server
         [
             new($"db{db.Id}.CurrentVersion", db.ObjectStore.CurrentVersion.ToString()),
             new($"db{db.Id}.LastCheckpointedVersion", db.ObjectStore.LastCheckpointedVersion.ToString()),
-            new($"db{db.Id}.RecoveredVersion", db.ObjectStore.RecoveredVersion.ToString()),
             new($"db{db.Id}.SystemState", db.ObjectStore.SystemState.ToString()),
             new($"db{db.Id}.IndexSize", db.ObjectStore.IndexSize.ToString()),
             new($"db{db.Id}.LogDir", storeWrapper.serverOptions.LogDir),

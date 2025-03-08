@@ -186,11 +186,10 @@ namespace Garnet.server
         /// <summary>
         /// Append a checkpoint commit to the AOF
         /// </summary>
-        /// <param name="isMainStore"></param>
+        /// <param name="entryType"></param>
         /// <param name="version"></param>
         /// <param name="dbId"></param>
-        /// <param name="diskless"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false);
+        public void EnqueueCommit(AofEntryType entryType, long version, int dbId = 0);
 
         /// <summary>
         /// Get a snapshot of all active databases

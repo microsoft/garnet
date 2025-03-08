@@ -30,6 +30,11 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        /// <summary>
+        /// Resp protocol version
+        /// </summary>
+        internal const string RedisProtocolVersion = "7.2.5";
+
         static readonly string version = GetVersion();
         static string GetVersion()
         {
@@ -55,11 +60,6 @@ namespace Garnet
         /// Store and associated information used by this Garnet server
         /// </summary>
         protected StoreWrapper storeWrapper;
-
-        /// <summary>
-        /// Resp protocol version
-        /// </summary>
-        readonly string redisProtocolVersion = "7.2.5";
 
         /// <summary>
         /// Metrics API
@@ -241,7 +241,7 @@ namespace Garnet
             this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax,
                 opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server,
+            storeWrapper = new StoreWrapper(version, RedisProtocolVersion, server,
                 customCommandManager, opts, subscribeBroker,
                 createDatabaseDelegate: createDatabaseDelegate,
                 clusterFactory: clusterFactory,
@@ -319,7 +319,6 @@ namespace Garnet
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-            kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
             var baseName = Path.Combine(checkpointDir, "Store", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
@@ -343,9 +342,8 @@ namespace Garnet
             objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
                 out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
-            // Run checkpoint on its own thread to control p99
-            objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-            objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
+                // Run checkpoint on its own thread to control p99
+                objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
 
             var baseName = Path.Combine(checkpointDir, "ObjectStore", $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}");
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);

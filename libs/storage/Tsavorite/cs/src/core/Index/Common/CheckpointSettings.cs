@@ -50,10 +50,5 @@ namespace Tsavorite.core
         /// Whether we should throttle the disk IO for checkpoints (one write at a time, wait between each write) and issue IO from separate task (-1 = throttling disabled)
         /// </summary>
         public int ThrottleCheckpointFlushDelayMs = -1;
-
-        /// <summary>
-        /// Whether we use a barrier to ensure that threads are not in two different checkpoint versions at the same time
-        /// </summary>
-        public bool CheckpointVersionSwitchBarrier = false;
     }
 }

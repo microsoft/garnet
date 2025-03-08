@@ -471,7 +471,7 @@ namespace Garnet.server
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(out bool commandReceived);
+                var cmd = ParseCommand(writeErrorOnFailure: true, out bool commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)

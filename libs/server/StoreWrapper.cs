@@ -333,16 +333,15 @@ namespace Garnet.server
         /// <summary>
         /// Append a checkpoint commit to the AOF
         /// </summary>
-        /// <param name="isMainStore"></param>
+        /// <param name="entryType"></param>
         /// <param name="version"></param>
         /// <param name="dbId"></param>
-        /// <param name="diskless"></param>
-        public void EnqueueCommit(bool isMainStore, long version, int dbId = 0, bool diskless = false)
+        public void EnqueueCommit(AofEntryType entryType, long version, int dbId = 0)
         {
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.EnqueueCommit)} with DB ID: {dbId}");
 
-            this.databaseManager.EnqueueCommit(isMainStore, version, dbId, diskless);
+            this.databaseManager.EnqueueCommit(entryType, version, dbId);
         }
 
         internal FunctionsState CreateFunctionsState(int dbId = 0)
