@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -443,18 +444,54 @@ namespace Garnet.server
         /// <summary>
         /// This should be used for all LoadBuffers into Lua.
         /// 
-        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
+        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled and executed.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LuaStatus LoadBuffer(ReadOnlySpan<byte> buffer)
         {
-            AssertLuaStackNotFull();
+            AssertLuaStackNotFull(2);
 
             var ret = NativeMethods.LoadBuffer(state, buffer);
 
-            UpdateStackTop(1);
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
+
+            return ret;
+        }
+
+        /// <summary>
+        /// This should be used for all LoadStrings into Lua.
+        /// 
+        /// Note that this is different from pushing or loading buffer, as the loaded buffer is compiled but NOT executed.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        internal LuaStatus LoadString(ReadOnlySpan<byte> buffer)
+        {
+            AssertLuaStackNotFull(2);
+
+            var ret = NativeMethods.LoadString(state, buffer);
+
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
 
             return ret;
         }
@@ -581,6 +618,20 @@ namespace Garnet.server
             UpdateStackTop(1);
         }
 
+        /// <summary>
+        /// This should be used for all Removes into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Remove(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+
+            NativeMethods.Rotate(state, stackIndex, -1);
+            NativeMethods.Pop(state, 1);
+
+            UpdateStackTop(-1);
+        }
+
         // Rarely used
 
         /// <summary>
@@ -624,6 +675,7 @@ namespace Garnet.server
         /// <summary>
         /// Clear the stack and raise an error with the given message.
         /// </summary>
+        [DoesNotReturn]
         internal int RaiseError(string msg)
         {
             ClearStack();
@@ -636,6 +688,7 @@ namespace Garnet.server
         /// <summary>
         /// Raise an error, where the top of the stack is the error message.
         /// </summary>
+        [DoesNotReturn]
         internal readonly int RaiseErrorFromStack()
         {
             Debug.Assert(StackTop != 0, "Expected error message on the stack");
