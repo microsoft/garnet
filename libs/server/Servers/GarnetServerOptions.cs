@@ -495,6 +495,7 @@ namespace Garnet.server
                 MutableFraction = MutablePercent / 100.0,
                 PageSize = 1L << PageSizeBits(),
                 Epoch = Epoch,
+                StateMachineDriver = StateMachineDriver,
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
@@ -653,6 +654,7 @@ namespace Garnet.server
                 MutableFraction = ObjectStoreMutablePercent / 100.0,
                 PageSize = 1L << ObjectStorePageSizeBits(),
                 Epoch = Epoch,
+                StateMachineDriver = StateMachineDriver,
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV  [obj]")
             };
