@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test
 {
@@ -381,6 +382,30 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand($"BZMPOP 1 1 {key} {mode}");
             var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void BzmpopReturnTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res = db.SortedSetAdd("a", [new SortedSetEntry("one", 1)]);
+            ClassicAssert.AreEqual(1, res);
+            res = db.SortedSetAdd("a", [new SortedSetEntry("two", 2)]);
+            ClassicAssert.AreEqual(1, res);
+            res = db.SortedSetAdd("b", [new SortedSetEntry("three", 3)]);
+            ClassicAssert.AreEqual(1, res);
+            var pop = db.Execute("BZMPOP", "10", "2", "a", "b", "MIN", "COUNT", "2");
+            ClassicAssert.AreEqual(2, pop.Length);
+            ClassicAssert.AreEqual("a", pop[0].ToString());
+            ClassicAssert.AreEqual(2, pop[1].Length);
+            ClassicAssert.AreEqual(2, pop[1][0].Length);
+            ClassicAssert.AreEqual("one", pop[1][0][0].ToString());
+            ClassicAssert.AreEqual(1, (int)(RedisValue)pop[1][0][1]);
+            ClassicAssert.AreEqual(2, pop[1][1].Length);
+            ClassicAssert.AreEqual("two", pop[1][1][0].ToString());
+            ClassicAssert.AreEqual(2, (int)(RedisValue)pop[1][1][1]);
         }
 
         [Test]
