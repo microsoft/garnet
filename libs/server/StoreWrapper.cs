@@ -870,7 +870,8 @@ namespace Garnet.server
             if (serverOptions.EnableCluster && clusterProvider.IsPrimary())
             {
                 EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
-                EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, store.CurrentVersion);
+                if (objectStore != null)
+                    EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
             }
 
             // If cluster is enabled the replication manager is responsible for truncating AOF
