@@ -8,8 +8,6 @@ using Garnet.cluster;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
-using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
@@ -37,19 +35,19 @@ namespace Garnet.test.cluster
         [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
         public void ClusterConfigInitializesUnassignedWorkerTest()
         {
-            ClusterConfig config = new ClusterConfig().InitializeLocalWorker(
+            var config = new ClusterConfig().InitializeLocalWorker(
                 Generator.CreateHexId(),
                 "127.0.0.1",
                 7001,
                 configEpoch: 0,
-                NodeRole.PRIMARY,
+                Garnet.cluster.NodeRole.PRIMARY,
                 null,
                 "");
 
             (string address, int port) = config.GetWorkerAddress(0);
             Assert.That(address == "unassigned");
             Assert.That(port == 0);
-            Assert.That(NodeRole.UNASSIGNED == config.GetNodeRoleFromNodeId("asdasdqwe"));
+            Assert.That(Garnet.cluster.NodeRole.UNASSIGNED == config.GetNodeRoleFromNodeId("asdasdqwe"));
 
             var configBytes = config.ToByteArray();
             var restoredConfig = ClusterConfig.FromByteArray(configBytes);
@@ -57,7 +55,7 @@ namespace Garnet.test.cluster
             (address, port) = restoredConfig.GetWorkerAddress(0);
             Assert.That(address == "unassigned");
             Assert.That(port == 0);
-            Assert.That(NodeRole.UNASSIGNED == restoredConfig.GetNodeRoleFromNodeId("asdasdqwe"));
+            Assert.That(Garnet.cluster.NodeRole.UNASSIGNED == restoredConfig.GetNodeRoleFromNodeId("asdasdqwe"));
         }
 
         [Test, Order(2)]

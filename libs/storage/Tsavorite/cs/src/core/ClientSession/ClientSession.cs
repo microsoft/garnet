@@ -40,14 +40,12 @@ namespace Tsavorite.core
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
 
-        bool isAcquiredLockable;
-
         ScanCursorState<TKey, TValue> scanCursorState;
 
         internal void AcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
             where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsNotAcquiredLockable();
+            CheckIsNotAcquiredLockable(sessionFunctions);
 
             while (true)
             {
@@ -60,39 +58,43 @@ namespace Tsavorite.core
                 }
 
                 store.IncrementNumLockingSessions();
-                isAcquiredLockable = true;
+                sessionFunctions.Ctx.isAcquiredLockable = true;
 
                 if (!IsInPreparePhase())
                     break;
-                InternalReleaseLockable();
+                InternalReleaseLockable(sessionFunctions);
                 _ = Thread.Yield();
             }
         }
 
-        internal void ReleaseLockable()
+        internal void ReleaseLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsAcquiredLockable();
+            CheckIsAcquiredLockable(sessionFunctions);
             if (TotalLockCount > 0)
                 throw new TsavoriteException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseLockable();
+            InternalReleaseLockable(sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseLockable()
+        private void InternalReleaseLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            isAcquiredLockable = false;
+            sessionFunctions.Ctx.isAcquiredLockable = false;
             store.DecrementNumLockingSessions();
         }
 
-        internal void CheckIsAcquiredLockable()
+        internal void CheckIsAcquiredLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (!isAcquiredLockable)
+            if (!sessionFunctions.Ctx.isAcquiredLockable)
                 throw new TsavoriteException("Lockable method call when BeginLockable has not been called");
         }
 
-        void CheckIsNotAcquiredLockable()
+        void CheckIsNotAcquiredLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (isAcquiredLockable)
+            if (sessionFunctions.Ctx.isAcquiredLockable)
                 throw new TsavoriteException("BeginLockable cannot be called twice (call EndLockable first)");
         }
 
@@ -133,7 +135,9 @@ namespace Tsavorite.core
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
-            store.DisposeClientSession(ID, ctx.phase);
+
+            if (store.RevivificationManager.IsEnabled)
+                MergeRevivificationStatsTo(ref store.RevivificationManager.stats, reset: true);
         }
 
         /// <summary>
@@ -388,7 +392,7 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+            if (!ctx.pendingReads.IsEmpty)
                 throw new TsavoriteException("Make sure all async operations issued on this session are awaited and completed first");
 
             // Complete all pending sync operations on session
@@ -506,8 +510,9 @@ namespace Tsavorite.core
         ///     TailAddress). A snapshot can be taken by calling ShiftReadOnlyToTail() and then using that TailAddress as endAddress and maxAddress.</param>
         /// <param name="validateCursor">If true, validate that the cursor is on a valid address boundary, and snap it to the highest lower address if it is not.</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
-        /// <returns>True if Scan completed and pushed <paramref name="count"/> records; false if Scan ended early due to finding less than <paramref name="count"/> records
-        /// or one of the TScanIterator reader functions returning false</returns>
+        /// <returns>True if Scan completed and pushed <paramref name="count"/> records and there may be more records; false if Scan ended early due to finding less than <paramref name="count"/> records
+        /// or one of the TScanIterator reader functions returning false, or if we determined that there are no records remaining. In other words, if this returns true,
+        /// there may be more records satisfying the iteration criteria beyond <paramref name="count"/>.</returns>
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false, long maxAddress = long.MaxValue)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress);
@@ -535,11 +540,6 @@ namespace Tsavorite.core
             store.epoch.Suspend();
         }
 
-        void IClientSession.AtomicSwitch(long version)
-        {
-            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, version);
-        }
-
         /// <inheritdoc/>
         public void MergeRevivificationStatsTo(ref RevivificationStats to, bool reset) => ctx.MergeRevivificationStatsTo(ref to, reset);
 
@@ -551,7 +551,8 @@ namespace Tsavorite.core
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return store.SystemState.Phase == Phase.PREPARE || store.SystemState.Phase == Phase.PREPARE_GROW;
+            var storeState = store.stateMachineDriver.SystemState;
+            return storeState.Phase == Phase.PREPARE || storeState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations

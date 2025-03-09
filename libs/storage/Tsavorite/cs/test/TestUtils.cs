@@ -28,6 +28,7 @@ namespace Tsavorite.test
         internal const string CheckpointRestoreCategory = "CheckpointRestore";
         internal const string MallocFixedPageSizeCategory = "MallocFixedPageSize";
         internal const string RMWTestCategory = "RMW";
+        internal const string IteratorCategory = "Iterator";
         internal const string ModifiedBitTestCategory = "ModifiedBitTest";
         internal const string RevivificationCategory = "Revivification";
 

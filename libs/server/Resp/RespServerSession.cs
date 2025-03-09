@@ -371,8 +371,11 @@ namespace Garnet.server
                     Environment.Exit(-1);
                 }
 
-                // The session is no longer usable, dispose it
-                networkSender.DisposeNetworkSender(true);
+                if (ex.DisposeSession)
+                {
+                    // The session is no longer usable, dispose it
+                    networkSender.DisposeNetworkSender(true);
+                }
             }
             catch (Exception ex)
             {
@@ -444,7 +447,7 @@ namespace Garnet.server
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(out bool commandReceived);
+                var cmd = ParseCommand(writeErrorOnFailure: true, out bool commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)
@@ -866,6 +869,7 @@ namespace Garnet.server
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
+                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

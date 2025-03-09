@@ -65,10 +65,6 @@ namespace Tsavorite.core
                             if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                             {
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-
-                                // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-                                if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
-                                    return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
                                 value = ref stackCtx.recSrc.GetValue();
                             }
                             else
@@ -281,6 +277,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing.
+            // If we're here we know the key matches because AllocatorBase.AsyncGetFromDiskCallback skips colliding keys by following the .PreviousAddress chain.
             if (request.logicalAddress >= pendingContext.minAddress)
                 return OperationStatus.SUCCESS;
 
@@ -337,6 +334,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
+            // If we're here we know the key matches because AllocatorBase.AsyncGetFromDiskCallback skips colliding keys by following the .PreviousAddress chain.
             if (request.logicalAddress >= pendingContext.minAddress || pendingContext.scanCursorState.stop)
                 return OperationStatus.SUCCESS;
 

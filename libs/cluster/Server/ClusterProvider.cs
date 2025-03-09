@@ -179,7 +179,7 @@ namespace Garnet.cluster
                 _ = replicationManager.SafeTruncateAof(CheckpointCoveredAofAddress);
             else
             {
-                if (serverOptions.MainMemoryReplication)
+                if (serverOptions.FastAofTruncate)
                     storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
                 else
                 {
@@ -263,7 +263,7 @@ namespace Garnet.cluster
             if (!serverOptions.EnableCluster)
             {
                 return (replicationManager.ReplicationOffset, default);
-            };
+            }
 
             return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
         }

@@ -144,9 +144,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
+        public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
+        public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
 
         /// <summary>
         /// Response strings
@@ -164,6 +167,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
         public static ReadOnlySpan<byte> matches => "matches"u8;
         public static ReadOnlySpan<byte> len => "len"u8;
+        public static ReadOnlySpan<byte> RESP3_NULL_REPLY => "_\r\n"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
@@ -242,6 +246,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_OVERFLOW_TYPE => "ERR Invalid OVERFLOW type specified"u8;
         public static ReadOnlySpan<byte> RESP_ERR_SCRIPT_FLUSH_OPTIONS => "ERR SCRIPT FLUSH only support SYNC|ASYNC option"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BUSSYKEY => "BUSYKEY Target key name already exists."u8;
         public static ReadOnlySpan<byte> RESP_ERR_LENGTH_AND_INDEXES => "If you want both the length and indexes, please just use IDX."u8;
@@ -251,8 +256,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ETAG must be a numerical value greater than or equal to 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
+
 
         /// <summary>
         /// Response string templates
@@ -324,6 +331,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
         public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
         public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
+        public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
@@ -375,6 +383,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
         public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
+        public static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
         public static ReadOnlySpan<byte> banlist => "BANLIST"u8;
         public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
         public static ReadOnlySpan<byte> endpoint => "ENDPOINT"u8;
@@ -383,6 +392,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        public static ReadOnlySpan<byte> cluster_sync => "SYNC"u8;
 
         // Lua scripting strings
         public static ReadOnlySpan<byte> LUA_OK => "OK"u8;
@@ -392,5 +402,19 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_wrong_number_of_arguments => "ERR wrong number of arguments"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_log_requires_two_arguments_or_more => "ERR redis.log() requires two arguments or more."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_First_argument_must_be_a_number_log_level => "ERR First argument must be a number (log level)."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_Invalid_debug_level => "ERR Invalid debug level."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd => "ERR Invalid command passed to redis.acl_check_cmd()"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_setresp_requires_one_argument => "ERR redis.setresp() requires one argument."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_RESP_version_must_be_2_or_3 => "ERR RESP version must be 2 or 3."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_log_disabled => "ERR redis.log(...) disabled in Garnet config"u8;
+        public static ReadOnlySpan<byte> Lua_double => "double"u8;
+        public static ReadOnlySpan<byte> Lua_map => "map"u8;
+        public static ReadOnlySpan<byte> Lua_set => "set"u8;
+        public static ReadOnlySpan<byte> Lua_big_number => "big_number"u8;
+        public static ReadOnlySpan<byte> Lua_format => "format"u8;
+        public static ReadOnlySpan<byte> Lua_string => "string"u8;
     }
 }

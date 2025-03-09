@@ -56,14 +56,14 @@ namespace BDN.benchmark.Operations
                 QuietMode = true,
                 EnableLua = true,
                 DisablePubSub = true,
-                LuaOptions = new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan),
+                LuaOptions = new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Enable),
             };
 
             if (Params.useAof)
             {
                 opts.EnableAOF = true;
                 opts.UseAofNullDevice = true;
-                opts.MainMemoryReplication = true;
+                opts.FastAofTruncate = true;
                 opts.CommitFrequencyMs = -1;
                 opts.AofPageSize = "128m";
                 opts.AofMemorySize = "256m";

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -92,6 +93,7 @@ namespace Garnet.test.Resp.ACL
             {
                 // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
                 IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
+                var x = advertisedCommands.Except(withOnlySubCommands).Union(subCommands);
                 IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
                 IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
@@ -174,6 +176,22 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("ACL", ["DELUSER", "does-not-exist-1", "does-not-exist-2"]);
                 ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task AclGetUserACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GETUSER",
+                [DoAclGetUserAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoAclGetUserAsync(GarnetClient client)
+            {
+                // ACL GETUSER returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ACL", ["GETUSER", "default"]);
             }
         }
 
@@ -1006,6 +1024,54 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterAttachSyncACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER ATTACH_SYNC",
+                [DoClusterAttachSyncAsync]
+            );
+
+            static async Task DoClusterAttachSyncAsync(GarnetClient client)
+            {
+                var ms = new MemoryStream();
+                var writer = new BinaryWriter(ms, Encoding.ASCII);
+                // See SyncMetadata
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+                writer.Write(0);
+
+                writer.Write(0);
+
+                byte[] byteBuffer = ms.ToArray();
+                writer.Dispose();
+                ms.Dispose();
+
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ATTACH_SYNC", Encoding.UTF8.GetString(byteBuffer)]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+
+        [Test]
         public async Task ClusterBanListACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -1690,6 +1756,35 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("CLUSTER", ["MIGRATE", "a", "b", "c"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ClusterSyncACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SYNC",
+                [DoClusterMigrateAsync]
+            );
+
+            static async Task DoClusterMigrateAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SYNC", "a", "b", "c"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
@@ -2528,7 +2623,8 @@ namespace Garnet.test.Resp.ACL
             await CheckCommandsAsync(
                 "COSCAN",
                 [DoCOScanAsync],
-                skipPermitted: true
+                skipPermitted: true,
+                aclCheckCommandOverride: "CUSTOMOBJECTSCAN"
             );
 
             static async Task DoCOScanAsync(GarnetClient client)
@@ -2548,7 +2644,8 @@ namespace Garnet.test.Resp.ACL
             await CheckCommandsAsync(
                 "CUSTOMRAWSTRINGCMD",
                 [DoSetWpIfPgtAsync],
-                knownCategories: ["garnet", "custom", "dangerous"]
+                knownCategories: ["garnet", "custom", "dangerous"],
+                aclCheckCommandOverride: "SETWPIFPGT"
             );
 
             async Task DoSetWpIfPgtAsync(GarnetClient client)
@@ -2568,7 +2665,8 @@ namespace Garnet.test.Resp.ACL
             await CheckCommandsAsync(
                 "CUSTOMOBJCMD",
                 [DoMyDictGetAsync],
-                knownCategories: ["garnet", "custom", "dangerous"]
+                knownCategories: ["garnet", "custom", "dangerous"],
+                aclCheckCommandOverride: "MYDICTGET"
             );
 
             static async Task DoMyDictGetAsync(GarnetClient client)
@@ -2586,7 +2684,8 @@ namespace Garnet.test.Resp.ACL
             await CheckCommandsAsync(
                 "CustomTxn",
                 [DoReadWriteTxAsync],
-                knownCategories: ["garnet", "custom", "dangerous"]
+                knownCategories: ["garnet", "custom", "dangerous"],
+                aclCheckCommandOverride: "READWRITETX"
             );
 
             static async Task DoReadWriteTxAsync(GarnetClient client)
@@ -2599,10 +2698,13 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task CustomProcedureACLsAsync()
         {
+            // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
+
             await CheckCommandsAsync(
                 "CustomProcedure",
                 [DoSumAsync],
-                knownCategories: ["garnet", "custom", "dangerous"]
+                knownCategories: ["garnet", "custom", "dangerous"],
+                aclCheckCommandOverride: "SUM"
             );
 
             async Task DoSumAsync(GarnetClient client)
@@ -4752,7 +4854,8 @@ namespace Garnet.test.Resp.ACL
             await CheckCommandsAsync(
                 "MULTI",
                 [DoMultiAsync],
-                skipPing: true
+                skipPing: true,
+                skipAclCheckCmd: true
             );
 
             static async Task DoMultiAsync(GarnetClient client)
@@ -5450,8 +5553,23 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoSetIfMatchAsync(GarnetClient client)
             {
-                var res = await client.ExecuteForStringResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
-                ClassicAssert.IsNull(res);
+                var res = await client.ExecuteForStringArrayResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
+        public async Task SetIfGreaterACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "SETIFGREATER",
+               [DoSetIfGreaterAsync]
+           );
+
+            static async Task DoSetIfGreaterAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
             }
         }
 
@@ -7055,7 +7173,9 @@ namespace Garnet.test.Resp.ACL
             Func<GarnetClient, Task>[] commands,
             List<string> knownCategories = null,
             bool skipPing = false,
-            bool skipPermitted = false
+            bool skipPermitted = false,
+            string aclCheckCommandOverride = null,
+            bool skipAclCheckCmd = false
         )
         {
             const string UserWithAll = "temp-all";
@@ -7063,6 +7183,8 @@ namespace Garnet.test.Resp.ACL
             const string TestPassword = "foo";
 
             ClassicAssert.IsNotEmpty(commands, $"[{command}]: should have delegates to invoke");
+
+            var commandAndSubCommand = (aclCheckCommandOverride ?? command).Split(' ');
 
             // Figure out the ACL categories that apply to this command
             List<string> categories = knownCategories;
@@ -7118,25 +7240,25 @@ namespace Garnet.test.Resp.ACL
 
                             if (!skipPermitted)
                             {
-                                await AssertAllPermittedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +@all)", skipPing);
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +@all)", skipPing, commandAndSubCommand, skipAclCheckCmd);
                             }
 
                             await SetUserAsync(defaultUserClient, UserWithAll, [$"-@{category}"]);
 
-                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing, commandAndSubCommand, skipAclCheckCmd);
                         }
 
                         // Check adding category works
                         {
                             await ResetUserWithNoneAsync(defaultUserClient);
 
-                            await AssertAllDeniedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing, commandAndSubCommand, skipAclCheckCmd);
 
                             await SetACLOnUserAsync(defaultUserClient, UserWithNone, [$"+@{category}"]);
 
                             if (!skipPermitted)
                             {
-                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})", skipPing);
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})", skipPing, commandAndSubCommand, skipAclCheckCmd);
                             }
                         }
                     }
@@ -7149,13 +7271,19 @@ namespace Garnet.test.Resp.ACL
                             commandAcl = commandAcl[..commandAcl.IndexOf(' ')];
                         }
 
+                        var aclCheckCmdCommand = (aclCheckCommandOverride ?? command).ToLowerInvariant();
+                        if (aclCheckCmdCommand.Contains(" "))
+                        {
+                            aclCheckCmdCommand = aclCheckCmdCommand[..aclCheckCmdCommand.IndexOf(' ')];
+                        }
+
                         // Check removing command works
                         {
                             await ResetUserWithAllAsync(defaultUserClient);
 
                             await SetACLOnUserAsync(defaultUserClient, UserWithAll, [$"-{commandAcl}"]);
 
-                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing, [aclCheckCmdCommand], skipAclCheckCmd);
                         }
 
                         // Check adding command works
@@ -7166,7 +7294,7 @@ namespace Garnet.test.Resp.ACL
 
                             if (!skipPermitted)
                             {
-                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})", skipPing);
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})", skipPing, [aclCheckCmdCommand], skipAclCheckCmd);
                             }
                         }
                     }
@@ -7183,7 +7311,7 @@ namespace Garnet.test.Resp.ACL
 
                             await SetACLOnUserAsync(defaultUserClient, UserWithAll, [$"-{subCommandAcl}"]);
 
-                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing, commandAndSubCommand, skipAclCheckCmd);
                         }
 
                         // Check adding subcommand works
@@ -7194,7 +7322,7 @@ namespace Garnet.test.Resp.ACL
 
                             if (!skipPermitted)
                             {
-                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})", skipPing);
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})", skipPing, commandAndSubCommand, skipAclCheckCmd);
                             }
                         }
 
@@ -7204,7 +7332,7 @@ namespace Garnet.test.Resp.ACL
 
                             await SetACLOnUserAsync(defaultUserClient, UserWithNone, [$"+{commandAcl}", $"-{subCommandAcl}"]);
 
-                            await AssertAllDeniedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing, commandAndSubCommand, skipAclCheckCmd);
                         }
 
                         // Checking removing command but adding subcommand works
@@ -7215,7 +7343,7 @@ namespace Garnet.test.Resp.ACL
 
                             if (!skipPermitted)
                             {
-                                await AssertAllPermittedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})", skipPing);
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})", skipPing, commandAndSubCommand, skipAclCheckCmd);
                             }
                         }
                     }
@@ -7229,9 +7357,9 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.AreEqual("OK", aclRes);
             }
 
+            // Create or reset user, with all permissions
             static async Task ResetUserWithAllAsync(GarnetClient defaultUserClient)
             {
-                // Create or reset user, with all permissions
                 string aclRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", UserWithAll, "on", $">{TestPassword}", "+@all"]);
                 ClassicAssert.AreEqual("OK", aclRes);
             }
@@ -7239,17 +7367,21 @@ namespace Garnet.test.Resp.ACL
             // Get user that was initialized with -@all
             static async Task ResetUserWithNoneAsync(GarnetClient defaultUserClient)
             {
-                // Create or reset user, with no permissions
                 string aclRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", UserWithNone, "on", $">{TestPassword}", "-@all"]);
                 ClassicAssert.AreEqual("OK", aclRes);
             }
 
             // Check that all commands succeed
-            static async Task AssertAllPermittedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing)
+            static async Task AssertAllPermittedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing, string[] commandAndSubCommand, bool skipAclCheckCmd)
             {
                 foreach (Func<GarnetClient, Task> cmd in commands)
                 {
                     ClassicAssert.True(await CheckAuthFailureAsync(() => cmd(currentUserClient)), message);
+                }
+
+                if (!skipAclCheckCmd)
+                {
+                    await AssertRedisAclCheckCmd(true, defaultUserClient, currentUserName, currentUserClient, commandAndSubCommand);
                 }
 
                 if (!skipPing)
@@ -7259,12 +7391,55 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
+            // Check that a script which calls redis.acl_check_cmd(...) for the given (sub-)command produces the right result
+            static async Task AssertRedisAclCheckCmd(
+                bool expectedResult,
+                GarnetClient defaultUserClient,
+                string currentUserName,
+                GarnetClient currentUserClient,
+                string[] commandAndSubCommand
+            )
+            {
+                var withBar = string.Join("|", commandAndSubCommand);
+                if (!RespCommandsInfo.TryGetRespCommandInfo(withBar, out var info, includeSubCommands: true))
+                {
+                    // Couldn't find info, skip
+                    return;
+                }
+
+                if (info.Command == RespCommand.EVAL)
+                {
+                    // Need to be able to EVAL to do this test, so skip
+                    return;
+                }
+
+                if (info.Command.IsNoAuth())
+                {
+                    // No point to check these
+                    return;
+                }
+
+                var aclRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", currentUserName, "+eval"]);
+
+                var script = $"return redis.acl_check_cmd({string.Join(", ", commandAndSubCommand.Select(static x => $"'{x}'"))});";
+
+                var canRunStr = await currentUserClient.ExecuteForStringResultAsync("EVAL", [script, "0"]);
+                var canRun = canRunStr == "1";
+
+                ClassicAssert.AreEqual(expectedResult, canRun, $"redis.acl_check_cmd(...) return unexpected result for '{withBar}'");
+            }
+
             // Check that all commands fail with NOAUTH
-            static async Task AssertAllDeniedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing)
+            static async Task AssertAllDeniedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing, string[] commandAndSubCommand, bool skipAclCheckCmd)
             {
                 foreach (Func<GarnetClient, Task> cmd in commands)
                 {
                     ClassicAssert.False(await CheckAuthFailureAsync(() => cmd(currentUserClient)), message);
+                }
+
+                if (!skipAclCheckCmd)
+                {
+                    await AssertRedisAclCheckCmd(false, defaultUserClient, currentUserName, currentUserClient, commandAndSubCommand);
                 }
 
                 if (!skipPing)
