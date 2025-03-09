@@ -7,14 +7,11 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using System.Xml.Linq;
 using Garnet.common;
-using HdrHistogram;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using static System.Runtime.InteropServices.JavaScript.JSType;
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
