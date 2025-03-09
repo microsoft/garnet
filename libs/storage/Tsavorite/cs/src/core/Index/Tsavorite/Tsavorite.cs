@@ -181,18 +181,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <param name="streamingSnapshotIteratorFunctions">Iterator for streaming snapshot records</param>
         /// <returns>
         /// Whether we successfully initiated the checkpoint (initiation may
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
 
@@ -201,11 +196,11 @@ namespace Tsavorite.core
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
+                stateMachine = Checkpoint.Streaming(this, out token);
             }
             else
             {
-                stateMachine = Checkpoint.Full(this, checkpointType, targetVersion, out token);
+                stateMachine = Checkpoint.Full(this, checkpointType, out token);
             }
             return stateMachineDriver.Register(stateMachine);
         }
@@ -215,11 +210,6 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <param name="streamingSnapshotIteratorFunctions">Iterator for streaming snapshot records</param>
         /// <returns>
         /// (bool success, Guid token)
@@ -230,9 +220,9 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
-            CancellationToken cancellationToken = default, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
+            CancellationToken cancellationToken = default, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
-            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, targetVersion, streamingSnapshotIteratorFunctions);
+            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, streamingSnapshotIteratorFunctions);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -247,7 +237,7 @@ namespace Tsavorite.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token)
         {
-            var stateMachine = Checkpoint.IndexOnly(this, -1, out token);
+            var stateMachine = Checkpoint.IndexOnly(this, out token);
             return stateMachineDriver.Register(stateMachine);
         }
 
@@ -279,14 +269,9 @@ namespace Tsavorite.core
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
-            long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
+            IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
 
@@ -295,7 +280,7 @@ namespace Tsavorite.core
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
+                stateMachine = Checkpoint.Streaming(this, out token);
             }
             else
             {
@@ -307,11 +292,11 @@ namespace Tsavorite.core
                     && !hlog.HasObjectLog;
                 if (incremental)
                 {
-                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, targetVersion, token);
+                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, token);
                 }
                 else
                 {
-                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, targetVersion, out token);
+                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, out token);
                 }
             }
             return stateMachineDriver.Register(stateMachine);
@@ -338,11 +323,6 @@ namespace Tsavorite.core
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <returns>
         /// (bool success, Guid token)
         /// success: Whether we successfully initiated the checkpoint (initiation may
@@ -352,9 +332,9 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType,
-            bool tryIncremental = false, CancellationToken cancellationToken = default, long targetVersion = -1)
+            bool tryIncremental = false, CancellationToken cancellationToken = default)
         {
-            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
+            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -600,7 +580,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
             var indexResizeTask = new IndexResizeSMTask<TKey, TValue, TStoreFunctions, TAllocator>(this);
-            var indexResizeSM = new IndexResizeSM(-1, indexResizeTask);
+            var indexResizeSM = new IndexResizeSM(indexResizeTask);
             return await stateMachineDriver.RunAsync(indexResizeSM);
         }
 

@@ -842,8 +842,8 @@ namespace Garnet.server
             if (full)
             {
                 sm = objectStore == null ?
-                        Checkpoint.Full(store, checkpointType, -1, out checkpointResult.token) :
-                        Checkpoint.Full(store, objectStore, checkpointType, -1, out checkpointResult.token);
+                        Checkpoint.Full(store, checkpointType, out checkpointResult.token) :
+                        Checkpoint.Full(store, objectStore, checkpointType, out checkpointResult.token);
             }
             else
             {
@@ -854,14 +854,14 @@ namespace Garnet.server
                 if (tryIncremental)
                 {
                     sm = objectStore == null ?
-                        Checkpoint.IncrementalHybridLogOnly(store, -1, checkpointResult.token) :
-                        Checkpoint.IncrementalHybridLogOnly(store, objectStore, -1, checkpointResult.token);
+                        Checkpoint.IncrementalHybridLogOnly(store, checkpointResult.token) :
+                        Checkpoint.IncrementalHybridLogOnly(store, objectStore, checkpointResult.token);
                 }
                 else
                 {
                     sm = objectStore == null ?
-                        Checkpoint.HybridLogOnly(store, checkpointType, -1, out checkpointResult.token) :
-                        Checkpoint.HybridLogOnly(store, objectStore, checkpointType, -1, out checkpointResult.token);
+                        Checkpoint.HybridLogOnly(store, checkpointType, out checkpointResult.token) :
+                        Checkpoint.HybridLogOnly(store, objectStore, checkpointType, out checkpointResult.token);
                 }
             }
 
