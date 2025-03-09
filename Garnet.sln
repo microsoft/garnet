@@ -374,7 +374,6 @@ Global
 		{1A5DF817-D0DD-4F0B-AE3A-C9CD0E03C9D5} = {D8A9CE6E-91B9-4B84-B44A-2BCF1161A793}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		FileExplorer = 
 		SolutionGuid = {2C02C405-4798-41CA-AF98-61EDFEF6772E}
 	EndGlobalSection
 EndGlobal

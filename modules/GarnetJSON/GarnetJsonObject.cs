@@ -149,29 +149,28 @@ namespace GarnetJSON
 
         /// <summary>
         /// Tries to get the JSON value for the specified path and writes it to the output stream.
+        /// System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
         /// </summary>
         /// <param name="path">The JSON path to get the value for.</param>
         /// <param name="output">The output stream to write the value to.</param>
         /// <param name="errorMessage">The error message if the operation fails.</param>
-        /// <param name="indent">The string to use for indentation.</param>
-        /// <param name="newLine">The string to use for new lines.</param>
-        /// <param name="space">The string to use for spaces.</param>
+        /// <param name="indent">The string to use for indentation. (ignored with generic format)</param>
+        /// <param name="newLine">The string to use for new lines. (ignored with generic format)</param>
+        /// <param name="space">The string to use for spaces. (ignored with generic format)</param>
         /// <returns>True if the operation is successful; otherwise, false.</returns>
         public bool TryGet(ReadOnlySpan<byte> path, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
         {
             try
             {
+                errorMessage = default;
                 if (rootNode is null)
                 {
-                    errorMessage = default;
                     return true;
                 }
 
                 if (path.Length == 0)
                 {
-                    // System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
                     JsonSerializer.Serialize(output, rootNode, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions);
-                    errorMessage = default;
                     return true;
                 }
 
@@ -188,11 +187,9 @@ namespace GarnetJSON
                     }
                     isFirst = false;
 
-                    // System.Text.Json doesn't support customizing indentation, new line, and space github/runtime#111899, so for now if any of these are set, we will use the default indented serializer options
                     JsonSerializer.Serialize(output, item, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions);
                 }
                 output.WriteByte((byte)']');
-                errorMessage = default;
                 return true;
             }
             catch (JsonException ex)
@@ -204,6 +201,7 @@ namespace GarnetJSON
 
         /// <summary>
         /// Sets the value at the specified JSON path.
+        /// Known issue: When the value to be replaced is null, replace won't work as there is no NullJsonValue, instead .net returns null
         /// </summary>
         /// <param name="path">The JSON path.</param>
         /// <param name="value">The value to set.</param>
@@ -234,7 +232,7 @@ namespace GarnetJSON
                 JsonPath jsonPath = new JsonPath(pathStr);
                 var result = jsonPath.Evaluate(rootNode, rootNode, null).ToArray();
 
-                if (!result.Any())
+                if (result.Length == 0)
                 {
                     if (existOptions == ExistOptions.XX)
                     {
@@ -293,7 +291,6 @@ namespace GarnetJSON
                         break;
                     }
 
-                    // Known issue: When the value to be replaced is null, replace won't work as there is no NullJsonValue, instead .net returns null
                     match?.ReplaceWith(valNode);
                 }
 

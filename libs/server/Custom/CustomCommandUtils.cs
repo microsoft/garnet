@@ -5,12 +5,10 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
 
 namespace Garnet.server
 {
-    public static class CustomCommandUtils
+    internal static class CustomCommandUtils
     {
         /// <summary>
         /// Shared memory pool used by functions
@@ -97,8 +95,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create output as error message, from given string
+        /// Create output as error message, from given byte span
         /// </summary>
+        /// <param name="output">A tuple containing the memory owner and the length of written data</param>
+        /// <param name="errorMessage">The error message to write</param>
         public static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<byte> errorMessage)
         {
             var bytes = errorMessage;

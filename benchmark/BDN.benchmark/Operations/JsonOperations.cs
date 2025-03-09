@@ -13,11 +13,8 @@ namespace BDN.benchmark.Operations
     [MemoryDiagnoser]
     public class JsonOperations : OperationsBase
     {
-        // Existing commands
         static ReadOnlySpan<byte> JSONGETCMD => "*3\r\n$8\r\nJSON.GET\r\n$2\r\nk3\r\n$1\r\n$\r\n"u8;
         static ReadOnlySpan<byte> JSONSETCMD => "*4\r\n$8\r\nJSON.SET\r\n$2\r\nk3\r\n$4\r\n$.f2\r\n$1\r\n2\r\n"u8;
-
-        // New commands for different JsonPath patterns
         static ReadOnlySpan<byte> JSONGET_DEEP => "*3\r\n$8\r\nJSON.GET\r\n$4\r\nbig1\r\n$12\r\n$.data[0].id\r\n"u8;
         static ReadOnlySpan<byte> JSONGET_ARRAY => "*3\r\n$8\r\nJSON.GET\r\n$4\r\nbig1\r\n$13\r\n$.data[*]\r\n"u8;
         static ReadOnlySpan<byte> JSONGET_ARRAY_ELEMENTS => "*3\r\n$8\r\nJSON.GET\r\n$4\r\nbig1\r\n$13\r\n$.data[*].id\r\n"u8;
@@ -31,41 +28,6 @@ namespace BDN.benchmark.Operations
         Request jsonGetArrayElementsCmd;
         Request jsonGetFilterCmd;
         Request jsonGetRecursiveCmd;
-
-        private static string GenerateLargeJson(int items)
-        {
-            var data = new StringBuilder();
-            data.Append("{\"data\":[");
-
-            for (int i = 0; i < items; i++)
-            {
-                if (i > 0) data.Append(',');
-                data.Append($$"""
-                    {
-                        "id": {{i}},
-                        "name": "Item{{i}}",
-                        "active": {{(i % 2 == 0).ToString().ToLower()}},
-                        "value": {{i * 100}},
-                        "nested": {
-                            "level1": {
-                                "level2": {
-                                    "value": {{i}}
-                                }
-                            }
-                        }
-                    }
-                    """);
-            }
-
-            data.Append("]}");
-            return data.ToString();
-        }
-
-        private void RegisterModules()
-        {
-            server.Register.NewModule(new NoOpModule.NoOpModule(), [], out _);
-            server.Register.NewModule(new GarnetJSON.Module(), [], out _);
-        }
 
         public override void GlobalSetup()
         {
@@ -130,6 +92,40 @@ namespace BDN.benchmark.Operations
         public void ModuleJsonGetRecursive()
         {
             Send(jsonGetRecursiveCmd);
+        }
+
+        private static string GenerateLargeJson(int items)
+        {
+            var data = new StringBuilder();
+            data.Append("{\"data\":[");
+
+            for (int i = 0; i < items; i++)
+            {
+                if (i > 0) data.Append(',');
+                data.Append($$"""
+                    {
+                        "id": {{i}},
+                        "name": "Item{{i}}",
+                        "active": {{(i % 2 == 0).ToString().ToLower()}},
+                        "value": {{i * 100}},
+                        "nested": {
+                            "level1": {
+                                "level2": {
+                                    "value": {{i}}
+                                }
+                            }
+                        }
+                    }
+                    """);
+            }
+
+            data.Append("]}");
+            return data.ToString();
+        }
+
+        private void RegisterModules()
+        {
+            server.Register.NewModule(new GarnetJSON.Module(), [], out _);
         }
     }
 }

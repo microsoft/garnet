@@ -3,9 +3,9 @@
 
 using System.Buffers;
 using System.Diagnostics;
-using System.Text;
 using Garnet.common;
 using Garnet.server;
+using Garnet.server.Custom;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -49,42 +49,33 @@ namespace GarnetJSON
             var parseState = input.parseState;
             if (parseState.Count is not (2 or 3))
             {
-                return output.AbortWithWrongNumberOfArguments("json.set");
+                return AbortWithWrongNumberOfArguments(ref output, "json.set");
             }
 
             int offset = 0;
-            var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
-            var value = CustomCommandUtils.GetNextArg(ref input, ref offset);
+            var path = GetNextArg(ref input, ref offset);
+            var value = GetNextArg(ref input, ref offset);
             var existOptions = ExistOptions.None;
 
-            if (parseState.Count is 4)
+            if (parseState.Count is 4 && !input.TryGetExpireOption(ref offset, out existOptions))
             {
-                var existOptionStr = CustomCommandUtils.GetNextArg(ref input, ref offset);
-                if (existOptionStr.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
-                {
-                    existOptions = ExistOptions.NX;
-                }
-                else if (existOptionStr.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
-                {
-                    existOptions = ExistOptions.XX;
-                }
-                else
-                {
-                    return output.AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
-                }
+                return AbortWithSyntaxError(ref output);
             }
-            var result = ((GarnetJsonObject)jsonObject).Set(path, value, existOptions, out var errorMessage);
+
+            var garnetJsonObject = jsonObject as GarnetJsonObject;
+            Debug.Assert(garnetJsonObject is not null);
+
+            var result = garnetJsonObject.Set(path, value, existOptions, out var errorMessage);
 
             switch (result)
             {
                 case SetResult.Success:
-                    WriteDirect(ref output, CmdStrings.RESP_OK);
-                    break;
+                    return true;
                 case SetResult.ConditionNotMet:
                     WriteNullBulkString(ref output);
                     break;
                 default:
-                    output.AbortWithErrorMessage(errorMessage);
+                    AbortWithErrorMessage(ref output, errorMessage);
                     break;
             }
 
@@ -110,13 +101,15 @@ namespace GarnetJSON
         /// </summary>
         /// <param name="key">The key of the object.</param>
         /// <param name="input">The input data.</param>
-        /// <param name="value">The JSON object to read.</param>
+        /// <param name="jsonObject">The JSON object to read.</param>
         /// <param name="output">The output data.</param>
         /// <param name="readInfo">Additional information for the read operation.</param>
         /// <returns>True if the read is successful, otherwise false.</returns>
-        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
-            Debug.Assert(value is GarnetJsonObject);
+            Debug.Assert(jsonObject is GarnetJsonObject);
+            var garnetJsonObject = jsonObject as GarnetJsonObject;
+            Debug.Assert(garnetJsonObject is not null);
 
             var parseState = input.parseState;
 
@@ -126,7 +119,7 @@ namespace GarnetJSON
             if (parseState.Count == 0)
             {
                 ReadOnlySpan<byte> path = default;
-                isSuccess = ((GarnetJsonObject)value).TryGet(path, outputStream, out errorMessage);
+                isSuccess = garnetJsonObject.TryGet(path, outputStream, out errorMessage);
             }
             else
             {
@@ -137,26 +130,26 @@ namespace GarnetJSON
                 string? space = null;
                 while (true)
                 {
-                    var option = CustomCommandUtils.GetNextArg(ref input, ref offset);
+                    var option = GetNextArg(ref input, ref offset);
                     if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.INDENT) && offset < parseState.Count)
                     {
-                        indent = Encoding.UTF8.GetString(CustomCommandUtils.GetNextArg(ref input, ref offset));
+                        indent = GetNextString(ref input, ref offset);
                         continue;
                     }
                     else if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.NEWLINE) && offset < parseState.Count)
                     {
-                        newLine = Encoding.UTF8.GetString(CustomCommandUtils.GetNextArg(ref input, ref offset));
+                        newLine = GetNextString(ref input, ref offset);
                         continue;
                     }
                     else if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.SPACE) && offset < parseState.Count)
                     {
-                        space = Encoding.UTF8.GetString(CustomCommandUtils.GetNextArg(ref input, ref offset));
+                        space = GetNextString(ref input, ref offset);
                         continue;
                     }
 
                     if (offset > parseState.Count)
                     {
-                        return output.AbortWithWrongNumberOfArguments("json.get");
+                        return AbortWithWrongNumberOfArguments(ref output, "json.get");
                     }
                     else
                     {
@@ -166,22 +159,22 @@ namespace GarnetJSON
                     }
                 }
 
-                isSuccess = ((GarnetJsonObject)value).TryGet(paths, outputStream, out errorMessage, indent, newLine, space);
+                isSuccess = garnetJsonObject.TryGet(paths, outputStream, out errorMessage, indent, newLine, space);
             }
 
             if (!isSuccess)
             {
-                output.AbortWithErrorMessage(errorMessage);
+                AbortWithErrorMessage(ref output, errorMessage);
                 return true;
             }
 
             if (outputStream.Length == 0)
             {
-                CustomCommandUtils.WriteNullBulkString(ref output);
+                WriteNullBulkString(ref output);
             }
             else
             {
-                CustomCommandUtils.WriteBulkString(ref output, outputStream.GetBuffer().AsSpan(0, (int)outputStream.Length));
+                WriteBulkString(ref output, outputStream.GetBuffer().AsSpan(0, (int)outputStream.Length));
             }
             return true;
         }
