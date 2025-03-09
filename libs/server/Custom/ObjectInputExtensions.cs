@@ -2,6 +2,9 @@
 
 namespace Garnet.server.Custom
 {
+    /// <summary>
+    /// Provides extension methods for handling object input.
+    /// </summary>
     public static class ObjectInputExtensions
     {
         /// <summary>
