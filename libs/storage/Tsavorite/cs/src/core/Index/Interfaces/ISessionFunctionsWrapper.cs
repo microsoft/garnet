@@ -7,7 +7,7 @@ namespace Tsavorite.core
     /// Provides thread management and all callbacks. A wrapper for IFunctions and additional methods called by TsavoriteImpl; the wrapped
     /// IFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
     /// </summary>
-    internal interface ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> : ISessionEpochControl, IVariableLengthInput<TValue, TInput>
+    internal interface ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> : IVariableLengthInput<TValue, TInput>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
@@ -62,7 +62,12 @@ namespace Tsavorite.core
         bool TryLockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
         void UnlockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
         void UnlockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        #endregion 
+        #endregion
+
+        #region Epoch control
+        void UnsafeResumeThread();
+        void UnsafeSuspendThread();
+        #endregion
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 

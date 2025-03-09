@@ -701,19 +701,19 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void PassiveExpireTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void PassiveExpireTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
             IncrementValue(TestOp.PassiveExpire, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             GetRecord(ModifyKey, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
         }
 
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireDeleteTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ExpireDeleteTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -721,7 +721,7 @@ namespace Tsavorite.test.Expiration
             var key = ModifyKey;
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired) : new(StatusCode.CopyUpdatedRecord);
 
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Increment/Delete it
             ExpirationInput input = new() { testOp = testOp };
@@ -743,7 +743,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ExpireRolloverTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ExpireRolloverTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -751,7 +751,7 @@ namespace Tsavorite.test.Expiration
             var key = ModifyKey;
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Increment/Rollover to initial state
             ExpirationInput input = new() { testOp = testOp };
@@ -772,7 +772,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfKeyExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -780,7 +780,7 @@ namespace Tsavorite.test.Expiration
             var key = ModifyKey;
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Key exists - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
@@ -816,14 +816,14 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfKeyNotExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfKeyNotExistsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
             const TestOp testOp = TestOp.SetIfKeyNotExists;
             var key = ModifyKey;
 
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Key exists - no-op
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement };
@@ -861,7 +861,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfValueEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -870,7 +870,7 @@ namespace Tsavorite.test.Expiration
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
             VerifyKeyNotCreated(testOp, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Value equals - update it
             ExpirationInput input = new() { testOp = testOp, value = GetValue(key) + SetIncrement, comparisonValue = GetValue(key) + 1 };
@@ -907,7 +907,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SetIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SetIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -916,7 +916,7 @@ namespace Tsavorite.test.Expiration
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord) : new(StatusCode.CopyUpdatedRecord);
 
             VerifyKeyNotCreated(testOp, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Value equals
             ExpirationInput input = new() { testOp = testOp, value = -2, comparisonValue = GetValue(key) + 1 };
@@ -950,7 +950,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenUpdateTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteThenUpdateTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -962,7 +962,7 @@ namespace Tsavorite.test.Expiration
                     : new(StatusCode.NotFound | StatusCode.Expired | StatusCode.CreatedRecord);
 
             VerifyKeyNotCreated(testOp, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Target value - if isEqual, the actual value of the key, else a bogus value. Delete the record, then re-initialize it from input
             var reinitValue = GetValue(key) + 1000;
@@ -999,7 +999,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteThenInsertTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteThenInsertTest([Values] FlushMode flushMode, [Values] KeyEquality keyEquality, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -1011,7 +1011,7 @@ namespace Tsavorite.test.Expiration
                 new(StatusCode.NotFound | StatusCode.Expired | StatusCode.CreatedRecord);
 
             VerifyKeyNotCreated(testOp, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Target value - if isEqual, the actual value of the key, else a bogus value. Delete the record, then re-initialize it from input
             var reinitValue = GetValue(key) + 1000;
@@ -1047,7 +1047,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteAndCancelIfValueEqualsTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteAndCancelIfValueEqualsTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             const TestOp testOp = TestOp.DeleteIfValueEqualsAndStop;
@@ -1056,7 +1056,7 @@ namespace Tsavorite.test.Expiration
             Status expectedFoundRmwStatus = new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
 
             VerifyKeyNotCreated(testOp, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Value equals - delete it
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
@@ -1083,7 +1083,7 @@ namespace Tsavorite.test.Expiration
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void DeleteIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void DeleteIfValueNotEqualsTest([Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             InitialIncrement();
             MaybeEvict(flushMode);
@@ -1095,7 +1095,7 @@ namespace Tsavorite.test.Expiration
             ClassicAssert.IsTrue(expectedFoundRmwStatus.Expired, expectedFoundRmwStatus.ToString());
 
             VerifyKeyNotCreated(testOp, flushMode);
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
 
             // Value equals - no-op
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
