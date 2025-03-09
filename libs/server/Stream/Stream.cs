@@ -23,7 +23,7 @@ namespace Garnet.server
     {
         readonly IDevice device;
         readonly TsavoriteLog log;
-        readonly BPlusTree index;
+        readonly BTree index;
         StreamID lastId;
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
@@ -38,7 +38,7 @@ namespace Garnet.server
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice("streamLogs/" + logDir + "/streamLog", preallocateFile: false);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize });
-            index = new BPlusTree(device.SectorSize);
+            index = new BTree(device.SectorSize);
             totalEntriesAdded = 0;
             lastId = default;
             _lock = new SingleWriterMultiReaderLock();
