@@ -169,6 +169,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
         public static ReadOnlySpan<byte> matches => "matches"u8;
         public static ReadOnlySpan<byte> len => "len"u8;
+        public static ReadOnlySpan<byte> RESP3_NULL_REPLY => "_\r\n"u8;
 
         /// <summary>
         /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
@@ -404,5 +405,19 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_ERR_Please_specify_at_least_one_argument_for_this_redis_lib_call => "ERR Please specify at least one argument for this redis lib call"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Unknown_Redis_command_called_from_script => "ERR Unknown Redis command called from script"u8;
         public static ReadOnlySpan<byte> LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers => "ERR Lua redis lib command arguments must be strings or integers"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_wrong_number_of_arguments => "ERR wrong number of arguments"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_log_requires_two_arguments_or_more => "ERR redis.log() requires two arguments or more."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_First_argument_must_be_a_number_log_level => "ERR First argument must be a number (log level)."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_Invalid_debug_level => "ERR Invalid debug level."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd => "ERR Invalid command passed to redis.acl_check_cmd()"u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_setresp_requires_one_argument => "ERR redis.setresp() requires one argument."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_RESP_version_must_be_2_or_3 => "ERR RESP version must be 2 or 3."u8;
+        public static ReadOnlySpan<byte> Lua_ERR_redis_log_disabled => "ERR redis.log(...) disabled in Garnet config"u8;
+        public static ReadOnlySpan<byte> Lua_double => "double"u8;
+        public static ReadOnlySpan<byte> Lua_map => "map"u8;
+        public static ReadOnlySpan<byte> Lua_set => "set"u8;
+        public static ReadOnlySpan<byte> Lua_big_number => "big_number"u8;
+        public static ReadOnlySpan<byte> Lua_format => "format"u8;
+        public static ReadOnlySpan<byte> Lua_string => "string"u8;
     }
 }
