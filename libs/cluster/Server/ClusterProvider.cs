@@ -439,23 +439,25 @@ namespace Garnet.cluster
         /// <returns></returns>
         internal bool BumpAndWaitForEpochTransition()
         {
-            var server = storeWrapper.TcpServer;
             BumpCurrentEpoch();
-            while (true)
+            foreach (var server in storeWrapper.TcpServer)
             {
-            retry:
-                Thread.Yield();
-                // Acquire latest bumped epoch
-                var currentEpoch = GarnetCurrentEpoch;
-                var sessions = server.ActiveClusterSessions();
-                foreach (var s in sessions)
+                while (true)
                 {
-                    var entryEpoch = s.LocalCurrentEpoch;
-                    // Retry if at least one session has not yet caught up to the current epoch.
-                    if (entryEpoch != 0 && entryEpoch < currentEpoch)
-                        goto retry;
+                retry:
+                    Thread.Yield();
+                    // Acquire latest bumped epoch
+                    var currentEpoch = GarnetCurrentEpoch;
+                    var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
+                    foreach (var s in sessions)
+                    {
+                        var entryEpoch = s.LocalCurrentEpoch;
+                        // Retry if at least one session has not yet caught up to the current epoch.
+                        if (entryEpoch != 0 && entryEpoch < currentEpoch)
+                            goto retry;
+                    }
+                    break;
                 }
-                break;
             }
             return true;
         }
