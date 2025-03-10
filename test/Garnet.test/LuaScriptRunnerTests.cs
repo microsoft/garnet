@@ -721,6 +721,22 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void InternalFunctionsIgnoredInAllowedFunctions()
+        {
+            // Check if an internal implementation detail (garnet_call in this case) can be allowed
+            using var allRunner =
+                   new LuaRunner(
+                       new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, ["tostring", "garnet_call"]),
+                       @$"return tostring(garnet_call)"
+                   );
+
+            allRunner.CompileForRunner();
+
+            var res = (string)allRunner.RunForRunner();
+            ClassicAssert.AreEqual("nil", res);
+        }
+
         private sealed class FakeLogger : ILogger, IDisposable
         {
             private readonly List<string> logs = new();

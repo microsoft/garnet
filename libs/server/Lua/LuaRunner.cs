@@ -519,7 +519,8 @@ end
             "bit",
             "cjson",
             "cmsgpack",
-            "os.clock",
+            // Note os only contains clock due to definition in the loader block
+            "os",
             // Note struct is actually implemented by Lua 5.4's string.pack/unpack/size
             "struct",
 
@@ -1095,7 +1096,7 @@ end
             state.Pop(1);
 
             var numberAsFloat = (float)number;
-            
+
             if ((long)numberAsFloat == numberAsFloat)
             {
                 state.PushInteger((long)numberAsFloat);
@@ -4795,6 +4796,12 @@ end
             var replacement = new StringBuilder();
             foreach (var wholeRef in allowedFunctions.Where(static x => !x.Contains('.')))
             {
+                if (!DefaultAllowedFunctions.Contains(wholeRef))
+                {
+                    // Skip functions not intentionally exported
+                    continue;
+                }
+
                 _ = replacement.AppendLine($"    {wholeRef}={wholeRef};");
                 _ = wholeIncludes.Add(wholeRef);
             }
@@ -4806,6 +4813,12 @@ end
                 if (wholeIncludes.Contains(grouped.Key))
                 {
                     // Including a subset of something included in whole doesn't affect things
+                    continue;
+                }
+
+                if (!DefaultAllowedFunctions.Contains(grouped.Key))
+                {
+                    // Skip functions not intentionally exported
                     continue;
                 }
 
