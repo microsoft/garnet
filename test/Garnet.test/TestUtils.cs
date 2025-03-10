@@ -272,7 +272,7 @@ namespace Garnet.test
                 EnableStorageTier = logCheckpointDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoints = endpoints,
+                EndPoints = endpoints ?? ([EndPoint]),
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
