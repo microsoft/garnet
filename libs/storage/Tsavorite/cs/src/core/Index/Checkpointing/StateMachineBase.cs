@@ -10,17 +10,14 @@ namespace Tsavorite.core
     internal abstract class StateMachineBase : IStateMachine
     {
         readonly IStateMachineTask[] tasks;
-        protected long toVersion;
 
         /// <summary>
         /// Construct a new SynchronizationStateMachine with the given tasks. The order of tasks given is the
         /// order they are executed on each state machine.
         /// </summary>
-        /// <param name="toVersion">To version</param>
         /// <param name="tasks">The ISynchronizationTasks to run on the state machine</param>
-        protected StateMachineBase(long toVersion = -1, params IStateMachineTask[] tasks)
+        protected StateMachineBase(params IStateMachineTask[] tasks)
         {
-            this.toVersion = toVersion;
             this.tasks = tasks;
         }
 

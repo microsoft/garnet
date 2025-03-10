@@ -22,6 +22,7 @@ namespace Tsavorite.core
             public SystemState SessionState;
             internal long version => SessionState.Version;
             public Phase phase => SessionState.Phase;
+            public long txnVersion;
 
             public long totalPending;
             public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;

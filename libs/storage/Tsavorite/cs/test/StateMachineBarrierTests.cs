@@ -101,8 +101,7 @@ namespace Tsavorite.test.statemachine
         void Prepare(out SMSimpleFunctions f,
             out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> s1,
             out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
-            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> s2,
-            long toVersion = -1)
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> s2)
         {
             f = new SMSimpleFunctions();
 
@@ -141,7 +140,7 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
-            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
             // Wait for PREPARE phase
             while (!SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState))

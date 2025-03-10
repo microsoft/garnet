@@ -11,9 +11,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a new VersionChangeStateMachine with the given tasks. Does not load any tasks by default.
         /// </summary>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">The tasks to load onto the state machine</param>
-        protected VersionChangeSM(long targetVersion = -1, params IStateMachineTask[] tasks) : base(targetVersion, tasks)
+        protected VersionChangeSM(params IStateMachineTask[] tasks) : base(tasks)
         {
         }
 
@@ -28,8 +27,7 @@ namespace Tsavorite.core
                     break;
                 case Phase.PREPARE:
                     nextState.Phase = Phase.IN_PROGRESS;
-                    if (toVersion == -1) toVersion = start.Version + 1;
-                    nextState.Version = toVersion;
+                    nextState.Version = start.Version + 1;
                     break;
                 case Phase.IN_PROGRESS:
                     nextState.Phase = Phase.REST;

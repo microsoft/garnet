@@ -11,8 +11,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a new IndexSnapshotStateMachine
         /// </summary>
-        public IndexCheckpointSM(long targetVersion = -1, params IStateMachineTask[] tasks)
-            : base(targetVersion, tasks)
+        public IndexCheckpointSM(params IStateMachineTask[] tasks)
+            : base(tasks)
         {
         }
 

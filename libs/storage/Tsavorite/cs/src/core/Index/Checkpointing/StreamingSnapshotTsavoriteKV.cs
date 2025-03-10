@@ -24,15 +24,15 @@ namespace Tsavorite.core
             readonly IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions;
             readonly Guid checkpointToken;
             readonly long currentVersion;
-            readonly long targetVersion;
+            readonly long nextVersion;
             public long numberOfRecords;
 
-            public ScanPhase1Functions(IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions, Guid checkpointToken, long currentVersion, long targetVersion)
+            public ScanPhase1Functions(IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions, Guid checkpointToken, long currentVersion, long nextVersion)
             {
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
                 this.checkpointToken = checkpointToken;
                 this.currentVersion = currentVersion;
-                this.targetVersion = targetVersion;
+                this.nextVersion = nextVersion;
             }
 
             /// <inheritdoc />
@@ -52,7 +52,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool OnStart(long beginAddress, long endAddress)
-                => streamingSnapshotIteratorFunctions.OnStart(checkpointToken, currentVersion, targetVersion);
+                => streamingSnapshotIteratorFunctions.OnStart(checkpointToken, currentVersion, nextVersion);
 
             /// <inheritdoc />
             public void OnStop(bool completed, long numberOfRecords)

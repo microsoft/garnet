@@ -26,18 +26,17 @@ namespace Tsavorite.core
                 // Grab current system state into session state under epoch protection
                 sessionFunctions.Ctx.SessionState = stateMachineDriver.SystemState;
 
-                //   If a session is in PREPARE/PREPARE_GROW phase AND is not currently in a transaction
+                //   If a session is in PREPARE_GROW phase AND is not currently in a transaction
                 //      Then the session will SPIN during Refresh until it is in (IN_PROGRESS, v+1).
                 //
-                //   That way no session can work in the PREPARE/PREPARE_GROW phase while any session works in IN_PROGRESS phase.
-                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) only if all sessions
-                //   have reached PREPARE/PREPARE_GROW and all transactions have concluded (i.e., NumActiveLockingSessions == 0).
+                //   That way no session can work in the PREPARE_GROW phase while any session works in IN_PROGRESS_GROW phase.
+                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS_GROW, v+1) only if all sessions
+                //   have reached PREPARE_GROW and all prior active transactions have concluded.
                 //   See HybridLogCheckpointSMTask and IndexResizeSMTask for state machine progress condition.
                 //
-                //   Also, ClientSession.AcquireLockable() ensures that no new transactions are started in
-                //   the PREPARE/PREPARE_GROW phase.
-                if ((sessionFunctions.Ctx.phase == Phase.PREPARE || sessionFunctions.Ctx.phase == Phase.PREPARE_GROW)
-                    && !sessionFunctions.Ctx.isAcquiredLockable)
+                //   Also, StateMachineDriver.AcquireTransactionVersion() ensures that no new transactions are started in
+                //   the PREPARE_GROW phase.
+                if (sessionFunctions.Ctx.phase == Phase.PREPARE_GROW && !sessionFunctions.Ctx.isAcquiredLockable)
                 {
                     epoch.ProtectAndDrain();
                     _ = Thread.Yield();

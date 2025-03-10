@@ -13,9 +13,9 @@ namespace Tsavorite.core
         /// <summary>Iteration is starting.</summary>
         /// <param name="checkpointToken">Checkpoint token</param>
         /// <param name="currentVersion">Current version of database</param>
-        /// <param name="targetVersion">Target version of database</param>
+        /// <param name="nextVersion">Next version of database</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion);
+        bool OnStart(Guid checkpointToken, long currentVersion, long nextVersion);
 
         /// <summary>Next record in the streaming snapshot.</summary>
         /// <param name="key">Reference to the current record's key</param>

@@ -68,6 +68,7 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
+        private readonly StateMachineDriver stateMachineDriver;
         internal int txnStartHead;
         internal int operationCntTxn;
 
@@ -79,6 +80,7 @@ namespace Garnet.server
         private const int initialKeyBufferSize = 1 << 10;
         StoreType transactionStoreType;
         readonly ILogger logger;
+        long txnVersion;
 
         internal LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableContext
             => lockableContext;
@@ -146,7 +148,9 @@ namespace Garnet.server
                         throw new Exception("Trying to perform object store transaction with object store disabled");
                     objectStoreLockableContext.EndLockable();
                 }
+                stateMachineDriver.EndTransaction(txnVersion);
             }
+            this.txnVersion = 0;
             this.txnStartHead = 0;
             this.operationCntTxn = 0;
             this.state = TxnState.None;
@@ -292,23 +296,45 @@ namespace Garnet.server
             readOnly = keyEntries.IsReadOnly;
         }
 
+        void BeginLockable(StoreType transactionStoreType)
+        {
+            if (transactionStoreType is StoreType.All or StoreType.Main)
+            {
+                lockableContext.BeginLockable();
+            }
+            if (transactionStoreType is StoreType.All or StoreType.Object)
+            {
+                if (objectStoreBasicContext.IsNull)
+                    throw new Exception("Trying to perform object store transaction with object store disabled");
+                objectStoreLockableContext.BeginLockable();
+            }
+        }
+
+        void LocksAcquired(StoreType transactionStoreType, long txnVersion)
+        {
+            if (transactionStoreType is StoreType.All or StoreType.Main)
+            {
+                lockableContext.LocksAcquired(txnVersion);
+            }
+            if (transactionStoreType is StoreType.All or StoreType.Object)
+            {
+                if (objectStoreBasicContext.IsNull)
+                    throw new Exception("Trying to perform object store transaction with object store disabled");
+                objectStoreLockableContext.LocksAcquired(txnVersion);
+            }
+        }
+
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)
         {
             // Save watch keys to lock list
             if (!internal_txn)
                 watchContainer.SaveKeysToLock(this);
 
+            // Acquire transaction version
+            txnVersion = stateMachineDriver.AcquireTransactionVersion();
+
             // Acquire lock sessions
-            if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Main)
-            {
-                lockableContext.BeginLockable();
-            }
-            if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Object)
-            {
-                if (objectStoreBasicContext.IsNull)
-                    throw new Exception("Trying to perform object store transaction with object store disabled");
-                objectStoreLockableContext.BeginLockable();
-            }
+            BeginLockable(transactionStoreType);
 
             bool lockSuccess;
             if (fail_fast_on_lock)
@@ -333,6 +359,12 @@ namespace Garnet.server
                     watchContainer.Reset();
                 return false;
             }
+
+            // Verify transaction version
+            txnVersion = stateMachineDriver.VerifyTransactionVersion(txnVersion);
+
+            // Update sessions with transaction version
+            LocksAcquired(transactionStoreType, txnVersion);
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {

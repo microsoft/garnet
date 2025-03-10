@@ -69,12 +69,6 @@ namespace Tsavorite.core
         /// <summary>HeadAddress offset from tail (currently page-aligned)</summary>
         internal long HeadAddressLagOffset;
 
-        /// <summary>
-        /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> or 
-        /// <see cref="LockableContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> instances active.
-        /// </summary>
-        internal long NumActiveLockingSessions = 0;
-
         /// <summary>Log mutable fraction</summary>
         protected readonly double LogMutableFraction;
 

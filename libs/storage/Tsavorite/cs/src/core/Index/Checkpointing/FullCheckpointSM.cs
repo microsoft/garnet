@@ -9,13 +9,11 @@ namespace Tsavorite.core
     internal sealed class FullCheckpointSM : HybridLogCheckpointSM
     {
         /// <summary>
-        /// Construct a new FullCheckpointStateMachine to use the given set of checkpoint tasks,
-        /// drawing boundary at targetVersion.
+        /// Construct a new FullCheckpointStateMachine to use the given set of checkpoint tasks.
         /// </summary>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">Tasks</param>
-        public FullCheckpointSM(long targetVersion = -1, params IStateMachineTask[] tasks)
-            : base(targetVersion, tasks)
+        public FullCheckpointSM(params IStateMachineTask[] tasks)
+            : base(tasks)
         { }
 
         /// <inheritdoc />
