@@ -105,6 +105,9 @@ namespace Tsavorite.core
                 long* left_end = left + Constants.kOverflowBucketIndex;
                 long* right_end = right + Constants.kOverflowBucketIndex;
 
+                // Verify that we are not moving latched buckets
+                Debug.Assert(!HashBucket.IsLatched(src_start));
+
                 HashBucketEntry entry = default;
                 do
                 {
