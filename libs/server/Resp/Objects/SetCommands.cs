@@ -730,13 +730,30 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (output == null || output.Count == 0)
                     {
-                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                            SendAndReset();
+                        if (respProtocolVersion == 3)
+                        {
+                            while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteArrayLength(output.Count, ref dcurr, dend))
-                            SendAndReset();
+                        if (respProtocolVersion == 3)
+                        {
+                            while (!RespWriteUtils.TryWriteSetLength(output.Count, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(output.Count, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         foreach (var item in output)
                         {
                             while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
