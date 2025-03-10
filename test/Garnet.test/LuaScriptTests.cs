@@ -2482,6 +2482,70 @@ return count";
         }
 
         [Test]
+        public void MathFunctions()
+        {
+            // There are a number of "weird" math functions Redis supports that don't have direct .NET equivalents
+            //
+            // Doing some basic testing on these implementations
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Frexp
+            {
+                var a = (string)db.ScriptEvaluate("local a,b = math.frexp(0); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("0|0", a);
+
+                var b = (string)db.ScriptEvaluate("local a,b = math.frexp(1); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("0.5|1", b);
+
+                var c = (string)db.ScriptEvaluate($"local a,b = math.frexp({double.MaxValue}); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("1|1024", c);
+
+                var d = (string)db.ScriptEvaluate($"local a,b = math.frexp({double.MinValue}); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("-1|1024", d);
+
+                var e = (string)db.ScriptEvaluate("local a,b = math.frexp(1234.56); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("0.6028125|11", e);
+
+                var f = (string)db.ScriptEvaluate("local a,b = math.frexp(-7890.12); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("-0.9631494140625|13", f);
+            }
+
+            // Ldexp
+            {
+                var a = (string)db.ScriptEvaluate("return tostring(math.ldexp(0, 0))");
+                ClassicAssert.AreEqual("0", a);
+
+                var b = (string)db.ScriptEvaluate("return tostring(math.ldexp(1, 1))");
+                ClassicAssert.AreEqual("2", b);
+
+                var c = (string)db.ScriptEvaluate("return tostring(math.ldexp(0, 1))");
+                ClassicAssert.AreEqual("0", c);
+
+                var d = (string)db.ScriptEvaluate("return tostring(math.ldexp(1, 0))");
+                ClassicAssert.AreEqual("1", d);
+
+                var e = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MaxValue}, 0))");
+                ClassicAssert.AreEqual("1.7976931348623e+308", e);
+
+                var f = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MaxValue}, 1))");
+                ClassicAssert.AreEqual("inf", f);
+
+                var g = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MinValue}, 0))");
+                ClassicAssert.AreEqual("-1.7976931348623e+308", g);
+
+                var h = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MinValue}, 1))");
+                ClassicAssert.AreEqual("-inf", h);
+
+                var i = (string)db.ScriptEvaluate($"return tostring(math.ldexp(1.234, 1.234))");
+                ClassicAssert.AreEqual("2.468", i);
+
+                var j = (string)db.ScriptEvaluate($"return tostring(math.ldexp(-5.6798, 9.0123))");
+                ClassicAssert.AreEqual("-2908.0576", j);
+            }
+        }
+
+        [Test]
         [Ignore("Long running, disabled by default")]
         public void StressTimeouts()
         {

@@ -1049,7 +1049,13 @@ end
         /// </summary>
         public int Frexp(nint luaStatePtr)
         {
-            // TODO: Test!
+            // Based on: https://github.com/MachineCognitis/C.math.NET/ (MIT License)
+
+            const long DBL_EXP_MASK = 0x7FF0000000000000L;
+            const int DBL_MANT_BITS = 52;
+            const long DBL_SGN_MASK = -1 - 0x7FFFFFFFFFFFFFFFL;
+            const long DBL_MANT_MASK = 0x000FFFFFFFFFFFFFL;
+            const long DBL_EXP_CLR_MASK = DBL_SGN_MASK | DBL_MANT_MASK;
 
             state.CallFromLuaEntered(luaStatePtr);
 
@@ -1059,34 +1065,48 @@ end
                 return state.RaiseError("bad argument to frexp");
             }
 
-            var value = state.CheckNumber(1);
+            var number = state.CheckNumber(1);
 
-            var asULong = BitConverter.DoubleToUInt64Bits(value);
-            var expBits = 0x7FF0_0000__0000_0000UL & asULong;
+            var bits = BitConverter.DoubleToInt64Bits(number);
+            var exp = (int)((bits & DBL_EXP_MASK) >> DBL_MANT_BITS);
+            var exponent = 0;
 
-            var num = value;
-            var exponent = expBits >> 20;
-            if (expBits is 0 or 0x7FF0_0000__0000_0000UL)
+            if (exp == 0x7FF || number == 0D)
             {
-                num *= 2;
+                number += number;
             }
             else
             {
-                exponent -= 1022;
-                if (expBits == 0)
+                // Not zero and finite.
+                exponent = exp - 1022;
+                if (exp == 0)
                 {
-                    num *= BitConverter.Int64BitsToDouble(0x4350_0000__0000_0000L);
-                    asULong = BitConverter.DoubleToUInt64Bits(num);
-                    exponent = ((asULong & 0x7FF0_0000__0000_0000UL) >> 20) - 1022 - 54;
+                    // Subnormal, scale number so that it is in [1, 2).
+                    number *= BitConverter.Int64BitsToDouble(0x4350000000000000L); // 2^54
+                    bits = BitConverter.DoubleToInt64Bits(number);
+                    exp = (int)((bits & DBL_EXP_MASK) >> DBL_MANT_BITS);
+                    exponent = exp - 1022 - 54;
                 }
-
-                num = BitConverter.UInt64BitsToDouble((asULong & ~0x7FF0_0000__0000_0000UL) | 0x3FE0_0000__0000_0000UL);
+                // Set exponent to -1 so that number is in [0.5, 1).
+                number = BitConverter.Int64BitsToDouble((bits & DBL_EXP_CLR_MASK) | 0x3FE0000000000000L);
             }
 
             state.ForceMinimumStackCapacity(2);
             state.Pop(1);
-            state.PushNumber(num);
-            state.PushNumber(exponent);
+
+            var numberAsFloat = (float)number;
+            
+            if ((long)numberAsFloat == numberAsFloat)
+            {
+                state.PushInteger((long)numberAsFloat);
+            }
+            else
+            {
+                state.PushNumber(number);
+            }
+
+            state.PushInteger(exponent);
+
             return 2;
         }
 
@@ -1095,8 +1115,6 @@ end
         /// </summary>
         public int Ldexp(nint luaStatePtr)
         {
-            // TODO: Test!
-
             state.CallFromLuaEntered(luaStatePtr);
 
             var luaArgCount = state.StackTop;
@@ -1106,12 +1124,21 @@ end
             }
 
             var m = state.CheckNumber(1);
-            var e = state.CheckNumber(2);
+            var e = (int)state.CheckNumber(2);
 
             var res = m * Math.Pow(2, e);
 
             state.Pop(2);
-            state.PushNumber(res);
+
+            if ((long)res == res)
+            {
+                state.PushInteger((long)res);
+            }
+            else
+            {
+                state.PushNumber(res);
+            }
+
             return 1;
         }
 
