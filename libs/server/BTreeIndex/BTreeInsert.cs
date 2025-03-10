@@ -41,28 +41,34 @@ namespace Garnet.server.BTreeIndex
         {
             var newLeaf = CreateNewLeafNode(ref leaf);
 
-            // count valid keys in the new leaf, starting at splitLeafPosition in the old leaf 
-            uint newLeafValidCount = 0;
-            for (int i = SPLIT_LEAF_POSITION; i < BTreeNode.LEAF_CAPACITY; i++)
-            {
-                if (leaf->data.values[i].Valid)
-                {
-                    newLeafValidCount++;
-                }
-            }
-            leaf->info.validCount -= newLeafValidCount;
-            newLeaf->info.validCount = newLeafValidCount;
+            // // count valid keys in the new leaf, starting at splitLeafPosition in the old leaf 
+            // uint newLeafValidCount = 0;
+            // for (int i = SPLIT_LEAF_POSITION; i < BTreeNode.LEAF_CAPACITY; i++)
+            // {
+            //     if (leaf->data.values[i].Valid)
+            //     {
+            //         newLeafValidCount++;
+            //     }
+            // }
+            // leaf->info.validCount -= newLeafValidCount;
+            // newLeaf->info.validCount = newLeafValidCount;
 
-            // since input will always arrive sorted as timestamp, the new key always goes to the new leaf
-            var newIndex = index - SPLIT_LEAF_POSITION;
-            Buffer.MemoryCopy(leaf->keys + leaf->info.count * BTreeNode.KEY_SIZE, newLeaf->keys, newIndex * BTreeNode.KEY_SIZE, newIndex * BTreeNode.KEY_SIZE);
-            newLeaf->SetKey(newIndex, key);
+            // // since input will always arrive sorted as timestamp, the new key always goes to the new leaf
+            // var newIndex = index - SPLIT_LEAF_POSITION;
+            // Buffer.MemoryCopy(leaf->keys + leaf->info.count * BTreeNode.KEY_SIZE, newLeaf->keys, newIndex * BTreeNode.KEY_SIZE, newIndex * BTreeNode.KEY_SIZE);
+            // newLeaf->SetKey(newIndex, key);
 
-            Buffer.MemoryCopy(leaf->keys + index * BTreeNode.KEY_SIZE, newLeaf->keys + (newIndex + 1) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE);
-            Buffer.MemoryCopy(leaf->data.values + leaf->info.count, newLeaf->data.values, newIndex * sizeof(Value), newIndex * sizeof(Value));
-            newLeaf->SetValue(newIndex, value);
-            Buffer.MemoryCopy(leaf->data.values + index, newLeaf->data.values + newIndex + 1, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value), (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
-            newLeaf->info.validCount++;
+            // Buffer.MemoryCopy(leaf->keys + index * BTreeNode.KEY_SIZE, newLeaf->keys + (newIndex + 1) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE);
+            // Buffer.MemoryCopy(leaf->data.values + leaf->info.count, newLeaf->data.values, newIndex * sizeof(Value), newIndex * sizeof(Value));
+            // newLeaf->SetValue(newIndex, value);
+            // Buffer.MemoryCopy(leaf->data.values + index, newLeaf->data.values + newIndex + 1, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value), (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
+            // newLeaf->info.validCount++;
+
+            newLeaf->SetKey(0, key);
+            newLeaf->SetValue(0, value);
+            newLeaf->info.count = 1;
+            newLeaf->info.validCount = 1;
+            
 
             uint validCount = 0;
             // the leaf that is split will also be the tail node; so update the tail pointer
@@ -92,7 +98,7 @@ namespace Garnet.server.BTreeIndex
             leafToSplit->info.count = SPLIT_LEAF_POSITION;
             newLeaf->info.previous = leafToSplit;
             newLeaf->info.next = leafToSplit->info.next;
-            newLeaf->info.count = BTreeNode.LEAF_CAPACITY + 1 - SPLIT_LEAF_POSITION;
+            newLeaf->info.count = BTreeNode.LEAF_CAPACITY - SPLIT_LEAF_POSITION;
             leafToSplit->info.next = newLeaf;
             stats.numLeafNodes++;
             return newLeaf;
@@ -177,13 +183,21 @@ namespace Garnet.server.BTreeIndex
             newNode->info.validCount = newValidCount;
 
             // we are inserting in sorted order, so child always goes to newNode
-            Buffer.MemoryCopy(nodeToSplit->keys + (nodeToSplit->info.count + 1) * BTreeNode.KEY_SIZE, newNode->keys, (index - nodeToSplit->info.count - 1) * BTreeNode.KEY_SIZE, (index - nodeToSplit->info.count - 1) * BTreeNode.KEY_SIZE);
-            Buffer.MemoryCopy(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, newNode->keys + (index - nodeToSplit->info.count) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
-            newNode->SetKey(index - nodeToSplit->info.count - 1, key);
-            Buffer.MemoryCopy(nodeToSplit->data.children + 1 + nodeToSplit->info.count, newNode->data.children, (index - nodeToSplit->info.count) * sizeof(BTreeNode*), (index - nodeToSplit->info.count) * sizeof(BTreeNode*));
-            Buffer.MemoryCopy(nodeToSplit->data.children + 1 + index, newNode->data.children + 1 + index - nodeToSplit->info.count, newNode->info.count * sizeof(BTreeNode*), newNode->info.count * sizeof(BTreeNode*));
-            newNode->SetChild(index - nodeToSplit->info.count, child);
-            key = nodeToSplit->GetKey(nodeToSplit->info.count);
+            // Buffer.MemoryCopy(nodeToSplit->keys + (nodeToSplit->info.count + 1) * BTreeNode.KEY_SIZE, newNode->keys, (index - nodeToSplit->info.count - 1) * BTreeNode.KEY_SIZE, (index - nodeToSplit->info.count - 1) * BTreeNode.KEY_SIZE);
+            // Buffer.MemoryCopy(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, newNode->keys + (index - nodeToSplit->info.count) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
+            // newNode->SetKey(index - nodeToSplit->info.count - 1, key);
+            // Buffer.MemoryCopy(nodeToSplit->data.children + 1 + nodeToSplit->info.count, newNode->data.children, (index - nodeToSplit->info.count) * sizeof(BTreeNode*), (index - nodeToSplit->info.count) * sizeof(BTreeNode*));
+            // Buffer.MemoryCopy(nodeToSplit->data.children + 1 + index, newNode->data.children + 1 + index - nodeToSplit->info.count, newNode->info.count * sizeof(BTreeNode*), newNode->info.count * sizeof(BTreeNode*));
+            // newNode->SetChild(index - nodeToSplit->info.count, child);
+
+            newNode->SetChild(0, nodeToSplit->GetChild(nodeToSplit->info.count)); // left child pointer of the new node part
+            newNode->SetKey(0, key);
+            newNode->SetChild(1, child);
+            newNode->info.count = 1;
+            // key = nodeToSplit->GetKey(nodeToSplit->info.count);
+            key = newNode->GetKey(0);
+
+            var childvalid = child->info.validCount;
 
             return newNode;
         }

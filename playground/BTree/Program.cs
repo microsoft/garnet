@@ -34,7 +34,7 @@ class Program
         // return;
         var tree = new BTree(4096);
 
-        ulong N = 60000;
+        ulong N = 60500;
         bool verbose = false;
         bool sanity = false;
         if (args.Length > 0)
@@ -70,8 +70,19 @@ class Program
         sw.Start();
         for (ulong i = 0; i < N; i++)
         {
-            Value val = new Value(i + 1);
-            tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), val);
+             if(i == 60374)
+            {
+                Console.WriteLine("here");
+            }
+            if(i == 43952)
+            {
+                Console.WriteLine("here");
+            }
+            if (i == 57315)
+            {
+                Console.WriteLine("here");
+            }
+            tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(i + 1));
         }
         sw.Stop();
         dur2 = sw.ElapsedTicks;
@@ -93,7 +104,10 @@ class Program
         sw.Start();
         for (ulong i = 0; i < N; i++)
         {
-
+            if(i==57315)
+            {
+                Console.WriteLine("here");
+            }
             var value = tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]));
             if (sanity)
             {

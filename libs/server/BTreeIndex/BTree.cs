@@ -17,8 +17,8 @@ namespace Garnet.server.BTreeIndex
         byte* tailMinKey;
         public static readonly int MAX_TREE_DEPTH = 10; // maximum allowed depth of the tree
         static int DEFAULT_SPLIT_LEAF_POSITION = (BTreeNode.LEAF_CAPACITY + 1) / 2; // position at which leaf node is split
-        static int SPLIT_LEAF_POSITION = BTreeNode.LEAF_CAPACITY - 1; // position at which leaf node is split
-        static int SPLIT_INTERNAL_POSITION = BTreeNode.INTERNAL_CAPACITY - 1; // position at which internal node is split
+        static int SPLIT_LEAF_POSITION = BTreeNode.LEAF_CAPACITY; // position at which leaf node is split
+        static int SPLIT_INTERNAL_POSITION = BTreeNode.INTERNAL_CAPACITY; // position at which internal node is split
 
         BTreeNode*[] rootToTailLeaf; // array of nodes from root to tail leaf
         BTreeStats stats; // statistics about the tree
