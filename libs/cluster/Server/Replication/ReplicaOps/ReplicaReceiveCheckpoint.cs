@@ -22,18 +22,6 @@ namespace Garnet.cluster
         CheckpointEntry cEntry;
 
         /// <summary>
-        /// Reset store
-        /// </summary>
-        public void ResetStore()
-        {
-            // Reset replication offset
-            ReplicationOffset = 0;
-
-            // Reset the database in preparation for connecting to primary
-            storeWrapper.Reset();
-        }
-
-        /// <summary>
         /// Try to initiate replication while instance is up and running.
         /// NOTE: Caller should be aware of the following
         ///     It is assumed that when this method is called we are under epoch protection
@@ -111,8 +99,11 @@ namespace Garnet.cluster
             // Reset background replay iterator
             ResetReplayIterator();
 
+            // Reset replication offset
+            ReplicationOffset = 0;
+
             // Reset the database in preparation for connecting to primary
-            ResetStore();
+            storeWrapper.Reset();
 
             // Initiate remote checkpoint retrieval
             if (background)

@@ -784,5 +784,56 @@ namespace Garnet.test.cluster
                     if (i != j)
                         context.clusterTestUtils.WaitUntilNodeIsKnown(i, j, context.logger);
         }
+
+        [Test, Order(14)]
+        public void ClusterFlushAll()
+        {
+            var node_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+
+            var key = "mykey";
+            var value = "myvalue";
+
+            // Set value
+            var result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute("SET", key, value);
+            ClassicAssert.AreEqual("OK", result);
+
+            // Get value
+            result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute("GET", key);
+            ClassicAssert.AreEqual(value, result);
+
+            // Get value from replica
+            while (true)
+            {
+                result = (string)context.clusterTestUtils.GetServer(replicaIndex).Execute("GET", key);
+                if (result == value)
+                    break;
+            }
+            ClassicAssert.AreEqual(value, result);
+
+            // Try to flushall on replica
+            var exception = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(replicaIndex).FlushAllDatabases());
+            ClassicAssert.AreEqual("ERR You can't write against a read only replica.", exception.Message);
+
+            // Flushall on primary
+            Assert.DoesNotThrow(() => context.clusterTestUtils.GetServer(primaryIndex).FlushAllDatabases());
+
+            // Get value
+            result = (string)context.clusterTestUtils.GetServer(primaryIndex).Execute("GET", key);
+            ClassicAssert.IsNull(result);
+
+            // Get value from replica
+            while (true)
+            {
+                result = (string)context.clusterTestUtils.GetServer(replicaIndex).Execute("GET", key);
+                if (result == null)
+                    break;
+            }
+            ClassicAssert.IsNull(result);
+        }
     }
 }

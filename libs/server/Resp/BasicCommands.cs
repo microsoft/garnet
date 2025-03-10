@@ -1677,28 +1677,13 @@ namespace Garnet.server
             }
 
             if (async)
-                Task.Run(() => ExecuteFlushDb(unsafeTruncateLog)).ConfigureAwait(false);
+                Task.Run(() => storeWrapper.ExecuteFlushDb(cmd, unsafeTruncateLog, 0)).ConfigureAwait(false);
             else
-                ExecuteFlushDb(unsafeTruncateLog);
+                storeWrapper.ExecuteFlushDb(cmd, unsafeTruncateLog, 0);
 
             logger?.LogInformation($"Running {nameof(cmd)} {{async}} {{mode}}", async ? "async" : "sync", unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
-        }
-
-        void ExecuteFlushDb(bool unsafeTruncateLog)
-        {
-            if (storeWrapper.serverOptions.EnableAOF)
-            {
-                storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-                storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-                storeWrapper.appendOnlyFile?.Reset();
-            }
-            else
-            {
-                storeWrapper.Reset();
-                storeWrapper.clusterProvider.ResetStore();
-            }
         }
 
         /// <summary>
