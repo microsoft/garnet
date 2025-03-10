@@ -2487,6 +2487,8 @@ return count";
             // There are a number of "weird" math functions Redis supports that don't have direct .NET equivalents
             //
             // Doing some basic testing on these implementations
+            //
+            // We don't actually guarantee bit-for-bit or char-for-char equivalence, but "close" is worth attempting
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
@@ -2543,6 +2545,44 @@ return count";
                 var j = (string)db.ScriptEvaluate($"return tostring(math.ldexp(-5.6798, 9.0123))");
                 ClassicAssert.AreEqual("-2908.0576", j);
             }
+        }
+
+        [Test]
+        public void Maxn()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var empty = (int)db.ScriptEvaluate("return table.maxn({})");
+            ClassicAssert.AreEqual(0, empty);
+
+            var single = (int)db.ScriptEvaluate("return table.maxn({4})");
+            ClassicAssert.AreEqual(1, single);
+
+            var multiple = (int)db.ScriptEvaluate("return table.maxn({-1, 1, 2, 5})");
+            ClassicAssert.AreEqual(4, multiple);
+
+            var keyed = (int)db.ScriptEvaluate("return table.maxn({foo='bar',fizz='buzz',hello='world'})");
+            ClassicAssert.AreEqual(0, keyed);
+
+            var mixed = (int)db.ScriptEvaluate("return table.maxn({-1, 1, foo='bar', 3})");
+            ClassicAssert.AreEqual(3, mixed);
+
+            var allNegative = (int)db.ScriptEvaluate("local x = {}; x[-1] = 1; x[-2]=2; return table.maxn(x)");
+            ClassicAssert.AreEqual(0, allNegative);
+        }
+
+        [Test]
+        public void LoadString()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var basic = (int)db.ScriptEvaluate("local x = loadstring('return 123'); return x()");
+            ClassicAssert.AreEqual(123, basic);
+
+            var rejectNullExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return \"\\0\"'); return x()"));
+            ClassicAssert.True(rejectNullExc.Message.Contains("bad argument to loadstring, interior null byte"));
         }
 
         [Test]

@@ -1236,8 +1236,6 @@ end
         /// </summary>
         public int Maxn(nint luaStatePtr)
         {
-            // TODO: Test?
-
             state.CallFromLuaEntered(luaStatePtr);
 
             var luaArgCount = state.StackTop;
@@ -1275,7 +1273,6 @@ end
         /// </summary>
         public int LoadString(nint luaStatePtr)
         {
-            // TODO: Test?
             state.CallFromLuaEntered(luaStatePtr);
 
             var luaArgCount = state.StackTop;
