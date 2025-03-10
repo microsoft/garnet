@@ -249,14 +249,16 @@ namespace Tsavorite.test.recovery
                     new(key2, LockType.Exclusive, lc)
                 };
 
+                var txnVersion = store.stateMachineDriver.AcquireTransactionVersion();
+
                 // Start transaction, session does not acquire version in this call
                 lc.BeginLockable();
 
                 // Lock keys, session acquires version in this call
                 lc.Lock(exclusiveVec);
 
-                // We have determined the version of the transaction
-                var txnVersion = lc.Session.Version;
+                txnVersion = store.stateMachineDriver.VerifyTransactionVersion(txnVersion);
+                lc.LocksAcquired(txnVersion);
 
                 // Run transaction
                 _ = lc.RMW(ref key1, ref input);
@@ -267,6 +269,8 @@ namespace Tsavorite.test.recovery
 
                 // End transaction
                 lc.EndLockable();
+
+                store.stateMachineDriver.EndTransaction(txnVersion);
 
                 // Update expected counts for the old and new version of store
                 if (txnVersion == 1)
