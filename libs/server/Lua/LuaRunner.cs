@@ -2016,7 +2016,7 @@ end
             {
                 // Because each encode removes the encoded value
                 // we always encode the argument at position 1
-                Encode(this, 1);
+                Encode(this, 1, 0);
             }
 
             // After all encoding, stack should be empty
@@ -2028,7 +2028,7 @@ end
             return 1;
 
             // Encode a single item at the top of the stack, and remove it
-            static void Encode(LuaRunner self, int stackIndex)
+            static void Encode(LuaRunner self, int stackIndex, int depth)
             {
                 var type = self.state.Type(stackIndex);
                 switch (type)
@@ -2036,7 +2036,23 @@ end
                     case LuaType.Boolean: EncodeBool(self, stackIndex); break;
                     case LuaType.Number: EncodeNumber(self, stackIndex); break;
                     case LuaType.String: EncodeBytes(self, stackIndex); break;
-                    case LuaType.Table: EncodeTable(self, stackIndex); break;
+                    case LuaType.Table:
+
+                        if (depth == 16)
+                        {
+                            // Redis treats a too deeply nested table as a null
+                            //
+                            // This is weird, but we match it
+                            self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = 0xC0;
+                            self.scratchBufferManager.MoveOffset(1);
+
+                            self.state.Remove(stackIndex);
+
+                            return;
+                        }
+
+                        EncodeTable(self, stackIndex, depth);
+                        break;
 
                     // Everything else maps to null, NOT an error
                     case LuaType.Function:
@@ -2260,7 +2276,7 @@ end
             }
 
             // Encode a table at stackIndex, and remove it
-            static void EncodeTable(LuaRunner self, int stackIndex)
+            static void EncodeTable(LuaRunner self, int stackIndex, int depth)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
 
@@ -2301,16 +2317,16 @@ end
 
                 if (isArray && count == max)
                 {
-                    EncodeArray(self, stackIndex, count);
+                    EncodeArray(self, stackIndex, depth, count);
                 }
                 else
                 {
-                    EncodeMap(self, stackIndex, count);
+                    EncodeMap(self, stackIndex, depth, count);
                 }
             }
 
             // Encode a table at stackIndex into an array, and remove it
-            static void EncodeArray(LuaRunner self, int stackIndex, int count)
+            static void EncodeArray(LuaRunner self, int stackIndex, int depth, int count)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
                 Debug.Assert(count >= 0, "Array should have positive length");
@@ -2349,14 +2365,14 @@ end
                 for (var ix = 1; ix <= count; ix++)
                 {
                     _ = self.state.RawGetInteger(null, tableIndex, ix);
-                    Encode(self, valueIndex);
+                    Encode(self, valueIndex, depth + 1);
                 }
 
                 self.state.Remove(tableIndex);
             }
 
             // Encode a table at stackIndex into a map, and remove it
-            static void EncodeMap(LuaRunner self, int stackIndex, int count)
+            static void EncodeMap(LuaRunner self, int stackIndex, int depth, int count)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
                 Debug.Assert(count >= 0, "Map should have positive length");
@@ -2401,10 +2417,10 @@ end
                     self.state.PushValue(keyIndex);
 
                     // Write the key
-                    Encode(self, keyCopyIndex);
+                    Encode(self, keyCopyIndex, depth + 1);
 
                     // Write the value
-                    Encode(self, valueIndex);
+                    Encode(self, valueIndex, depth + 1);
                 }
 
                 self.state.Remove(tableIndex);
