@@ -1934,11 +1934,11 @@ return count";
             // lshift, rshift, arshift, rol, ror
             {
                 (string Name, Func<int, int, int> Op)[] ops = [
-                    ("lshift", static(x, n) => x << n),
-                    ("rshift", static(x, n) => (int)((uint)x >> n)),
-                    ("arshift", static(x, n) => x >> n),
-                    ("rol", static(x, n) => (int)BitOperations.RotateLeft((uint)x, n)),
-                    ("ror", static(x, n) => (int)BitOperations.RotateRight((uint)x, n)),
+                    ("lshift", static (x, n) => x << n),
+                    ("rshift", static (x, n) => (int)((uint)x >> n)),
+                    ("arshift", static (x, n) => x >> n),
+                    ("rol", static (x, n) => (int)BitOperations.RotateLeft((uint)x, n)),
+                    ("ror", static (x, n) => (int)BitOperations.RotateRight((uint)x, n)),
                 ];
 
                 foreach (var op in ops)
