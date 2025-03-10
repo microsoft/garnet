@@ -920,9 +920,18 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
             }
 
+            var explicitUsings = @"
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+";
+
             var parseFunc = new Func<string, SyntaxTree>(filePath =>
             {
-                var source = File.ReadAllText(filePath);
+                var source = $"{explicitUsings}{Environment.NewLine}{File.ReadAllText(filePath)}";
                 var stringText = SourceText.From(source, Encoding.UTF8);
                 return SyntaxFactory.ParseSyntaxTree(stringText,
                     CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), string.Empty);

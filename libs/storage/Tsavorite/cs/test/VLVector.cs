@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
