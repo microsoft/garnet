@@ -98,6 +98,7 @@ namespace Garnet.server
             RespServerSession respSession,
             StorageSession storageSession,
             ScratchBufferManager scratchBufferManager,
+            StateMachineDriver stateMachineDriver,
             bool clusterEnabled,
             ILogger logger = null)
         {
@@ -121,6 +122,7 @@ namespace Garnet.server
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, lockableContext, objectStoreLockableContext);
             this.scratchBufferManager = scratchBufferManager;
+            this.stateMachineDriver = stateMachineDriver;
 
             garnetTxMainApi = respSession.lockableGarnetApi;
             garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(respSession.basicGarnetApi);
