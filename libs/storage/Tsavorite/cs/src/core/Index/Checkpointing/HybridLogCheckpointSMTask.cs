@@ -35,14 +35,18 @@ namespace Tsavorite.core
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
-                    stateMachineDriver.lastVersionTransactionsDone = new(0);
                     break;
 
                 case Phase.IN_PROGRESS:
                     store.CheckpointVersionShiftStart(lastVersion, next.Version);
+
+                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                        stateMachineDriver.lastVersionTransactionsDone = new(0);
+                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                        stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
                     // State machine should wait for active transactions in the last version to complete (drain out).
                     // Note that we allow new transactions to process in parallel.
-                    stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
+                    
                     break;
 
                 case Phase.WAIT_FLUSH:

@@ -27,11 +27,6 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE_GROW:
                     lastVersion = next.Version;
-                    stateMachineDriver.lastVersionTransactionsDone = new(0);
-
-                    // State machine should wait for active transactions in the last version to complete (drain out).
-                    // Note that we DO NOT allow new transactions to start in PREPARE_GROW (i.e., this is a full barrier)
-                    stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
                     break;
 
                 case Phase.IN_PROGRESS_GROW:
@@ -71,6 +66,15 @@ namespace Tsavorite.core
         {
             switch (next.Phase)
             {
+                case Phase.PREPARE_GROW:
+                    // State machine should wait for active transactions in the last version to complete (drain out).
+                    // Note that we DO NOT allow new transactions to start in PREPARE_GROW (i.e., this is a full barrier)
+                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                        stateMachineDriver.lastVersionTransactionsDone = new(0);
+                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                        stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
+                    break;
+
                 case Phase.IN_PROGRESS_GROW:
                     store.SplitAllBuckets();
                     break;
