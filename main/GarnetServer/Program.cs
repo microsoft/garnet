@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Threading;
 using Garnet.server;
 
 namespace Garnet
@@ -10,7 +8,7 @@ namespace Garnet
     /// <summary>
     /// Garnet server entry point
     /// </summary>
-    class Program
+    public class Program
     {
         static void Main(string[] args)
         {
