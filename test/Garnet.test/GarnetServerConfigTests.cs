@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -716,6 +718,31 @@ namespace Garnet.test
             string[] args = ["--unixsocketperm", "888"];
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
+        }
+
+        [Test]
+        public async Task MultiEndpointTest()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            var hostname = TestUtils.GetHostName();
+            var addresses = Dns.GetHostAddresses(hostname);
+
+            var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
+            ClassicAssert.Greater(endpoints.Length, 1, $"{nameof(MultiEndpointTest)} not enough network interfaces!");
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints);
+            server.Start();
+
+            var clients = endpoints.Select(endpoint => TestUtils.GetGarnetClientSession(endPoint: endpoint)).ToArray();
+            foreach (var client in clients)
+            {
+                client.Connect();
+                var result = await client.ExecuteAsync("PING");
+                ClassicAssert.AreEqual("PONG", result);
+                client.Dispose();
+            }
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 }
