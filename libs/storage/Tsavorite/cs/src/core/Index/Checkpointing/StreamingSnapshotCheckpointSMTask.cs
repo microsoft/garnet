@@ -35,7 +35,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.nextVersion = next.Version + 1;
                     store.StreamingSnapshotScanPhase1();
                     break;
-                
+
                 case Phase.IN_PROGRESS:
                     if (store._hybridLogCheckpoint.info.nextVersion != next.Version)
                         throw new TsavoriteException($"StreamingSnapshotCheckpointSMTask: IN_PROGRESS phase with incorrect version {next.Version}, expected {store._hybridLogCheckpoint.info.nextVersion}");

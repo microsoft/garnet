@@ -169,7 +169,7 @@ namespace Tsavorite.test.statemachine
                         return;
                     case "getLUC":
                         luc = session.LockableUnsafeContext;
-                        if (session.IsInPreparePhase())
+                        if (session.ctx.phase == Phase.PREPARE)
                         {
                             isProtected = false;
                         }
