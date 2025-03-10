@@ -1290,6 +1290,29 @@ return retArray";
             ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
         }
 
+        [Test]
+        public void Issue1079()
+        {
+            // Repeated submission of invalid Lua scripts shouldn't be cached, and thus should produce the same compilation error each time
+            //
+            // They also shouldn't break the session for future executions
+
+            const string BrokenScript = "return \"hello lua";
+            const string FixedScript = "return \"hello lua\"";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var brokenExc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
+            ClassicAssert.True(brokenExc1.Message.StartsWith("Compilation error: "));
+
+            var brokenExc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
+            ClassicAssert.AreEqual(brokenExc1.Message, brokenExc2.Message);
+
+            var success = (string)db.Execute("EVAL", FixedScript, 0);
+            ClassicAssert.AreEqual("hello lua", success);
+        }
+
         [TestCase(2)]
         [TestCase(3)]
         public void LuaToResp2Conversions(int redisSetRespVersion)
