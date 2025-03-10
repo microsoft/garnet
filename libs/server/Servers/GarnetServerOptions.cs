@@ -197,6 +197,11 @@ namespace Garnet.server
         public string ClusterPassword;
 
         /// <summary>
+        /// Argument string for keyspace notifications
+        /// </summary>
+        public string NotifiyKeyspaceEventsArguments;
+
+        /// <summary>
         /// Enable per command latency tracking for all commands
         /// </summary>
         public bool LatencyMonitor = false;

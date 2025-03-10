@@ -194,6 +194,10 @@ namespace Garnet.server
                         else errorMsg += " TLS is disabled.";
                     }
                 }
+                if (notifiyKeyspaceEventsArguments != null)
+                {
+                    storeWrapper.serverOptions.NotifiyKeyspaceEventsArguments = notifiyKeyspaceEventsArguments;
+                }
             }
 
             if (errorMsg == null)
