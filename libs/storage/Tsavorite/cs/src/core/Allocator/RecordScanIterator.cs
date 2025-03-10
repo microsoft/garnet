@@ -187,8 +187,6 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                recordBuffer?.Return();
-                recordBuffer = null;
                 TValue valueObject = default;
                 if (currentAddress >= headAddress || assumeInMemory)
                 {

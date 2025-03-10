@@ -20,6 +20,8 @@ namespace Tsavorite.core
 
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
+        /// <summary>Invalid ETag</summary>
+        public const int NoETag = sizeof(long);
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
         /// <summary>Number of bytes required to store the FillerLen</summary>
@@ -162,7 +164,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
+        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : LogRecord.NoETag;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
@@ -764,7 +766,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearOptionals()
+        public void ClearOptionals()
         {
             _ = RemoveExpiration();
             _ = RemoveETag();

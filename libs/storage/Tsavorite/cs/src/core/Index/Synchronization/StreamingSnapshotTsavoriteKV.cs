@@ -1,0 +1,165 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Threading;
+using Microsoft.Extensions.Logging;
+
+namespace Tsavorite.core
+{
+    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TValue>
+        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    {
+        IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions;
+        long scannedUntilAddressCursor;
+        long numberOfRecords;
+
+        class StreamingSnapshotSessionFunctions : SessionFunctionsBase<TValue, Empty, Empty, Empty>
+        {
+
+        }
+
+        class ScanPhase1Functions : IScanIteratorFunctions<TValue>
+        {
+            readonly IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions;
+            readonly Guid checkpointToken;
+            readonly long currentVersion;
+            readonly long targetVersion;
+            public long numberOfRecords;
+
+            public ScanPhase1Functions(IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions, Guid checkpointToken, long currentVersion, long targetVersion)
+            {
+                this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
+                this.checkpointToken = checkpointToken;
+                this.currentVersion = currentVersion;
+                this.targetVersion = targetVersion;
+            }
+
+            /// <inheritdoc />
+            public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord<TValue>
+            {
+                cursorRecordResult = CursorRecordResult.Accept;
+                return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
+            }
+
+            /// <inheritdoc />
+            public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord<TValue>
+                => SingleReader(ref srcLogRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+            /// <inheritdoc />
+            public void OnException(Exception exception, long numberOfRecords)
+                => streamingSnapshotIteratorFunctions.OnException(exception, numberOfRecords);
+
+            /// <inheritdoc />
+            public bool OnStart(long beginAddress, long endAddress)
+                => streamingSnapshotIteratorFunctions.OnStart(checkpointToken, currentVersion, targetVersion);
+
+            /// <inheritdoc />
+            public void OnStop(bool completed, long numberOfRecords)
+            {
+                this.numberOfRecords = numberOfRecords;
+            }
+        }
+
+        internal void StreamingSnapshotScanPhase1()
+        {
+            try
+            {
+                // Iterate all the read-only records in the store
+                scannedUntilAddressCursor = Log.SafeReadOnlyAddress;
+                var scanFunctions = new ScanPhase1Functions(streamingSnapshotIteratorFunctions, _hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, _hybridLogCheckpoint.info.nextVersion);
+                using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
+                long cursor = 0;
+                _ = s.ScanCursor(ref cursor, long.MaxValue, scanFunctions, scannedUntilAddressCursor);
+                this.numberOfRecords = scanFunctions.numberOfRecords;
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Exception in StreamingSnapshotScanPhase1");
+                throw;
+            }
+            finally
+            {
+                // We started this task before entering PREP_STREAMING_SNAPSHOT_CHECKPOINT, so we
+                // need to wait until the state machine is in PREP_STREAMING_SNAPSHOT_CHECKPOINT
+                while (systemState.Phase != Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT)
+                    Thread.Yield();
+                GlobalStateMachineStep(systemState);
+            }
+        }
+
+        class ScanPhase2Functions : IScanIteratorFunctions<TValue>
+        {
+            readonly IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions;
+            readonly long phase1NumberOfRecords;
+
+            public ScanPhase2Functions(IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions, long acceptedRecordCount)
+            {
+                this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
+                this.phase1NumberOfRecords = acceptedRecordCount;
+            }
+
+            /// <inheritdoc />
+            public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord<TValue>
+            {
+                cursorRecordResult = CursorRecordResult.Accept;
+                return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
+            }
+
+            /// <inheritdoc />
+            public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord<TValue>
+                => SingleReader(ref srcLogRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+            /// <inheritdoc />
+            public void OnException(Exception exception, long numberOfRecords)
+                => streamingSnapshotIteratorFunctions.OnException(exception, numberOfRecords);
+
+            /// <inheritdoc />
+            public bool OnStart(long beginAddress, long endAddress) => true;
+
+            /// <inheritdoc />
+            public void OnStop(bool completed, long numberOfRecords)
+                => streamingSnapshotIteratorFunctions.OnStop(completed, phase1NumberOfRecords + numberOfRecords);
+        }
+
+        internal void StreamingSnapshotScanPhase2(long untilAddress)
+        {
+            try
+            {
+                // Iterate all the (v) records in the store
+                var scanFunctions = new ScanPhase2Functions(streamingSnapshotIteratorFunctions, this.numberOfRecords);
+                using var s = NewSession<Empty, Empty, Empty, StreamingSnapshotSessionFunctions>(new());
+
+                _ = s.ScanCursor(ref scannedUntilAddressCursor, long.MaxValue, scanFunctions, endAddress: untilAddress, maxAddress: untilAddress);
+
+                // Reset the cursor to 0
+                scannedUntilAddressCursor = 0;
+                numberOfRecords = 0;
+
+                // Reset the callback functions
+                streamingSnapshotIteratorFunctions = null;
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Exception in StreamingSnapshotScanPhase2");
+                throw;
+            }
+            finally
+            {
+                // Release the semaphore to allow the checkpoint waiting task to proceed
+                _hybridLogCheckpoint.flushedSemaphore.Release();
+
+                // We started this task before entering WAIT_FLUSH, so we
+                // need to wait until the state machine is in WAIT_FLUSH
+                while (systemState.Phase != Phase.WAIT_FLUSH)
+                    Thread.Yield();
+                GlobalStateMachineStep(systemState);
+            }
+        }
+    }
+}

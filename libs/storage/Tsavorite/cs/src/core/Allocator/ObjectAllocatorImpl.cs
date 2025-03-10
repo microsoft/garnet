@@ -49,7 +49,7 @@ namespace Tsavorite.core
         readonly int overflowAllocatorFixedPageSize;
 
         // Size of object chunks being written to storage
-        private readonly int objectBlockSize = 100 * (1 << 20);
+        // TODO: private readonly int objectBlockSize = 100 * (1 << 20);
 
         // RecordSize and Value size are constant; only the key size is variable.
         private static int FixedValueSize => ObjectIdMap.ObjectIdSize;
@@ -1014,10 +1014,10 @@ namespace Tsavorite.core
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TValue, TStoreFunctions, ObjectAllocator<TValue, TStoreFunctions>> store,
-                ScanCursorState<TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+                ScanCursorState<TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
         {
             using RecordScanIterator<TValue, TStoreFunctions, ObjectAllocator<TValue, TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, includeSealedRecords: false, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, RecordScanIterator<TValue, TStoreFunctions, ObjectAllocator<TValue, TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            return ScanLookup<long, long, TScanFunctions, RecordScanIterator<TValue, TStoreFunctions, ObjectAllocator<TValue, TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress);
         }
 
         /// <summary>

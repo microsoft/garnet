@@ -48,13 +48,13 @@ namespace Garnet.server
 
             if (status == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
                 // Write result to output
-                while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -85,7 +85,7 @@ namespace Garnet.server
                 // Read count
                 if (!parseState.TryGetInt(1, out popCount))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -104,7 +104,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(key, ref input, ref outputFooter)
@@ -114,14 +114,14 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -153,21 +153,21 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListPosition(key, ref input, ref outputFooter);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -193,7 +193,7 @@ namespace Garnet.server
             // Read count of keys
             if (!parseState.TryGetInt(currTokenId++, out var numKeys))
             {
-                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "numkeys");
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
             }
 
@@ -234,7 +234,7 @@ namespace Garnet.server
                 // Read count
                 if (!parseState.TryGetInt(currTokenId, out popCount))
                 {
-                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    var err = string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "count");
                     return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
                 }
             }
@@ -246,28 +246,28 @@ namespace Garnet.server
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(key.Span, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.WriteArrayLength(elements.Length, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(elements.Length, ref dcurr, dend))
                         SendAndReset();
 
                     foreach (var element in elements)
                     {
-                        while (!RespWriteUtils.WriteBulkString(element.Span, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteBulkString(element.Span, ref dcurr, dend))
                             SendAndReset();
                     }
 
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -291,7 +291,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -301,41 +301,87 @@ namespace Garnet.server
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
+            if (result.IsForceUnblocked)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (!result.Found)
             {
-                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
                     SendAndReset();
             }
 
             return true;
         }
 
-        private unsafe bool ListBlockingMove(RespCommand command)
+        private unsafe bool ListBlockingMove()
         {
             if (parseState.Count != 5)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString());
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMOVE));
             }
 
-            var cmdArgs = new ArgSlice[] { default, default, default };
-
             var srcKey = parseState.GetArgSliceByRef(0);
-
-            // Read destination key
-            cmdArgs[0] = parseState.GetArgSliceByRef(1);
+            var dstKey = parseState.GetArgSliceByRef(1);
             var srcDir = parseState.GetArgSliceByRef(2);
             var dstDir = parseState.GetArgSliceByRef(3);
+
+            if (!parseState.TryGetDouble(4, out var timeout))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            return ListBlockingMove(srcKey, dstKey, srcDir, dstDir, timeout);
+        }
+
+        /// <summary>
+        /// BRPOPLPUSH
+        /// </summary>
+        /// <returns></returns>
+        private bool ListBlockingPopPush()
+        {
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BRPOPLPUSH));
+            }
+
+            var srcKey = parseState.GetArgSliceByRef(0);
+            var dstKey = parseState.GetArgSliceByRef(1);
+            var rightOption = ArgSlice.FromPinnedSpan(CmdStrings.RIGHT);
+            var leftOption = ArgSlice.FromPinnedSpan(CmdStrings.LEFT);
+
+            if (!parseState.TryGetDouble(2, out var timeout))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
+        }
+
+        private bool ListBlockingMove(ArgSlice srcKey, ArgSlice dstKey, ArgSlice srcDir, ArgSlice dstDir, double timeout)
+        {
+            var cmdArgs = new ArgSlice[] { default, default, default };
+
+            // Read destination key
+            cmdArgs[0] = dstKey;
 
             var sourceDirection = GetOperationDirection(srcDir);
             var destinationDirection = GetOperationDirection(dstDir);
@@ -350,27 +396,20 @@ namespace Garnet.server
             cmdArgs[1] = new ArgSlice(pSrcDir, 1);
             cmdArgs[2] = new ArgSlice(pDstDir, 1);
 
-            if (!parseState.TryGetDouble(4, out var timeout))
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             if (storeWrapper.itemBroker == null)
                 throw new GarnetException("Object store is disabled");
 
-            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
+            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -403,16 +442,16 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
                 default:
                     // Process output
-                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -442,7 +481,7 @@ namespace Garnet.server
             if (!parseState.TryGetInt(1, out var start) ||
                 !parseState.TryGetInt(2, out var stop))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -456,13 +495,13 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
                 default:
                     //GarnetStatus.OK or NOTFOUND have same result
                     // no need to process output, just send OK
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -492,7 +531,7 @@ namespace Garnet.server
             if (!parseState.TryGetInt(1, out var start) ||
                 !parseState.TryGetInt(2, out var end))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -502,7 +541,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListRange(key, ref input, ref outputFooter);
 
@@ -510,14 +549,14 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    _ = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -545,7 +584,7 @@ namespace Garnet.server
             // Read index param
             if (!parseState.TryGetInt(1, out var index))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -555,7 +594,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListIndex(key, ref input, ref outputFooter);
 
@@ -565,7 +604,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     if (objOutputHeader.result1 == -1)
                         error = CmdStrings.RESP_ERRNOTFOUND;
                     break;
@@ -573,14 +612,14 @@ namespace Garnet.server
                     error = CmdStrings.RESP_ERRNOTFOUND;
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
 
             if (!error.IsEmpty)
             {
-                while (!RespWriteUtils.WriteDirect(error, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(error, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -618,15 +657,15 @@ namespace Garnet.server
                     if (output.result1 == int.MinValue)
                         return false;
                     //process output
-                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -655,7 +694,7 @@ namespace Garnet.server
             // Get count parameter
             if (!parseState.TryGetInt(1, out var nCount))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -673,15 +712,15 @@ namespace Garnet.server
                     if (output.result1 == int.MinValue)
                         return false;
                     //process output
-                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -726,18 +765,18 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (node != null)
                     {
-                        while (!RespWriteUtils.WriteBulkString(node, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteBulkString(node, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                             SendAndReset();
                     }
 
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -770,18 +809,18 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (node != null)
                     {
-                        while (!RespWriteUtils.WriteBulkString(node, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteBulkString(node, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
                             SendAndReset();
                     }
 
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -837,7 +876,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListSet(key, ref input, ref outputFooter);
 
@@ -845,16 +884,125 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// BLMPOP timeout numkeys key [key ...] LEFT|RIGHT [COUNT count]
+        /// </summary>
+        /// <returns></returns>
+        private unsafe bool ListBlockingPopMultiple()
+        {
+            if (parseState.Count < 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMPOP));
+            }
+
+            var currTokenId = 0;
+
+            // Read timeout
+            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            // Read count of keys
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            {
+                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+            }
+
+            if (parseState.Count != numKeys + 3 && parseState.Count != numKeys + 5)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            // Get the keys for Lists
+            var keysBytes = new byte[numKeys][];
+            for (var i = 0; i < keysBytes.Length; i++)
+            {
+                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).SpanByte.ToByteArray();
+            }
+
+            var cmdArgs = new ArgSlice[2];
+
+            // Get the direction
+            var dir = parseState.GetArgSliceByRef(currTokenId++);
+            var popDirection = GetOperationDirection(dir);
+
+            if (popDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+            cmdArgs[0] = new ArgSlice((byte*)&popDirection, 1);
+
+            var popCount = 1;
+
+            // Get the COUNT keyword & parameter value, if specified
+            if (parseState.Count == numKeys + 5)
+            {
+                var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
+
+                if (!countKeyword.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
+                // Read count
+                if (!parseState.TryGetInt(currTokenId, out popCount) || popCount < 1)
+                {
+                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                }
+            }
+
+            cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
+
+            if (result.IsForceUnblocked)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
+                SendAndReset();
+
+            var elements = result.Items;
+            while (!RespWriteUtils.TryWriteArrayLength(elements.Length, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var element in elements)
+            {
+                while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;

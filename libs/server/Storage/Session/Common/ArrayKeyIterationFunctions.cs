@@ -315,11 +315,9 @@ namespace Garnet.server
                 public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord<SpanByte>
                 {
-                    if (MainSessionFunctions.CheckExpiry(ref logRecord))
-                        cursorRecordResult = CursorRecordResult.Skip;
-                    else
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (!MainSessionFunctions.CheckExpiry(ref logRecord))
                     {
-                        cursorRecordResult = CursorRecordResult.Accept;
                         ++info.count;
                     }
                     return true;
@@ -345,11 +343,9 @@ namespace Garnet.server
                 public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
                 {
-                    if (ObjectSessionFunctions.CheckExpiry(ref logRecord))
-                        cursorRecordResult = CursorRecordResult.Skip;
-                    else
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    if (!ObjectSessionFunctions.CheckExpiry(ref logRecord))
                     {
-                        cursorRecordResult = CursorRecordResult.Accept;
                         ++info.count;
                     }
                     return true;

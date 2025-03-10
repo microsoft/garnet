@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.IO;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -45,7 +44,7 @@ namespace Garnet.server
                 return;
             }
 
-            var numLength = NumUtils.NumDigits(srcLength);
+            var numLength = NumUtils.CountDigits(srcLength);
             var totalSize = 1 + numLength + 2 + srcLength + 2; // $5\r\nvalue\r\n
 
             if (dst.IsSpanByte)
@@ -56,7 +55,7 @@ namespace Garnet.server
 
                     var tmp = dst.SpanByte.ToPointer();
                     *tmp++ = (byte)'$';
-                    NumUtils.IntToBytes(srcLength, numLength, ref tmp);
+                    NumUtils.WriteInt32(srcLength, numLength, ref tmp);
                     *tmp++ = (byte)'\r';
                     *tmp++ = (byte)'\n';
                     src.AsReadOnlySpan().Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
@@ -74,7 +73,7 @@ namespace Garnet.server
             {
                 var tmp = ptr;
                 *tmp++ = (byte)'$';
-                NumUtils.IntToBytes(srcLength, numLength, ref tmp);
+                NumUtils.WriteInt32(srcLength, numLength, ref tmp);
                 *tmp++ = (byte)'\r';
                 *tmp++ = (byte)'\n';
                 src.AsReadOnlySpan().Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
@@ -139,7 +138,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GETBIT:
-                    var offset = input.parseState.GetLong(0);
+                    var offset = input.arg1;
                     var oldValSet = BitmapManager.GetBit(offset, value.ToPointer(), value.Length);
                     if (oldValSet == 0)
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
@@ -189,8 +188,14 @@ namespace Garnet.server
                         }
                     }
 
-                    var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
-                        value.ToPointer(), value.Length);
+                    var pos = BitmapManager.BitPosDriver(
+                        input: value.ToPointer(),
+                        inputLen: value.Length,
+                        startOffset: bpStartOffset,
+                        endOffset: bpEndOffset,
+                        searchFor: bpSetVal,
+                        offsetType: bpOffsetType
+                        );
                     *(long*)dst.SpanByte.ToPointer() = pos;
                     functionsState.CopyRespNumber(pos, ref dst);
                     break;
@@ -211,6 +216,12 @@ namespace Garnet.server
                         functionsState.CopyRespNumber(retValue, ref dst);
                     else
                         functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                    return;
+
+                case RespCommand.BITFIELD_RO:
+                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    var retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, value.ToPointer(), value.Length);
+                    functionsState.CopyRespNumber(retValue_RO, ref dst);
                     return;
 
                 case RespCommand.PFCOUNT:
@@ -248,7 +259,6 @@ namespace Garnet.server
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(value, ref dst, start, end);
                     return;
-
                 case RespCommand.EXPIRETIME:
                     var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                     functionsState.CopyRespNumber(expireTime, ref dst);
@@ -419,15 +429,14 @@ namespace Garnet.server
 
         static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            var fNeg = false;
-            var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
-            ndigits += fNeg ? 1 : 0;
+            var ndigits = NumUtils.CountDigits(val, out var isNegative);
+            ndigits += isNegative ? 1 : 0;
 
             if (!logRecord.TrySetValueLength(ndigits, ref sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
-            _ = NumUtils.LongToSpanByte(val, value.AsSpan());
+            _ = NumUtils.WriteInt64(val, value.AsSpan());
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
@@ -437,13 +446,13 @@ namespace Garnet.server
 
         static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            var ndigits = NumUtils.NumOfCharInDouble(val, out var _, out var _, out var _);
+            var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
 
             if (!logRecord.TrySetValueLength(ndigits, ref sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
-            _ = NumUtils.DoubleToSpanByte(val, value.AsSpan());
+            _ = NumUtils.WriteDouble(val, value.AsSpan());
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
@@ -492,7 +501,7 @@ namespace Garnet.server
 
         static bool TryCopyUpdateNumber(long next, SpanByte newValue, ref SpanByteAndMemory output)
         {
-            if (NumUtils.LongToSpanByte(next, newValue.AsSpan()) == 0)
+            if (NumUtils.WriteInt64(next, newValue.AsSpan()) == 0)
                 return false;
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.Length;
@@ -501,7 +510,7 @@ namespace Garnet.server
 
         static bool TryCopyUpdateNumber(double next, SpanByte newValue, ref SpanByteAndMemory output)
         {
-            if (NumUtils.DoubleToSpanByte(next, newValue.AsSpan()) == 0)
+            if (NumUtils.WriteDouble(next, newValue.AsSpan()) == 0)
                 return false;
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.Length;
@@ -592,18 +601,8 @@ namespace Garnet.server
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
         static bool IsValidNumber(int length, byte* source, Span<byte> output, out long val)
         {
-            val = 0;
-            try
-            {
-                // Check for valid number
-                if (!NumUtils.TryBytesToLong(length, source, out val))
-                {
-                    // Signal value is not a valid number
-                    output[0] = (byte)OperationError.INVALID_TYPE;
-                    return false;
-                }
-            }
-            catch
+            // Check for valid number
+            if (!NumUtils.TryReadInt64(length, source, out val))
             {
                 // Signal value is not a valid number
                 output[0] = (byte)OperationError.INVALID_TYPE;
@@ -614,18 +613,8 @@ namespace Garnet.server
 
         static bool IsValidDouble(int length, byte* source, Span<byte> output, out double val)
         {
-            val = 0;
-            try
-            {
-                // Check for valid number
-                if (!NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val))
-                {
-                    // Signal value is not a valid number
-                    output[0] = (byte)OperationError.INVALID_TYPE;
-                    return false;
-                }
-            }
-            catch
+            // Check for valid number
+            if (!NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val))
             {
                 // Signal value is not a valid number
                 output[0] = (byte)OperationError.INVALID_TYPE;
@@ -641,7 +630,7 @@ namespace Garnet.server
         {
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
 
-            var numDigits = NumUtils.NumDigits(value.Length);
+            var numDigits = NumUtils.CountDigits(value.Length);
             if (numDigits > output.SpanByte.Length)
             {
                 Debug.Fail("Output length overflow in CopyValueLengthToOutput");
@@ -649,9 +638,47 @@ namespace Garnet.server
             }
 
             var outputPtr = output.SpanByte.ToPointer();
-            NumUtils.IntToBytes(value.Length, numDigits, ref outputPtr);
+            NumUtils.WriteInt32(value.Length, numDigits, ref outputPtr);
             output.SpanByte.Length = numDigits;
             return true;
+        }
+
+        void CopyRespWithEtagData(SpanByte value, ref SpanByteAndMemory dst, bool hasETag, MemoryPool<byte> memoryPool)
+        {
+            int valueLength = value.Length;
+            // always writing an array of size 2 => *2\r\n
+            int desiredLength = 4;
+
+            // get etag to write, default etag 0 for when no etag
+            long etag = hasETag ? functionsState.etagState.etag : LogRecord.NoETag;
+
+            // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
+            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+            desiredLength += 1 + NumUtils.CountDigits(etag) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
+
+            WriteValAndEtagToDst(desiredLength, value.AsReadOnlySpan(), etag, ref dst, memoryPool);
+        }
+
+        static void WriteValAndEtagToDst(int desiredLength, ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
+        {
+            if (desiredLength <= dst.Length)
+            {
+                dst.Length = desiredLength;
+                byte* curr = dst.SpanByte.ToPointer();
+                byte* end = curr + dst.SpanByte.Length;
+                RespWriteUtils.WriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
+                return;
+            }
+
+            dst.ConvertToHeap();
+            dst.Length = desiredLength;
+            dst.Memory = memoryPool.Rent(desiredLength);
+            fixed (byte* ptr = dst.Memory.Memory.Span)
+            {
+                byte* curr = ptr;
+                byte* end = ptr + desiredLength;
+                RespWriteUtils.WriteEtagValArray(etag, ref value, ref curr, end, writeDirect);
+            }
         }
 
         /// <summary>
@@ -709,15 +736,23 @@ namespace Garnet.server
             // Get secondary command. Legal commands: GET, SET & INCRBY.
             var cmd = RespCommand.NONE;
             var sbCmd = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-            if (sbCmd.EqualsUpperCaseSpanIgnoringCase("GET"u8))
+            if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 cmd = RespCommand.GET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("SET"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SET))
                 cmd = RespCommand.SET;
-            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
+            else if (sbCmd.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INCRBY))
                 cmd = RespCommand.INCRBY;
 
-            var encodingArg = input.parseState.GetString(currTokenIdx++);
-            var offsetArg = input.parseState.GetString(currTokenIdx++);
+            var bitfieldEncodingParsed = input.parseState.TryGetBitfieldEncoding(
+                                                currTokenIdx++, out var bitCount, out var isSigned);
+            Debug.Assert(bitfieldEncodingParsed);
+            var sign = isSigned ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+
+            // Calculate number offset from bitCount if offsetArg starts with #
+            var offsetParsed = input.parseState.TryGetBitfieldOffset(currTokenIdx++, out var offset, out var multiplyOffset);
+            Debug.Assert(offsetParsed);
+            if (multiplyOffset)
+                offset *= bitCount;
 
             long value = default;
             if (cmd == RespCommand.SET || cmd == RespCommand.INCRBY)
@@ -733,14 +768,9 @@ namespace Garnet.server
                 overflowType = (byte)overflowTypeValue;
             }
 
-            var sign = encodingArg[0] == 'i' ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
             // Number of bits in signed number
-            var bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
             // At most 64 bits can fit into encoding info
             var typeInfo = (byte)(sign | bitCount);
-
-            // Calculate number offset from bitCount if offsetArg starts with #
-            var offset = offsetArg[0] == '#' ? long.Parse(offsetArg.AsSpan(1)) * bitCount : long.Parse(offsetArg);
 
             return new BitFieldCmdArgs(cmd, typeInfo, offset, value, overflowType);
         }

@@ -6,6 +6,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -30,12 +31,12 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
             var replicas = clusterProvider.clusterManager.ListReplicas(nodeId, clusterProvider);
 
-            while (!RespWriteUtils.WriteArrayLength(replicas.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(replicas.Count, ref dcurr, dend))
                 SendAndReset();
 
             foreach (var replica in replicas)
             {
-                while (!RespWriteUtils.WriteAsciiBulkString(replica, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(replica, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -71,7 +72,7 @@ namespace Garnet.cluster
                     background = true;
                 else
                 {
-                    while (!RespWriteUtils.WriteError(
+                    while (!RespWriteUtils.TryWriteError(
                                $"ERR Invalid CLUSTER REPLICATE FLAG ({Encoding.ASCII.GetString(backgroundFlagSpan)}) not valid",
                                ref dcurr, dend))
                         SendAndReset();
@@ -81,19 +82,23 @@ namespace Garnet.cluster
 
             if (!clusterProvider.serverOptions.EnableAOF)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                if (!clusterProvider.replicationManager.TryBeginReplicate(this, nodeId, background: background, force: false, out var errorMessage))
+                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, nodeId, background: background, force: false, out var errorMessage) :
+                    clusterProvider.replicationManager.TryBeginReplicate(this, nodeId, background: background, force: false, out errorMessage);
+
+                if (success)
                 {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -120,7 +125,7 @@ namespace Garnet.cluster
 
             if (!parseState.TryGetLong(1, out var nextAddress))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -130,18 +135,18 @@ namespace Garnet.cluster
                 clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
                 if (!clusterProvider.replicationManager.TryConnectToReplica(nodeId, nextAddress, aofSyncTaskInfo, out var errorMessage))
                 {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -212,29 +217,34 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var nodeId = parseState.GetString(0);
-            var primaryReplicaId = parseState.GetString(1);
+            var replicaNodeId = parseState.GetString(0);
+            var replicaAssignedPrimaryId = parseState.GetString(1);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
 
             if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
                 !parseState.TryGetLong(4, out var replicaAofTailAddress))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var remoteEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
+            var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            if (!clusterProvider.replicationManager.TryBeginReplicaSyncSession(
-                nodeId, primaryReplicaId, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress, out var errorMessage))
+            if (!clusterProvider.replicationManager.TryBeginPrimarySync(
+                replicaNodeId,
+                replicaAssignedPrimaryId,
+                replicaCheckpointEntry,
+                replicaAofBeginAddress,
+                replicaAofTailAddress,
+                out var errorMessage))
             {
-                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -261,7 +271,7 @@ namespace Garnet.cluster
 
             if (!parseState.TryGetInt(1, out var fileTypeInt))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -271,7 +281,7 @@ namespace Garnet.cluster
             var fileToken = new Guid(fileTokenBytes);
             var fileType = (CheckpointFileType)fileTypeInt;
             clusterProvider.replicationManager.ProcessCheckpointMetadata(fileToken, fileType, checkpointMetadata);
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -298,7 +308,7 @@ namespace Garnet.cluster
                 !parseState.TryGetLong(2, out var startAddress) ||
                 !parseState.TryGetInt(4, out var segmentId))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -311,7 +321,7 @@ namespace Garnet.cluster
             // Commenting due to high verbosity
             // logger?.LogTrace("send_ckpt_file_segment {fileToken} {ckptFileType} {startAddress} {dataLength}", fileToken, ckptFileType, startAddress, data.Length);
             clusterProvider.replicationManager.recvCheckpointHandler.ProcessFileSegments(segmentId, fileToken, ckptFileType, startAddress, data);
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -337,7 +347,7 @@ namespace Garnet.cluster
                 !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) ||
                 !parseState.TryGetBool(2, out var replayAOF))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -348,7 +358,7 @@ namespace Garnet.cluster
             if (!parseState.TryGetLong(5, out var beginAddress) ||
                 !parseState.TryGetLong(6, out var tailAddress))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -362,7 +372,111 @@ namespace Garnet.cluster
                 entry,
                 beginAddress,
                 tailAddress);
-            while (!RespWriteUtils.WriteInteger(replicationOffset, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER attach_sync command (only for internode use)
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterAttachSync(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 1 arguments
+            if (parseState.Count != 1)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
+
+            ReadOnlySpan<byte> errorMessage = default;
+            long replicationOffset = -1;
+            if (syncMetadata.originNodeRole == NodeRole.REPLICA)
+                _ = clusterProvider.replicationManager.TryAttachSync(syncMetadata, out errorMessage);
+            else
+                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata);
+
+            if (errorMessage != default)
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Implements CLUSTER SYNC
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        private bool NetworkClusterSync(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 3 arguments
+            if (parseState.Count != 3)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var primaryNodeId = parseState.GetString(0);
+            var storeTypeSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            var payload = parseState.GetArgSliceByRef(2).SpanByte;
+            var payloadPtr = payload.ToPointer();
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
+
+            var keyValuePairCount = *(int*)payloadPtr;
+            var i = 0;
+            payloadPtr += 4;
+            if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
+            {
+                TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
+                while (i < keyValuePairCount)
+                {
+#if TODOMigrate
+                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                    payloadPtr += key.TotalSize;
+                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                    payloadPtr += value.TotalSize;
+
+                    _ = basicGarnetApi.SET(ref key, ref value);
+#endif // TODOMigrate
+                    i++;
+                }
+            }
+            else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
+            {
+                TrackImportProgress(keyValuePairCount, isMainStore: false, keyValuePairCount == 0);
+                while (i < keyValuePairCount)
+                {
+                    if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
+                        return false;
+
+                    var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
+                    // TODOMigrate: value.Expiration = expiration;
+                    fixed (byte* keyPtr = key)
+                        _ = basicGarnetApi.SET(SpanByte.FromPinnedPointer(keyPtr, key.Length), value);
+                    i++;
+                }
+            }
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;

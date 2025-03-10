@@ -24,9 +24,17 @@ namespace MigrateBench
             var opts = result.MapResult(o => o, xs => new Options());
 
             var loggerFactory = CreateLoggerFactory(opts);
-            MigrateRequest mreq = new(opts, logger: loggerFactory.CreateLogger("MigrateBench"));
 
-            mreq.Run();
+            if (opts.Endpoints.Count() == 0)
+            {
+                MigrateRequest mreq = new(opts, logger: loggerFactory.CreateLogger("MigrateBench"));
+                mreq.Run();
+            }
+            else
+            {
+                MigrateSlotWalk mwalk = new(opts, logger: loggerFactory.CreateLogger("MigrateWalk"));
+                mwalk.Run();
+            }
         }
     }
 }

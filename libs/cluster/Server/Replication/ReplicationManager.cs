@@ -19,6 +19,7 @@ namespace Garnet.cluster
         readonly StoreWrapper storeWrapper;
         readonly AofProcessor aofProcessor;
         readonly CheckpointStore checkpointStore;
+        readonly ReplicationSyncManager replicationSyncManager;
 
         readonly CancellationTokenSource ctsRepManager = new();
 
@@ -101,6 +102,7 @@ namespace Garnet.cluster
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
+            replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
             ReplicationOffset = 0;
 
@@ -110,7 +112,7 @@ namespace Garnet.cluster
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && !StartRecovery())
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery())
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -154,7 +156,7 @@ namespace Garnet.cluster
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            storeWrapper.EnqueueCommit(isMainStore, newVersion);
+            storeWrapper.EnqueueCommit(isMainStore, newVersion, streaming: true);
         }
 
         /// <summary>
@@ -163,10 +165,14 @@ namespace Garnet.cluster
         public bool StartRecovery()
         {
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
+            {
+                logger?.LogError("Error could not acquire checkpoint lock");
                 return false;
+            }
 
             if (!recoverLock.TryWriteLock())
             {
+                logger?.LogError("Error could not acquire recover lock");
                 // If failed to acquire recoverLock re-enable checkpoint taking
                 clusterProvider.storeWrapper.ResumeCheckpoints();
                 return false;
@@ -190,6 +196,8 @@ namespace Garnet.cluster
 
             replicationConfigDevice?.Dispose();
             replicationConfigDevicePool?.Free();
+
+            replicationSyncManager?.Dispose();
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
@@ -273,7 +281,7 @@ namespace Garnet.cluster
 
             var localNodeRole = current.LocalNodeRole;
             var replicaOfNodeId = current.LocalNodePrimaryId;
-            if (localNodeRole == NodeRole.REPLICA && replicaOfNodeId != null)
+            if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!TryReplicateFromPrimary(out var errorMessage))

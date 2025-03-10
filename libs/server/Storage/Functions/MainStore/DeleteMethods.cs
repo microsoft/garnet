@@ -13,6 +13,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo)
         {
+            logRecord.InfoRef.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
         }
@@ -27,6 +28,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentDeleter(ref LogRecord<SpanByte> logRecord, ref DeleteInfo deleteInfo)
         {
+            logRecord.ClearOptionals();
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)

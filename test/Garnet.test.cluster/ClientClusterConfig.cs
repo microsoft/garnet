@@ -4,17 +4,118 @@
 #pragma warning disable IDE0005 // Using directive is unnecessary.
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 #pragma warning restore IDE0005 // Using directive is unnecessary.
 using System.Net;
+using System.Net.Sockets;
 using Garnet.cluster;
-using Garnet.common;
 using StackExchange.Redis;
 
 namespace GarnetClusterManagement
 {
     internal class ClientClusterNode
     {
+        static bool TryParseEndPoint(string addressWithPort, [NotNullWhen(true)] out EndPoint endpoint)
+        {
+            string addressPart;
+#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.
+            string portPart = null;
+#pragma warning restore CS8600 // Converting null literal or possible null value to non-nullable type.
+            if (string.IsNullOrEmpty(addressWithPort))
+            {
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
+                endpoint = null;
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
+                return false;
+            }
+
+            if (addressWithPort[0] == '!')
+            {
+                if (addressWithPort.Length == 1)
+                {
+                    endpoint = null;
+                    return false;
+                }
+
+#if UNIX_SOCKET
+                endpoint = new UnixDomainSocketEndPoint(addressWithPort.Substring(1));
+                return true;
+#else
+                throw new PlatformNotSupportedException("Unix domain sockets require .NET Core 3 or above");
+#endif
+            }
+            var lastColonIndex = addressWithPort.LastIndexOf(':');
+            if (lastColonIndex > 0)
+            {
+                // IPv4 with port or IPv6
+                var closingIndex = addressWithPort.LastIndexOf(']');
+                if (closingIndex > 0)
+                {
+                    // IPv6 with brackets
+                    addressPart = addressWithPort.Substring(1, closingIndex - 1);
+                    if (closingIndex < lastColonIndex)
+                    {
+                        // IPv6 with port [::1]:80
+                        portPart = addressWithPort.Substring(lastColonIndex + 1);
+                    }
+                }
+                else
+                {
+                    // IPv6 without port or IPv4
+                    var firstColonIndex = addressWithPort.IndexOf(':');
+                    if (firstColonIndex != lastColonIndex)
+                    {
+                        // IPv6 ::1
+                        addressPart = addressWithPort;
+                    }
+                    else
+                    {
+                        // IPv4 with port 127.0.0.1:123
+                        addressPart = addressWithPort.Substring(0, firstColonIndex);
+                        portPart = addressWithPort.Substring(firstColonIndex + 1);
+                    }
+                }
+            }
+            else
+            {
+                // IPv4 without port
+                addressPart = addressWithPort;
+            }
+
+            int? port = 0;
+            if (portPart != null)
+            {
+                if (TryParseInt32(portPart, out var portVal))
+                {
+                    port = portVal;
+                }
+                else
+                {
+                    // Invalid port, return
+                    endpoint = null;
+                    return false;
+                }
+            }
+
+            if (IPAddress.TryParse(addressPart, out IPAddress address))
+            {
+                endpoint = new IPEndPoint(address, port ?? 0);
+                return true;
+            }
+            else
+            {
+                IPHostEntry host = Dns.GetHostEntryAsync(addressPart).Result;
+                var ip = host.AddressList.First(x => x.AddressFamily == AddressFamily.InterNetwork);
+                endpoint = new IPEndPoint(ip, port ?? 0);
+                return true;
+            }
+
+            static bool TryParseInt32(string s, out int value) =>
+                int.TryParse(s, NumberStyles.Integer, NumberFormatInfo.InvariantInfo, out value);
+        }
+
         public ClientClusterNode(string raw)
         {
             Raw = raw;
@@ -27,7 +128,7 @@ namespace GarnetClusterManagement
             int at = ep.IndexOf('@');
             if (at >= 0) ep = ep.Substring(0, at);
 
-            if (Format.TryParseEndPoint(ep, out var epResult))
+            if (TryParseEndPoint(ep, out var epResult))
             {
                 EndPoint = epResult;
             }

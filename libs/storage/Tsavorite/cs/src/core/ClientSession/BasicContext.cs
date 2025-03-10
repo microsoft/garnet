@@ -405,15 +405,16 @@ namespace Tsavorite.core
         /// <param name="srcLogRecord"></param>
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
+        /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState<TValue> scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress)
+        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState<TValue> scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress, long maxAddress)
             where TSourceLogRecord : ISourceLogRecord<TValue>
         {
             UnsafeResumeThread();
             try
             {
                 return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
-                        sessionFunctions, scanCursorState, ref srcLogRecord, currentAddress, untilAddress);
+                        sessionFunctions, scanCursorState, ref srcLogRecord, currentAddress, untilAddress, maxAddress);
             }
             finally
             {

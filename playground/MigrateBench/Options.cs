@@ -31,5 +31,8 @@ namespace MigrateBench
 
         [Option("verbose", Required = false, Default = false, HelpText = "Print detailed information")]
         public bool Verbose { get; set; }
+
+        [Option("endpoints", Separator = ',', Default = null, HelpText = "Endpoints of instance to migrate slots through")]
+        public IEnumerable<string> Endpoints { get; set; }
     }
 }

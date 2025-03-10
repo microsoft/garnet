@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Begin migration task
@@ -49,12 +49,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Migrate slots session background task
         /// </summary>
-        private void BeginAsyncMigrationTask()
+        private async Task BeginAsyncMigrationTask()
         {
+            var configResumed = true;
             try
             {
-
-                //1. Set target node to import state
+                // Set target node to import state
                 if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
                 {
                     logger?.LogError("Failed to set remote slots {slots} to import state", ClusterManager.GetRange([.. GetSlots]));
@@ -64,7 +64,7 @@ namespace Garnet.cluster
                 }
 
                 #region transitionLocalSlotToMigratingState
-                //2. Set source node to migrating state and wait for local threads to see changed state.
+                // Set source node to migrating state and wait for local threads to see changed state.
                 if (!TryPrepareLocalForMigration())
                 {
                     logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
@@ -77,7 +77,7 @@ namespace Garnet.cluster
                 #endregion
 
                 #region migrateData
-                //3. Migrate actual data
+                // Migrate actual data
                 if (!MigrateSlotsDriver())
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
@@ -88,7 +88,21 @@ namespace Garnet.cluster
                 #endregion
 
                 #region transferSlotOwnnershipToTargetNode
-                //5. Clear local migration set.
+                // Lock config merge to avoid a background epoch bump
+                clusterProvider.clusterManager.SuspendConfigMerge();
+                configResumed = false;
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
+
+                // Change ownership of slots to target node.
+                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
+                {
+                    logger?.LogError("Failed to assign ownership to target node:({tgtNodeId}) ({endpoint})", GetTargetNodeId, GetTargetEndpoint);
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+
+                // Clear local migration set.
                 if (!RelinquishOwnership())
                 {
                     logger?.LogError("Failed to relinquish ownership from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
@@ -97,17 +111,15 @@ namespace Garnet.cluster
                     return;
                 }
 
-                //6. Change ownership of slots to target node.
-                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
-                {
-                    logger?.LogError("Failed to assign ownership to target node:({tgtNodeId}) ({endpoint})", GetTargetNodeId, GetTargetEndpoint);
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }
+                // Gossip again to ensure that source and target agree on the slot exchange
+                await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
+
+                // Ensure that config merge resumes
+                clusterProvider.clusterManager.ResumeConfigMerge();
+                configResumed = true;
                 #endregion
 
-                //7. Enqueue success log
+                // Enqueue success log
                 Status = MigrateState.SUCCESS;
             }
             catch (Exception ex)
@@ -116,7 +128,8 @@ namespace Garnet.cluster
             }
             finally
             {
-                clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
+                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
             }
         }
     }

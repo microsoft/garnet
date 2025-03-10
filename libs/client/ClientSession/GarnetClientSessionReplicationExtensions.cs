@@ -19,6 +19,8 @@ namespace Garnet.client
         static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
         static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
+        static ReadOnlySpan<byte> sync => "SYNC"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -36,7 +38,7 @@ namespace Garnet.client
             byte* curr = offset;
             int arraySize = 7;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -44,7 +46,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -52,7 +54,7 @@ namespace Garnet.client
             offset = curr;
 
             //2
-            while (!RespWriteUtils.WriteBulkString(initiate_replica_sync, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(initiate_replica_sync, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -60,7 +62,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -68,7 +70,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteAsciiBulkString(primary_replid, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -76,7 +78,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(checkpointEntryData, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(checkpointEntryData, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -84,7 +86,7 @@ namespace Garnet.client
             offset = curr;
 
             //6
-            while (!RespWriteUtils.WriteArrayItem(aofBeginAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(aofBeginAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -92,7 +94,7 @@ namespace Garnet.client
             offset = curr;
 
             //7
-            while (!RespWriteUtils.WriteArrayItem(aofTailAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(aofTailAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -117,7 +119,7 @@ namespace Garnet.client
             byte* curr = offset;
             int arraySize = 5;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -125,7 +127,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -133,7 +135,7 @@ namespace Garnet.client
             offset = curr;
 
             //2
-            while (!RespWriteUtils.WriteBulkString(send_ckpt_metadata, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(send_ckpt_metadata, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -141,7 +143,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(fileTokenBytes.Span, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(fileTokenBytes.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -149,7 +151,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteArrayItem(fileType, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(fileType, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -157,7 +159,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(data.Span, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(data.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -183,7 +185,7 @@ namespace Garnet.client
             byte* curr = offset;
             int arraySize = 7;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -191,7 +193,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -199,7 +201,7 @@ namespace Garnet.client
             offset = curr;
 
             //2
-            while (!RespWriteUtils.WriteBulkString(send_ckpt_file_segment, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(send_ckpt_file_segment, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -207,7 +209,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(fileTokenBytes.Span, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(fileTokenBytes.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -215,7 +217,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteArrayItem(fileType, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(fileType, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -223,7 +225,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteArrayItem(startAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(startAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -231,7 +233,7 @@ namespace Garnet.client
             offset = curr;
 
             //6
-            while (!RespWriteUtils.WriteBulkString(data, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(data, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -239,7 +241,7 @@ namespace Garnet.client
             offset = curr;
 
             //7
-            while (!RespWriteUtils.WriteArrayItem(segmentId, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(segmentId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -269,7 +271,7 @@ namespace Garnet.client
             byte* curr = offset;
             int arraySize = 9;
 
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -277,7 +279,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -285,7 +287,7 @@ namespace Garnet.client
             offset = curr;
 
             //2
-            while (!RespWriteUtils.WriteBulkString(begin_replica_recover, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(begin_replica_recover, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -293,7 +295,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(sendStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(sendStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -301,7 +303,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteBulkString(sendObjectStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(sendObjectStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -309,7 +311,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(replayAOF ? "1"u8 : "0"u8, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(replayAOF ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -317,7 +319,7 @@ namespace Garnet.client
             offset = curr;
 
             //6
-            while (!RespWriteUtils.WriteAsciiBulkString(primary_replid, ref curr, end))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -325,7 +327,7 @@ namespace Garnet.client
             offset = curr;
 
             //7
-            while (!RespWriteUtils.WriteBulkString(checkpointEntryData, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(checkpointEntryData, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -333,7 +335,7 @@ namespace Garnet.client
             offset = curr;
 
             //8
-            while (!RespWriteUtils.WriteArrayItem(beginAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(beginAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -341,7 +343,7 @@ namespace Garnet.client
             offset = curr;
 
             //9
-            while (!RespWriteUtils.WriteArrayItem(tailAddress, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(tailAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -351,6 +353,119 @@ namespace Garnet.client
             Flush();
             Interlocked.Increment(ref numCommands);
             return tcs.Task;
+        }
+
+        /// <summary>
+        /// Initiate attach from replica
+        /// </summary>
+        /// <param name="syncMetadata"></param>
+        /// <returns></returns>
+        public Task<string> ExecuteAttachSync(byte[] syncMetadata)
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            byte* curr = offset;
+            int arraySize = 3;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //2
+            while (!RespWriteUtils.TryWriteBulkString(attach_sync, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //3
+            while (!RespWriteUtils.TryWriteBulkString(syncMetadata, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Set CLUSTER SYNC header info
+        /// </summary>
+        /// <param name="sourceNodeId"></param>
+        /// <param name="isMainStore"></param>
+        public void SetClusterSyncHeader(string sourceNodeId, bool isMainStore)
+        {
+            currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(currTcsIterationTask);
+            curr = offset;
+            this.isMainStore = isMainStore;
+            this.ist = IncrementalSendType.SYNC;
+            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
+
+            var arraySize = 5;
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 2
+            while (!RespWriteUtils.TryWriteBulkString(sync, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 3
+            while (!RespWriteUtils.TryWriteAsciiBulkString(sourceNodeId, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 4
+            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 5
+            // Reserve space for the bulk string header + final newline
+            while (ExtraSpace + 2 > (int)(end - curr))
+            {
+                Flush();
+                curr = offset;
+            }
+            head = curr;
+            curr += ExtraSpace;
         }
     }
 }

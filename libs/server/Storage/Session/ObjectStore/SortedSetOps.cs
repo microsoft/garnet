@@ -41,14 +41,13 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext, ref outputFooter);
+            itemBroker.HandleCollectionUpdate(key.ToArray());
 
             if (status == GarnetStatus.OK)
-            {
                 zaddCount = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
-            }
 
             return status;
         }
@@ -82,9 +81,10 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext, ref outputFooter);
+            itemBroker.HandleCollectionUpdate(key.ToArray());
 
             if (status == GarnetStatus.OK)
             {
@@ -242,7 +242,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext,
                 ref outputFooter);
@@ -280,8 +280,8 @@ namespace Garnet.server
 
             GarnetStatus status;
             // Get parameter lengths
-            var startLen = NumUtils.NumDigits(start);
-            var stopLen = NumUtils.NumDigits(stop);
+            var startLen = NumUtils.CountDigits(start);
+            var stopLen = NumUtils.CountDigits(stop);
 
             // Get buffer from scratch buffer manager
             var paramsSlice = scratchBufferManager.CreateArgSlice(startLen + stopLen);
@@ -289,11 +289,11 @@ namespace Garnet.server
 
             // Store parameters to buffer
             var startSpan = paramsSpan.Slice(0, startLen);
-            NumUtils.LongToSpanByte(start, startSpan);
+            NumUtils.WriteInt64(start, startSpan);
             var startSlice = ArgSlice.FromPinnedSpan(startSpan);
 
             var stopSpan = paramsSpan.Slice(startLen, stopLen);
-            NumUtils.LongToSpanByte(stop, stopSpan);
+            NumUtils.WriteInt64(stop, stopSpan);
             var stopSlice = ArgSlice.FromPinnedSpan(stopSpan);
 
             parseState.InitializeWithArguments(startSlice, stopSlice);
@@ -302,7 +302,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             status = RMWObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext,
                 ref outputFooter);
@@ -339,7 +339,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
             var input = new ObjectInput(header, count);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = RMWObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext, ref outputFooter);
 
@@ -382,7 +382,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
             var input = new ObjectInput(header, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = RMWObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext,
                 ref outputFooter);
 
@@ -457,37 +457,18 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
 
-            ReadOnlySpan<byte> operation = default;
-            var sortedOperation = SortedSetOperation.ZRANGE;
-            switch (sortedSetOrderOperation)
+            var rangeOpts = sortedSetOrderOperation switch
             {
-                case SortedSetOrderOperation.ByScore:
-                    sortedOperation = SortedSetOperation.ZRANGEBYSCORE;
-                    operation = "BYSCORE"u8;
-                    break;
-                case SortedSetOrderOperation.ByLex:
-                    sortedOperation = SortedSetOperation.ZRANGE;
-                    operation = "BYLEX"u8;
-                    break;
-                case SortedSetOrderOperation.ByRank:
-                    if (reverse)
-                        sortedOperation = SortedSetOperation.ZREVRANGE;
-                    operation = default;
-                    break;
-            }
+                SortedSetOrderOperation.ByScore => SortedSetRangeOpts.ByScore,
+                SortedSetOrderOperation.ByLex => SortedSetRangeOpts.ByLex,
+                _ => SortedSetRangeOpts.None
+            };
 
             var arguments = new List<ArgSlice> { min, max };
 
-            // Operation order
-            if (!operation.IsEmpty)
+            if (reverse)
             {
-                arguments.Add(scratchBufferManager.CreateArgSlice(operation));
-            }
-
-            // Reverse
-            if (sortedOperation != SortedSetOperation.ZREVRANGE && reverse)
-            {
-                arguments.Add(scratchBufferManager.CreateArgSlice("REV"u8));
+                rangeOpts |= SortedSetRangeOpts.Reverse;
             }
 
             // Limit parameter
@@ -499,20 +480,20 @@ namespace Garnet.server
                 arguments.Add(scratchBufferManager.CreateArgSlice(limit.Item1));
 
                 // Count
-                var limitCountLength = NumUtils.NumDigitsInLong(limit.Item2);
+                var limitCountLength = NumUtils.CountDigits(limit.Item2);
                 var limitCountSlice = scratchBufferManager.CreateArgSlice(limitCountLength);
-                NumUtils.LongToSpanByte(limit.Item2, limitCountSlice.Span);
+                NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
                 arguments.Add(limitCountSlice);
             }
 
             parseState.InitializeWithArguments([.. arguments]);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = sortedOperation };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var inputArg = 2; // Default RESP server protocol version
-            var input = new ObjectInput(header, ref parseState, arg1: inputArg);
+            var input = new ObjectInput(header, ref parseState, arg1: inputArg, arg2: (int)rangeOpts);
 
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectContext, ref outputFooter);
 
             for (var i = arguments.Count - 1; i > 1; i--)
@@ -603,7 +584,6 @@ namespace Garnet.server
                 }
 
                 count = pairs?.Count ?? 0;
-
                 if (count > 0)
                 {
                     SortedSetObject newSetObject = new();
@@ -611,7 +591,9 @@ namespace Garnet.server
                     {
                         newSetObject.Add(element, score);
                     }
+
                     _ = SET(destinationKey.SpanByte, newSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
                 {
@@ -653,7 +635,7 @@ namespace Garnet.server
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
 
             var status = ReadObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectStoreContext, ref outputFooter);
 
@@ -685,7 +667,115 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SortedSetAdd<TObjectContext>(SpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
+        {
+            var status = RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
+            itemBroker.HandleCollectionUpdate(key.ToByteArray());
+            return status;
+        }
+
+        /// <summary>
+        /// ZRANGESTORE - Stores a range of sorted set elements into a destination key.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="dstKey">The destination key where the range will be stored.</param>
+        /// <param name="srcKey">The source key from which the range will be taken.</param>
+        /// <param name="input">The input object containing range parameters.</param>
+        /// <param name="result">The result of the operation, indicating the number of elements stored.</param>
+        /// <param name="objectStoreContext">The context of the object store.</param>
+        /// <returns>Returns a GarnetStatus indicating the success or failure of the operation.</returns>
+        public unsafe GarnetStatus SortedSetRangeStore<TObjectContext>(ArgSlice dstKey, ArgSlice srcKey, ref ObjectInput input, out int result, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (txnManager.ObjectStoreTransactionalContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            result = 0;
+
+            if (dstKey.Length == 0 || srcKey.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(dstKey, isObject: true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(srcKey, isObject: true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                SpanByteAndMemory rangeOutputMem = default;
+                var rangeOutput = new GarnetObjectStoreOutput() { SpanByteAndMemory = rangeOutputMem };
+                var status = SortedSetRange(srcKey.SpanByte, ref input, ref rangeOutput, ref objectStoreTransactionalContext);
+                rangeOutputMem = rangeOutput.SpanByteAndMemory;
+
+                if (status == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
+
+                if (status == GarnetStatus.NOTFOUND)
+                {
+                    // Expire/Delete the destination key if the source key is not found
+                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref transactionalContext, ref objectStoreTransactionalContext);
+                    return GarnetStatus.OK;
+                }
+
+                Debug.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
+
+                var rangeOutputHandler = rangeOutputMem.Memory.Memory.Pin();
+                try
+                {
+                    var rangeOutPtr = (byte*)rangeOutputHandler.Pointer;
+                    ref var currOutPtr = ref rangeOutPtr;
+                    var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
+
+                    var destinationKey = dstKey.SpanByte;
+                    objectStoreTransactionalContext.Delete(destinationKey);
+
+                    RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
+                    Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
+                    result = arrayLen / 2;
+
+                    if (result > 0)
+                    {
+                        parseState.Initialize(arrayLen); // 2 elements per pair (result * 2)
+
+                        for (int j = 0; j < result; j++)
+                        {
+                            // Read member/element into parse state
+                            parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
+                            // Read score into parse state
+                            parseState.Read(2 * j, ref currOutPtr, endOutPtr);
+                        }
+
+                        var zAddInput = new ObjectInput(new RespInputHeader
+                        {
+                            type = GarnetObjectType.SortedSet,
+                            SortedSetOp = SortedSetOperation.ZADD,
+                        }, ref parseState);
+
+                        var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
+                        itemBroker.HandleCollectionUpdate(destinationKey.ToByteArray());
+                    }
+                }
+                finally
+                {
+                    rangeOutputHandler.Dispose();
+                }
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
 
         /// <summary>
         /// Removes the specified members from the sorted set stored at key.
@@ -770,6 +860,46 @@ namespace Garnet.server
         public GarnetStatus SortedSetPop<TObjectContext>(SpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+
+        /// <summary>
+        /// Returns the number of elements in the sorted set at key with a score between min and max.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="minScore"></param>
+        /// <param name="maxScore"></param>
+        /// <param name="numElements"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus SortedSetCount<TObjectContext>(ArgSlice key, ArgSlice minScore, ArgSlice maxScore, out int numElements, ref TObjectContext objectContext)
+             where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            numElements = 0;
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            // Prepare the parse state
+            parseState.InitializeWithArguments(minScore, maxScore);
+
+            // Prepare the input
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
+            var input = new ObjectInput(header, ref parseState);
+
+            const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+
+            var status = ReadObjectStoreOperationWithOutput(key.SpanByte, ref input, ref objectContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                Debug.Assert(*outputContainer == (byte)':');
+                var read = TryProcessRespSimple64IntOutput(outputFooter, out var value);
+                numElements = read ? (int)value : default;
+                Debug.Assert(read);
+            }
+            return status;
+        }
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
@@ -881,6 +1011,164 @@ namespace Garnet.server
          where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            pairs = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                return SortedSetUnion(keys, ref objectContext, out pairs, weights, aggregateType);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        public GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                var status = SortedSetUnion(keys, ref objectContext, out var pairs, weights, aggregateType);
+
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = pairs?.Count ?? 0;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSortedSetObject = new();
+                    foreach (var (element, score) in pairs)
+                    {
+                        newSortedSetObject.Add(element, score);
+                    }
+
+                    _ = SET(destinationKey.SpanByte, newSortedSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref transactionalContext, ref objectContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        private GarnetStatus SortedSetUnion<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext,
+            out Dictionary<byte[], double> pairs, double[] weights = null, SortedSetAggregateType aggregateType = SortedSetAggregateType.Sum)
+            where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            pairs = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            // Get the first sorted set
+            var status = GET(keys[0].SpanByte, out var firstObj, ref objectContext);
+            if (status == GarnetStatus.OK)
+            {
+                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                // Initialize pairs with the first set
+                if (weights is null)
+                {
+                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                }
+                else
+                {
+                    pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                    foreach (var (key, score) in firstSortedSet.Dictionary)
+                    {
+                        pairs[key] = weights[0] * score;
+                    }
+                }
+
+                // Process remaining sets
+                for (var i = 1; i < keys.Length; i++)
+                {
+                    status = GET(keys[i].SpanByte, out var nextObj, ref objectContext);
+                    if (status != GarnetStatus.OK)
+                        continue;
+
+                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
+                    {
+                        pairs = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    foreach (var (key, score) in nextSortedSet.Dictionary)
+                    {
+                        var weightedScore = weights is null ? score : score * weights[i];
+                        if (pairs.TryGetValue(key, out var existingScore))
+                        {
+                            pairs[key] = aggregateType switch
+                            {
+                                SortedSetAggregateType.Sum => existingScore + weightedScore,
+                                SortedSetAggregateType.Min => Math.Min(existingScore, weightedScore),
+                                SortedSetAggregateType.Max => Math.Max(existingScore, weightedScore),
+                                _ => existingScore + weightedScore // Default to SUM
+                            };
+                        }
+                        else
+                        {
+                            pairs[key] = weightedScore;
+                        }
+                    }
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+
         private GarnetStatus SortedSetDifference<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref TObjectContext objectContext, out Dictionary<byte[], double> pairs)
             where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
@@ -889,7 +1177,7 @@ namespace Garnet.server
             var statusOp = GET(keys[0].SpanByte, out var firstObj, ref objectContext);
             if (statusOp == GarnetStatus.OK)
             {
-                if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
+                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
                 {
                     return GarnetStatus.WRONGTYPE;
                 }
@@ -907,7 +1195,7 @@ namespace Garnet.server
                     if (statusOp != GarnetStatus.OK)
                         continue;
 
-                    if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
                     {
                         pairs = default;
                         return GarnetStatus.WRONGTYPE;
@@ -917,6 +1205,259 @@ namespace Garnet.server
                         pairs = SortedSetObject.CopyDiff(firstSortedSet.Dictionary, nextSortedSet.Dictionary);
                     else
                         SortedSetObject.InPlaceDiff(pairs, nextSortedSet.Dictionary);
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Removes and returns up to count members and their scores from the first sorted set that contains a member.
+        /// </summary>
+        public unsafe GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
+        {
+            if (txnManager.ObjectStoreTransactionalContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            pairs = default;
+            poppedKey = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var key in keys)
+                    txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.Run(true);
+            }
+
+            var storeTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                // Try popping from each key until we find one with members
+                foreach (var key in keys)
+                {
+                    if (key.Length == 0) continue;
+
+                    var status = SortedSetPop(key, count, lowScoresFirst, out pairs, ref storeTransactionalContext);
+                    if (status == GarnetStatus.OK && pairs != null && pairs.Length > 0)
+                    {
+                        poppedKey = key;
+                        return status;
+                    }
+
+                    if (status != GarnetStatus.OK && status != GarnetStatus.NOTFOUND)
+                        return status;
+                }
+
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
+        /// Computes the cardinality of the intersection of multiple sorted sets.
+        /// </summary>
+        public GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)
+        {
+            count = 0;
+
+            var status = SortedSetIntersect(keys, null, SortedSetAggregateType.Sum, out var pairs);
+            if (status == GarnetStatus.OK && pairs != null)
+            {
+                count = limit.HasValue ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
+            }
+
+            return status;
+        }
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and stores the resulting sorted set at destinationKey.
+        /// </summary>
+        public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                var status = SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out var pairs);
+
+                if (status != GarnetStatus.OK)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                count = pairs?.Count ?? 0;
+
+                if (count > 0)
+                {
+                    SortedSetObject newSortedSetObject = new();
+                    foreach (var (element, score) in pairs)
+                    {
+                        newSortedSetObject.Add(element, score);
+                    }
+
+                    _ = SET(destinationKey.SpanByte, newSortedSetObject, ref objectContext);
+                    itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
+                }
+                else
+                {
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref transactionalContext, ref objectContext);
+                }
+
+                return status;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and returns the result with optional weights and aggregate type.
+        /// </summary>
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        {
+            pairs = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                txnManager.Run(true);
+            }
+
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
+
+            try
+            {
+                return SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out pairs);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+        }
+
+        /// <summary>
+        /// Computes the intersection of multiple sorted sets and returns the result with optional weights and aggregate type.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="keys">The keys of the sorted sets to intersect.</param>
+        /// <param name="weights">The weights to apply to each sorted set's scores. If null, no weights are applied.</param>
+        /// <param name="aggregateType">The type of aggregation to use (Sum, Min, Max).</param>
+        /// <param name="objectContext">The object context.</param>
+        /// <param name="pairs">The resulting dictionary of intersected elements and their scores.</param>
+        /// <returns></returns>
+        private GarnetStatus SortedSetIntersection<TObjectContext>(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, ref TObjectContext objectContext, out Dictionary<byte[], double> pairs)
+            where TObjectContext : ITsavoriteContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            pairs = default;
+
+            var statusOp = GET(keys[0].SpanByte, out var firstObj, ref objectContext);
+            if (statusOp == GarnetStatus.OK)
+            {
+                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
+                {
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                if (keys.Length == 1)
+                {
+                    pairs = firstSortedSet.Dictionary;
+                    return GarnetStatus.OK;
+                }
+
+                // Initialize result with first set
+                if (weights is null)
+                {
+                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                }
+                else
+                {
+                    pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                    foreach (var kvp in firstSortedSet.Dictionary)
+                    {
+                        pairs[kvp.Key] = kvp.Value * weights[0];
+                    }
+                }
+
+                // Intersect with remaining sets
+                for (var i = 1; i < keys.Length; i++)
+                {
+                    statusOp = GET(keys[i].SpanByte, out var nextObj, ref objectContext);
+                    if (statusOp != GarnetStatus.OK)
+                    {
+                        pairs = default;
+                        return statusOp;
+                    }
+
+                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
+                    {
+                        pairs = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    foreach (var kvp in pairs)
+                    {
+                        if (!nextSortedSet.Dictionary.TryGetValue(kvp.Key, out var score))
+                        {
+                            pairs.Remove(kvp.Key);
+                            continue;
+                        }
+
+                        var weightedScore = weights is null ? score : score * weights[i];
+                        pairs[kvp.Key] = aggregateType switch
+                        {
+                            SortedSetAggregateType.Sum => kvp.Value + weightedScore,
+                            SortedSetAggregateType.Min => Math.Min(kvp.Value, weightedScore),
+                            SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
+                            _ => kvp.Value + weightedScore // Default to SUM
+                        };
+                    }
+
+                    // If intersection becomes empty, we can stop early
+                    if (pairs.Count == 0)
+                    {
+                        break;
+                    }
                 }
             }
 

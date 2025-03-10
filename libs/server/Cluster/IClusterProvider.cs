@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
@@ -26,7 +27,7 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
 
         /// <summary>
         /// Flush config
@@ -50,10 +51,44 @@ namespace Garnet.server
         MetricsItem[] GetBufferPoolStats();
 
         /// <summary>
+        /// Get info on primary from replica perspective.
+        /// </summary>
+        /// <returns></returns>
+        (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
+
+        /// <summary>
+        /// Get info on replicas from primary perspective.
+        /// </summary>
+        /// <returns></returns>
+        RoleInfo GetReplicaInfo();
+
+        /// <summary>
         /// Purger buffer pool for provided manager
         /// </summary>
         /// <param name="managerType"></param>
         void PurgeBufferPool(ManagerType managerType);
+
+        /// <summary>
+        /// Extract key specs
+        /// </summary>
+        /// <param name="commandInfo"></param>
+        /// <param name="cmd"></param>
+        /// <param name="csvi"></param>
+        void ExtractKeySpecs(RespCommandsInfo commandInfo, RespCommand cmd, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi);
+
+        /// <summary>
+        /// Issue a cluster publish message to remote nodes
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message);
+
+        /// <summary>
+        /// Is Primary
+        /// </summary>
+        /// <returns></returns>
+        bool IsPrimary();
 
         /// <summary>
         /// Is replica

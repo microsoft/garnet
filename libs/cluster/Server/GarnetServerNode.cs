@@ -1,12 +1,14 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -16,67 +18,103 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly GarnetClient gc;
 
-        long gossip_send;
-        long gossip_recv;
-        private CancellationTokenSource cts = new();
-        private CancellationTokenSource internalCts = new();
-        private volatile int initialized = 0;
-        private readonly ILogger logger = null;
-        int disposeCount = 0;
+        long gossipSend;
+        long gossipRecv;
+        CancellationTokenSource cts = new();
+        CancellationTokenSource internalCts = new();
+        volatile int initialized = 0;
+        readonly ILogger logger = null;
+        SingleWriterMultiReaderLock dispose;
 
+        /// <summary>
+        /// Last transmitted configuration
+        /// </summary>
         ClusterConfig lastConfig = null;
 
-        SingleWriterMultiReaderLock meetLock;
+        /// <summary>
+        /// Outstanding gossip task if any
+        /// </summary>
+        Task gossipTask = null;
 
-        public bool IsConnected => gc.IsConnected;
+        /// <summary>
+        /// Timestamp of last gossipSend for this connection
+        /// </summary>
+        public long GossipSend => gossipSend;
 
-        public long GossipSend => gossip_send;
-
-        public long GossipRecv => gossip_recv;
-
+        /// <summary>
+        /// GarnetClient connection
+        /// </summary>
         public GarnetClient Client => gc;
 
         /// <summary>
-        /// Nodeid of remote node
+        /// NodeId of remote node
         /// </summary>
         public string NodeId;
 
         /// <summary>
-        /// Address of remote node
+        /// EndPoint of remote node
         /// </summary>
-        public string address;
+        public EndPoint EndPoint;
 
         /// <summary>
-        /// Port of remote node
+        /// Default send page size for GarnetClient
         /// </summary>
-        public int port;
+        const int defaultSendPageSize = 1 << 17;
 
-        public bool gossipSendSuccess = false;
-        public Task gossipTask = null;
+        /// <summary>
+        /// Default max outstanding tasks for GarnetClient
+        /// </summary>
+        const int defaultMaxOutstandingTask = 8;
 
-        public GarnetServerNode(ClusterProvider clusterProvider, string address, int port, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
+        /// <summary>
+        /// GarnetServerNode constructor
+        /// </summary>
+        /// <param name="clusterProvider"></param>
+        /// <param name="endpoint">The endpoint of the remote node</param>
+        /// <param name="tlsOptions"></param>
+        /// <param name="logger"></param>
+        public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, ILogger logger = null)
         {
+            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
-            this.address = address;
-            this.port = port;
+            this.EndPoint = endpoint;
             this.gc = new GarnetClient(
-                address, port, tlsOptions,
-                sendPageSize: 1 << 17,
-                maxOutstandingTasks: 8,
+                endpoint, tlsOptions,
+                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
+                maxOutstandingTasks: defaultMaxOutstandingTask,
+                timeoutMilliseconds: opts.ClusterTimeout <= 0 ? 0 : TimeSpan.FromSeconds(opts.ClusterTimeout).Milliseconds,
                 authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
                 logger: logger);
             this.initialized = 0;
             this.logger = logger;
-            this.gossip_recv = 0;
-            this.gossip_send = 0;
+            this.gossipRecv = 0;
+            this.gossipSend = 0;
             ResetCts();
+        }
+
+        /// <summary>
+        /// Initialize connection and cancellation tokens.
+        /// Initialization is performed only once
+        /// </summary>
+        public Task InitializeAsync()
+        {
+            // Ensure initialize executes only once
+            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return Task.CompletedTask;
+
+            cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
+            return gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
         }
 
         public void Dispose()
         {
-            if (Interlocked.Increment(ref disposeCount) != 1)
+            // Single write lock acquisition only
+            if (!dispose.CloseLock())
+            {
                 logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
+                return;
+            }
+
             try
             {
                 cts?.Cancel();
@@ -88,19 +126,9 @@ namespace Garnet.cluster
             catch { }
         }
 
-        public void Initialize()
-        {
-            //Ensure initialize executes only once
-            if (Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return;
-
-            cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).GetAwaiter().GetResult();
-        }
-
-        public void UpdateGossipSend() => this.gossip_send = DateTimeOffset.UtcNow.Ticks;
-        public void UpdateGossipRecv() => this.gossip_recv = DateTimeOffset.UtcNow.Ticks;
-
-        public void ResetCts()
+        void UpdateGossipSend() => this.gossipSend = DateTimeOffset.UtcNow.Ticks;
+        void UpdateGossipRecv() => this.gossipRecv = DateTimeOffset.UtcNow.Ticks;
+        void ResetCts()
         {
             bool internalCtsDisposed = false;
             internalCts.Cancel();
@@ -120,34 +148,19 @@ namespace Garnet.cluster
             gossipTask = null;
         }
 
-        public MemoryResult<byte> TryMeet(byte[] configByteArray)
-        {
-            try
-            {
-                _ = meetLock.TryWriteLock();
-                UpdateGossipSend();
-                var resp = gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).GetAwaiter().GetResult();
-                return resp;
-            }
-            finally
-            {
-                meetLock.WriteUnlock();
-            }
-        }
-
         /// <summary>
         /// Keep track of updated config per connection. Useful when gossip sampling so as to ensure updates are propagated
         /// </summary>
         /// <returns></returns>
-        private byte[] GetMostRecentConfig()
+        byte[] GetMostRecentConfig()
         {
             var conf = clusterProvider.clusterManager.CurrentConfig;
             byte[] byteArray;
             if (conf != lastConfig)
             {
-                if (clusterProvider.replicationManager != null) conf.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
-                byteArray = conf.ToByteArray();
                 lastConfig = conf;
+                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                byteArray = lastConfig.ToByteArray();
             }
             else
             {
@@ -157,49 +170,10 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Send gossip message or process response and send again.
+        /// Schedule a Gossip task for provided serialized configuration
         /// </summary>
+        /// <param name="configByteArray"></param>
         /// <returns></returns>
-        public bool TryGossip()
-        {
-            var configByteArray = GetMostRecentConfig();
-            var task = gossipTask;
-            // If first time we are sending gossip make sure to send latest version
-            if (task == null)
-            {
-                // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
-                gossipTask = Gossip(configArray);
-                UpdateGossipSend();
-                clusterProvider.clusterManager.gossipStats.gossip_full_send++;
-                // Track bytes send
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configArray.Length);
-                return true;
-            }
-            else if (task.Status == TaskStatus.RanToCompletion)
-            {
-                UpdateGossipRecv();
-
-                // Issue new gossip that can be either zero packet size or an updated configuration
-                gossipTask = Gossip(configByteArray);
-                UpdateGossipSend();
-
-                // Track number of full vs empty (ping) sends
-                if (configByteArray.Length > 0)
-                    clusterProvider.clusterManager.gossipStats.gossip_full_send++;
-                else
-                    clusterProvider.clusterManager.gossipStats.gossip_empty_send++;
-
-                // Track bytes send
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
-                return true;
-            }
-            logger?.LogWarning(task.Exception, "GOSSIP round faulted");
-            ResetCts();
-            gossipTask = null;
-            return false;
-        }
-
         private Task Gossip(byte[] configByteArray)
         {
             return gc.Gossip(configByteArray).ContinueWith(t =>
@@ -228,18 +202,105 @@ namespace Garnet.cluster
             }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
         }
 
+        /// <summary>
+        /// Issue gossip meet with meet to force receiving node to trust an untrusted node
+        /// </summary>
+        /// <param name="configByteArray"></param>
+        /// <returns></returns>
+        public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
+        {
+            UpdateGossipSend();
+            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            return resp;
+        }
+
+        /// <summary>
+        /// Send gossip message or process response and send again.
+        /// </summary>
+        /// <returns></returns>
+        public bool TryGossip()
+        {
+            var task = gossipTask;
+            // If first time we are sending gossip make sure to send latest version
+            if (task == null)
+            {
+                // Issue first time gossip
+                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
+                gossipTask = Gossip(configArray);
+                UpdateGossipSend();
+                clusterProvider.clusterManager.gossipStats.gossip_full_send++;
+                // Track bytes send
+                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configArray.Length);
+                return true;
+            }
+            else if (task.Status == TaskStatus.RanToCompletion)
+            {
+                var configByteArray = GetMostRecentConfig();
+                UpdateGossipRecv();
+
+                // Issue new gossip that can be either zero packet size or an updated configuration
+                gossipTask = Gossip(configByteArray);
+                UpdateGossipSend();
+
+                // Track number of full vs empty (ping) sends
+                if (configByteArray.Length > 0)
+                    clusterProvider.clusterManager.gossipStats.gossip_full_send++;
+                else
+                    clusterProvider.clusterManager.gossipStats.gossip_empty_send++;
+
+                // Track bytes send
+                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
+                return true;
+            }
+            logger?.LogWarning(task.Exception, "GOSSIP round faulted");
+            ResetCts();
+            gossipTask = null;
+            return false;
+        }
+
+        /// <summary>
+        /// Get connection info
+        /// </summary>
+        /// <returns></returns>
         public ConnectionInfo GetConnectionInfo()
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
-            var last_io_seconds = GossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - GossipSend).TotalSeconds;
+            var last_io_seconds = gossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - gossipSend).TotalSeconds;
 
             return new ConnectionInfo()
             {
-                ping = GossipSend,
-                pong = GossipRecv,
-                connected = IsConnected,
+                ping = gossipSend,
+                pong = gossipRecv,
+                connected = gc.IsConnected,
                 lastIO = last_io_seconds,
             };
+        }
+
+        /// <summary>
+        /// Send a CLUSTER PUBLISH message to another remote node
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="channel"></param>
+        /// <param name="message"></param>
+        public void TryClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
+        {
+            var locked = false;
+            try
+            {
+                // Try to acquire dispose lock to avoid a dispose during publish forwarding
+                if (!dispose.TryReadLock())
+                {
+                    logger?.LogWarning("Could not acquire readLock for publish forwarding");
+                    return;
+                }
+
+                locked = true;
+                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+            }
+            finally
+            {
+                if (locked) dispose.ReadUnlock();
+            }
         }
     }
 }

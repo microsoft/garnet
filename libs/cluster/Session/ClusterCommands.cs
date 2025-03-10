@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using Garnet.common;
 using Garnet.server;
 
 namespace Garnet.cluster
@@ -140,6 +139,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
                 RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(out invalidParameters),
                 RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
+                RespCommand.CLUSTER_ATTACH_SYNC => NetworkClusterAttachSync(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
                 RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER => NetworkClusterBeginReplicaRecover(out invalidParameters),
                 RespCommand.CLUSTER_BUMPEPOCH => NetworkClusterBumpEpoch(out invalidParameters),
@@ -165,6 +165,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_MYID => NetworkClusterMyId(out invalidParameters),
                 RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(out invalidParameters),
                 RespCommand.CLUSTER_NODES => NetworkClusterNodes(out invalidParameters),
+                RespCommand.CLUSTER_PUBLISH or RespCommand.CLUSTER_SPUBLISH => NetworkClusterPublish(out invalidParameters),
                 RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(out invalidParameters),
                 RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(out invalidParameters),
                 RespCommand.CLUSTER_RESET => NetworkClusterReset(out invalidParameters),
@@ -176,6 +177,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
+                RespCommand.CLUSTER_SYNC => NetworkClusterSync(out invalidParameters),
                 _ => throw new Exception($"Unexpected cluster subcommand: {command}")
             };
             this.sessionMetrics?.incr_total_cluster_commands_processed();

@@ -20,6 +20,8 @@ namespace Garnet.test.cluster
     [TestFixture(false), NonParallelizable]
     public unsafe class ClusterMigrateTests(bool UseTLS)
     {
+        const int testTimeout = 100000;
+
         public (Action, string)[] GetUnitTests()
         {
             (Action, string)[] x =
@@ -70,7 +72,8 @@ namespace Garnet.test.cluster
 
         readonly Dictionary<string, LogLevel> monitorTests = new()
         {
-            {"ClusterTLSSlotChangeStatus", LogLevel.Error }
+            {"ClusterTLSSlotChangeStatus", LogLevel.Error },
+            {"ClusterMigrateSlotWalk", LogLevel.Warning }
         };
 
         public TextWriter logTextWriter = TestContext.Progress;
@@ -332,22 +335,22 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(resp, "OK");
 
 
-            var respState = context.clusterTestUtils.SetKey(0, key, val, out var _, out var _, out var _, logger: context.logger);
+            var respState = context.clusterTestUtils.SetKey(0, key, val, out var _, out var _, logger: context.logger);
             ClassicAssert.AreEqual(respState, ResponseState.OK);
 
             resp = context.clusterTestUtils.AddDelSlots(0, [slot], false);
             ClassicAssert.AreEqual(resp, "OK");
 
-            respState = context.clusterTestUtils.SetKey(0, key, val, out var _, out var _, out var _, logger: context.logger);
+            respState = context.clusterTestUtils.SetKey(0, key, val, out var _, out var _, logger: context.logger);
             ClassicAssert.AreEqual(respState, ResponseState.CLUSTERDOWN);
 
-            resp = context.clusterTestUtils.GetKey(0, key, out var _, out var _, out var _, out var _, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(0, key, out var _, out var _, out var _, logger: context.logger);
             ClassicAssert.AreEqual(resp, "CLUSTERDOWN");
 
             resp = context.clusterTestUtils.AddDelSlots(0, [slot], true);
             ClassicAssert.AreEqual(resp, "OK");
 
-            resp = context.clusterTestUtils.GetKey(0, key, out var _, out var _, out var _, out var _, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(0, key, out var _, out var _, out var _, logger: context.logger);
             ClassicAssert.AreEqual(resp, val);
 
             #endregion
@@ -369,7 +372,7 @@ namespace Garnet.test.cluster
 
             var key = Encoding.ASCII.GetBytes("{abc}0");
             var val = Encoding.ASCII.GetBytes("1234");
-            var respState = context.clusterTestUtils.SetKey(sourcePortIndex, key, val, out _, out _, out _, logger: context.logger);
+            var respState = context.clusterTestUtils.SetKey(sourcePortIndex, key, val, out _, out _, logger: context.logger);
             ClassicAssert.AreEqual(respState, ResponseState.OK);
             var slot = (int)HashSlotUtils.HashSlot(key);
             var expectedSlot = 7638;
@@ -438,47 +441,43 @@ namespace Garnet.test.cluster
 
             #region TEST_REDIRECTION
             //0. other node alway redirect to source node            
-            resp = context.clusterTestUtils.GetKey(otherNodeIndex, key, out slot, out var address, out var port, out var responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(otherNodeIndex, key, out slot, out var endpoint, out var responseState, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.MOVED, responseState);
             ClassicAssert.AreEqual(resp, "MOVED");
             ClassicAssert.AreEqual(expectedSlot, slot);
-            ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Address.ToString());
-            ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Port);
+            ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(sourcePortIndex));
 
             //1. Can read source migrating
-            resp = context.clusterTestUtils.GetKey(sourcePortIndex, key, out _, out _, out _, out responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(sourcePortIndex, key, out _, out _, out responseState, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.OK, responseState);
             ClassicAssert.AreEqual(resp, val);
 
             //2. Request on source node redirect with asking for new keys to target node
-            resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out endpoint, out responseState, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.ASK, responseState);
             ClassicAssert.AreEqual(resp, "ASK");
             ClassicAssert.AreEqual(expectedSlot, slot);
-            ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(targetPortIndex).Address.ToString());
-            ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(targetPortIndex).Port);
+            ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(targetPortIndex));
 
             //3. request on target node without asking redirect to source node.
-            resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out endpoint, out responseState, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.MOVED, responseState);
             ClassicAssert.AreEqual(resp, "MOVED");
             ClassicAssert.AreEqual(expectedSlot, slot);
-            ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Address.ToString());
-            ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Port);
+            ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(sourcePortIndex));
 
             //4. request write on source node to existing key try-again migrating
-            respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}0"), Encoding.ASCII.GetBytes("5678"), out _, out _, out _, logger: context.logger);
+            respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}0"), Encoding.ASCII.GetBytes("5678"), out _, out _, logger: context.logger);
             ClassicAssert.AreEqual(respState, ResponseState.OK);
 
             //5. request write on source node to new key redirect.
-            respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), Encoding.ASCII.GetBytes("5678"), out slot, out address, out port, logger: context.logger);
+            respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), Encoding.ASCII.GetBytes("5678"), out slot, out endpoint, logger: context.logger);
             ClassicAssert.AreEqual(respState, ResponseState.ASK);
             ClassicAssert.AreEqual(expectedSlot, slot);
-            ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(targetPortIndex).Address.ToString());
-            ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(targetPortIndex).Port);
+            ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(targetPortIndex));
 
             //6. request on target after asking response empty for new key
-            resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out _, out _, out _, out responseState, true, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out _, out _, out responseState, true, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.OK, responseState);
             ClassicAssert.AreEqual(null, resp);
 
@@ -487,16 +486,15 @@ namespace Garnet.test.cluster
             #region RESET_SLOT_STATE
             resp = context.clusterTestUtils.SetSlot(targetPortIndex, expectedSlot, "STABLE", "", logger: context.logger);
             ClassicAssert.AreEqual(resp, "OK");
-            resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out endpoint, out responseState, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.MOVED, responseState);
             ClassicAssert.AreEqual(resp, "MOVED");
             ClassicAssert.AreEqual(expectedSlot, slot);
-            ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Address.ToString());
-            ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Port);
+            ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(sourcePortIndex));
 
             resp = context.clusterTestUtils.SetSlot(sourcePortIndex, expectedSlot, "STABLE", "", logger: context.logger);
             ClassicAssert.AreEqual(resp, "OK");
-            resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out _, out _, out _, out responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out _, out _, out responseState, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.OK, responseState);
             #endregion
 
@@ -565,7 +563,6 @@ namespace Garnet.test.cluster
         public void ClusterSimpleMigrateSlots()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsTest started");
-            var Port = TestUtils.Port;
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -593,10 +590,10 @@ namespace Garnet.test.cluster
             // Check data are inserted correctly
             foreach (var entry in data)
             {
-                var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(sourcePort), entry.Key, out var _slot, out var _address, out var _port, out var responseState);
+                var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(sourcePort), entry.Key, out var _slot, out var endpoint, out var responseState);
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(entry.Value), value, $"data not inserted correctly => expected: {Encoding.ASCII.GetString(entry.Value)}, actual: {value}");
-                ClassicAssert.AreEqual(sourcePort, _port);
+                ClassicAssert.AreEqual(sourcePort, endpoint.Port);
                 ClassicAssert.AreEqual((ushort)slot, _slot);
             }
 
@@ -609,15 +606,15 @@ namespace Garnet.test.cluster
             var keysList = data.Keys.ToList();
             for (var i = 0; i < keysList.Count; i++)
             {
-                var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out var _slot, out var _address, out var _port, out var responseState);
+                var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out var _slot, out var endPoint, out var responseState);
                 while (responseState != ResponseState.OK)
                 {
                     _ = Thread.Yield();
-                    value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out _slot, out _address, out _port, out responseState);
+                    value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(targetPort), keysList[i], out _slot, out endPoint, out responseState);
                 }
 
-                ClassicAssert.AreEqual(targetPort, _port, $"[{sourcePort}] => [{targetPort}] == {_port} | expected: {targetPort}, actual: {_port}");
-                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {_port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
+                ClassicAssert.AreEqual(targetPort, endPoint.Port, $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {targetPort}, actual: {endPoint.Port}");
+                ClassicAssert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {endPoint.Port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
             }
             context.logger.LogDebug("5. Checking keys done");
 
@@ -636,7 +633,7 @@ namespace Garnet.test.cluster
                     moved |= movedPort == targetPort;
                 }
 
-                // Check if slot is accesible only from target and not source,
+                // Check if slot is accessible only from target and not source,
                 // and other nodes have been informed.
                 if (moved && targetSlotPortMap.ContainsKey((ushort)slot) &&
                     !sourceSlotPortMap.ContainsKey((ushort)slot))
@@ -839,7 +836,6 @@ namespace Garnet.test.cluster
         public void ClusterSimpleMigrateSlotsWithObjects()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsWithObjectsTest started");
-            var Port = TestUtils.Port;
             var Shards = defaultShards;
             context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -920,10 +916,9 @@ namespace Garnet.test.cluster
                 keys.Add(newKey);
                 ClassicAssert.AreEqual(_workingSlot, ClusterTestUtils.HashSlot(newKey));
 
-                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, newKey, newKey, out _, out var address, out var port, logger: context.logger);
+                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, newKey, newKey, out _, out var endpoint, logger: context.logger);
                 ClassicAssert.AreEqual(resp, ResponseState.OK);
-                ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Address.ToString());
-                ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
+                ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(sourceNodeIndex));
             }
             context.logger.LogDebug("2. Test keys loaded");
 
@@ -978,17 +973,16 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("13. Checking migrate keys starting");
             foreach (var _key in keys)
             {
-                var resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out var slot, out var address, out var port, out var responseState, logger: context.logger);
-                while (port != context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port && responseState != ResponseState.OK)
+                var resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out var slot, out var endpoint, out var responseState, logger: context.logger);
+                while (endpoint.Port != context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port && responseState != ResponseState.OK)
                 {
-                    resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out address, out port, out responseState, logger: context.logger);
+                    resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
                 }
                 ClassicAssert.AreEqual(resp, "MOVED");
                 ClassicAssert.AreEqual(_workingSlot, slot);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex).Address.ToString(), address);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port, port);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex), endpoint);
 
-                resp = context.clusterTestUtils.GetKey(targetNodeIndex, _key, out _, out _, out _, out responseState, logger: context.logger);
+                resp = context.clusterTestUtils.GetKey(targetNodeIndex, _key, out _, out _, out responseState, logger: context.logger);
                 ClassicAssert.AreEqual(responseState, ResponseState.OK);
                 ClassicAssert.AreEqual(resp, _key);
             }
@@ -1003,7 +997,6 @@ namespace Garnet.test.cluster
         public void ClusterSimpleMigrateKeysWithObjects()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateKeysWithObjectsTest started");
-            var Port = TestUtils.Port;
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -1128,9 +1121,12 @@ namespace Garnet.test.cluster
 
         private void OperateOnSlotsTask(Dictionary<int, Dictionary<byte[], byte[]>> data, int targetNodeIndex)
         {
-            var Port = TestUtils.Port;
-            var Shards = defaultShards;
-            var Ports = Enumerable.Range(Port, Shards).ToList();
+            if (TestUtils.EndPoint is not IPEndPoint endpoint)
+                throw new NotSupportedException();
+
+            var port = endpoint.Port;
+            var shards = defaultShards;
+            var Ports = Enumerable.Range(port, shards).ToList();
             var connections = ClusterTestUtils.CreateLightRequestConnections([.. Ports]);
             operatedOnData = [];
 
@@ -1146,7 +1142,7 @@ namespace Garnet.test.cluster
             {
                 if (iterCount++ > maxIter) break;
                 var entryIndex = context.r.Next(0, operatedOnData.Count);
-                var nodeIndex = context.r.Next(0, Shards);
+                var nodeIndex = context.r.Next(0, shards);
                 var get = context.r.Next(0, 1) == 0;
                 var oldEntry = operatedOnData[entryIndex];
                 var key = oldEntry.Item2;
@@ -1156,18 +1152,18 @@ namespace Garnet.test.cluster
 
                 if (get)
                 {
-                    var getValue = context.clusterTestUtils.GetKey(nodeIndex, key, out var slot, out var redirectAddressA, out var redirectPortA, out var status, logger: context.logger);
+                    var getValue = context.clusterTestUtils.GetKey(nodeIndex, key, out var slot, out var redirectEndpointA, out var status, logger: context.logger);
                     switch (status)
                     {
                         case ResponseState.OK:
                             ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), getValue, $"{Encoding.ASCII.GetString(value)} => {getValue}");
                             break;
                         case ResponseState.MOVED: // Everyone redirect to node that is current owner
-                            var srcNodeIndex = context.clusterTestUtils.GetEndPointIndexFromPort(redirectPortA);
+                            var srcNodeIndex = context.clusterTestUtils.GetEndPointIndexFromPort(redirectEndpointA.Port);
                             ClassicAssert.AreNotEqual(srcNodeIndex, -1);
-                            getValue = context.clusterTestUtils.GetKey(srcNodeIndex, key, out _, out var redirectAddressB, out var redirectPortB, out status, logger: context.logger);
+                            getValue = context.clusterTestUtils.GetKey(srcNodeIndex, key, out _, out var redirectEndpointB, out status, logger: context.logger);
                             if (status == ResponseState.OK)
-                                ClassicAssert.AreEqual(value, getValue, $"{redirectPortA} => {redirectPortB}");
+                                ClassicAssert.AreEqual(value, getValue, $"{redirectEndpointA.Port} => {redirectEndpointB.Port}");
                             else if (status == ResponseState.MOVED)// can redirect again if source has made target the owner
                             {
                                 //ClassicAssert.AreEqual(connections[targetNodeIndex].Port, redirectPortB,
@@ -1176,8 +1172,7 @@ namespace Garnet.test.cluster
                             }
                             break;
                         case ResponseState.ASK:
-                            ClassicAssert.AreEqual(connections[targetNodeIndex].Port, redirectPortA);
-                            ClassicAssert.AreEqual(connections[targetNodeIndex].Address, redirectAddressA);
+                            ClassicAssert.AreEqual(connections[targetNodeIndex].EndPoint, redirectEndpointA);
                             break;
                         case ResponseState.CLUSTERDOWN:
                             goto retryRequest;
@@ -1190,16 +1185,16 @@ namespace Garnet.test.cluster
                 {
                     var newValue = new byte[value.Length];
                     RandomBytes(ref newValue);
-                    var status = context.clusterTestUtils.SetKey(nodeIndex, key, newValue, out _, out var address, out var port, logger: context.logger);
+                    var status = context.clusterTestUtils.SetKey(nodeIndex, key, newValue, out _, out endpoint, logger: context.logger);
                     switch (status)
                     {
                         case ResponseState.OK:
                             operatedOnData[entryIndex] = new(oldEntry.Item1, oldEntry.Item2, newValue);
                             break;
                         case ResponseState.MOVED: //everyone redirect to node that is current owner
-                            var srcNodeIndex = context.clusterTestUtils.GetEndPointIndexFromPort(port);
+                            var srcNodeIndex = context.clusterTestUtils.GetEndPointIndexFromPort(endpoint.Port);
                             ClassicAssert.AreNotEqual(srcNodeIndex, -1);
-                            status = context.clusterTestUtils.SetKey(srcNodeIndex, key, newValue, out _, out address, out port, logger: context.logger);
+                            status = context.clusterTestUtils.SetKey(srcNodeIndex, key, newValue, out _, out endpoint, logger: context.logger);
                             if (status == ResponseState.OK)
                                 operatedOnData[entryIndex] = new(oldEntry.Item1, oldEntry.Item2, newValue);
                             else if (status == ResponseState.MOVED)
@@ -1213,8 +1208,7 @@ namespace Garnet.test.cluster
 
                             break;
                         case ResponseState.ASK:
-                            ClassicAssert.AreEqual(connections[targetNodeIndex].Port, port);
-                            ClassicAssert.AreEqual(connections[targetNodeIndex].Address, address);
+                            ClassicAssert.AreEqual(connections[targetNodeIndex], endpoint);
                             break;
                         case ResponseState.CLUSTERDOWN:
                             goto retryRequest;
@@ -1269,16 +1263,15 @@ namespace Garnet.test.cluster
                 var key = entry.Item2;
                 var val = entry.Item3;
 
-                var resp = context.clusterTestUtils.GetKey(targetNodeIndex, key, out var slot, out var address, out var port, out var responseState, logger: context.logger);
+                var resp = context.clusterTestUtils.GetKey(targetNodeIndex, key, out var slot, out var endpoint, out var responseState, logger: context.logger);
                 while (responseState != ResponseState.OK)
                 {
                     _ = Thread.Yield();
-                    resp = context.clusterTestUtils.GetKey(targetNodeIndex, key, out slot, out address, out port, out responseState, logger: context.logger);
+                    resp = context.clusterTestUtils.GetKey(targetNodeIndex, key, out slot, out endpoint, out responseState, logger: context.logger);
                 }
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(val, resp, $"{val} != {resp}");
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port, port);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex).Address.ToString(), address);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex), endpoint);
             }
 
             context.logger.LogDebug("5. Checking keys after migration done");
@@ -1452,39 +1445,39 @@ namespace Garnet.test.cluster
             var newValue = Encoding.ASCII.GetBytes("newValue");
 
             var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
-            var n01 = config.GetBySlot(keyExists);
-            var n02 = config.GetBySlot(keyNotExists);
-            ClassicAssert.AreEqual(n01.NodeId, n02.NodeId);
+            var srcNode = config.GetBySlot(keyExists);
+            var _srcNode = config.GetBySlot(keyNotExists);
+            ClassicAssert.AreEqual(srcNode.NodeId, _srcNode.NodeId);
 
             // Create key before migration
-            var status = context.clusterTestUtils.SetKey(n01.EndPoint.ToIPEndPoint(), keyExists, oldValue, out _, out _, out _, logger: context.logger);
+            var status = context.clusterTestUtils.SetKey(srcNode.EndPoint.ToIPEndPoint(), keyExists, oldValue, out _, out _, logger: context.logger);
             ClassicAssert.AreEqual(ResponseState.OK, status);
 
             // Get slot mapping
-            var slot = context.clusterTestUtils.ClusterKeySlot(n01.EndPoint.ToIPEndPoint(), Encoding.ASCII.GetString(keyExists));
-            var anyOtherNode = context.clusterTestUtils.GetAnyOtherNode(n01.EndPoint.ToIPEndPoint(), logger: context.logger);
-
-            // Set slot to MIGRATING state
-            var resp = context.clusterTestUtils.SetSlot(n01.EndPoint.ToIPEndPoint(), slot, "MIGRATING", anyOtherNode.NodeId);
-            ClassicAssert.AreEqual("OK", resp);
+            var slot = context.clusterTestUtils.ClusterKeySlot(srcNode.EndPoint.ToIPEndPoint(), Encoding.ASCII.GetString(keyExists));
+            var tgtNode = context.clusterTestUtils.GetAnyOtherNode(srcNode.EndPoint.ToIPEndPoint(), logger: context.logger);
 
             // Set slot to IMPORTING state
-            resp = context.clusterTestUtils.SetSlot(anyOtherNode.EndPoint.ToIPEndPoint(), slot, "IMPORTING", n01.NodeId);
+            var resp = context.clusterTestUtils.SetSlot(tgtNode.EndPoint.ToIPEndPoint(), slot, "IMPORTING", srcNode.NodeId);
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Set slot to MIGRATING state
+            resp = context.clusterTestUtils.SetSlot(srcNode.EndPoint.ToIPEndPoint(), slot, "MIGRATING", tgtNode.NodeId);
             ClassicAssert.AreEqual("OK", resp);
 
             // Operate on existing key during migration
-            OperateOnExistingKey(n01.EndPoint, keyExists, oldValue, newValue);
+            OperateOnExistingKey(srcNode.EndPoint, keyExists, oldValue, newValue);
 
             // Operate on non-existing key during migration
-            OperateOnNonExistentKey(n01.EndPoint, keyNotExists, oldValue);
+            OperateOnNonExistentKey(srcNode.EndPoint, keyNotExists, oldValue);
 
             // Run background write workload
-            var task = Task.Run(() => WriteWorkload(n01.EndPoint.ToIPEndPoint(), keyExists));
+            var task = Task.Run(() => WriteWorkload(srcNode.EndPoint.ToIPEndPoint(), keyExists));
 
             Thread.Sleep(TimeSpan.FromSeconds(2));
 
             // Migrate key to target node
-            context.clusterTestUtils.MigrateKeys(n01.EndPoint.ToIPEndPoint(), anyOtherNode.EndPoint.ToIPEndPoint(), [keyExists], context.logger);
+            context.clusterTestUtils.MigrateKeys(srcNode.EndPoint.ToIPEndPoint(), tgtNode.EndPoint.ToIPEndPoint(), [keyExists], context.logger);
 
             // Wait for write workload to finish
             // Should finish when ResponseState != OK which means migration has completed
@@ -1492,53 +1485,51 @@ namespace Garnet.test.cluster
             oldValue ??= newValue;
 
             // Operate on migrated key that should not exist so the expected response will be redirect ASK
-            OperateOnNonExistentKey(n01.EndPoint, keyExists, newValue);
+            OperateOnNonExistentKey(srcNode.EndPoint, keyExists, newValue);
 
             // Assign slot to target node
-            var respNodeTarget = context.clusterTestUtils.SetSlot(anyOtherNode.EndPoint.ToIPEndPoint(), slot, "NODE", anyOtherNode.NodeId, logger: context.logger);
+            var respNodeTarget = context.clusterTestUtils.SetSlot(tgtNode.EndPoint.ToIPEndPoint(), slot, "NODE", tgtNode.NodeId, logger: context.logger);
             ClassicAssert.AreEqual(respNodeTarget, "OK");
-            context.clusterTestUtils.BumpEpoch(anyOtherNode.EndPoint.ToIPEndPoint(), waitForSync: true, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(tgtNode.EndPoint.ToIPEndPoint(), waitForSync: true, logger: context.logger);
 
             // Relinquish slot ownership from source node
-            var respNodeSource = context.clusterTestUtils.SetSlot(n01.EndPoint.ToIPEndPoint(), slot, "NODE", n01.NodeId, logger: context.logger);
+            var respNodeSource = context.clusterTestUtils.SetSlot(srcNode.EndPoint.ToIPEndPoint(), slot, "NODE", tgtNode.NodeId, logger: context.logger);
             ClassicAssert.AreEqual(respNodeSource, "OK");
-            context.clusterTestUtils.BumpEpoch(n01.EndPoint.ToIPEndPoint(), waitForSync: true, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(srcNode.EndPoint.ToIPEndPoint(), waitForSync: true, logger: context.logger);
 
             // Operate on existing key after migration
-            OperateOnExistingKey(anyOtherNode.EndPoint, keyExists, oldValue, newValue);
+            OperateOnExistingKey(tgtNode.EndPoint, keyExists, oldValue, newValue);
 
             // Operate on non existent when slot is in MIGRATING state
             void OperateOnNonExistentKey(EndPoint endPoint, byte[] key, byte[] value)
             {
                 // Perform write => expected response ASK
-                status = context.clusterTestUtils.SetKey(endPoint.ToIPEndPoint(), key, value, out int _slot, out string address, out int port, logger: context.logger);
+                status = context.clusterTestUtils.SetKey(endPoint.ToIPEndPoint(), key, value, out var _slot, out var actualEndpoint, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.ASK, status);
                 ClassicAssert.AreEqual(slot, _slot);
-                ClassicAssert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Address.ToString(), address);
-                ClassicAssert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Port, port);
+                ClassicAssert.AreEqual(tgtNode.EndPoint.ToIPEndPoint(), actualEndpoint);
 
                 // Perform read => expected response ASK
-                _ = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), key, out _slot, out address, out port, out status, logger: context.logger);
+                _ = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), key, out _slot, out actualEndpoint, out status, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.ASK, status);
                 ClassicAssert.AreEqual(slot, _slot);
-                ClassicAssert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Address.ToString(), address);
-                ClassicAssert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Port, port);
+                ClassicAssert.AreEqual(tgtNode.EndPoint.ToIPEndPoint(), actualEndpoint);
             }
 
             // Operate on existing key when slot is in MIGRATING state
             void OperateOnExistingKey(EndPoint endPoint, byte[] key, byte[] oldValue, byte[] newValue)
             {
                 // Perform read => expected response OK
-                var _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out _, out status, logger: context.logger);
+                var _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out status, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.OK, status);
                 ClassicAssert.AreEqual(oldValue, _value);
 
                 //  Perform write => expected response OK
-                status = context.clusterTestUtils.SetKey(endPoint.ToIPEndPoint(), key, newValue, out _, out _, out _, logger: context.logger);
+                status = context.clusterTestUtils.SetKey(endPoint.ToIPEndPoint(), key, newValue, out _, out _, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.OK, status);
 
                 // Perform read => expected response OK
-                _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out _, out status, logger: context.logger);
+                _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out status, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.OK, status);
                 ClassicAssert.AreEqual(newValue, _value);
             }
@@ -1550,7 +1541,7 @@ namespace Garnet.test.cluster
                 while (true)
                 {
                     context.clusterTestUtils.RandomBytes(ref value);
-                    var status = context.clusterTestUtils.SetKey(endPoint, key, value, out int _slot, out string address, out int port, logger: context.logger);
+                    var status = context.clusterTestUtils.SetKey(endPoint, key, value, out _, out _, logger: context.logger);
 
                     if (status == ResponseState.OK)
                     {
@@ -1606,7 +1597,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(16)]
+        [Test, Order(17)]
         [Category("CLUSTER")]
         public void ClusterMigrateDataSlotsRange()
         {
@@ -1632,10 +1623,9 @@ namespace Garnet.test.cluster
                 var key = new byte[keySize];
                 context.clusterTestUtils.RandomBytes(ref key);
 
-                var resp = context.clusterTestUtils.SetKey(srcNodeIndex, key, key, out _, out var address, out var port, logger: context.logger);
+                var resp = context.clusterTestUtils.SetKey(srcNodeIndex, key, key, out _, out var endpoint, logger: context.logger);
                 ClassicAssert.AreEqual(resp, ResponseState.OK);
-                ClassicAssert.AreEqual(address, context.clusterTestUtils.GetEndPoint(srcNodeIndex).Address.ToString());
-                ClassicAssert.AreEqual(port, context.clusterTestUtils.GetEndPoint(srcNodeIndex).Port);
+                ClassicAssert.AreEqual(endpoint, context.clusterTestUtils.GetEndPoint(srcNodeIndex));
                 keys.Add(key);
             }
 
@@ -1661,13 +1651,13 @@ namespace Garnet.test.cluster
 
             foreach (var key in keys)
             {
-                var resp = context.clusterTestUtils.GetKey(dstNodeIndex, key, out _, out _, out _, out var responseState, logger: context.logger);
+                var resp = context.clusterTestUtils.GetKey(dstNodeIndex, key, out _, out _, out var responseState, logger: context.logger);
                 ClassicAssert.AreEqual(ResponseState.OK, responseState);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(key), resp);
             }
         }
 
-        [Test, Order(16)]
+        [Test, Order(18)]
         [Category("CLUSTER")]
         public void ClusterMigrateLargePayload([Values] bool expiration, [Values] bool largePayload)
         {
@@ -1681,7 +1671,7 @@ namespace Garnet.test.cluster
             ClusterMigrateExpirationWithVaryingPayload(expiration, data);
         }
 
-        [Test, Order(16)]
+        [Test, Order(19)]
         [Category("CLUSTER")]
         public void ClusterMigrateIncreasingPayload([Values] bool expiration, [Values] bool largeSameSize)
         {
@@ -1768,6 +1758,178 @@ namespace Garnet.test.cluster
             {
                 foreach (var pair in data)
                     ClassicAssert.IsNotNull(db.KeyTimeToLive(pair.Item1), "key does not have expiry after migration");
+            }
+        }
+
+        [Order(20), CancelAfter(testTimeout)]
+        [TestCase(true)]
+        [TestCase(false)]
+        public void ClusterMigrateSlotWalk(bool slots, CancellationToken cancellationToken)
+        {
+            var sourceNode = 0;
+            var shards = 5;
+            var targetNode = shards - 1;
+            var slotCount = 10;
+
+            SetupInstances(sourceNode, out var nodeIds, out var nodeEndpoints);
+
+            for (var slot = 0; slot < slotCount; slot++)
+            {
+                var _src = sourceNode;
+                var _tgt = _src + 1;
+
+                while (_tgt < shards)
+                {
+                    if (slots)
+                        MigrateSlots();
+                    else
+                        MigrateKeys();
+
+                    _src++;
+                    _tgt++;
+                }
+
+                void MigrateKeys()
+                {
+                    // Issue IMPORTING and spinWait until it succeeds
+                    var status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
+                    while (string.IsNullOrEmpty(status) || !status.Equals("OK"))
+                    {
+                        SetSlot(_src, slot);
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{nodeIds[_src]}({nodeEndpoints[_src].Port}) > {slot} > {nodeIds[_tgt]}({nodeEndpoints[_tgt].Port})");
+                        status = context.clusterTestUtils.SetSlot(_tgt, slot, "IMPORTING", nodeIds[_src], logger: context.logger);
+                    }
+
+                    // Issue MIGRATING and spinWait until it succeeds
+                    status = context.clusterTestUtils.SetSlot(_src, slot, "MIGRATING", nodeIds[_tgt], logger: context.logger);
+                    while (string.IsNullOrEmpty(status) || !status.Equals("OK"))
+                    {
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{nodeIds[_src]}({nodeEndpoints[_src].Port}) > {slot} > {nodeIds[_tgt]}({nodeEndpoints[_tgt].Port})");
+                        status = context.clusterTestUtils.SetSlot(_src, slot, "MIGRATING", nodeIds[_tgt], logger: context.logger);
+                    }
+
+                    // Transfer keys if any
+                    var countKeys = context.clusterTestUtils.CountKeysInSlot(_src, slot, context.logger);
+                    if (countKeys > 0)
+                    {
+                        var keysInSlot = context.clusterTestUtils.GetKeysInSlot(_src, slot, countKeys, context.logger);
+                        context.logger.LogDebug("6. GetKeysInSlot {keysInSlot.Count}", keysInSlot.Count);
+
+                        context.logger.LogDebug("7. MigrateKeys starting");
+                        context.clusterTestUtils.MigrateKeys(nodeEndpoints[_src], nodeEndpoints[_tgt], keysInSlot, context.logger);
+                        context.logger.LogDebug("8. MigrateKeys done");
+                    }
+
+                    // Set slot to stable state
+                    _ = context.clusterTestUtils.SetSlot(_tgt, slot, "NODE", nodeIds[_tgt], logger: context.logger);
+                    _ = context.clusterTestUtils.SetSlot(_src, slot, "NODE", nodeIds[_tgt], logger: context.logger);
+                }
+
+                void MigrateSlots()
+                {
+                    // Check src node owns slots
+                    while (true)
+                    {
+                        var config = context.clusterTestUtils.ClusterNodes(_src, logger: context.logger);
+                        var node = config.GetBySlot(slot);
+                        if (node != null && node.NodeId.Equals(nodeIds[_src]))
+                            break;
+                        // Force set slot to src node
+                        SetSlot(_src, slot);
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+
+                    // Check tgt node knows that src owns slot
+                    while (true)
+                    {
+                        var config = context.clusterTestUtils.ClusterNodes(_tgt, logger: context.logger);
+                        var node = config.GetBySlot(slot);
+                        if (node != null && node.NodeId.Equals(nodeIds[_src]))
+                            break;
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+
+                    var sourceEndPoint = context.clusterTestUtils.GetEndPoint(_src);
+                    var targetEndPoint = context.clusterTestUtils.GetEndPoint(_tgt);
+                    context.clusterTestUtils.MigrateSlots(
+                        sourceEndPoint,
+                        targetEndPoint,
+                        [slot],
+                        range: false,
+                        logger: context.logger);
+
+                    while (true)
+                    {
+                        var config = context.clusterTestUtils.ClusterNodes(_tgt, logger: context.logger);
+                        var node = config.GetBySlot(slot);
+                        if (node != null && node.NodeId.Equals(nodeIds[_tgt]))
+                            break;
+                        ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                    }
+                }
+            }
+
+            ValidateConfig();
+
+            void SetupInstances(int sourceNode, out string[] nodeIds, out IPEndPoint[] nodeEndpoints)
+            {
+                context.CreateInstances(shards, useTLS: UseTLS);
+                context.CreateConnection(useTLS: UseTLS);
+
+                // Assign all slots to first node
+                _ = context.clusterTestUtils.AddSlotsRange(sourceNode, [(0, 16383)], logger: context.logger);
+
+                // Set config epoch
+                for (var i = 0; i < shards; i++)
+                    context.clusterTestUtils.SetConfigEpoch(i, i + 1, logger: context.logger);
+
+                // Introduce nodes to each other
+                for (var i = 1; i < shards; i++)
+                    context.clusterTestUtils.Meet(0, i, logger: context.logger);
+
+                context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(0, logger: context.logger);
+                for (var i = 0; i < shards; i++)
+                    context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i, logger: context.logger);
+
+                // Acquire node ids
+                nodeIds = new string[shards];
+                for (var i = 0; i < shards; i++)
+                    nodeIds[i] = context.clusterTestUtils.ClusterMyId(i, logger: context.logger);
+
+                nodeEndpoints = new IPEndPoint[shards];
+                for (var i = 0; i < shards; i++)
+                    nodeEndpoints[i] = context.clusterTestUtils.GetEndPoint(i);
+            }
+
+            void ValidateConfig()
+            {
+                for (var i = 0; i < shards; i++)
+                {
+                    var config = context.clusterTestUtils.ClusterNodes(i, logger: context.logger);
+                    for (var slot = 0; slot < slotCount; slot++)
+                    {
+                        var node = config.GetBySlot(slot);
+
+                        if (node == null || nodeIds[shards - 1] != node.NodeId)
+                        {
+                            // If failed to converge start from the beginning and backOff to give time to converge
+                            i = 0;
+                            SetSlot(shards - 1, slot);
+                            ClusterTestUtils.BackOff(cancellationToken: cancellationToken);
+                            continue;
+                        }
+                        ClassicAssert.AreEqual(nodeIds[shards - 1], node.NodeId);
+                    }
+                }
+            }
+
+            void SetSlot(int nodeIndex, int slot)
+            {
+                for (var i = 0; i < shards; i++)
+                {
+                    var resp = context.clusterTestUtils.SetSlot(i, slot, "NODE", nodeIds[nodeIndex], logger: context.logger);
+                    ClassicAssert.AreEqual("OK", resp);
+                }
             }
         }
     }

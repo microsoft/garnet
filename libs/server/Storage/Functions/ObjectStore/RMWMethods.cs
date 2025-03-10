@@ -26,15 +26,15 @@ namespace Garnet.server
                 case GarnetObjectType.Persist:
                     return false;
                 default:
-                    if ((byte)type < CustomCommandManager.TypeIdStartOffset)
+                    if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
                         return GarnetObject.NeedToCreate(input.header);
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
-                        output.spanByteAndMemory.Memory = outp.Memory;
-                        output.spanByteAndMemory.Length = outp.Length;
+                        output.SpanByteAndMemory.Memory = outp.Memory;
+                        output.SpanByteAndMemory.Length = outp.Length;
                         return ret;
                     }
             }
@@ -47,10 +47,10 @@ namespace Garnet.server
 
             var type = input.header.type;
             IGarnetObject value;
-            if ((byte)type < CustomCommandManager.TypeIdStartOffset)
+            if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
+                _ = value.Operate(ref input, ref output, out _);
                 _ = logRecord.TrySetValueObject(value, ref sizeInfo);
                 return true;
             }
@@ -58,14 +58,13 @@ namespace Garnet.server
             Debug.Assert(type is not GarnetObjectType.Expire and not GarnetObjectType.PExpire and not GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
             var customObjectCommand = GetCustomObjectCommand(ref input, type);
-            var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
-            value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
+            value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
 
-            (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.spanByteAndMemory.Memory, 0);
+            (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.SpanByteAndMemory.Memory, 0);
             var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref memoryAndLength, ref rmwInfo);
             _ = logRecord.TrySetValueObject(value, ref sizeInfo);
-            output.spanByteAndMemory.Memory = memoryAndLength.Memory;
-            output.spanByteAndMemory.Length = memoryAndLength.Length;
+            output.SpanByteAndMemory.Memory = memoryAndLength.Memory;
+            output.SpanByteAndMemory.Length = memoryAndLength.Length;
             if (result)
                 sizeInfo.AssertOptionals(logRecord.Info);
             return result;
@@ -91,7 +90,8 @@ namespace Garnet.server
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null) WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                if (functionsState.appendOnlyFile != null) 
+                    WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
                 return true;
             }
@@ -140,33 +140,39 @@ namespace Garnet.server
                     if (logRecord.Info.HasExpiration)
                     {
                         logRecord.RemoveExpiration();
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.spanByteAndMemory);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     }
                     else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
-                    break;
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                    return true;
                 default:
-                    if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = logRecord.ValueObject.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
-                        out var removeKey);
-                        if (removeKey)
+                        var operateSuccessful = logRecord.ValueObject.Operate(ref input, ref output, out sizeChange);
+                        if (output.HasWrongType)
+                            return true;
+                        if (output.HasRemoveKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
-                        break;
+
+                        sizeInfo.AssertOptionals(logRecord.Info);
+                        return operateSuccessful;
                     }
                     else
                     {
-                        if (IncorrectObjectType(ref input, logRecord.ValueObject, ref output.spanByteAndMemory))
+                        if (IncorrectObjectType(ref input, logRecord.ValueObject, ref output.SpanByteAndMemory))
+                        {
+                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
+                        }
 
-                        (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.spanByteAndMemory.Memory, 0);
+                        (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                         var result = customObjectCommand.Updater(logRecord.Key, ref input, logRecord.ValueObject, ref memoryAndLength, ref rmwInfo);
-                        output.spanByteAndMemory.Memory = memoryAndLength.Memory;
-                        output.spanByteAndMemory.Length = memoryAndLength.Length;
+                        output.SpanByteAndMemory.Memory = memoryAndLength.Memory;
+                        output.SpanByteAndMemory.Length = memoryAndLength.Length;
                         if (!result)
                             return false;
                         break;
@@ -247,16 +253,18 @@ namespace Garnet.server
                     if (srcLogRecord.Info.HasExpiration)
                     {
                         dstLogRecord.RemoveExpiration();
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.spanByteAndMemory);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     }
                     else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     break;
                 default:
-                    if ((byte)input.header.type < CustomCommandManager.TypeIdStartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        _ = value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
-                        if (removeKey)
+                        value.Operate(ref input, ref output, out _);
+                        if (output.HasWrongType)
+                            return true;
+                        if (output.HasRemoveKey)
                         {
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
@@ -267,22 +275,23 @@ namespace Garnet.server
                     {
                         // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
                         // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
-                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                        if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
+                        {
+                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
+                        }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
                         var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref outp, ref rmwInfo);
-                        output.spanByteAndMemory.Memory = outp.Memory;
-                        output.spanByteAndMemory.Length = outp.Length;
-                        if (!result)
-                            return false;
-                        break;
+                        output.SpanByteAndMemory.Memory = outp.Memory;
+                        output.SpanByteAndMemory.Length = outp.Length;
+                        return result;
                     }
             }
             sizeInfo.AssertOptionals(dstLogRecord.Info);
 
-            // If oldValue has been set to null, subtract it's size from the tracked heap size
+            // If oldValue has been set to null, subtract its size from the tracked heap size
             var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.Size - oldValueSize : value.Size;
             functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 

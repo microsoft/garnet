@@ -32,8 +32,8 @@ namespace Garnet.server
         /// <param name="storeWrapper"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
-        public GarnetProvider(StoreWrapper storeWrapper, SubscribeBroker<SpanByte, IKeySerializer> broker = null, MaxSizeSettings maxSizeSettings = default)
-            : base(storeWrapper.store, broker, false, maxSizeSettings)
+        public GarnetProvider(StoreWrapper storeWrapper, SubscribeBroker broker = null, MaxSizeSettings maxSizeSettings = default)
+            : base(storeWrapper.store, broker, recoverStore:false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
         }
@@ -64,7 +64,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(Interlocked.Increment(ref lastSessionId), networkSender, storeWrapper, broker, null, true)
+                ? new RespServerSession(Interlocked.Increment(ref lastSessionId), networkSender, storeWrapper, broker, authenticator: null, enableScripts: true)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }

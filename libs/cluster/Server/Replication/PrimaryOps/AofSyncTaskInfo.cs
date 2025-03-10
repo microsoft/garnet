@@ -23,6 +23,16 @@ namespace Garnet.cluster
         readonly long startAddress;
         public long previousAddress;
 
+        /// <summary>
+        /// Check if client connection is healthy
+        /// </summary>
+        public bool IsConnected => garnetClient != null && garnetClient.IsConnected;
+
+        /// <summary>
+        /// Return start address for this AOF iterator
+        /// </summary>
+        public long StartAddress => startAddress;
+
         public AofSyncTaskInfo(
             ClusterProvider clusterProvider,
             AofTaskStore aofTaskStore,
@@ -40,7 +50,7 @@ namespace Garnet.cluster
             this.garnetClient = garnetClient;
             this.startAddress = startAddress;
             previousAddress = startAddress;
-            this.cts = new CancellationTokenSource();
+            cts = new CancellationTokenSource();
         }
 
         public void Dispose()
@@ -89,7 +99,7 @@ namespace Garnet.cluster
 
             try
             {
-                garnetClient.Connect();
+                if (!IsConnected) garnetClient.Connect();
 
                 iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
 

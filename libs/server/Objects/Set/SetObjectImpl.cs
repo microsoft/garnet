@@ -44,19 +44,19 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(set.Count, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(set.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 foreach (var item in set)
                 {
-                    while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                    while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -79,13 +79,13 @@ namespace Garnet.server
                 var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
                 var isMember = set.Contains(member);
 
-                while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 _output.result1 = 1;
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -105,7 +105,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(input.parseState.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -113,7 +113,7 @@ namespace Garnet.server
                     var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
                     var isMember = set.Contains(member);
 
-                    while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
@@ -121,7 +121,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -176,7 +176,7 @@ namespace Garnet.server
                     var countParameter = count > set.Count ? set.Count : count;
 
                     // Write the size of the array reply
-                    while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
+                    while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     for (int i = 0; i < countParameter; i++)
@@ -186,7 +186,7 @@ namespace Garnet.server
                         var item = set.ElementAt(index);
                         set.Remove(item);
                         this.UpdateSize(item, false);
-                        while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                        while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone++;
                     }
@@ -202,13 +202,13 @@ namespace Garnet.server
                         var item = set.ElementAt(index);
                         set.Remove(item);
                         this.UpdateSize(item, false);
-                        while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                        while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
                         // If set empty return nil
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     countDone++;
@@ -217,7 +217,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -253,13 +253,13 @@ namespace Garnet.server
                     indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed);
 
                     // Write the size of the array reply
-                    while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
+                    while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     foreach (var index in indexes)
                     {
                         var element = set.ElementAt(index);
-                        while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                        while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone++;
                     }
@@ -272,13 +272,13 @@ namespace Garnet.server
                     {
                         var index = RandomUtils.PickRandomIndex(set.Count, seed);
                         var item = set.ElementAt(index);
-                        while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                        while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
                         // If set is empty, return nil
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     countDone++;
@@ -293,13 +293,13 @@ namespace Garnet.server
                     if (set.Count > 0)
                     {
                         // Write the size of the array reply
-                        while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
+                        while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                         foreach (var index in indexes)
                         {
                             var element = set.ElementAt(index);
-                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                            while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone++;
                         }
@@ -307,7 +307,7 @@ namespace Garnet.server
                     else
                     {
                         // If set is empty, return nil
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -315,7 +315,7 @@ namespace Garnet.server
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();

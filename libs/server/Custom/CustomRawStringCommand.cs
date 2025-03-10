@@ -3,25 +3,26 @@
 
 namespace Garnet.server
 {
-    public class CustomRawStringCommand
+    public class CustomRawStringCommand : ICustomCommand
     {
+        public byte[] Name { get; }
+
         public readonly string NameStr;
-        public readonly byte[] name;
         public readonly ushort id;
         public readonly CommandType type;
+        public readonly int arity;
         public readonly CustomRawStringFunctions functions;
         public long expirationTicks;
 
-        internal CustomRawStringCommand(string name, ushort id, CommandType type, CustomRawStringFunctions functions, long expirationTicks)
+        internal CustomRawStringCommand(string name, ushort id, CommandType type, int arity, CustomRawStringFunctions functions, long expirationTicks)
         {
             NameStr = name.ToUpperInvariant();
-            this.name = System.Text.Encoding.ASCII.GetBytes(NameStr);
+            this.Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             this.id = id;
             this.type = type;
+            this.arity = arity;
             this.functions = functions;
             this.expirationTicks = expirationTicks;
         }
-
-        internal RespCommand GetRespCommand() => (RespCommand)(id + CustomCommandManager.StartOffset);
     }
 }

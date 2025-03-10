@@ -3,6 +3,7 @@
 
 using BDN.benchmark.CustomProcs;
 using BenchmarkDotNet.Attributes;
+using Embedded.server;
 using Garnet;
 using Garnet.server;
 
@@ -15,20 +16,16 @@ namespace BDN.benchmark.Operations
     public unsafe class CustomOperations : OperationsBase
     {
         static ReadOnlySpan<byte> SETIFPM => "*4\r\n$7\r\nSETIFPM\r\n$1\r\nk\r\n$3\r\nval\r\n$1\r\nv\r\n"u8;
-        byte[] setIfPmRequestBuffer;
-        byte* setIfPmRequestBufferPointer;
+        Request setIfPm;
 
         static ReadOnlySpan<byte> MYDICTSETGET => "*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n*3\r\n$9\r\nMYDICTGET\r\n$2\r\nck\r\n$1\r\nf\r\n"u8;
-        byte[] myDictSetGetRequestBuffer;
-        byte* myDictSetGetRequestBufferPointer;
+        Request myDictSetGet;
 
         static ReadOnlySpan<byte> CTXNSET => "*9\r\n$7\r\nCTXNSET\r\n$6\r\n{0}000\r\n$6\r\n{0}001\r\n$6\r\n{0}002\r\n$6\r\n{0}003\r\n$6\r\n{0}000\r\n$6\r\n{0}001\r\n$6\r\n{0}002\r\n$6\r\n{0}003\r\n"u8;
-        byte[] ctxnsetBuffer;
-        byte* ctxnsetBufferPointer;
+        Request ctxnset;
 
         static ReadOnlySpan<byte> CPROCSET => "*9\r\n$8\r\nCPROCSET\r\n$6\r\n{0}000\r\n$6\r\n{0}001\r\n$6\r\n{0}002\r\n$6\r\n{0}003\r\n$6\r\n{0}000\r\n$6\r\n{0}001\r\n$6\r\n{0}002\r\n$6\r\n{0}003\r\n"u8;
-        byte[] cprocsetBuffer;
-        byte* cprocsetBufferPointer;
+        Request cprocset;
 
         void CreateExtensions()
         {
@@ -55,39 +52,39 @@ namespace BDN.benchmark.Operations
             base.GlobalSetup();
             CreateExtensions();
 
-            SetupOperation(ref setIfPmRequestBuffer, ref setIfPmRequestBufferPointer, SETIFPM);
-            SetupOperation(ref myDictSetGetRequestBuffer, ref myDictSetGetRequestBufferPointer, MYDICTSETGET);
-            SetupOperation(ref ctxnsetBuffer, ref ctxnsetBufferPointer, CTXNSET);
-            SetupOperation(ref cprocsetBuffer, ref cprocsetBufferPointer, CPROCSET);
+            SetupOperation(ref setIfPm, SETIFPM);
+            SetupOperation(ref myDictSetGet, MYDICTSETGET);
+            SetupOperation(ref ctxnset, CTXNSET);
+            SetupOperation(ref cprocset, CPROCSET);
 
             SlowConsumeMessage("*4\r\n$7\r\nSETIFPM\r\n$1\r\nk\r\n$3\r\nval\r\n$1\r\nv\r\n"u8);
             SlowConsumeMessage("*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n"u8);
-            SlowConsumeMessage(ctxnsetBuffer);
-            SlowConsumeMessage(cprocsetBuffer);
+            SlowConsumeMessage(CTXNSET);
+            SlowConsumeMessage(CPROCSET);
         }
 
         [Benchmark]
         public void CustomRawStringCommand()
         {
-            _ = session.TryConsumeMessages(setIfPmRequestBufferPointer, setIfPmRequestBuffer.Length);
+            Send(setIfPm);
         }
 
         [Benchmark]
         public void CustomObjectCommand()
         {
-            _ = session.TryConsumeMessages(myDictSetGetRequestBufferPointer, myDictSetGetRequestBuffer.Length);
+            Send(myDictSetGet);
         }
 
         [Benchmark]
         public void CustomTransaction()
         {
-            _ = session.TryConsumeMessages(ctxnsetBufferPointer, ctxnsetBuffer.Length);
+            Send(ctxnset);
         }
 
         [Benchmark]
         public void CustomProcedure()
         {
-            _ = session.TryConsumeMessages(cprocsetBufferPointer, cprocsetBuffer.Length);
+            Send(cprocset);
         }
     }
 }

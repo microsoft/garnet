@@ -159,7 +159,7 @@ namespace Garnet.server
                     }
 
                     var result = resultSb.ToString();
-                    while (!RespWriteUtils.WriteUtf8BulkString(result, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteUtf8BulkString(result, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -193,7 +193,7 @@ namespace Garnet.server
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
             var result = resultSb.ToString();
-            while (!RespWriteUtils.WriteSimpleString(result, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteSimpleString(result, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -226,7 +226,7 @@ namespace Garnet.server
                             {
                                 _ = session.TryKill();
 
-                                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                                     SendAndReset();
 
                                 return true;
@@ -234,7 +234,7 @@ namespace Garnet.server
                         }
                     }
 
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -272,7 +272,7 @@ namespace Garnet.server
                         {
                             if (!ParseUtils.TryReadLong(ref value, out var idParsed))
                             {
-                                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "client-id")));
+                                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "client-id")));
                             }
 
                             if (id is not null)
@@ -401,7 +401,7 @@ namespace Garnet.server
                     }
 
                     // Hand back result, which is count of clients _actually_ killed
-                    while (!RespWriteUtils.WriteInteger(killed, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(killed, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -463,7 +463,7 @@ namespace Garnet.server
                 if (user is not null)
                 {
                     // Using an ORDINAL match to fail-safe, if unicode normalization would change either name I'd prefer to not-match
-                    matches &= user.Equals(targetSession._user?.Name, StringComparison.Ordinal);
+                    matches &= user.Equals(targetSession._userHandle?.User.Name, StringComparison.Ordinal);
                 }
 
                 if (addr is not null)
@@ -487,6 +487,160 @@ namespace Garnet.server
 
                 return matches;
             }
+        }
+
+        /// <summary>
+        /// CLIENT GETNAME
+        /// </summary>
+        private bool NetworkCLIENTGETNAME()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|GETNAME");
+            }
+
+            if (string.IsNullOrEmpty(this.clientName))
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT SETNAME
+        /// </summary>
+        private bool NetworkCLIENTSETNAME()
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|SETNAME");
+            }
+
+            var name = parseState.GetString(0);
+            if (string.IsNullOrEmpty(name) || name.Contains(' '))   // it is not possible to use spaces in the connection name as this would violate the format of the CLIENT LIST reply
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            this.clientName = name;
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT SETINFO
+        /// </summary>
+        private bool NetworkCLIENTSETINFO()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("CLIENT|SETINFO");
+            }
+
+            var option = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetString(1);
+            if (option.Span.SequenceEqual(CmdStrings.LIB_NAME) || option.Span.SequenceEqual(CmdStrings.lib_name)) // Can't use EqualsUpperCaseSpanIgnoringCase as `-` is not upper case
+            {
+                this.clientLibName = value;
+            }
+            else if (option.Span.SequenceEqual(CmdStrings.LIB_VER) || option.Span.SequenceEqual(CmdStrings.lib_ver))
+            {
+                this.clientLibVersion = value;
+            }
+            else
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// CLIENT UNBLOCK
+        /// </summary>
+        private bool NetworkCLIENTUNBLOCK()
+        {
+            if (parseState.Count is not (1 or 2))
+            {
+                return AbortWithWrongNumberOfArguments("client|unblock");
+            }
+
+            if (!parseState.TryGetLong(0, out var clientId))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            var toThrowError = false;
+            if (parseState.Count == 2)
+            {
+                var option = parseState.GetArgSliceByRef(1);
+                if (option.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TIMEOUT))
+                {
+                    toThrowError = false;
+                }
+                else if (option.Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ERROR))
+                {
+                    toThrowError = true;
+                }
+                else
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON);
+                }
+            }
+
+            if (Server is GarnetServerBase garnetServer)
+            {
+                var session = garnetServer.ActiveConsumers().OfType<RespServerSession>().FirstOrDefault(x => x.Id == clientId);
+
+                if (session is null)
+                {
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (session.storeWrapper?.itemBroker is not null)
+                {
+                    var isBlocked = session.storeWrapper.itemBroker.TryGetObserver(session.ObjectStoreSessionID, out var observer);
+
+                    if (!isBlocked)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    var result = observer.TryForceUnblock(toThrowError);
+
+                    while (!RespWriteUtils.TryWriteInt32(result ? 1 : 0, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
         }
     }
 }

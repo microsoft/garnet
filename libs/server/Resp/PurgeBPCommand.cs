@@ -54,7 +54,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetManagerType(0, out var managerType))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -69,11 +69,11 @@ namespace Garnet.server
                         success = ClusterPurgeBufferPool(managerType);
                         break;
                     case ManagerType.ServerListener:
-                        storeWrapper.GetTcpServer().Purge();
+                        storeWrapper.TcpServer.Purge();
                         break;
                     default:
                         success = false;
-                        while (!RespWriteUtils.WriteError($"ERR Could not purge {managerType}.", ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError($"ERR Could not purge {managerType}.", ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -81,14 +81,14 @@ namespace Garnet.server
                 if (success)
                 {
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
-                    while (!RespWriteUtils.WriteSimpleString(managerType.ToReadOnlySpan(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteSimpleString(managerType.ToReadOnlySpan(), ref dcurr, dend))
                         SendAndReset();
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PURGEBP {type}:{managerType}", managerType, managerType.ToString());
-                while (!RespWriteUtils.WriteError($"ERR {ex.Message}", ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -97,7 +97,7 @@ namespace Garnet.server
             {
                 if (clusterSession == null)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
                         SendAndReset();
                     return false;
                 }

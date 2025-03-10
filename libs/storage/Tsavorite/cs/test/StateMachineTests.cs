@@ -396,9 +396,9 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Start first LUC before checkpoint
-            var luc1 = s1.LockableUnsafeContext;
+            var luc1 = s1.TransactionalUnsafeContext;
             luc1.BeginUnsafe();
-            luc1.BeginLockable();
+            luc1.BeginTransaction();
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
@@ -420,7 +420,7 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // End first LUC 
-            luc1.EndLockable();
+            luc1.EndTransaction();
             luc1.EndUnsafe();
 
             s1.BasicContext.Refresh();

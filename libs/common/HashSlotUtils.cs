@@ -102,7 +102,10 @@ namespace Garnet.common
             var end = keyPtr + ksize;
 
             // Find first occurence of '{'
-            while (startPtr < end && *startPtr != '{') { startPtr++; };
+            while (startPtr < end && *startPtr != '{')
+            {
+                startPtr++;
+            }
 
             // Return early if did not find '{'
             if (startPtr == end) return (ushort)(Hash(keyPtr, ksize) & 16383);

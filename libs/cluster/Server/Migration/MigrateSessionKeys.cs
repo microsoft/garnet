@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -79,7 +77,7 @@ namespace Garnet.cluster
                 }
 
                 // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
+                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
                     return false;
 
                 DeleteKeys();
@@ -128,14 +126,14 @@ namespace Garnet.cluster
                     // Serialize the object.
                     // TODOMigrate: Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have returned GarnetStatus.NOTFOUND");
                     // If it had expired, we would have received GarnetStatus.NOTFOUND.
-                    var objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
+                    var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
 
                     // TODOMigrate: if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
                     // TODOMigrate:     return false;
                 }
 
                 // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
+                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
                     return false;
             }
             finally
@@ -188,14 +186,14 @@ namespace Garnet.cluster
                     return false;
 
                 // Migrate main store keys
-                _gcs.InitMigrateBuffer(clusterProvider.storeWrapper.loggingFrequncy);
+                _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequncy);
                 if (!MigrateKeysFromMainStore())
                     return false;
 
                 // Migrate object store keys
                 if (!clusterProvider.serverOptions.DisableObjects)
                 {
-                    _gcs.InitMigrateBuffer(clusterProvider.storeWrapper.loggingFrequncy);
+                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequncy);
                     if (!MigrateKeysFromObjectStore())
                         return false;
                 }

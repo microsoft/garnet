@@ -24,7 +24,12 @@ namespace Tsavorite.core
         /// <summary>
         /// End the current cursor batch (as if "count" had been met); return a valid cursor for the next ScanCursor call
         /// </summary>
-        EndBatch = 4
+        EndBatch = 4,
+
+        /// <summary>
+        /// Retry the last record when returning a valid cursor
+        /// </summary>
+        RetryLastRecord = 8,
     }
 
     /// <summary>
@@ -41,7 +46,7 @@ namespace Tsavorite.core
         /// <summary>Next record in iteration for a record not in mutable log memory.</summary>
         /// <param name="logRecord">Reference to the current log record's info</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
-        /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
+        /// <param name="numberOfRecords">The number of records accepted so far, not including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
@@ -51,7 +56,7 @@ namespace Tsavorite.core
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
         /// <param name="logRecord">Reference to the current log record's info</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
-        /// <param name="numberOfRecords">The number of records returned so far, including the current one.</param>
+        /// <param name="numberOfRecords">The number of records accepted so far, not including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>

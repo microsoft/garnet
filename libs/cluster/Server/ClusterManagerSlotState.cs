@@ -38,7 +38,7 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 if (current.NumWorkers == 0) return false;
 
-                if (!currentConfig.TryAddSlots(slots, out var slot, out var newConfig))
+                if (!current.TryAddSlots(slots, out var slot, out var newConfig))
                 {
                     slotAssigned = slot;
                     return false;
@@ -66,7 +66,7 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 if (current.NumWorkers == 0) return false;
 
-                if (!currentConfig.TryRemoveSlots(slots, out var slot, out var newConfig) &&
+                if (!current.TryRemoveSlots(slots, out var slot, out var newConfig) &&
                     slot != -1)
                 {
                     notLocalSlot = slot;
@@ -204,7 +204,7 @@ namespace Garnet.cluster
                 // Redirection logic should be aware of this and not consider this slot as part of target node until migration completes
                 // Cluster status queries should also be aware of this implicit assignment and return this node as the current owner
                 // The above is only true for the primary that owns this slot and this configuration change is not propagated through gossip.
-                var newConfig = currentConfig.UpdateMultiSlotState(slots, migratingWorkerId, SlotState.MIGRATING);
+                var newConfig = current.UpdateMultiSlotState(slots, migratingWorkerId, SlotState.MIGRATING);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
@@ -321,7 +321,7 @@ namespace Garnet.cluster
                     }
                 }
 
-                var newConfig = currentConfig.UpdateMultiSlotState(slots, importingWorkerId, SlotState.IMPORTING);
+                var newConfig = current.UpdateMultiSlotState(slots, importingWorkerId, SlotState.IMPORTING);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
@@ -354,7 +354,7 @@ namespace Garnet.cluster
                 {
                     current = currentConfig;
                     workerId = current.GetWorkerIdFromNodeId(nodeid);
-                    var newConfig = currentConfig.UpdateSlotState(slot, workerId, SlotState.STABLE);
+                    var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
 
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
@@ -374,15 +374,28 @@ namespace Garnet.cluster
                 while (true)
                 {
                     current = currentConfig;
-                    var newConfig = currentConfig.UpdateSlotState(slot, 1, SlotState.STABLE);
-                    newConfig = newConfig.BumpLocalNodeConfigEpoch();
+                    var newConfig = current.UpdateSlotState(slot, 1, SlotState.STABLE).BumpLocalNodeConfigEpoch();
+
+                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                        break;
+                }
+                logger?.LogWarning("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
+                FlushConfig();
+                return true;
+            }
+            else
+            {
+                while (true)
+                {
+                    current = currentConfig;
+                    workerId = current.GetWorkerIdFromNodeId(nodeid);
+                    var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
 
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
                 FlushConfig();
-                logger?.LogTrace("[Processed] SetSlot NODE {slot} IMPORTED TO {nodeid}", slot, nodeid);
-                return true;
+                logger?.LogTrace("[Processed] SetSlot {slot} FORCED TO {nodeId}", slot, nodeid);
             }
             return true;
         }
@@ -407,14 +420,13 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                var newConfig = currentConfig.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
+                var newConfig = current.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
                 if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-
+            logger?.LogWarning("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
             FlushConfig();
-            logger?.LogTrace("[Processed] SetSlotsRange {slot} IMPORTED TO {endpoint}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -433,7 +445,7 @@ namespace Garnet.cluster
                     current = currentConfig;
                     slotState = current.GetState((ushort)slot);
                     var workerId = slotState == SlotState.MIGRATING ? 1 : current.GetWorkerIdFromSlot((ushort)slot);
-                    var newConfig = currentConfig.UpdateSlotState(slot, workerId, SlotState.STABLE);
+                    var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
@@ -450,7 +462,7 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = currentConfig.ResetMultiSlotState(slots);
+                var newConfig = current.ResetMultiSlotState(slots);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }

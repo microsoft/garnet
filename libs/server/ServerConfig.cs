@@ -69,7 +69,7 @@ namespace Garnet.server
             // Generate response for matching parameters
             if (parameters.Count > 0)
             {
-                while (!RespWriteUtils.WriteArrayLength(parameters.Count * 2, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteArrayLength(parameters.Count * 2, ref dcurr, dend))
                     SendAndReset();
 
                 foreach (var parameter in parameters)
@@ -93,13 +93,13 @@ namespace Garnet.server
                         return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
                     }
 
-                    while (!RespWriteUtils.WriteDirect(parameterValue, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(parameterValue, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -114,7 +114,7 @@ namespace Garnet.server
             }
 
             storeWrapper.clusterProvider?.FlushConfig();
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -195,12 +195,12 @@ namespace Garnet.server
 
             if (errorMsg == null)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
 

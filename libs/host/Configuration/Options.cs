@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,9 +7,13 @@ using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
 using CommandLine;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
@@ -233,6 +237,9 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("hcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand.")]
+        public int HashCollectFrequencySecs { get; set; }
 
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
@@ -309,6 +316,14 @@ namespace Garnet
         public bool? LatencyMonitor { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-log-slower-than", Required = false, HelpText = "Threshold (microseconds) for logging command in the slow log. 0 to disable.")]
+        public int SlowLogThreshold { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("slowlog-max-len", Required = false, HelpText = "Maximum number of slow log entries to keep.")]
+        public int SlowLogMaxEntries { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("metrics-sampling-freq", Required = false, HelpText = "Metrics sampling frequency in seconds. Value of 0 disables metrics monitor task.")]
         public int MetricsSamplingFrequency { get; set; }
 
@@ -332,12 +347,24 @@ namespace Garnet
         public string FileLogger { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("minthreads", Required = false, HelpText = "Minimum worker and completion threads in thread pool, 0 uses the system default.")]
+        [Option("minthreads", Required = false, HelpText = "Minimum worker threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMinThreads { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("maxthreads", Required = false, HelpText = "Maximum worker and completion threads in thread pool, 0 uses the system default.")]
+        [Option("maxthreads", Required = false, HelpText = "Maximum worker threads in thread pool, 0 uses the system default.")]
         public int ThreadPoolMaxThreads { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("miniothreads", Required = false, HelpText = "Minimum IO completion threads in thread pool, 0 uses the system default.")]
+        public int ThreadPoolMinIOCompletionThreads { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("maxiothreads", Required = false, HelpText = "Maximum IO completion threads in thread pool, 0 uses the system default.")]
+        public int ThreadPoolMaxIOCompletionThreads { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("network-connection-limit", Required = false, Default = -1, HelpText = "Maximum number of simultaneously active network connections.")]
+        public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
@@ -379,8 +406,20 @@ namespace Garnet
         public bool? MainMemoryReplication { get; set; }
 
         [OptionValidation]
+        [Option("fast-aof-truncate", Required = false, HelpText = "Use fast-aof-truncate replication model.")]
+        public bool? FastAofTruncate { get; set; }
+
+        [OptionValidation]
         [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
+
+        [OptionValidation]
+        [Option("repl-diskless-sync", Required = false, HelpText = "Whether diskless replication is enabled or not.")]
+        public bool? ReplicaDisklessSync { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-diskless-sync-delay", Required = false, Default = 5, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
+        public int ReplicaDisklessSyncDelay { get; set; }
 
         [OptionValidation]
         [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
@@ -473,6 +512,10 @@ namespace Garnet
         [Option("object-scan-count-limit", Required = false, HelpText = "Limit of items to return in one iteration of *SCAN command")]
         public int ObjectScanCountLimit { get; set; }
 
+        [OptionValidation]
+        [Option("enable-debug-command", Required = false, HelpText = "Enable DEBUG command for 'no', 'local' or 'all' connections")]
+        public ConnectionProtectionOption EnableDebugCommand { get; set; }
+
         [DirectoryPathsValidation(true, false)]
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
@@ -496,6 +539,33 @@ namespace Garnet
         [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
 
+        [OptionValidation]
+        [Option("skip-rdb-restore-checksum-validation", Default = false, Required = false, HelpText = "Skip RDB restore checksum validation")]
+        public bool? SkipRDBRestoreChecksumValidation { get; set; }
+
+        [OptionValidation]
+        [Option("lua-memory-management-mode", Required = false, HelpText = "Memory management mode for Lua scripts, must be set to Tracked or Managed to impose script limits")]
+        public LuaMemoryManagementMode LuaMemoryManagementMode { get; set; }
+
+        [MemorySizeValidation(false)]
+        [ForbiddenWithOption(nameof(LuaMemoryManagementMode), nameof(LuaMemoryManagementMode.Native))]
+        [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
+        public string LuaScriptMemoryLimit { get; set; }
+
+        [IntRangeValidation(10, int.MaxValue, isRequired: false)]
+        [Option("lua-script-timeout", Default = null, Required = false, HelpText = "Timeout for a Lua instance while running a script, specified in positive milliseconds (0 = disabled)")]
+        public int LuaScriptTimeoutMs { get; set; }
+
+        [FilePathValidation(false, true, false)]
+        [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
+        public string UnixSocketPath { get; set; }
+
+
+        [IntRangeValidation(0, 777, isRequired: false)]
+        [SupportedOSValidation(isRequired: false, nameof(OSPlatform.Linux), nameof(OSPlatform.OSX), nameof(OSPlatform.FreeBSD))]
+        [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
+        public int UnixSocketPermission { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -504,18 +574,27 @@ namespace Garnet
         public IList<string> UnparsedArguments { get; set; }
 
         /// <summary>
+        /// Logger instance used for runtime option validation
+        /// </summary>
+        public ILogger runtimeLogger { get; set; }
+
+        /// <summary>
         /// Check the validity of all options with an explicit ValidationAttribute
         /// </summary>
         /// <param name="invalidOptions">List of invalid options</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if all property values are valid</returns>
-        public bool IsValid(out List<string> invalidOptions, ILogger logger)
+        public bool IsValid(out List<string> invalidOptions, ILogger logger = null)
         {
-            invalidOptions = new List<string>();
-            bool isValid = true;
+            invalidOptions = [];
+            var isValid = true;
 
-            foreach (PropertyInfo prop in typeof(Options).GetProperties())
+            this.runtimeLogger = logger;
+            foreach (var prop in typeof(Options).GetProperties())
             {
+                if (prop.Name.Equals("runtimeLogger"))
+                    continue;
+
                 // Ignore if property is not decorated with the OptionsAttribute or the ValidationAttribute
                 var validationAttr = prop.GetCustomAttributes(typeof(ValidationAttribute)).FirstOrDefault();
                 if (!Attribute.IsDefined(prop, typeof(OptionAttribute)) || validationAttr == null)
@@ -555,9 +634,20 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            var address = !string.IsNullOrEmpty(this.Address) && this.Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
-                ? IPAddress.Loopback.ToString()
-                : this.Address;
+            EndPoint endpoint;
+            if (!string.IsNullOrEmpty(UnixSocketPath))
+            {
+                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
+            }
+            else
+            {
+                endpoint = Format.TryCreateEndpoint(Address, Port, useForBind: false).Result;
+                if (endpoint == null)
+                    throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
+            }
+
+            // Unix file permission octal to UnixFileMode
+            var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
 
             var revivBinRecordSizes = this.RevivBinRecordSizes?.ToArray();
             var revivBinRecordCounts = this.RevivBinRecordCounts?.ToArray();
@@ -601,10 +691,14 @@ namespace Garnet
                 CompactionForceDelete = true;
             }
 
+            if (SlowLogThreshold > 0)
+            {
+                if (SlowLogThreshold < 100)
+                    throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
+            }
             return new GarnetServerOptions(logger)
             {
-                Port = Port,
-                Address = address,
+                EndPoint = endpoint,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
@@ -648,6 +742,7 @@ namespace Garnet
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
+                HashCollectFrequencySecs = HashCollectFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
@@ -670,21 +765,28 @@ namespace Garnet
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
+                SlowLogThreshold = SlowLogThreshold,
+                SlowLogMaxEntries = SlowLogMaxEntries,
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
                 LoggingFrequency = LoggingFrequency,
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
+                ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
+                ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
+                NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
-                    ? () => new AzureStorageNamedDeviceFactory(AzureStorageConnectionString, logger)
-                    : () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                    ? new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger)
+                    : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
                 ReplicationOffsetMaxLag = ReplicationOffsetMaxLag,
-                MainMemoryReplication = MainMemoryReplication.GetValueOrDefault(),
+                FastAofTruncate = GetFastAofTruncate(logger),
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
+                ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
+                ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
@@ -698,12 +800,17 @@ namespace Garnet
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
+                EnableDebugCommand = EnableDebugCommand,
                 ExtensionBinPaths = ExtensionBinPaths?.ToArray(),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
                 LoadModuleCS = LoadModuleCS,
-                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault()
+                FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
+                SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), logger) : null,
+                UnixSocketPath = UnixSocketPath,
+                UnixSocketPermission = unixSocketPermissions
             };
         }
 
@@ -726,6 +833,16 @@ namespace Garnet
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
+        }
+
+        public bool GetFastAofTruncate(ILogger logger = null)
+        {
+            if (MainMemoryReplication.GetValueOrDefault())
+            {
+                logger?.LogError("--main-memory-replication is deprecated. Use --fast-aof-truncate instead.");
+                return true;
+            }
+            return FastAofTruncate.GetValueOrDefault();
         }
     }
 

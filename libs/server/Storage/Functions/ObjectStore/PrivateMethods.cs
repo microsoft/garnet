@@ -71,8 +71,8 @@ namespace Garnet.server
 
         static bool EvaluateObjectExpireInPlace(ref LogRecord<IGarnetObject> logRecord, ExpireOption optionType, long newExpiry, ref GarnetObjectStoreOutput output)
         {
-            Debug.Assert(output.spanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            var o = (ObjectOutputHeader*)output.spanByteAndMemory.SpanByte.ToPointer();
+            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
+            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             o->result1 = 0;
             if (logRecord.Info.HasExpiration)
             {
@@ -129,9 +129,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private CustomObjectFunctions GetCustomObjectCommand(ref ObjectInput input, GarnetObjectType type)
         {
-            var objectId = (byte)((byte)type - CustomCommandManager.TypeIdStartOffset);
             var cmdId = input.header.SubId;
-            var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
+            var customObjectCommand = functionsState.GetCustomObjectSubCommandFunctions((byte)type, cmdId);
             return customObjectCommand;
         }
 

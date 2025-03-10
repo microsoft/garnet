@@ -27,12 +27,13 @@ namespace Garnet.cluster
         BasicGarnetApi basicGarnetApi;
         readonly INetworkSender networkSender;
         readonly ILogger logger;
+        ClusterSlotVerificationInput csvi;
 
         // Authenticator used to validate permissions for cluster commands
         readonly IGarnetAuthenticator authenticator;
 
         // User currently authenticated in this session
-        User user;
+        UserHandle userHandle;
 
         SessionParseState parseState;
         byte* dcurr, dend;
@@ -50,11 +51,11 @@ namespace Garnet.cluster
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, User user, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
-            this.user = user;
+            this.userHandle = userHandle;
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
@@ -74,6 +75,14 @@ namespace Garnet.cluster
             {
                 if (command.IsClusterSubCommand())
                 {
+                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out var commandInfo) && commandInfo.KeySpecifications != null)
+                    {
+                        csvi.keyNumOffset = -1;
+                        clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
+                        if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
+                            return;
+                    }
+
                     ProcessClusterCommands(command, out invalidParameters);
 
                     if (invalidParameters)
@@ -99,7 +108,7 @@ namespace Garnet.cluster
                 {
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
                         respCommandName ?? command.ToString());
-                    while (!RespWriteUtils.WriteError(errorMessage, ref this.dcurr, this.dend))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
                 }
             }
@@ -158,10 +167,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Updates the user currently authenticated in the session.
         /// </summary>
-        /// <param name="user">User to set as authenticated user.</param>
-        public void SetUser(User user)
+        /// <param name="userHandle"><see cref="UserHandle"/> to set as authenticated user.</param>
+        public void SetUserHandle(UserHandle userHandle)
         {
-            this.user = user;
+            this.userHandle = userHandle;
         }
         public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;

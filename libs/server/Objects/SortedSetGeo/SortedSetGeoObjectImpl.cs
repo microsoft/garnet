@@ -87,7 +87,7 @@ namespace Garnet.server
                     if (!input.parseState.TryGetDouble(currTokenIdx++, out var longitude) ||
                         !input.parseState.TryGetDouble(currTokenIdx++, out var latitude))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
                                 ref end);
                         return;
@@ -123,12 +123,12 @@ namespace Garnet.server
                     }
                 }
 
-                while (!RespWriteUtils.WriteInteger(ch ? elementsChanged : elementsAdded, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(ch ? elementsChanged : elementsAdded, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -148,7 +148,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(input.parseState.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -159,19 +159,19 @@ namespace Garnet.server
                     if (sortedSetDict.TryGetValue(member, out var value52Int))
                     {
                         var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
-                        while (!RespWriteUtils.WriteAsciiBulkString(geoHash, ref curr, end))
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(geoHash, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                        while (!RespWriteUtils.TryWriteNull(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -217,13 +217,13 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteNull(ref curr, end))
+                    while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -243,7 +243,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(input.parseState.Count, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(input.parseState.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -256,7 +256,7 @@ namespace Garnet.server
                         var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
 
                         // write array of 2 values
-                        while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                        while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                         while (!RespWriteUtils.TryWriteDoubleBulkString(lon, ref curr, end))
@@ -267,14 +267,14 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteNullArray(ref curr, end))
+                        while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
@@ -422,7 +422,7 @@ namespace Garnet.server
                 // Check if we encountered an error while checking the parse state
                 if (errorMessage != default)
                 {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
+                    while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
@@ -430,7 +430,7 @@ namespace Garnet.server
                 // Not supported options in Garnet: WITHHASH
                 if (opts.WithHash)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
@@ -444,7 +444,7 @@ namespace Garnet.server
                     if (opts.ByRadius)
                     {
                         // Not supported in Garnet: ByRadius
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -475,7 +475,7 @@ namespace Garnet.server
 
                         if (responseData.Count == 0)
                         {
-                            while (!RespWriteUtils.WriteInteger(0, ref curr, end))
+                            while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         else
@@ -495,18 +495,18 @@ namespace Garnet.server
                             }
 
                             // Write results 
-                            while (!RespWriteUtils.WriteArrayLength(responseData.Count, ref curr, end))
+                            while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                             foreach (var item in responseData)
                             {
                                 if (innerArrayLength > 1)
                                 {
-                                    while (!RespWriteUtils.WriteArrayLength(innerArrayLength, ref curr, end))
+                                    while (!RespWriteUtils.TryWriteArrayLength(innerArrayLength, ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 }
 
-                                while (!RespWriteUtils.WriteBulkString(item.Member, ref curr, end))
+                                while (!RespWriteUtils.TryWriteBulkString(item.Member, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                                 if (opts.WithDist)
@@ -521,7 +521,7 @@ namespace Garnet.server
                                 if (opts.WithCoord)
                                 {
                                     // Write array of 2 values
-                                    while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                                    while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                                     while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
@@ -538,13 +538,13 @@ namespace Garnet.server
                 // Not supported options in Garnet: FROMLONLAT BYBOX BYRADIUS 
                 if (opts.FromLonLat)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();

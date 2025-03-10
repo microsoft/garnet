@@ -41,6 +41,7 @@ namespace Tsavorite.core
             internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
 
             internal long minAddress;
+            internal long maxAddress;
 
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
@@ -119,10 +120,10 @@ namespace Tsavorite.core
             public readonly TValue GetReadOnlyValue() => value.Get();
 
             /// <inheritdoc/>
-            public readonly long ETag => eTag;
+            public readonly long ETag => recordInfo.HasETag ? eTag : LogRecord.NoETag;
 
             /// <inheritdoc/>
-            public readonly long Expiration => expiration;
+            public readonly long Expiration => recordInfo.HasExpiration ? expiration : 0;
 
             /// <inheritdoc/>
             public readonly void ClearValueObject(Action<TValue> disposer) { }  // Not relevant for PendingContext

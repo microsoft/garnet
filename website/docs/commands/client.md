@@ -40,6 +40,59 @@ Bulk string reply: a unique string for the current client, as described at the C
 
 ---
 
+### CLIENT GETNAME
+
+#### Syntax
+
+```bash
+    CLIENT GETNAME
+```
+
+The command returns the name of the current connection as set by CLIENT SETNAME.
+
+#### Resp Reply
+
+Bulk string reply: the name of the client, or an empty string if no name is set.
+
+---
+
+### CLIENT SETNAME
+
+#### Syntax
+
+```bash
+    CLIENT SETNAME <name>
+```
+
+The command sets the name of the current connection.
+
+#### Resp Reply
+
+Simple string reply: OK if the connection name was successfully set.
+
+---
+
+### CLIENT SETINFO
+
+#### Syntax
+
+```bash
+    CLIENT SETINFO <LIB-NAME libname | LIB-VER libver>
+```
+
+The command sets the value of a specific section of the current client connection.
+
+Currently the supported attributes are:
+
+- LIB-NAME - meant to hold the name of the client library that's in use.
+- LIB-VER - meant to hold the client library's version.
+
+#### Resp Reply
+
+Simple string reply: OK if the section value was successfully set.
+
+---
+
 ### CLIENT KILL
 
 #### Syntax
@@ -89,5 +142,27 @@ You can use one of the optional subcommands to filter the list. The TYPE type su
 #### Resp Reply
 
 Bulk string reply: information and statistics about client connections.
+
+---
+
+### CLIENT UNBLOCK
+
+#### Syntax
+
+```bash
+    CLIENT UNBLOCK <client-id> [TIMEOUT | ERROR]
+```
+
+The command unblocks a client blocked by a blocking command such as BRPOP, XREAD, or BLPOP.
+
+The optional argument specifies how to unblock the client:
+* TIMEOUT - Unblock the client as if a timeout occurred (default)
+* ERROR - Unblock the client returning an error
+
+#### Resp Reply
+
+Integer reply: 
+* 1 if the client was unblocked
+* 0 if the client wasn't blocked
 
 ---

@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("BDN.benchmark" + ClusterAssemblyRef.GarnetPublicKey)]
+[assembly: InternalsVisibleTo("Garnet.test.cluster" + ClusterAssemblyRef.GarnetPublicKey)]
 
 /// <summary>
 /// Sets public key string for friend assemblies.

@@ -26,10 +26,10 @@ namespace GarnetJSON
             var path = CustomCommandUtils.GetNextArg(ref input, ref offset);
             var value = CustomCommandUtils.GetNextArg(ref input, ref offset);
 
-            if (((JsonObject)jsonObject).TrySet(Encoding.UTF8.GetString(path), Encoding.UTF8.GetString(value), logger))
-                WriteSimpleString(ref output, "OK");
-            else
+            if (!((JsonObject)jsonObject).TrySet(Encoding.UTF8.GetString(path), Encoding.UTF8.GetString(value), logger))
+            {
                 WriteError(ref output, "ERR Invalid input");
+            }
 
             return true;
         }

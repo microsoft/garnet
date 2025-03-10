@@ -58,7 +58,7 @@ dotnet_diagnostic.IDE0303.severity = warning
 # Use collection expression for builder
 dotnet_diagnostic.IDE0304.severity = warning
 # Use collection expression for fluent
-dotnet_diagnostic.IDE0305.severity = warning
+dotnet_diagnostic.IDE0305.severity = suggestion
 
 # Miscellaneous style rules
 dotnet_separate_import_directive_groups = false
@@ -269,6 +269,11 @@ indent_size = 2
 
 # Xml config files
 [*.{props,targets,config,nuspec}]
+indent_size = 2
+
+# YAML
+# http://yaml.org/spec/1.2/2009-07-21/spec.html#id2576668
+[*.{yaml,yml}]
 indent_size = 2
 
 # Shell scripts

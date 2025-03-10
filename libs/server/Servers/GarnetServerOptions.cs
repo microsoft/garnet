@@ -137,6 +137,11 @@ namespace Garnet.server
         public int CompactionFrequencySecs = 0;
 
         /// <summary>
+        /// Hash collection frequency in seconds. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation.
+        /// </summary>
+        public int HashCollectFrequencySecs = 0;
+
+        /// <summary>
         /// Hybrid log compaction type.
         ///  None - no compaction.
         ///  Shift - shift begin address without compaction (data loss).
@@ -197,6 +202,16 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Threshold (microseconds) for logging command in the slow log. 0 to disable
+        /// </summary>
+        public int SlowLogThreshold = 0;
+
+        /// <summary>
+        /// Maximum number of slow log entries to keep
+        /// </summary>
+        public int SlowLogMaxEntries = 128;
+
+        /// <summary>
         /// Metrics sampling frequency
         /// </summary>
         public int MetricsSamplingFrequency = 0;
@@ -237,19 +252,34 @@ namespace Garnet.server
         public bool UseFoldOverCheckpoints = false;
 
         /// <summary>
-        /// Minimum worker and completion port threads in thread pool (0 for default)
+        /// Minimum worker threads in thread pool (0 for default)
         /// </summary>
         public int ThreadPoolMinThreads = 0;
 
         /// <summary>
-        /// Maximum worker and completion port threads in thread pool (0 for default)
+        /// Maximum worker threads in thread pool (0 for default)
         /// </summary>
         public int ThreadPoolMaxThreads = 0;
 
         /// <summary>
-        /// Creator of device factories
+        /// Minimum IO completion threads in thread pool (0 for default)
         /// </summary>
-        public Func<INamedDeviceFactory> DeviceFactoryCreator = null;
+        public int ThreadPoolMinIOCompletionThreads = 0;
+
+        /// <summary>
+        /// Maximum IO completion threads in thread pool (0 for default)
+        /// </summary>
+        public int ThreadPoolMaxIOCompletionThreads = 0;
+
+        /// <summary>
+        /// Maximum client connection limit
+        /// </summary>
+        public int NetworkConnectionLimit = -1;
+
+        /// <summary>
+        /// Instance of interface to create named device factories
+        /// </summary>
+        public INamedDeviceFactoryCreator DeviceFactoryCreator = null;
 
         /// <summary>
         /// Whether and by how much should we throttle the disk IO for checkpoints (default = 0)
@@ -292,12 +322,22 @@ namespace Garnet.server
         /// <summary>
         /// Whether we truncate AOF as soon as replicas are fed (not just after checkpoints)
         /// </summary>
-        public bool MainMemoryReplication = false;
+        public bool FastAofTruncate = false;
 
         /// <summary>
         /// Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching
         /// </summary>
         public bool OnDemandCheckpoint = false;
+
+        /// <summary>
+        /// Whether diskless replication is enabled or not.
+        /// </summary>
+        public bool ReplicaDisklessSync = false;
+
+        /// <summary>
+        /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
+        /// </summary>
+        public int ReplicaDisklessSyncDelay = 5;
 
         /// <summary>
         /// With main-memory replication, whether we use null device for AOF. Ensures no disk IO, but can cause data loss during replication.
@@ -363,6 +403,11 @@ namespace Garnet.server
         public int AdjustedObjectStoreIndexMaxCacheLines;
 
         /// <summary>
+        /// Enables the DEBUG command
+        /// </summary>
+        public ConnectionProtectionOption EnableDebugCommand;
+
+        /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
         /// </summary>
         public string[] ExtensionBinPaths;
@@ -388,6 +433,18 @@ namespace Garnet.server
         public string ObjectStoreReadCacheHeapMemorySize = "";
 
         public bool EnableObjectStoreReadCache = false;
+
+        public LuaOptions LuaOptions;
+
+        /// <summary>
+        /// Unix socket address path to bind server to
+        /// </summary>
+        public string UnixSocketPath { get; set; }
+
+        /// <summary>
+        /// Unix socket file permissions
+        /// </summary>
+        public UnixFileMode UnixSocketPermission { get; set; }
 
         /// <summary>
         /// Constructor
@@ -453,7 +510,7 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
-            DeviceFactoryCreator ??= () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -692,7 +749,7 @@ namespace Garnet.server
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
-                MainMemoryReplication ? new NullNamedDeviceFactory() : DeviceFactoryCreator(),
+                FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
@@ -705,9 +762,7 @@ namespace Garnet.server
         /// <returns></returns>
         public INamedDeviceFactory GetInitializedDeviceFactory(string baseName)
         {
-            var deviceFactory = GetDeviceFactory();
-            deviceFactory.Initialize(baseName);
-            return deviceFactory;
+            return DeviceFactoryCreator.Create(baseName);
         }
 
         /// <summary>
@@ -781,16 +836,10 @@ namespace Garnet.server
         /// <returns></returns>
         IDevice GetAofDevice()
         {
-            if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
+            if (UseAofNullDevice && EnableCluster && !FastAofTruncate)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
             else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
         }
-
-        /// <summary>
-        /// Get device factory
-        /// </summary>
-        /// <returns></returns>
-        public INamedDeviceFactory GetDeviceFactory() => DeviceFactoryCreator();
     }
 }

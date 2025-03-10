@@ -88,7 +88,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : 0;
+        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : LogRecord.NoETag;
 
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;

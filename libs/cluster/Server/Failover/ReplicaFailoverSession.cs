@@ -36,36 +36,21 @@ namespace Garnet.cluster
         /// <param name="nodeId">Node-id to use for search the connection array</param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private GarnetClient GetOrAddConnection(string nodeId)
+        private async Task<GarnetClient> GetOrAddConnectionAsync(string nodeId)
         {
             _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out var gsn);
 
-            // If connection not available try to initialize it
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
+            while (!clusterProvider.clusterManager.clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, clusterProvider.serverOptions.TlsOptions, nodeId, out gsn, logger: logger))
+                _ = System.Threading.Thread.Yield();
+
             if (gsn == null)
             {
-                var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
-                gsn = new GarnetServerNode(
-                    clusterProvider,
-                    address,
-                    port,
-                    clusterProvider.storeWrapper.serverOptions.TlsOptions?.TlsClientOptions,
-                    logger: logger);
-
-                // Try add connection to the connection store
-                if (!clusterProvider.clusterManager.clusterConnectionStore.AddConnection(gsn))
-                {
-                    // If failed to add dispose connection resources
-                    gsn.Dispose();
-                    // Retry to get established connection if it was added after our first attempt
-                    _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out gsn);
-                }
-
-                // Final check fail, if connection is not established.
-                if (gsn == null)
-                    throw new GarnetException($"Connection not established to node {nodeId}");
+                logger?.LogWarning("TryMeet: Could not establish connection to remote node [{nodeId} {endpoint}] failed", nodeId, endpoint);
+                return null;
             }
 
-            gsn.Initialize();
+            await gsn.InitializeAsync();
 
             return gsn.Client;
         }
@@ -75,12 +60,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private GarnetClient CreateConnection(string nodeId)
+        private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
         {
-            var (address, port) = oldConfig.GetEndpointFromNodeId(nodeId);
+            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
-                address,
-                port,
+                endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                 sendPageSize: sendPageSize,
                 maxOutstandingTasks: 8,
@@ -90,7 +74,7 @@ namespace Garnet.cluster
             try
             {
                 if (!client.IsConnected)
-                    client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token).GetAwaiter().GetResult();
+                    await client.ReconnectAsync().WaitAsync(failoverTimeout, cts.Token);
 
                 return client;
             }
@@ -108,9 +92,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns></returns>
-        private GarnetClient GetConnection(string nodeId)
+        private Task<GarnetClient> GetConnectionAsync(string nodeId)
         {
-            return useGossipConnections ? GetOrAddConnection(nodeId) : CreateConnection(nodeId);
+            return useGossipConnections ? GetOrAddConnectionAsync(nodeId) : CreateConnectionAsync(nodeId);
         }
 
         /// <summary>
@@ -120,7 +104,7 @@ namespace Garnet.cluster
         private async Task<bool> PauseWritesAndWaitForSync()
         {
             var primaryId = oldConfig.LocalNodePrimaryId;
-            var client = GetConnection(primaryId);
+            var client = await GetConnectionAsync(primaryId);
             try
             {
                 if (client == null)
@@ -167,16 +151,16 @@ namespace Garnet.cluster
             // Take over as primary and inform old primary
             status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
-            // Make replica syncing unavailable by setting recovery flag
-            if (!clusterProvider.replicationManager.StartRecovery())
-            {
-                logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
-                return false;
-            }
-            _ = clusterProvider.BumpAndWaitForEpochTransition();
-
             try
             {
+                // Make replica syncing unavailable by setting recovery flag
+                if (!clusterProvider.replicationManager.StartRecovery())
+                {
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    return false;
+                }
+                _ = clusterProvider.BumpAndWaitForEpochTransition();
+
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
                 {
@@ -210,7 +194,7 @@ namespace Garnet.cluster
         {
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : GetConnection(replicaId);
+            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId);
 
             try
             {

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -58,14 +59,6 @@ namespace Garnet.server
             => provider.StoreWrapper.customCommandManager.RegisterType(factory);
 
         /// <summary>
-        /// Register object type with server, with specific type ID [0-55]
-        /// </summary>
-        /// <param name="type">Type ID for factory</param>
-        /// <param name="factory">Factory for object type</param>
-        public void NewType(int type, CustomObjectFactory factory)
-            => provider.StoreWrapper.customCommandManager.RegisterType(type, factory);
-
-        /// <summary>
         /// Register custom command with Garnet
         /// </summary>
         /// <param name="name">Name of command</param>
@@ -76,7 +69,7 @@ namespace Garnet.server
         /// <param name="commandDocs">RESP command docs</param>
         /// <returns>ID of the registered command</returns>
         public (int objectTypeId, int subCommandId) NewCommand(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, customObjectFunctions, commandInfo, commandDocs);
+            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, commandInfo, commandDocs, customObjectFunctions);
 
         /// <summary>
         /// Register custom procedure with Garnet
@@ -88,5 +81,16 @@ namespace Garnet.server
         /// <returns></returns>
         public int NewProcedure(string name, Func<CustomProcedure> customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
             => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo, commandDocs);
+
+        /// <summary>
+        /// Register custom module with Garnet
+        /// </summary>
+        /// <param name="module"></param>
+        /// <param name="moduleArgs"></param>
+        /// <param name="logger"></param>
+        /// <param name="errorMessage"></param>
+        /// <returns></returns>
+        public bool NewModule(ModuleBase module, string[] moduleArgs, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
+            => provider.StoreWrapper.customCommandManager.RegisterModule(module, moduleArgs, logger, out errorMessage);
     }
 }
