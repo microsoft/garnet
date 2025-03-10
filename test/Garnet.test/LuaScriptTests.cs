@@ -2425,7 +2425,7 @@ return count";
             ClassicAssert.True(multiResp.SequenceEqual([5, 4, 3, 2, 1]));
 
             // Helper for encoding a byte array into something that can be passed to Lua
-            static string ToLuaString(params ReadOnlySpan<byte> data)
+            static string ToLuaString(params byte[] data)
             {
                 var ret = new StringBuilder();
                 _ = ret.Append('\'');
