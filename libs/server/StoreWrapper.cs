@@ -31,7 +31,7 @@ namespace Garnet.server
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
-        readonly IGarnetServer server;
+        readonly IGarnetServer[] servers;
         internal readonly long startupTime;
 
         /// <summary>
@@ -59,7 +59,7 @@ namespace Garnet.server
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
+        public IGarnetServer[] TcpServer => servers;
 
         /// <summary>
         /// Access control list governing all commands
@@ -130,7 +130,7 @@ namespace Garnet.server
         public StoreWrapper(
             string version,
             string redisProtocolVersion,
-            IGarnetServer server,
+            IGarnetServer[] servers,
             TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
@@ -145,7 +145,7 @@ namespace Garnet.server
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
-            this.server = server;
+            this.servers = servers;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.store = store;
             this.objectStore = objectStore;
@@ -154,7 +154,7 @@ namespace Garnet.server
             this.subscribeBroker = subscribeBroker;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
-            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
+            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, this.servers, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
@@ -225,7 +225,7 @@ namespace Garnet.server
         /// <returns></returns>
         public string GetIp()
         {
-            if (TcpServer.EndPoint is not IPEndPoint localEndpoint)
+            if (((GarnetServerTcp)TcpServer[0]).EndPoint is not IPEndPoint localEndpoint)
                 throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
 
             if (localEndpoint.Address.Equals(IPAddress.Any))
