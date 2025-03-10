@@ -13,6 +13,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Multiple logical database management
+    /// </summary>
     internal class MultiDatabaseManager : DatabaseManagerBase
     {
         /// <inheritdoc/>
@@ -21,14 +24,11 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override int DatabaseCount => activeDbIdsLength;
 
-        readonly CancellationTokenSource cts = new();
-
+        // Maximal numbers of allowed logical databases
         readonly int maxDatabases;
 
         // Map of databases by database ID (by default: of size 1, contains only DB 0)
         ExpandableMap<GarnetDatabase> databases;
-
-        SingleWriterMultiReaderLock databasesLock;
 
         // Array containing active database IDs
         int[] activeDbIds;
@@ -36,8 +36,8 @@ namespace Garnet.server
         // Total number of current active database IDs
         int activeDbIdsLength;
 
-        // Last DB ID activated
-        int lastActivatedDbId = -1;
+        // Lock for accessing activeDbIds
+        SingleWriterMultiReaderLock activeDatabasesLock;
 
         // Reusable task array for tracking checkpointing of multiple DBs
         // Used by recurring checkpointing task if multiple DBs exist
@@ -150,7 +150,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
 
             return true;
@@ -244,7 +244,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -299,7 +299,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -342,7 +342,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -445,7 +445,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -477,7 +477,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -505,7 +505,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -573,7 +573,7 @@ namespace Garnet.server
             if (!success)
                 return false;
 
-            databasesLock.WriteLock();
+            activeDatabasesLock.WriteLock();
             try
             {
                 var databaseMapSnapshot = databases.Map;
@@ -597,7 +597,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.WriteUnlock();
+                activeDatabasesLock.WriteUnlock();
             }
 
             return true;
@@ -606,15 +606,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new MultiDatabaseManager(this, enableAof);
 
-        protected virtual ref GarnetDatabase GetDatabaseByRef(int dbId = 0)
-        {
-            var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault());
-
-            return ref databasesMapSnapshot[dbId];
-        }
-
+        /// <inheritdoc/>
         public override FunctionsState CreateFunctionsState(int dbId = 0)
         {
             ref var db = ref TryGetOrAddDatabase(dbId, out var success, out _);
@@ -676,24 +668,6 @@ namespace Garnet.server
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
             return TryPauseCheckpoints(ref db);
-        }
-
-        /// <inheritdoc/>
-        public override async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId, CancellationToken token = default)
-        {
-            var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault());
-
-            var checkpointsPaused = TryPauseCheckpoints(ref databasesMapSnapshot[dbId]);
-
-            while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
-            {
-                await Task.Yield();
-                checkpointsPaused = TryPauseCheckpoints(ref databasesMapSnapshot[dbId]);
-            }
-
-            return checkpointsPaused;
         }
 
         /// <inheritdoc/>
@@ -766,12 +740,12 @@ namespace Garnet.server
         /// <returns>True if lock acquired</returns>
         public async Task<bool> TryGetDatabasesReadLockAsync(CancellationToken token = default)
         {
-            var lockAcquired = databasesLock.TryReadLock();
+            var lockAcquired = activeDatabasesLock.TryReadLock();
 
             while (!lockAcquired && !token.IsCancellationRequested && !Disposed)
             {
                 await Task.Yield();
-                lockAcquired = databasesLock.TryReadLock();
+                lockAcquired = activeDatabasesLock.TryReadLock();
             }
 
             return lockAcquired;
@@ -784,12 +758,12 @@ namespace Garnet.server
         /// <returns>True if lock acquired</returns>
         public async Task<bool> TryGetDatabasesWriteLockAsync(CancellationToken token = default)
         {
-            var lockAcquired = databasesLock.TryWriteLock();
+            var lockAcquired = activeDatabasesLock.TryWriteLock();
 
             while (!lockAcquired && !token.IsCancellationRequested && !Disposed)
             {
                 await Task.Yield();
-                lockAcquired = databasesLock.TryWriteLock();
+                lockAcquired = activeDatabasesLock.TryWriteLock();
             }
 
             return lockAcquired;
@@ -851,15 +825,14 @@ namespace Garnet.server
             var db = databases.Map[dbId];
             if (dbId != 0 && ObjectStoreSizeTracker != null && !ObjectStoreSizeTracker.Stopped &&
                 db.ObjectStoreSizeTracker != null && db.ObjectStoreSizeTracker.Stopped)
-                db.ObjectStoreSizeTracker.Start(cts.Token);
+                db.ObjectStoreSizeTracker.Start(StoreWrapper.ctsCommit.Token);
 
-            var dbIdIdx = Interlocked.Increment(ref lastActivatedDbId);
+            var dbIdIdx = Interlocked.Increment(ref activeDbIdsLength) - 1;
 
             // If there is no size increase needed for activeDbIds, set the added ID in the array
             if (activeDbIds != null && dbIdIdx < activeDbIds.Length)
             {
                 activeDbIds[dbIdIdx] = dbId;
-                Interlocked.Increment(ref activeDbIdsLength);
                 return;
             }
 
@@ -887,13 +860,12 @@ namespace Garnet.server
                 activeDbIdsUpdated[dbIdIdx] = dbId;
 
                 activeDbIds = activeDbIdsUpdated;
-                activeDbIdsLength = dbIdIdx + 1;
                 checkpointTasks = new Task[activeDbIdsLength];
                 dbIdsToCheckpoint = new int[activeDbIdsLength];
             }
             finally
             {
-                databasesLock.WriteUnlock();
+                activeDatabasesLock.WriteUnlock();
             }
         }
 
@@ -901,7 +873,7 @@ namespace Garnet.server
         /// Copy active databases from specified IDatabaseManager instance
         /// </summary>
         /// <param name="src">Source IDatabaseManager</param>
-        /// <param name="enableAof">True if should enable AOF in copied databases</param>
+        /// <param name="enableAof">Enable AOF in copied databases</param>
         private void CopyDatabases(IDatabaseManager src, bool enableAof)
         {
             switch (src)
@@ -979,7 +951,7 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
         }
 
@@ -997,23 +969,37 @@ namespace Garnet.server
             }
             finally
             {
-                databasesLock.ReadUnlock();
+                activeDatabasesLock.ReadUnlock();
             }
+        }
+
+        private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId, CancellationToken token = default)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault());
+
+            var checkpointsPaused = TryPauseCheckpoints(ref databasesMapSnapshot[dbId]);
+
+            while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
+            {
+                await Task.Yield();
+                checkpointsPaused = TryPauseCheckpoints(ref databasesMapSnapshot[dbId]);
+            }
+
+            return checkpointsPaused;
         }
 
         public override void Dispose()
         {
             if (Disposed) return;
 
-            cts.Cancel();
             Disposed = true;
 
             // Disable changes to databases map and dispose all databases
             databases.mapLock.WriteLock();
             foreach (var db in databases.Map)
                 db.Dispose();
-
-            cts.Dispose();
         }
     }
 }

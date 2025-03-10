@@ -138,7 +138,7 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string runId;
 
-        readonly CancellationTokenSource ctsCommit;
+        internal readonly CancellationTokenSource ctsCommit;
 
         // True if StoreWrapper instance is disposed
         bool disposed;

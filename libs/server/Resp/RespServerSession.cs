@@ -97,10 +97,13 @@ namespace Garnet.server
 
         readonly IGarnetAuthenticator _authenticator;
 
+        // Current active database ID
         internal int activeDbId;
 
+        // True if multiple logical databases are enabled on this session
         readonly bool allowMultiDb;
         
+        // Map of all active database sessions (default of size 1, containing DB 0 session)
         private ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
         /// <summary>

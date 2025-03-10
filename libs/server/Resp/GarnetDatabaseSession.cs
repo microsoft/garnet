@@ -15,7 +15,10 @@ namespace Garnet.server
         LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-
+    
+    /// <summary>
+    /// Represents a logical database session in Garnet
+    /// </summary>
     internal struct GarnetDatabaseSession : IDisposable
     {
         /// <summary>
@@ -48,6 +51,15 @@ namespace Garnet.server
             this.LockableGarnetApi = lockableGarnetApi;
         }
 
+        /// <summary>
+        /// Returns true if current struct hasn't been initialized
+        /// </summary>
+        /// <returns>True if default struct</returns>
+        public bool IsDefault() => StorageSession == null;
+
+        /// <summary>
+        /// Dispose method
+        /// </summary>
         public void Dispose()
         {
             if (disposed)
@@ -57,8 +69,6 @@ namespace Garnet.server
 
             disposed = true;
         }
-
-        public bool IsDefault() => StorageSession == null;
 
         /// <summary>
         /// Instance of empty database session

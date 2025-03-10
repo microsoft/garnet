@@ -82,6 +82,13 @@ namespace Garnet.server
         /// <param name="dbId">ID of database to unlock</param>
         public void ResumeCheckpoints(int dbId);
 
+        /// <summary>
+        /// Recover checkpoint
+        /// </summary>
+        /// <param name="replicaRecover"></param>
+        /// <param name="recoverMainStoreFromToken"></param>
+        /// <param name="recoverObjectStoreFromToken"></param>
+        /// <param name="metadata"></param>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
@@ -236,6 +243,11 @@ namespace Garnet.server
         /// <returns></returns>
         public IDatabaseManager Clone(bool enableAof);
 
+        /// <summary>
+        /// Create a database functions state
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <returns>Functions state</returns>
         internal FunctionsState CreateFunctionsState(int dbId = 0);
     }
 }

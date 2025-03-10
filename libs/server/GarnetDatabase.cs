@@ -124,8 +124,15 @@ namespace Garnet.server
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
         }
 
+        /// <summary>
+        /// Returns true if current struct hasn't been initialized
+        /// </summary>
+        /// <returns>True if default struct</returns>
         public bool IsDefault() => MainStore == null;
 
+        /// <summary>
+        /// Dispose method
+        /// </summary>
         public void Dispose()
         {
             if (disposed) return;
@@ -152,7 +159,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Instance of empty database
+        /// Dummy database to return by default
         /// </summary>
         internal static GarnetDatabase Empty;
     }

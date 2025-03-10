@@ -32,14 +32,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract bool TryPauseCheckpoints(int dbId);
 
-        /// <summary>
-        /// Continuously try to take a lock for checkpointing until acquired or token was cancelled
-        /// </summary>
-        /// <param name="dbId">ID of database to lock</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>True if lock acquired</returns>
-        public abstract Task<bool> TryPauseCheckpointsContinuousAsync(int dbId, CancellationToken token = default);
-
         /// <inheritdoc/>
         public abstract void ResumeCheckpoints(int dbId);
 
@@ -110,6 +102,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract bool TrySwapDatabases(int dbId1, int dbId2);
 
+        /// <inheritdoc/>
         public abstract FunctionsState CreateFunctionsState(int dbId = 0);
 
         /// <inheritdoc/>

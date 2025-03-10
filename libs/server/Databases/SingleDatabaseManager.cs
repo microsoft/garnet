@@ -9,6 +9,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Single logical database management
+    /// </summary>
     internal class SingleDatabaseManager : DatabaseManagerBase
     {
         /// <inheritdoc/>
@@ -46,6 +49,7 @@ namespace Garnet.server
             return ref DefaultDatabase;
         }
 
+        /// <inheritdoc/>
         public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
             long storeVersion = -1, objectStoreVersion = -1;
@@ -99,23 +103,6 @@ namespace Garnet.server
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             return TryPauseCheckpoints(ref DefaultDatabase);
-        }
-
-        /// <inheritdoc/>
-        public override async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
-            CancellationToken token = default)
-        {
-            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-
-            var checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
-
-            while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
-            {
-                await Task.Yield();
-                checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
-            }
-
-            return checkpointsPaused;
         }
 
         /// <inheritdoc/>
@@ -231,6 +218,7 @@ namespace Garnet.server
             await CommitToAofAsync(token, logger);
         }
 
+        /// <inheritdoc/>
         public override async Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
             await AppendOnlyFile.WaitForCommitAsync(token: token);
@@ -321,8 +309,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
 
-        protected virtual ref GarnetDatabase GetDatabaseByRef(int dbId = 0) => ref DefaultDatabase;
-
+        /// <inheritdoc/>
         public override FunctionsState CreateFunctionsState(int dbId = 0)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
@@ -334,6 +321,22 @@ namespace Garnet.server
         private void CopyDatabases(SingleDatabaseManager src, bool enableAof)
         {
             DefaultDatabase = new GarnetDatabase(ref src.DefaultDatabase, enableAof);
+        }
+
+        private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
+            CancellationToken token = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+
+            var checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
+
+            while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
+            {
+                await Task.Yield();
+                checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
+            }
+
+            return checkpointsPaused;
         }
 
         public override void Dispose()
