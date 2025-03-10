@@ -365,22 +365,22 @@ namespace Garnet
 
         private (IDevice, TsavoriteLog) CreateAOF(int dbId)
         {
-            if (opts.EnableAOF)
+            if (!opts.EnableAOF)
             {
-                if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
-                    throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
-
-                opts.GetAofSettings(dbId, out var aofSettings);
-                var aofDevice = aofSettings.LogDevice;
-                var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
-                if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
-                    throw new Exception("Cannot use CommitWait with manual commits");
-                return (aofDevice, appendOnlyFile);
+                if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
+                    throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
+                return (null, null);
             }
 
-            if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
-                throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
-            return (null, null);
+            if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
+                throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
+
+            opts.GetAofSettings(dbId, out var aofSettings);
+            var aofDevice = aofSettings.LogDevice;
+            var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+            if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
+                throw new Exception("Cannot use CommitWait with manual commits");
+            return (aofDevice, appendOnlyFile);
         }
 
         /// <summary>

@@ -16,7 +16,7 @@ namespace Garnet.server
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
-    internal struct GarnetDatabaseSession : IDefaultChecker, IDisposable
+    internal struct GarnetDatabaseSession : IDisposable
     {
         /// <summary>
         /// Database ID

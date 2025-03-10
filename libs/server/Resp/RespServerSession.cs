@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -37,9 +38,8 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         readonly GarnetSessionMetrics sessionMetrics;
-        readonly GarnetLatencyMetricsSession LatencyMetrics;
 
-        public GarnetLatencyMetricsSession latencyMetrics => LatencyMetrics;
+        public GarnetLatencyMetricsSession LatencyMetrics { get; }
 
         /// <summary>
         /// Get a copy of sessionMetrics
@@ -54,12 +54,12 @@ namespace Garnet.server
         /// <summary>
         /// Reset latencyMetrics for eventType
         /// </summary>
-        public void ResetLatencyMetrics(LatencyMetricsType latencyEvent) => latencyMetrics?.Reset(latencyEvent);
+        public void ResetLatencyMetrics(LatencyMetricsType latencyEvent) => LatencyMetrics?.Reset(latencyEvent);
 
         /// <summary>
         /// Reset all latencyMetrics
         /// </summary>
-        public void ResetAllLatencyMetrics() => latencyMetrics?.ResetAll();
+        public void ResetAllLatencyMetrics() => LatencyMetrics?.ResetAll();
 
         readonly StoreWrapper storeWrapper;
         internal readonly TransactionManager txnManager;
@@ -100,9 +100,8 @@ namespace Garnet.server
         internal int activeDbId;
 
         readonly bool allowMultiDb;
-        internal ExpandableMap<GarnetDatabaseSession> databaseSessions;
-
-        GarnetDatabaseSession activeDatabaseSession;
+        
+        private ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
         /// <summary>
         /// The user currently authenticated in this session
@@ -263,12 +262,27 @@ namespace Garnet.server
             }
         }
 
-        private GarnetDatabaseSession CreateDatabaseSession(int dbId)
+        /// <summary>
+        /// Get all active database sessions
+        /// </summary>
+        /// <returns>Array of active database sessions</returns>
+        public GarnetDatabaseSession[] GetDatabaseSessionsSnapshot()
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
-            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
-            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
-            return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
+            var databaseSessionsMapSize = databaseSessions.ActualSize;
+            var databaseSessionsMapSnapshot = databaseSessions.Map;
+
+            if (databaseSessionsMapSize == 1)
+                return [databaseSessionsMapSnapshot[0]];
+
+            var databaseSessionsSnapshot = new List<GarnetDatabaseSession>();
+
+            for (var i = 0; i < databaseSessionsMapSize; i++)
+            {
+                if (!databaseSessionsMapSnapshot[i].IsDefault())
+                    databaseSessionsSnapshot.Add(databaseSessionsMapSnapshot[i]);
+            }
+
+            return databaseSessionsSnapshot.ToArray();
         }
 
         internal void SetUserHandle(UserHandle userHandle)
@@ -291,7 +305,7 @@ namespace Garnet.server
                 dbSession.Dispose();
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
-                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, latencyMetrics);
+                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
@@ -346,10 +360,10 @@ namespace Garnet.server
                 readHead = 0;
             try
             {
-                latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
                 if (slowLogThreshold > 0)
                 {
-                    slowLogStartTime = latencyMetrics != null ? latencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
+                    slowLogStartTime = LatencyMetrics != null ? LatencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
                 }
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
@@ -421,17 +435,17 @@ namespace Garnet.server
             // If server processed input data successfully, update tracked metrics
             if (readHead > 0)
             {
-                if (latencyMetrics != null)
+                if (LatencyMetrics != null)
                 {
                     if (containsSlowCommand)
                     {
-                        latencyMetrics.StopAndSwitch(LatencyMetricsType.NET_RS_LAT, LatencyMetricsType.NET_RS_LAT_ADMIN);
+                        LatencyMetrics.StopAndSwitch(LatencyMetricsType.NET_RS_LAT, LatencyMetricsType.NET_RS_LAT_ADMIN);
                         containsSlowCommand = false;
                     }
                     else
-                        latencyMetrics.Stop(LatencyMetricsType.NET_RS_LAT);
-                    latencyMetrics.RecordValue(LatencyMetricsType.NET_RS_BYTES, readHead);
-                    latencyMetrics.RecordValue(LatencyMetricsType.NET_RS_OPS, opCount);
+                        LatencyMetrics.Stop(LatencyMetricsType.NET_RS_LAT);
+                    LatencyMetrics.RecordValue(LatencyMetricsType.NET_RS_BYTES, readHead);
+                    LatencyMetrics.RecordValue(LatencyMetricsType.NET_RS_OPS, opCount);
                     opCount = 0;
                 }
                 sessionMetrics?.incr_total_net_input_bytes((ulong)readHead);
@@ -531,7 +545,7 @@ namespace Garnet.server
                 _origReadHead = readHead = endReadHead;
 
                 // Handle metrics and special cases
-                if (latencyMetrics != null) opCount++;
+                if (LatencyMetrics != null) opCount++;
                 if (slowLogThreshold > 0) HandleSlowLog(cmd);
                 if (sessionMetrics != null)
                 {
@@ -1380,10 +1394,17 @@ namespace Garnet.server
             }
         }
 
+        private GarnetDatabaseSession CreateDatabaseSession(int dbId)
+        {
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
+            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
+            return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
+        }
+
         private void SwitchActiveDatabaseSession(int dbId, ref GarnetDatabaseSession dbSession)
         {
             this.activeDbId = dbId;
-            this.activeDatabaseSession = dbSession;
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;

@@ -15,36 +15,16 @@ namespace Garnet.server
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    /// <summary>
+    /// Base class for logical database management
+    /// </summary>
     internal abstract class DatabaseManagerBase : IDatabaseManager
     {
         /// <inheritdoc/>
         public abstract ref GarnetDatabase DefaultDatabase { get; }
 
         /// <inheritdoc/>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
-
-        /// <inheritdoc/>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
-
-        /// <inheritdoc/>
-        public TsavoriteLog AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
-
-        /// <inheritdoc/>
-        public DateTimeOffset LastSaveTime => DefaultDatabase.LastSaveTime;
-
-        /// <inheritdoc/>
-        public CacheSizeTracker ObjectStoreSizeTracker => DefaultDatabase.ObjectStoreSizeTracker;
-
-        /// <inheritdoc/>
-        public WatchVersionMap VersionMap => DefaultDatabase.VersionMap;
-
-        /// <inheritdoc/>
         public abstract int DatabaseCount { get; }
-
-        /// <summary>
-        /// Store Wrapper
-        /// </summary>
-        public readonly StoreWrapper StoreWrapper;
 
         /// <inheritdoc/>
         public abstract ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
@@ -138,6 +118,29 @@ namespace Garnet.server
         /// <inheritdoc/>
         public abstract IDatabaseManager Clone(bool enableAof);
 
+        /// <inheritdoc/>
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
+
+        /// <inheritdoc/>
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
+
+        /// <inheritdoc/>
+        public TsavoriteLog AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
+
+        /// <inheritdoc/>
+        public DateTimeOffset LastSaveTime => DefaultDatabase.LastSaveTime;
+
+        /// <inheritdoc/>
+        public CacheSizeTracker ObjectStoreSizeTracker => DefaultDatabase.ObjectStoreSizeTracker;
+
+        /// <inheritdoc/>
+        public WatchVersionMap VersionMap => DefaultDatabase.VersionMap;
+
+        /// <summary>
+        /// Store Wrapper
+        /// </summary>
+        public readonly StoreWrapper StoreWrapper;
+
         /// <summary>
         /// Delegate for creating a new logical database
         /// </summary>
@@ -153,6 +156,9 @@ namespace Garnet.server
         /// </summary>
         protected ILoggerFactory LoggerFactory;
 
+        /// <summary>
+        /// True if instance has been previously disposed
+        /// </summary>
         protected bool Disposed;
 
         protected DatabaseManagerBase(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper)
@@ -162,8 +168,12 @@ namespace Garnet.server
             this.LoggerFactory = storeWrapper.loggerFactory;
         }
 
-        protected abstract ref GarnetDatabase GetDatabaseByRef(int dbId = 0);
-
+        /// <summary>
+        /// Recover single database from checkpoint
+        /// </summary>
+        /// <param name="db">Database to recover</param>
+        /// <param name="storeVersion">Store version</param>
+        /// <param name="objectStoreVersion">Object store version</param>
         protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
         {
             storeVersion = db.MainStore.Recover();
@@ -176,87 +186,6 @@ namespace Garnet.server
             {
                 db.LastSaveTime = DateTimeOffset.UtcNow;
             }
-        }
-
-        protected async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
-            bool tryIncremental,
-            StoreType storeType, ILogger logger = null)
-        {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}, dbId = {dbId}", full, checkpointType, tryIncremental, storeType, db.Id);
-
-            long checkpointCoveredAofAddress = 0;
-            if (db.AppendOnlyFile != null)
-            {
-                if (StoreWrapper.serverOptions.EnableCluster)
-                    StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
-                else
-                    checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
-
-                if (checkpointCoveredAofAddress > 0)
-                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit)", checkpointCoveredAofAddress);
-            }
-
-            (bool success, Guid token) storeCheckpointResult = default;
-            (bool success, Guid token) objectStoreCheckpointResult = default;
-            if (full)
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                {
-                    storeCheckpointResult = await db.MainStore.TakeFullCheckpointAsync(checkpointType);
-                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
-                        EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, db.MainStore.CurrentVersion);
-                }
-
-                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                {
-                    objectStoreCheckpointResult = await db.ObjectStore.TakeFullCheckpointAsync(checkpointType);
-                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
-                        EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, db.ObjectStore.CurrentVersion);
-                }
-            }
-            else
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                {
-                    storeCheckpointResult = await db.MainStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
-                        EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, db.MainStore.CurrentVersion);
-                }
-
-                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                {
-                    objectStoreCheckpointResult = await db.ObjectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
-                        EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, db.ObjectStore.CurrentVersion);
-                }
-            }
-
-            // If cluster is enabled the replication manager is responsible for truncating AOF
-            if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
-            {
-                StoreWrapper.clusterProvider.SafeTruncateAOF(storeType, full, checkpointCoveredAofAddress,
-                    storeCheckpointResult.token, objectStoreCheckpointResult.token);
-            }
-            else
-            {
-                db.AppendOnlyFile?.TruncateUntil(checkpointCoveredAofAddress);
-                db.AppendOnlyFile?.Commit();
-            }
-
-            if (db.ObjectStore != null)
-            {
-                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
-                // We can now safely remove these serialized versions as they are no longer needed.
-                using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
-                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true);
-                while (iter1.GetNext(out _, out _, out var value))
-                {
-                    if (value != null)
-                        ((GarnetObjectBase)value).serialized = null;
-                }
-            }
-
-            logger?.LogInformation("Completed checkpoint");
         }
 
         /// <summary>
@@ -299,25 +228,45 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Checkpointing threw exception");
+                logger?.LogError(ex, "Checkpointing threw exception, DB ID: {id}", db.Id);
             }
         }
 
+        /// <summary>
+        /// Try to take checkpointing lock for specified database
+        /// </summary>
+        /// <param name="db">Database to checkpoint</param>
+        /// <returns>True if acquired a lock</returns>
         protected bool TryPauseCheckpoints(ref GarnetDatabase db)
             => db.CheckpointingLock.TryWriteLock();
 
+        /// <summary>
+        /// Release existing checkpointing lock for 
+        /// </summary>
+        /// <param name="db">Database to checkpoint</param>
         protected void ResumeCheckpoints(ref GarnetDatabase db)
             => db.CheckpointingLock.WriteUnlock();
 
+        /// <summary>
+        /// Recover a single database from AOF
+        /// </summary>
+        /// <param name="db">Database to recover</param>
         protected void RecoverDatabaseAOF(ref GarnetDatabase db)
         {
             if (db.AppendOnlyFile == null) return;
 
             db.AppendOnlyFile.Recover();
-            Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}",
-                db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress);
+            Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}, DB ID: {id}",
+                db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress, db.Id);
         }
 
+        /// <summary>
+        /// Replay AOF for specified database
+        /// </summary>
+        /// <param name="aofProcessor">AOF processor</param>
+        /// <param name="db">Database to replay</param>
+        /// <param name="untilAddress">Tail address</param>
+        /// <returns>Tail address</returns>
         protected long ReplayDatabaseAOF(AofProcessor aofProcessor, ref GarnetDatabase db, long untilAddress = -1)
         {
             long replicationOffset = 0;
@@ -336,6 +285,10 @@ namespace Garnet.server
             return replicationOffset;
         }
 
+        /// <summary>
+        /// Reset database
+        /// </summary>
+        /// <param name="db">Database to reset</param>
         protected void ResetDatabase(ref GarnetDatabase db)
         {
             try
@@ -355,6 +308,12 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Enqueue AOF commit for single database
+        /// </summary>
+        /// <param name="db">Database to enqueue commit for</param>
+        /// <param name="entryType">AOF entry type</param>
+        /// <param name="version">Store version</param>
         protected void EnqueueDatabaseCommit(ref GarnetDatabase db, AofEntryType entryType, long version)
         {
             if (db.AppendOnlyFile == null) return;
@@ -369,12 +328,65 @@ namespace Garnet.server
             db.AppendOnlyFile.Enqueue(header, out _);
         }
 
+        /// <summary>
+        /// Flush a single database
+        /// </summary>
+        /// <param name="db">Database to flush</param>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
         protected void FlushDatabase(ref GarnetDatabase db, bool unsafeTruncateLog)
         {
             db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
+        /// <summary>
+        /// Grow store indexes for specified database, if necessary
+        /// </summary>
+        /// <param name="db">Database to grow store indexes for</param>
+        /// <returns>True if both store indexes are maxed out</returns>
+        protected bool GrowIndexesIfNeeded(ref GarnetDatabase db)
+        {
+            var indexesMaxedOut = true;
+
+            if (!DefaultDatabase.MainStoreIndexMaxedOut)
+            {
+                var dbMainStore = DefaultDatabase.MainStore;
+                if (GrowIndexIfNeeded(StoreType.Main,
+                        StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
+                        () => dbMainStore.IndexSize, async () => await dbMainStore.GrowIndexAsync()))
+                {
+                    db.MainStoreIndexMaxedOut = true;
+                }
+                else
+                {
+                    indexesMaxedOut = false;
+                }
+            }
+
+            if (!db.ObjectStoreIndexMaxedOut)
+            {
+                var dbObjectStore = db.ObjectStore;
+                if (GrowIndexIfNeeded(StoreType.Object,
+                        StoreWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
+                        dbObjectStore.OverflowBucketAllocations,
+                        () => dbObjectStore.IndexSize, async () => await dbObjectStore.GrowIndexAsync()))
+                {
+                    db.ObjectStoreIndexMaxedOut = true;
+                }
+                else
+                {
+                    indexesMaxedOut = false;
+                }
+            }
+
+            return indexesMaxedOut;
+        }
+
+        /// <summary>
+        /// Run compaction on specified database
+        /// </summary>
+        /// <param name="db">Database to run compaction on</param>
+        /// <param name="logger">Logger</param>
         protected void DoCompaction(ref GarnetDatabase db, ILogger logger = null)
         {
             try
@@ -389,10 +401,44 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex,
-                    "Exception raised during compaction. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
-                    db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress);
+                    "Exception raised during compaction. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; DB ID = {id}",
+                    db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress, db.Id);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Grows index if current size is smaller than max size.
+        /// Decision is based on whether overflow bucket allocation is more than a threshold which indicates a contention
+        /// in the index leading many allocations to the same bucket.
+        /// </summary>
+        /// <param name="storeType"></param>
+        /// <param name="indexMaxSize"></param>
+        /// <param name="overflowCount"></param>
+        /// <param name="indexSizeRetriever"></param>
+        /// <param name="growAction"></param>
+        /// <returns>True if index has reached its max size</returns>
+        protected bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        {
+            Logger?.LogDebug(
+                $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
+                storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
+
+            if (indexSizeRetriever() < indexMaxSize &&
+                overflowCount > (indexSizeRetriever() * StoreWrapper.serverOptions.IndexResizeThreshold / 100))
+            {
+                Logger?.LogInformation(
+                    $"IndexAutoGrowTask[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
+                    storeType, overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
+                growAction();
+            }
+
+            if (indexSizeRetriever() < indexMaxSize) return false;
+
+            Logger?.LogDebug(
+                $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
+                storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
+            return true;
         }
 
         private void DoCompaction(ref GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
@@ -510,76 +556,95 @@ namespace Garnet.server
             }
         }
 
-        protected bool GrowIndexesIfNeeded(ref GarnetDatabase db)
-        {
-            var indexesMaxedOut = true;
-
-            if (!DefaultDatabase.MainStoreIndexMaxedOut)
-            {
-                var dbMainStore = DefaultDatabase.MainStore;
-                if (GrowIndexIfNeeded(StoreType.Main,
-                        StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                        () => dbMainStore.IndexSize, async () => await dbMainStore.GrowIndexAsync()))
-                {
-                    db.MainStoreIndexMaxedOut = true;
-                }
-                else
-                {
-                    indexesMaxedOut = false;
-                }
-            }
-
-            if (!db.ObjectStoreIndexMaxedOut)
-            {
-                var dbObjectStore = db.ObjectStore;
-                if (GrowIndexIfNeeded(StoreType.Object,
-                        StoreWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines,
-                        dbObjectStore.OverflowBucketAllocations,
-                        () => dbObjectStore.IndexSize, async () => await dbObjectStore.GrowIndexAsync()))
-                {
-                    db.ObjectStoreIndexMaxedOut = true;
-                }
-                else
-                {
-                    indexesMaxedOut = false;
-                }
-            }
-
-            return indexesMaxedOut;
-        }
-
         /// <summary>
-        /// Grows index if current size is smaller than max size.
-        /// Decision is based on whether overflow bucket allocation is more than a threshold which indicates a contention
-        /// in the index leading many allocations to the same bucket.
+        /// Asynchronously initiate a single database checkpoint
         /// </summary>
-        /// <param name="storeType"></param>
-        /// <param name="indexMaxSize"></param>
-        /// <param name="overflowCount"></param>
-        /// <param name="indexSizeRetriever"></param>
-        /// <param name="growAction"></param>
-        /// <returns>True if index has reached its max size</returns>
-        protected bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
+        /// <param name="db">Database to checkpoint</param>
+        /// <param name="full">True if full checkpoint should be initiated</param>
+        /// <param name="checkpointType">Type of checkpoint</param>
+        /// <param name="tryIncremental">Try to store as incremental delta over last snapshot</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Task</returns>
+        private async Task InitiateCheckpointAsync(GarnetDatabase db, bool full, CheckpointType checkpointType,
+            bool tryIncremental,
+            StoreType storeType, ILogger logger = null)
         {
-            Logger?.LogDebug(
-                $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
-                storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
+            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}, dbId = {dbId}", full, checkpointType, tryIncremental, storeType, db.Id);
 
-            if (indexSizeRetriever() < indexMaxSize &&
-                overflowCount > (indexSizeRetriever() * StoreWrapper.serverOptions.IndexResizeThreshold / 100))
+            long checkpointCoveredAofAddress = 0;
+            if (db.AppendOnlyFile != null)
             {
-                Logger?.LogInformation(
-                    $"IndexAutoGrowTask[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...",
-                    storeType, overflowCount, StoreWrapper.serverOptions.IndexResizeThreshold);
-                growAction();
+                if (StoreWrapper.serverOptions.EnableCluster)
+                    StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
+                else
+                    checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
+
+                if (checkpointCoveredAofAddress > 0)
+                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
             }
 
-            if (indexSizeRetriever() < indexMaxSize) return false;
+            (bool success, Guid token) storeCheckpointResult = default;
+            (bool success, Guid token) objectStoreCheckpointResult = default;
+            if (full)
+            {
+                if (storeType is StoreType.Main or StoreType.All)
+                {
+                    storeCheckpointResult = await db.MainStore.TakeFullCheckpointAsync(checkpointType);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, db.MainStore.CurrentVersion);
+                }
 
-            Logger?.LogDebug(
-                $"IndexAutoGrowTask[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}",
-                storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
-            return true;
+                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
+                    objectStoreCheckpointResult = await db.ObjectStore.TakeFullCheckpointAsync(checkpointType);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, db.ObjectStore.CurrentVersion);
+                }
+            }
+            else
+            {
+                if (storeType is StoreType.Main or StoreType.All)
+                {
+                    storeCheckpointResult = await db.MainStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, db.MainStore.CurrentVersion);
+                }
+
+                if (db.ObjectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
+                    objectStoreCheckpointResult = await db.ObjectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsPrimary())
+                        EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, db.ObjectStore.CurrentVersion);
+                }
+            }
+
+            // If cluster is enabled the replication manager is responsible for truncating AOF
+            if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
+            {
+                StoreWrapper.clusterProvider.SafeTruncateAOF(storeType, full, checkpointCoveredAofAddress,
+                    storeCheckpointResult.token, objectStoreCheckpointResult.token);
+            }
+            else
+            {
+                db.AppendOnlyFile?.TruncateUntil(checkpointCoveredAofAddress);
+                db.AppendOnlyFile?.Commit();
+            }
+
+            if (db.ObjectStore != null)
+            {
+                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
+                // We can now safely remove these serialized versions as they are no longer needed.
+                using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
+                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true);
+                while (iter1.GetNext(out _, out _, out var value))
+                {
+                    if (value != null)
+                        ((GarnetObjectBase)value).serialized = null;
+                }
+            }
+
+            logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);
         }
     }
 }

@@ -267,7 +267,7 @@ namespace Garnet.server
             if (c > 1)
             {
                 // Update metrics (the first GET is accounted for by the caller)
-                if (latencyMetrics != null) opCount += c - 1;
+                if (LatencyMetrics != null) opCount += c - 1;
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed += (ulong)(c - 1);

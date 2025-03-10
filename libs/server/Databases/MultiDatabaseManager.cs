@@ -606,7 +606,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new MultiDatabaseManager(this, enableAof);
 
-        protected override ref GarnetDatabase GetDatabaseByRef(int dbId = 0)
+        protected virtual ref GarnetDatabase GetDatabaseByRef(int dbId = 0)
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;

@@ -15,6 +15,9 @@ namespace Garnet.server
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    /// <summary>
+    /// Interface for logical database management
+    /// </summary>
     public interface IDatabaseManager : IDisposable
     {
         /// <summary>

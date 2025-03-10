@@ -321,7 +321,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
 
-        protected override ref GarnetDatabase GetDatabaseByRef(int dbId = 0) => ref DefaultDatabase;
+        protected virtual ref GarnetDatabase GetDatabaseByRef(int dbId = 0) => ref DefaultDatabase;
 
         public override FunctionsState CreateFunctionsState(int dbId = 0)
         {
