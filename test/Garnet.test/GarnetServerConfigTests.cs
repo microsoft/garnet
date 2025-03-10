@@ -726,9 +726,9 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             var hostname = TestUtils.GetHostName();
             var addresses = Dns.GetHostAddresses(hostname);
+            addresses = [.. addresses, IPAddress.IPv6Loopback, IPAddress.Loopback];
 
             var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
-            ClassicAssert.Greater(endpoints.Length, 1, $"{nameof(MultiEndpointTest)} not enough network interfaces!");
             var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints);
             server.Start();
 
