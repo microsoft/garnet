@@ -46,7 +46,7 @@ namespace Tsavorite.core
                         stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
                     // State machine should wait for active transactions in the last version to complete (drain out).
                     // Note that we allow new transactions to process in parallel.
-                    
+
                     break;
 
                 case Phase.WAIT_FLUSH:
