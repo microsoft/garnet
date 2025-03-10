@@ -76,7 +76,7 @@ namespace Garnet.server.BTreeIndex
             }
 
             // update the parent node with the new key
-
+            PushUpKeyInInternalNode(ref nodesTraversed, newLeaf->GetKey(0), ref newLeaf, SPLIT_INTERNAL_POSITION, validCount);
             return true;
         }
 
@@ -90,10 +90,10 @@ namespace Garnet.server.BTreeIndex
             // newLeaf->memoryHandle = memoryBlock;
             newLeaf->Initialize(BTreeNodeType.Leaf, memoryBlock);
             leafToSplit->info.count = SPLIT_LEAF_POSITION;
-            leafToSplit->info.next = newLeaf;
             newLeaf->info.previous = leafToSplit;
             newLeaf->info.next = leafToSplit->info.next;
             newLeaf->info.count = BTreeNode.LEAF_CAPACITY + 1 - SPLIT_LEAF_POSITION;
+            leafToSplit->info.next = newLeaf;
             stats.numLeafNodes++;
             return newLeaf;
         }
@@ -153,7 +153,6 @@ namespace Garnet.server.BTreeIndex
             // newNode->memoryHandle = memoryBlock;
             newNode->Initialize(BTreeNodeType.Internal, memoryBlock);
             stats.numInternalNodes++;
-
             node->info.count = splitPos;
             newNode->info.count = (BTreeNode.INTERNAL_CAPACITY - splitPos);
             newNode->info.next = node->info.next;
@@ -195,44 +194,27 @@ namespace Garnet.server.BTreeIndex
             // BTreeNode* leftNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
             var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
             var memory = (IntPtr)memoryBlock.aligned_pointer;
-            BTreeNode* leftNode = (BTreeNode*)memory;
+            BTreeNode* newRoot = (BTreeNode*)memory;
             // leftNode->memoryHandle = memoryBlock;
-            leftNode->Initialize(root->info.type, memoryBlock);
+            newRoot->Initialize(BTreeNodeType.Internal, memoryBlock);
 
-            // copy the root node to the left node
-            // Buffer.MemoryCopy(root->info, leftNode->info, BTreeNode.PAGE_SIZE, BTreeNode.PAGE_SIZE);
+            // Set the new root's key to the key being pushed up (key from newlySplitNode).
+            newRoot->info.count = 1;
+            newRoot->SetKey(0, key);
+            // Set its children: left child is the old root; right child is the newly split node.
+            newRoot->SetChild(0, root);
+            newRoot->SetChild(1, newlySplitNode);
 
-            // if root is a leaf, upgrade to internal node
-            if (root->info.type == BTreeNodeType.Leaf)
-            {
-                root->UpgradeToInternal();
-            }
-
-            root->info.count = 1;
-            root->SetKey(0, key);
-            root->SetChild(0, leftNode);
-            root->SetChild(1, newlySplitNode);
-            root->info.next = root->info.previous = null;
-            root->info.validCount = leftNode->info.validCount;
+            // Update the valid count (if desired, handle validCount appropriately).
+                newRoot->info.validCount = root->info.validCount;
             if (newlySplitNode != tail)
             {
-                root->info.validCount += newlySplitNode->info.validCount;
+                newRoot->info.validCount += newlySplitNode->info.validCount;
             }
-            newlySplitNode->info.previous = leftNode;
+            newRoot->info.next = newRoot->info.previous = null;
 
-            if (root == head)
-            {
-                head = leftNode;
-            }
-            if (rootToTailLeaf[stats.depth - 1] == root)
-            {
-                if (tail == root)
-                {
-                    tail = leftNode;
-                }
-                rootToTailLeaf[stats.depth - 1] = leftNode;
-            }
-            rootToTailLeaf[stats.depth] = root;
+            root = newRoot;
+            rootToTailLeaf[stats.depth] = newRoot;
             stats.depth++;
             stats.numInternalNodes++;
         }

@@ -34,7 +34,7 @@ class Program
         // return;
         var tree = new BTree(4096);
 
-        ulong N = 1000;
+        ulong N = 60000;
         bool verbose = false;
         bool sanity = false;
         if (args.Length > 0)
@@ -76,6 +76,7 @@ class Program
         sw.Stop();
         dur2 = sw.ElapsedTicks;
         duration += Stopwatch.GetTimestamp() - start;
+        Console.WriteLine(" Number of Fast Inserts = " + tree.FastInserts);
         double nanosecondsPerTick = (1_000_000_000.0) / Stopwatch.Frequency;
         if (verbose)
         {
