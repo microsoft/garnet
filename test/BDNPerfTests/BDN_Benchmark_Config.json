@@ -383,5 +383,13 @@
     "expected_Publish_ACL": 800,
     "expected_Publish_AOF": 800,
     "expected_Publish_None": 800
+  },
+  "BDN.benchmark.Operations.ServerOperations.*": {
+    "expected_SelectUnselect_ACL": 0,
+    "expected_SelectUnselect_AOF": 0,
+    "expected_SelectUnselect_None": 0,
+	"expected_SwapDb_ACL": 0,
+    "expected_SwapDb_AOF": 0,
+    "expected_SwapDb_None": 0
   }
 }

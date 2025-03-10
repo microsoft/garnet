@@ -30,11 +30,10 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    COMMITAOF
+    COMMITAOF [DBID]
 ```
 
-Issues a manual commit of the append-only-file. This is useful when auto-commits are turned off, but you need the
-system to commit at specific times.
+Issues a manual commit of the append-only-file (for all active databases in the Garnet instance). This is useful when auto-commits are turned off, but you need the system to commit at specific times. If a DB ID is specified, a manual commit of the append-only-file of that specific database will be issues.
 
 #### Resp Reply
 

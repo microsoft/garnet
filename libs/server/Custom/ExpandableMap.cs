@@ -195,7 +195,7 @@ namespace Garnet.server
         /// <param name="value">Item value</param>
         /// <param name="noExpansion">True if should not attempt to expand the underlying array</param>
         /// <returns>True if assignment succeeded</returns>
-        private bool TrySetValueUnsafe(int id, ref T value, bool noExpansion)
+        internal bool TrySetValueUnsafe(int id, ref T value, bool noExpansion)
         {
             var idx = id - minId;
             if (idx < 0 || idx >= maxSize) return false;

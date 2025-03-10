@@ -35,14 +35,34 @@ namespace Garnet.server
         internal readonly long startupTime;
 
         /// <summary>
-        /// Store
+        /// Default database (DB 0)
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        public ref GarnetDatabase DefaultDatabase => ref databaseManager.DefaultDatabase;
 
         /// <summary>
-        /// Object store
+        /// Store (of DB 0)
         /// </summary>
-        public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
+
+        /// <summary>
+        /// Object store (of DB 0)
+        /// </summary>
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
+
+        /// <summary>
+        /// AOF (of DB 0)
+        /// </summary>
+        public TsavoriteLog appendOnlyFile => databaseManager.AppendOnlyFile;
+
+        /// <summary>
+        /// Last save time (of DB 0)
+        /// </summary>
+        public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;
+
+        /// <summary>
+        /// Object store size tracker (of DB 0)
+        /// </summary>
+        public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
 
         /// <summary>
         /// Server options
@@ -54,12 +74,10 @@ namespace Garnet.server
         /// </summary>
         public readonly SubscribeBroker subscribeBroker;
 
-        internal readonly IClusterProvider clusterProvider;
-
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
+        public GarnetServerTcp TcpServer => server as GarnetServerTcp;
 
         /// <summary>
         /// Access control list governing all commands
@@ -67,29 +85,13 @@ namespace Garnet.server
         public readonly AccessControlList accessControlList;
 
         /// <summary>
-        /// AOF
-        /// </summary>
-        public readonly TsavoriteLog appendOnlyFile;
-
-        /// <summary>
-        /// Last save time
-        /// </summary>
-        public DateTimeOffset lastSaveTime;
-        internal long lastSaveStoreTailAddress;
-        internal long lastSaveObjectStoreTailAddress;
-
-        /// <summary>
         /// Logger factory
         /// </summary>
         public readonly ILoggerFactory loggerFactory;
 
-        internal readonly CollectionItemBroker itemBroker;
-        internal readonly CustomCommandManager customCommandManager;
-        internal readonly GarnetServerMonitor monitor;
-        internal readonly WatchVersionMap versionMap;
-
-        internal readonly CacheSizeTracker objectStoreSizeTracker;
-
+        /// <summary>
+        /// Object serializer
+        /// </summary>
         public readonly GarnetObjectSerializer GarnetObjectSerializer;
 
         /// <summary>
@@ -97,32 +99,49 @@ namespace Garnet.server
         /// </summary>
         public readonly ILogger logger;
 
-        internal readonly ILogger sessionLogger;
-        readonly CancellationTokenSource ctsCommit;
-
-        internal long SafeAofAddress = -1;
-
-        // Standalone instance node_id
-        internal readonly string run_id;
-        private SingleWriterMultiReaderLock _checkpointTaskLock;
-        internal readonly SlowLogContainer slowLogContainer;
-
         /// <summary>
         /// Lua script cache
         /// </summary>
         public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
 
         /// <summary>
+        /// Logging frequency
+        /// </summary>
+        public readonly TimeSpan loggingFrequency;
+
+        /// <summary>
+        /// Definition for delegate creating a new logical database
+        /// </summary>
+        public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
+
+        /// <summary>
+        /// Number of active databases
+        /// </summary>
+        public int DatabaseCount => databaseManager.DatabaseCount;
+
+        /// <summary>
         /// Shared timeout manager for all <see cref="LuaRunner"/> across all sessions.
         /// </summary>
         internal readonly LuaTimeoutManager luaTimeoutManager;
 
-        public readonly TimeSpan loggingFrequncy;
+        private IDatabaseManager databaseManager;
+        SingleWriterMultiReaderLock databaseManagerLock;
 
-        /// <summary>
-        /// NOTE: For now we support only a single database
-        /// </summary>
-        public readonly int databaseNum = 1;
+        internal readonly CollectionItemBroker itemBroker;
+        internal readonly CustomCommandManager customCommandManager;
+        internal readonly GarnetServerMonitor monitor;
+        internal readonly IClusterProvider clusterProvider;
+        internal readonly SlowLogContainer slowLogContainer;
+        internal readonly ILogger sessionLogger;
+        internal long safeAofAddress = -1;
+
+        // Standalone instance node_id
+        internal readonly string runId;
+
+        readonly CancellationTokenSource ctsCommit;
+
+        // True if StoreWrapper instance is disposed
+        bool disposed;
 
         /// <summary>
         /// Constructor
@@ -131,42 +150,39 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
-            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
-            CacheSizeTracker objectStoreSizeTracker,
             CustomCommandManager customCommandManager,
-            TsavoriteLog appendOnlyFile,
             GarnetServerOptions serverOptions,
             SubscribeBroker subscribeBroker,
             AccessControlList accessControlList = null,
+            DatabaseCreatorDelegate createDatabaseDelegate = null,
+            IDatabaseManager databaseManager = null,
             IClusterFactory clusterFactory = null,
-            ILoggerFactory loggerFactory = null
-            )
+            ILoggerFactory loggerFactory = null)
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
-            this.store = store;
-            this.objectStore = objectStore;
-            this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
-            lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
-            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
-            this.objectStoreSizeTracker = objectStoreSizeTracker;
+            this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
+            this.monitor = serverOptions.MetricsSamplingFrequency > 0
+                ? new GarnetServerMonitor(this, serverOptions, server,
+                    loggerFactory?.CreateLogger("GarnetServerMonitor"))
+                : null;
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
-            // TODO Change map size to a reasonable number
-            this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
-            this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+            this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+
+            // If cluster mode is off and more than one database allowed multi-db mode is turned on
 
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
+
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
 
@@ -186,15 +202,19 @@ namespace Garnet.server
                 // If ACL authentication is enabled, initiate access control list
                 // NOTE: This is a temporary workflow. ACL should always be initiated and authenticator
                 //       should become a parameter of AccessControlList.
-                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings)))
+                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType ==
+                                                                  typeof(AclAuthenticationSettings)))
                 {
                     // Create a new access control list and register it with the authentication settings
-                    AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.serverOptions.AuthSettings;
+                    var aclAuthenticationSettings =
+                        (AclAuthenticationSettings)this.serverOptions.AuthSettings;
 
                     if (!string.IsNullOrEmpty(aclAuthenticationSettings.AclConfigurationFile))
                     {
-                        logger?.LogInformation("Reading ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
-                        this.accessControlList = new AccessControlList(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
+                        logger?.LogInformation("Reading ACL configuration file '{filepath}'",
+                            aclAuthenticationSettings.AclConfigurationFile);
+                        this.accessControlList = new AccessControlList(aclAuthenticationSettings.DefaultPassword,
+                            aclAuthenticationSettings.AclConfigurationFile);
                     }
                     else
                     {
@@ -211,7 +231,25 @@ namespace Garnet.server
             if (clusterFactory != null)
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
             ctsCommit = new();
-            run_id = Generator.CreateHexId();
+            runId = Generator.CreateHexId();
+        }
+
+        /// <summary>
+        /// Copy Constructor
+        /// </summary>
+        /// <param name="storeWrapper">Source instance</param>
+        /// <param name="recordToAof">Enable AOF in database manager</param>
+        public StoreWrapper(StoreWrapper storeWrapper, bool recordToAof) : this(storeWrapper.version,
+            storeWrapper.redisProtocolVersion,
+            storeWrapper.server,
+            storeWrapper.customCommandManager,
+            storeWrapper.serverOptions,
+            storeWrapper.subscribeBroker,
+            storeWrapper.accessControlList,
+            databaseManager: storeWrapper.databaseManager.Clone(recordToAof),
+            clusterFactory: null,
+            loggerFactory: storeWrapper.loggerFactory)
+        {
         }
 
         /// <summary>
@@ -244,9 +282,6 @@ namespace Garnet.server
             return localEndpoint.Address.ToString();
         }
 
-        internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager, null, objectStoreSizeTracker, GarnetObjectSerializer);
-
         internal void Recover()
         {
             if (serverOptions.EnableCluster)
@@ -268,122 +303,162 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Caller will have to decide if recover is necessary, so we do not check if recover option is enabled
+        /// Take checkpoint of all active databases
         /// </summary>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
-        {
-            long storeVersion = -1, objectStoreVersion = -1;
-            try
-            {
-                if (replicaRecover)
-                {
-                    if (metadata.storeIndexToken != default && metadata.storeHlogToken != default)
-                    {
-                        storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
-                    }
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
+            CancellationToken token = default) => databaseManager.TakeCheckpoint(background, storeType, logger, token);
 
-                    if (!serverOptions.DisableObjects)
-                    {
-                        if (metadata.objectStoreIndexToken != default && metadata.objectStoreHlogToken != default)
-                        {
-                            objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(metadata.objectStoreIndexToken, metadata.objectStoreHlogToken);
-                        }
-                    }
-                }
-                else
-                {
-                    storeVersion = store.Recover();
-                    if (objectStore != null) objectStoreVersion = objectStore.Recover();
-                }
-                if (storeVersion > 0 || objectStoreVersion > 0)
-                    lastSaveTime = DateTimeOffset.UtcNow;
-            }
-            catch (TsavoriteNoHybridLogException ex)
-            {
-                // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-                if (serverOptions.FailOnRecoveryError)
-                    throw;
-            }
-        }
+        /// <summary>
+        /// Recover checkpoint
+        /// </summary>
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
+            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
 
         /// <summary>
         /// Recover AOF
         /// </summary>
-        public void RecoverAOF()
+        public void RecoverAOF() => databaseManager.RecoverAOF();
+
+        /// <summary>
+        /// When replaying AOF we do not want to write AOF records again.
+        /// </summary>
+        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF();
+
+        /// <summary>
+        /// Append a checkpoint commit to the AOF
+        /// </summary>
+        /// <param name="entryType"></param>
+        /// <param name="version"></param>
+        /// <param name="dbId"></param>
+        public void EnqueueCommit(AofEntryType entryType, long version, int dbId = 0)
         {
-            if (appendOnlyFile == null) return;
-            appendOnlyFile.Recover();
-            logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", appendOnlyFile.BeginAddress, appendOnlyFile.TailAddress);
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.EnqueueCommit)} with DB ID: {dbId}");
+
+            this.databaseManager.EnqueueCommit(entryType, version, dbId);
+        }
+
+        internal FunctionsState CreateFunctionsState(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.CreateFunctionsState)} with DB ID: {dbId}");
+
+            return databaseManager.CreateFunctionsState(dbId);
         }
 
         /// <summary>
         /// Reset
         /// </summary>
-        public void Reset()
+        /// <param name="dbId">Database ID</param>
+        public void Reset(int dbId = 0)
         {
-            try
-            {
-                if (store.Log.TailAddress > 64)
-                    store.Reset();
-                if (objectStore?.Log.TailAddress > 64)
-                    objectStore?.Reset();
-                appendOnlyFile?.Reset();
-                lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Error during reset of store");
-            }
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.Reset)} with DB ID: {dbId}");
+
+            databaseManager.Reset(dbId);
         }
 
         /// <summary>
-        /// When replaying AOF we do not want to write AOF records again.
+        /// Resets the revivification stats.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1)
-        {
-            if (!serverOptions.EnableAOF)
-                return -1;
+        public void ResetRevivificationStats() => databaseManager.ResetRevivificationStats();
 
-            long replicationOffset = 0;
-            try
+        /// <summary>
+        /// Get a snapshot of all active databases
+        /// </summary>
+        /// <returns>Array of active databases</returns>
+        public GarnetDatabase[] GetDatabasesSnapshot() => databaseManager.GetDatabasesSnapshot();
+
+        /// <summary>
+        /// Get database DB ID
+        /// </summary>
+        /// <param name="dbId">DB Id</param>
+        /// <param name="database">Retrieved database</param>
+        /// <returns>True if database was found</returns>
+        public bool TryGetDatabase(int dbId, out GarnetDatabase database)
+        {
+
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
             {
-                // When replaying AOF we do not want to write record again to AOF.
-                // So initialize local AofProcessor with recordToAof: false.
-                var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
-                aofProcessor.Recover(untilAddress);
-                aofProcessor.Dispose();
-                replicationOffset = aofProcessor.ReplicationOffset;
-                lastSaveTime = DateTimeOffset.UtcNow;
+                database = GarnetDatabase.Empty;
+                return false;
             }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Error during recovery of AofProcessor");
-                if (serverOptions.FailOnRecoveryError)
-                    throw;
-            }
-            return replicationOffset;
+
+            database = databaseManager.TryGetDatabase(dbId, out var success);
+            return success;
         }
 
-        async Task AutoCheckpointBasedOnAofSizeLimit(long AofSizeLimit, CancellationToken token = default, ILogger logger = null)
+        /// <summary>
+        /// Try to get or add a new database
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <param name="database">Retrieved or added database</param>
+        /// <param name="added">True if database was added</param>
+        /// <returns>True if database was found or added</returns>
+        public bool TryGetOrAddDatabase(int dbId, out GarnetDatabase database, out bool added)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+            {
+                database = GarnetDatabase.Empty;
+                added = false;
+                return false;
+            }
+
+            database = databaseManager.TryGetOrAddDatabase(dbId, out var success, out added);
+            return success;
+        }
+
+        /// <summary>
+        /// Flush database with specified ID
+        /// </summary>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
+        /// <param name="dbId">Database ID</param>
+        public void FlushDatabase(bool unsafeTruncateLog, int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.FlushDatabase)} with DB ID: {dbId}");
+
+            databaseManager.FlushDatabase(unsafeTruncateLog, dbId);
+        }
+
+        /// <summary>
+        /// Flush all active databases 
+        /// </summary>
+        /// <param name="unsafeTruncateLog">Truncate log</param>
+        public void FlushAllDatabases(bool unsafeTruncateLog)
+        {
+            databaseManager.FlushAllDatabases(unsafeTruncateLog);
+        }
+
+        /// <summary>
+        /// Try to swap between two database instances
+        /// </summary>
+        /// <param name="dbId1">First database ID</param>
+        /// <param name="dbId2">Second database ID</param>
+        /// <returns>True if swap successful</returns>
+        public bool TrySwapDatabases(int dbId1, int dbId2)
+        {
+            if (databaseManager is SingleDatabaseManager) return false;
+
+            return this.databaseManager.TrySwapDatabases(dbId1, dbId2);
+        }
+
+        async Task AutoCheckpointBasedOnAofSizeLimit(long aofSizeLimit, CancellationToken token = default, ILogger logger = null)
         {
             try
             {
                 while (true)
                 {
-                    await Task.Delay(1000);
+                    await Task.Delay(1000, token);
                     if (token.IsCancellationRequested) break;
-                    var currAofSize = appendOnlyFile.TailAddress - appendOnlyFile.BeginAddress;
 
-                    if (currAofSize > AofSizeLimit)
-                    {
-                        logger?.LogInformation("Enforcing AOF size limit currentAofSize: {currAofSize} >  AofSizeLimit: {AofSizeLimit}", currAofSize, AofSizeLimit);
-                        TakeCheckpoint(false, logger: logger);
-                    }
+                    await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
                 }
             }
             catch (Exception ex)
@@ -407,14 +482,15 @@ namespace Garnet.server
                     }
                     else
                     {
-                        await appendOnlyFile.CommitAsync(null, token);
+                        await databaseManager.CommitToAofAsync(token, logger);
+
                         await Task.Delay(commitFrequencyMs, token);
                     }
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "CommitTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CommitTask exception received.");
             }
         }
 
@@ -426,7 +502,9 @@ namespace Garnet.server
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
-                    DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
+
+                    databaseManager.DoCompaction(token, logger);
+
                     if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
                     else
@@ -437,7 +515,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "CompactionTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CompactionTask exception received.");
             }
         }
 
@@ -449,7 +527,7 @@ namespace Garnet.server
                 var scratchBufferManager = new ScratchBufferManager();
                 using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
 
-                if (objectStore is null)
+                if (serverOptions.DisableObjects)
                 {
                     logger?.LogWarning("HashCollectFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
                     return;
@@ -484,137 +562,81 @@ namespace Garnet.server
             }
         }
 
-        void DoCompaction()
+        /// <summary>
+        /// Commit AOF for all active databases
+        /// </summary>
+        /// <param name="spinWait">True if should wait until all commits complete</param>
+        internal void CommitAOF(bool spinWait)
         {
-            // Periodic compaction -> no need to compact before checkpointing
-            if (serverOptions.CompactionFrequencySecs > 0) return;
+            if (!serverOptions.EnableAOF) return;
 
-            DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
+            var task = databaseManager.CommitToAofAsync();
+            if (!spinWait) return;
+
+            task.GetAwaiter().GetResult();
         }
 
         /// <summary>
-        /// Append a checkpoint commit to the AOF
+        /// Wait for commits from all active databases
         /// </summary>
-        /// <param name="entryType"></param>
-        /// <param name="version"></param>
-        public void EnqueueCommit(AofEntryType entryType, long version)
+        internal void WaitForCommit() =>
+            WaitForCommitAsync().GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Asynchronously wait for commits from all active databases
+        /// </summary>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>ValueTask</returns>
+        internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
         {
-            AofHeader header = new()
-            {
-                opType = entryType,
-                storeVersion = version,
-                sessionID = -1
-            };
-            appendOnlyFile?.Enqueue(header, out _);
+            if (!serverOptions.EnableAOF) return;
+
+            await databaseManager.WaitForCommitToAofAsync(token);
         }
 
-        void DoCompaction(int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
+        /// <summary>
+        /// Asynchronously wait for AOF commits on all active databases,
+        /// unless specific database ID specified (by default: -1 = all)
+        /// </summary>
+        /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>ValueTask</returns>
+        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
         {
-            if (compactionType == LogCompactionType.None) return;
+            if (!serverOptions.EnableAOF) return;
 
-            long mainStoreMaxLogSize = (1L << serverOptions.SegmentSizeBits()) * mainStoreMaxSegments;
-
-            if (store.Log.ReadOnlyAddress - store.Log.BeginAddress > mainStoreMaxLogSize)
+            if (dbId == -1)
             {
-                long readOnlyAddress = store.Log.ReadOnlyAddress;
-                long compactLength = (1L << serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
-                long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
-
-                switch (compactionType)
-                {
-                    case LogCompactionType.Shift:
-                        store.Log.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
-                        break;
-
-                    case LogCompactionType.Scan:
-                        store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof();
-                            store.Log.Truncate();
-                        }
-                        break;
-
-                    case LogCompactionType.Lookup:
-                        store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof();
-                            store.Log.Truncate();
-                        }
-                        break;
-
-                    default:
-                        break;
-                }
-
-                logger?.LogInformation("End main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+                await databaseManager.CommitToAofAsync(token, logger);
+                return;
             }
 
-            if (objectStore == null) return;
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
 
-            long objectStoreMaxLogSize = (1L << serverOptions.ObjectStoreSegmentSizeBits()) * objectStoreMaxSegments;
-
-            if (objectStore.Log.ReadOnlyAddress - objectStore.Log.BeginAddress > objectStoreMaxLogSize)
-            {
-                long readOnlyAddress = objectStore.Log.ReadOnlyAddress;
-                long compactLength = (1L << serverOptions.ObjectStoreSegmentSizeBits()) * (objectStoreMaxSegments - numSegmentsToCompact);
-                long untilAddress = readOnlyAddress - compactLength;
-                logger?.LogInformation("Begin object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, objectStore.Log.BeginAddress, readOnlyAddress, objectStore.Log.TailAddress);
-
-                switch (compactionType)
-                {
-                    case LogCompactionType.Shift:
-                        objectStore.Log.ShiftBeginAddress(untilAddress, compactionForceDelete);
-                        break;
-
-                    case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof();
-                            objectStore.Log.Truncate();
-                        }
-                        break;
-
-                    case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
-                        if (compactionForceDelete)
-                        {
-                            CompactionCommitAof();
-                            objectStore.Log.Truncate();
-                        }
-                        break;
-
-                    default:
-                        break;
-                }
-
-                logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
-            }
+            await databaseManager.CommitToAofAsync(dbId, token);
         }
 
-        void CompactionCommitAof()
+        /// <summary>
+        /// Take checkpoint of all active database IDs or a specified database ID
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, int dbId = -1, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
         {
-            // If we are the primary, we commit the AOF.
-            // If we are the replica, we commit the AOF only if fast commit is disabled
-            // because we do not want to clobber AOF addresses.
-            // TODO: replica should instead wait until the next AOF commit is done via primary
-            if (serverOptions.EnableAOF)
+            if (dbId == -1)
             {
-                if (serverOptions.EnableCluster && clusterProvider.IsReplica())
-                {
-                    if (!serverOptions.EnableFastCommit)
-                        appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-                }
-                else
-                {
-                    appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-                }
+                return databaseManager.TakeCheckpoint(background, storeType, logger, token);
             }
+
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
+
+            return databaseManager.TakeCheckpoint(background, dbId, storeType, logger, token);
         }
 
         internal void Start()
@@ -625,11 +647,11 @@ namespace Garnet.server
 
             if (serverOptions.AofSizeLimit.Length > 0)
             {
-                var AofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                Task.Run(async () => await AutoCheckpointBasedOnAofSizeLimit(AofSizeLimitBytes, ctsCommit.Token, logger));
+                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
+                Task.Run(async () => await AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, ctsCommit.Token, logger));
             }
 
-            if (serverOptions.CommitFrequencyMs > 0 && appendOnlyFile != null)
+            if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
             {
                 Task.Run(async () => await CommitTask(serverOptions.CommitFrequencyMs, logger, ctsCommit.Token));
             }
@@ -649,7 +671,7 @@ namespace Garnet.server
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
 
-            objectStoreSizeTracker?.Start(ctsCommit.Token);
+            databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
         }
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
@@ -658,21 +680,15 @@ namespace Garnet.server
         {
             try
             {
-                bool indexMaxedOut = serverOptions.AdjustedIndexMaxCacheLines == 0;
-                bool objectStoreIndexMaxedOut = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
-                while (!indexMaxedOut || !objectStoreIndexMaxedOut)
+                var allIndexesMaxedOut = false;
+
+                while (!allIndexesMaxedOut)
                 {
                     if (token.IsCancellationRequested) break;
 
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
-                    if (!indexMaxedOut)
-                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                            () => store.IndexSize, async () => await store.GrowIndexAsync());
-
-                    if (!objectStoreIndexMaxedOut)
-                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, objectStore.OverflowBucketAllocations,
-                            () => objectStore.IndexSize, async () => await objectStore.GrowIndexAsync());
+                    allIndexesMaxedOut = databaseManager.GrowIndexesIfNeeded(token);
                 }
             }
             catch (Exception ex)
@@ -682,220 +698,60 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Grows index if current size is smaller than max size.
-        /// Decision is based on whether overflow bucket allocation is more than a threshold which indicates a contention
-        /// in the index leading many allocations to the same bucket.
-        /// </summary>
-        /// <param name="storeType"></param>
-        /// <param name="indexMaxSize"></param>
-        /// <param name="overflowCount"></param>
-        /// <param name="indexSizeRetriever"></param>
-        /// <param name="growAction"></param>
-        /// <returns>True if index has reached its max size</returns>
-        private bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
-        {
-            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}", storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
-
-            if (indexSizeRetriever() < indexMaxSize &&
-                overflowCount > (indexSizeRetriever() * serverOptions.IndexResizeThreshold / 100))
-            {
-                logger?.LogInformation($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...", storeType, overflowCount, serverOptions.IndexResizeThreshold);
-                growAction();
-            }
-
-            if (indexSizeRetriever() < indexMaxSize) return false;
-
-            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: index size {{indexSizeRetriever}} reached index max size {{indexMaxSize}}", storeType, indexSizeRetriever(), indexMaxSize);
-            return true;
-        }
-
-        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
         {
-            // Wait for checkpoints to complete and disable checkpointing
-            _checkpointTaskLock.WriteLock();
+            if (disposed) return;
+            disposed = true;
 
             itemBroker?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
-
-            while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)
-                Thread.Yield();
+            databaseManager.Dispose();
 
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
         }
 
         /// <summary>
-        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpoint tasks
+        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
         /// </summary>
-        /// <returns></returns>
-        public bool TryPauseCheckpoints()
-            => _checkpointTaskLock.TryWriteLock();
+        /// <param name="dbId">ID of database to lock</param>
+        /// <returns>True if lock acquired</returns>
+        public bool TryPauseCheckpoints(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TryPauseCheckpoints)} with DB ID: {dbId}");
+
+            return databaseManager.TryPauseCheckpoints(dbId);
+        }
 
         /// <summary>
         /// Release checkpoint task lock
         /// </summary>
-        public void ResumeCheckpoints()
-            => _checkpointTaskLock.WriteUnlock();
+        /// <param name="dbId">ID of database to unlock</param>
+        public void ResumeCheckpoints(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.ResumeCheckpoints)} with DB ID: {dbId}");
+
+            databaseManager.ResumeCheckpoints(dbId);
+        }
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
         /// </summary>
         /// <param name="entryTime"></param>
+        /// <param name="dbId"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime)
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
         {
-            // Take lock to ensure no other task will be taking a checkpoint
-            while (!TryPauseCheckpoints())
-                await Task.Yield();
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
 
-            // If an external task has taken a checkpoint beyond the provided entryTime return
-            if (this.lastSaveTime > entryTime)
-            {
-                ResumeCheckpoints();
-                return;
-            }
-
-            // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-            await CheckpointTask(StoreType.All, logger: logger);
-        }
-
-        /// <summary>
-        /// Take checkpoint
-        /// </summary>
-        /// <param name="background"></param>
-        /// <param name="storeType"></param>
-        /// <param name="logger"></param>
-        /// <returns></returns>
-        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null)
-        {
-            // Prevent parallel checkpoint
-            if (!TryPauseCheckpoints()) return false;
-            if (background)
-                Task.Run(async () => await CheckpointTask(storeType, logger));
-            else
-                CheckpointTask(storeType, logger).ConfigureAwait(false).GetAwaiter().GetResult();
-            return true;
-        }
-
-        private async Task CheckpointTask(StoreType storeType, ILogger logger = null)
-        {
-            try
-            {
-                DoCompaction();
-                var lastSaveStoreTailAddress = store.Log.TailAddress;
-                var lastSaveObjectStoreTailAddress = (objectStore?.Log.TailAddress).GetValueOrDefault();
-
-                var full = false;
-                if (this.lastSaveStoreTailAddress == 0 || lastSaveStoreTailAddress - this.lastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval)
-                    full = true;
-                if (objectStore != null && (this.lastSaveObjectStoreTailAddress == 0 || lastSaveObjectStoreTailAddress - this.lastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval))
-                    full = true;
-
-                var tryIncremental = serverOptions.EnableIncrementalSnapshots;
-                if (store.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                    tryIncremental = false;
-                if (objectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
-                    tryIncremental = false;
-
-                var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpoint(full, checkpointType, tryIncremental, storeType, logger);
-                if (full)
-                {
-                    if (storeType is StoreType.Main or StoreType.All)
-                        this.lastSaveStoreTailAddress = lastSaveStoreTailAddress;
-                    if (storeType is StoreType.Object or StoreType.All)
-                        this.lastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
-                }
-                lastSaveTime = DateTimeOffset.UtcNow;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Checkpointing threw exception");
-            }
-            finally
-            {
-                ResumeCheckpoints();
-            }
-        }
-
-        private async Task InitiateCheckpoint(bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
-        {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}", full, checkpointType, tryIncremental, storeType);
-
-            long CheckpointCoveredAofAddress = 0;
-            if (appendOnlyFile != null)
-            {
-                if (serverOptions.EnableCluster)
-                    clusterProvider.OnCheckpointInitiated(out CheckpointCoveredAofAddress);
-                else
-                    CheckpointCoveredAofAddress = appendOnlyFile.TailAddress;
-
-                if (CheckpointCoveredAofAddress > 0)
-                    logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit)", CheckpointCoveredAofAddress);
-            }
-
-            (bool success, Guid token) storeCheckpointResult = default;
-            (bool success, Guid token) objectStoreCheckpointResult = default;
-            if (full)
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                {
-                    storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
-                }
-
-                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                {
-                    objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
-                }
-            }
-            else
-            {
-                if (storeType is StoreType.Main or StoreType.All)
-                {
-                    storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
-                }
-
-                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                {
-                    objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
-                }
-            }
-
-            // If cluster is enabled the replication manager is responsible for truncating AOF
-            if (serverOptions.EnableCluster && serverOptions.EnableAOF)
-            {
-                clusterProvider.SafeTruncateAOF(storeType, full, CheckpointCoveredAofAddress, storeCheckpointResult.token, objectStoreCheckpointResult.token);
-            }
-            else
-            {
-                appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
-                appendOnlyFile?.Commit();
-            }
-
-            if (objectStore != null)
-            {
-                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
-                // We can now safely remove these serialized versions as they are no longer needed.
-                using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
-                {
-                    while (iter1.GetNext(out _, out _, out var value))
-                    {
-                        if (value != null)
-                            ((GarnetObjectBase)value).serialized = null;
-                    }
-                }
-            }
-
-            logger?.LogInformation("Completed checkpoint");
+            await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId);
         }
 
         public bool HasKeysInSlots(List<int> slots)
@@ -916,9 +772,9 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots && objectStore != null)
+                if (!hasKeyInSlots && !serverOptions.DisableObjects)
                 {
-                    var functionsState = CreateFunctionsState();
+                    var functionsState = databaseManager.CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
                     var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
                     var iter = objectStoreSession.Iterate();
@@ -937,6 +793,28 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+        private bool CheckMultiDatabaseCompatibility()
+        {
+            if (databaseManager is MultiDatabaseManager)
+                return true;
+
+            if (!serverOptions.AllowMultiDb)
+                return false;
+
+            databaseManagerLock.WriteLock();
+            try
+            {
+                if (databaseManager is SingleDatabaseManager singleDatabaseManager)
+                    databaseManager = new MultiDatabaseManager(singleDatabaseManager);
+
+                return true;
+            }
+            finally
+            {
+                databaseManagerLock.WriteUnlock();
+            }
         }
     }
 }

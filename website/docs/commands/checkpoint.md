@@ -9,10 +9,10 @@ slug: checkpoint
 #### Syntax
 
 ```bash
-BGSAVE [SCHEDULE]
+BGSAVE [SCHEDULE] [DBID]
 ```
 
-Save the DB in background.
+Save all databases inside the Garnet instance in the background. If a DB ID is specified, save save only that specific database.
 
 #### Resp Reply
 
@@ -28,10 +28,10 @@ One of the following:
 #### Syntax
 
 ```bash
-SAVE
+SAVE [DBID]
 ```
 
-The SAVE commands performs a synchronous save of the dataset producing a point in time snapshot of all the data inside the Garnet instance.
+The SAVE commands performs a synchronous save of the dataset producing a point in time snapshot of all the data inside the Garnet instance. If a DB ID is specified, only the data inside of that database will be snapshotted.
 
 #### Resp Reply
 
@@ -42,10 +42,10 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-LASTSAVE
+LASTSAVE [DBID]
 ```
 
-Return the UNIX TIME of the last DB save executed with success.
+Return the UNIX TIME of the last DB save executed with success for the current database or, if a DB ID is specified, the last DB save executed with success for the specified database.
 
 #### Resp Reply
 
