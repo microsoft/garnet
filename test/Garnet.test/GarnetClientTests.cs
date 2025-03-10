@@ -599,7 +599,7 @@ namespace Garnet.test
             var unixSocketPath = "./unix-socket-ping-test.sock";
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
 
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, enableTLS: useTls, unixSocketPath: unixSocketPath);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath);
             server.Start();
 
             using var db = TestUtils.GetGarnetClient(unixSocketEndpoint, useTLS: useTls);
