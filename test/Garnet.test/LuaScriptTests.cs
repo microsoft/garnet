@@ -1993,8 +1993,6 @@ return count";
         [Test]
         public void CJson()
         {
-            // TODO: too deep?  need to match Redis here
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
@@ -2061,6 +2059,31 @@ return count";
 
                 var nestArrayResp = (string)db.ScriptEvaluate("return cjson.encode({1,'hello',{1,2,3,4},{foo='bar'}})");
                 ClassicAssert.AreEqual("[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]", nestArrayResp);
+
+                var deeplyNestedButLegal =
+                    (string)db.ScriptEvaluate(
+@"local nested = 1
+for x = 1, 1000 do
+    local newNested = {}
+    newNested[1] = nested;
+    nested = newNested
+end
+
+return cjson.encode(nested)");
+                ClassicAssert.AreEqual(new string('[', 1000) + 1 + new string(']', 1000), deeplyNestedButLegal);
+
+                var deeplyNestedExc =
+                    ClassicAssert.Throws<RedisServerException>(
+                        () => db.ScriptEvaluate(
+@"local nested = 1
+for x = 1, 1001 do
+    local newNested = {}
+    newNested[1] = nested;
+    nested = newNested
+end
+
+return cjson.encode(nested)"));
+                ClassicAssert.True(deeplyNestedExc.Message.Contains("Cannot serialise, excessive nesting (1001)"));
             }
 
             // Decoding
@@ -2109,6 +2132,19 @@ return count";
                 ClassicAssert.True(complexArrDecodeArr.SequenceEqual(["1", "2", "3", "4"]));
                 var complexArrDecodeObj = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[4].foo");
                 ClassicAssert.AreEqual("bar", complexArrDecodeObj);
+
+                // Redis cuts us off at 1000 levels of recursion, so check that we're matching that
+                var deeplyNestedButLegal = (RedisResult[])db.ScriptEvaluate($"return cjson.decode('{new string('[', 1000)}{new string(']', 1000)}')");
+                var deeplyNestedButLegalCur = deeplyNestedButLegal;
+                for (var i = 1; i < 1000; i++)
+                {
+                    ClassicAssert.AreEqual(1, deeplyNestedButLegalCur.Length);
+                    deeplyNestedButLegalCur = (RedisResult[])deeplyNestedButLegalCur[0];
+                }
+                ClassicAssert.AreEqual(0, deeplyNestedButLegalCur.Length);
+
+                var deeplyNestedExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cjson.decode('{new string('[', 1001)}{new string(']', 1001)}')"));
+                ClassicAssert.True(deeplyNestedExc.Message.Contains("Found too many nested data structures"));
             }
         }
 
@@ -2589,7 +2625,7 @@ return count";
         [Ignore("Long running, disabled by default")]
         public void StressTimeouts()
         {
-            // Psuedo-repeatably random
+            // Pseudo-repeatably random
             const int SEED = 2025_01_30_00;
 
             const int DurationMS = 60 * 60 * 1_000;

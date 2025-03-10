@@ -1570,7 +1570,7 @@ end
 
             var jsonUtf8Builder = new List<byte>();
 
-            Encode(jsonUtf8Builder, ref state);
+            Encode(jsonUtf8Builder, 0, ref state);
 
             // Encoding should leave nothing on the stack
             state.ExpectLuaStackEmpty();
@@ -1582,8 +1582,14 @@ end
             return 1;
 
             // Encode the unknown type on the top of the stack
-            static void Encode(List<byte> utf8, ref LuaStateWrapper state)
+            static void Encode(List<byte> utf8, int depth, ref LuaStateWrapper state)
             {
+                if (depth > 1000)
+                {
+                    // Match Redis max decoding depth
+                    _ = state.RaiseError("Cannot serialise, excessive nesting (1001)");
+                }
+
                 var argType = state.Type(state.StackTop);
 
                 switch (argType)
@@ -1601,7 +1607,7 @@ end
                         EncodeString(utf8, ref state);
                         break;
                     case LuaType.Table:
-                        EncodeTable(utf8, ref state);
+                        EncodeTable(utf8, depth, ref state);
                         break;
                     case LuaType.Function:
                     case LuaType.LightUserData:
@@ -1695,7 +1701,7 @@ end
             }
 
             // Encode the table on the top of the stack and remove it
-            static void EncodeTable(List<byte> utf8, ref LuaStateWrapper state)
+            static void EncodeTable(List<byte> utf8, int depth, ref LuaStateWrapper state)
             {
                 Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
@@ -1737,16 +1743,16 @@ end
 
                 if (isArray)
                 {
-                    EncodeArray(utf8, arrayLength, ref state);
+                    EncodeArray(utf8, arrayLength, depth, ref state);
                 }
                 else
                 {
-                    EncodeObject(utf8, ref state);
+                    EncodeObject(utf8, depth, ref state);
                 }
             }
 
             // Encode the table on the top of the stack as an array and remove it
-            static void EncodeArray(List<byte> utf8, int length, ref LuaStateWrapper state)
+            static void EncodeArray(List<byte> utf8, int length, int depth, ref LuaStateWrapper state)
             {
                 Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
@@ -1765,7 +1771,7 @@ end
                     }
 
                     _ = state.RawGetInteger(null, tableIndex, ix);
-                    Encode(utf8, ref state);
+                    Encode(utf8, depth + 1, ref state);
                 }
 
                 utf8.Add((byte)']');
@@ -1775,7 +1781,7 @@ end
             }
 
             // Encode the table on the top of the stack as an object and remove it
-            static void EncodeObject(List<byte> utf8, ref LuaStateWrapper state)
+            static void EncodeObject(List<byte> utf8, int depth, ref LuaStateWrapper state)
             {
                 Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
@@ -1821,12 +1827,12 @@ end
                     }
 
                     // Encode key
-                    Encode(utf8, ref state);
+                    Encode(utf8, depth + 1, ref state);
 
                     utf8.Add((byte)':');
 
                     // Encode value
-                    Encode(utf8, ref state);
+                    Encode(utf8, depth + 1, ref state);
 
                     firstValue = false;
                 }
@@ -1870,13 +1876,19 @@ end
 
             try
             {
-                var parsed = JsonNode.Parse(buff);
+                var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = 1000 });
                 Decode(this, parsed);
 
                 return 1;
             }
             catch (Exception e)
             {
+                if (e.Message.Contains("maximum configured depth of 1000"))
+                {
+                    // Maximum depth exceeded, munge to a compatible Redis error
+                    return state.RaiseError("Found too many nested data structures (1001)");
+                }
+
                 // Invalid token is implied (and matches Redis error replies)
                 //
                 // Additinal error details can be gleaned from messages
