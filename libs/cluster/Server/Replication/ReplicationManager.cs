@@ -107,12 +107,16 @@ namespace Garnet.cluster
             ReplicationOffset = 0;
 
             // Set the appendOnlyFile field for all stores
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShift = CheckpointVersionShift;
+            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
+            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
             if (storeWrapper.objectStore != null)
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
+            {
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftStart = CheckpointVersionShiftStart;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
+            }
 
-            // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery())
+                // If this node starts as replica, it cannot serve requests until it is connected to primary
+                if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery())
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -152,13 +156,23 @@ namespace Garnet.cluster
 
         public string GetBufferPoolStats() => networkPool.GetStats();
 
-        void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)
+        void CheckpointVersionShiftStart(bool isMainStore, long oldVersion, long newVersion)
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
             var entryType = clusterProvider.serverOptions.ReplicaDisklessSync ?
                 (isMainStore ? AofEntryType.MainStoreStreamingCheckpointStartCommit : AofEntryType.ObjectStoreStreamingCheckpointStartCommit) :
                 (isMainStore ? AofEntryType.MainStoreCheckpointStartCommit : AofEntryType.ObjectStoreCheckpointStartCommit);
+            storeWrapper.EnqueueCommit(entryType, newVersion);
+        }
+
+        void CheckpointVersionShiftEnd(bool isMainStore, long oldVersion, long newVersion)
+        {
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
+                return;
+            var entryType = clusterProvider.serverOptions.ReplicaDisklessSync ?
+                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointEndCommit : AofEntryType.ObjectStoreStreamingCheckpointEndCommit) :
+                (isMainStore ? AofEntryType.MainStoreCheckpointEndCommit : AofEntryType.ObjectStoreCheckpointEndCommit);
             storeWrapper.EnqueueCommit(entryType, newVersion);
         }
 

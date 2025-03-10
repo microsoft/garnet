@@ -25,14 +25,16 @@ namespace Garnet.cluster
         public string RecoveredReplicationId = string.Empty;
 
         readonly bool isMainStore = isMainStore;
-        public Action<bool, long, long> checkpointVersionShift;
+        public Action<bool, long, long> checkpointVersionShiftStart;
+        public Action<bool, long, long> checkpointVersionShiftEnd;
 
         readonly bool safelyRemoveOutdated = removeOutdated;
 
-        public override void CheckpointVersionShift(long oldVersion, long newVersion)
-        {
-            checkpointVersionShift?.Invoke(isMainStore, oldVersion, newVersion);
-        }
+        public override void CheckpointVersionShiftStart(long oldVersion, long newVersion)
+            => checkpointVersionShiftStart?.Invoke(isMainStore, oldVersion, newVersion);
+
+        public override void CheckpointVersionShiftEnd(long oldVersion, long newVersion)
+            => checkpointVersionShiftEnd?.Invoke(isMainStore, oldVersion, newVersion);
 
         public void DeleteLogCheckpoint(Guid logToken)
             => deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(logToken));

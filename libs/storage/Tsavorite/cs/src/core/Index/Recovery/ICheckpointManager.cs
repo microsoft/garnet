@@ -59,11 +59,18 @@ namespace Tsavorite.core
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
-        /// Callback to indicate version shift during checkpoint
+        /// Callback to indicate start of version shift during checkpoint
         /// </summary>
         /// <param name="oldVersion"></param>
         /// <param name="newVersion"></param>
-        void CheckpointVersionShift(long oldVersion, long newVersion);
+        void CheckpointVersionShiftStart(long oldVersion, long newVersion);
+
+        /// <summary>
+        /// Callback to indicate end of version shift during checkpoint
+        /// </summary>
+        /// <param name="oldVersion"></param>
+        /// <param name="newVersion"></param>
+        void CheckpointVersionShiftEnd(long oldVersion, long newVersion);
 
         /// <summary>
         /// Commit log incremental checkpoint (incremental snapshot)

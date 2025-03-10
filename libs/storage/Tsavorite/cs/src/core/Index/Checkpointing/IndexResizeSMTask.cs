@@ -28,14 +28,17 @@ namespace Tsavorite.core
                 case Phase.PREPARE_GROW:
                     lastVersion = next.Version;
                     stateMachineDriver.lastVersionTransactionsDone = new(0);
+
+                    // State machine should wait for active transactions in the last version to complete (drain out).
+                    // Note that we DO NOT allow new transactions to start in PREPARE_GROW (i.e., this is a full barrier)
+                    stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
                     break;
 
                 case Phase.IN_PROGRESS_GROW:
-                    // Wait for active transactions in the last version to complete (drain out)
-                    // Note that we DO NOT allow new transactions to start in PREPARE_GROW (i.e., this is a full barrier)
-                    stateMachineDriver.lastVersionTransactionsDone.Wait();
-                    stateMachineDriver.lastVersionTransactionsDone = null;
+                    // Verify full transaction barrier
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
+                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(next.Version) == 0);
+                    stateMachineDriver.lastVersionTransactionsDone = null;
 
                     // Set up the transition to new version of HT
                     var numChunks = (int)(store.state[store.resizeInfo.version].size / Constants.kSizeofChunk);

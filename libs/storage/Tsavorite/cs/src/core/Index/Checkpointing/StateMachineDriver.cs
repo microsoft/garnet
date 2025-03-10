@@ -70,10 +70,12 @@ namespace Tsavorite.core
                 epoch.Resume();
             try
             {
+                // We create a barrier preventing new transactions from starting in the PREPARE_GROW phase
+                // since the lock table needs to be drained and transferred to the larger hash index.
                 while (systemState.Phase == Phase.PREPARE_GROW)
                 {
                     epoch.ProtectAndDrain();
-                    Thread.Yield();
+                    _ = Thread.Yield();
                 }
                 var txnVersion = systemState.Version;
                 Debug.Assert(txnVersion > 0);
@@ -128,7 +130,8 @@ namespace Tsavorite.core
 
         internal void AddToWaitingList(SemaphoreSlim waiter)
         {
-            waitingList.Add(waiter);
+            if (waiter != null)
+                waitingList.Add(waiter);
         }
 
         public bool Register(IStateMachine stateMachine, CancellationToken token = default)

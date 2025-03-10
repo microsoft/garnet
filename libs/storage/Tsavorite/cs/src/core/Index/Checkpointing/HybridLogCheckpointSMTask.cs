@@ -39,15 +39,15 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.IN_PROGRESS:
-                    store.CheckpointVersionShift(lastVersion, next.Version);
+                    store.CheckpointVersionShiftStart(lastVersion, next.Version);
+                    // State machine should wait for active transactions in the last version to complete (drain out).
+                    // Note that we allow new transactions to process in parallel.
+                    stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
                     break;
 
                 case Phase.WAIT_FLUSH:
-                    // Wait for active transactions in last version to complete (drain out)
-                    // Note that we allow new transactions to process in parallel
-                    stateMachineDriver.lastVersionTransactionsDone.Wait();
-                    stateMachineDriver.lastVersionTransactionsDone = null;
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
+                    stateMachineDriver.lastVersionTransactionsDone = null;
 
                     // Grab final logical address (end of fuzzy region)
                     store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();

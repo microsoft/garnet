@@ -486,7 +486,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual void CheckpointVersionShift(long oldVersion, long newVersion)
+        public virtual void CheckpointVersionShiftStart(long oldVersion, long newVersion)
+        {
+        }
+
+        /// <inheritdoc />
+        public virtual void CheckpointVersionShiftEnd(long oldVersion, long newVersion)
         {
         }
     }

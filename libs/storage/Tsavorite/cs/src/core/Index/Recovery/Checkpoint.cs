@@ -41,8 +41,11 @@ namespace Tsavorite.core
 
         internal Task<LinkedCheckpointInfo> CheckpointTask => checkpointTcs.Task;
 
-        internal void CheckpointVersionShift(long oldVersion, long newVersion)
-            => checkpointManager.CheckpointVersionShift(oldVersion, newVersion);
+        internal void CheckpointVersionShiftStart(long oldVersion, long newVersion)
+            => checkpointManager.CheckpointVersionShiftStart(oldVersion, newVersion);
+
+        internal void CheckpointVersionShiftEnd(long oldVersion, long newVersion)
+            => checkpointManager.CheckpointVersionShiftEnd(oldVersion, newVersion);
 
         internal void WriteHybridLogMetaInfo()
         {
