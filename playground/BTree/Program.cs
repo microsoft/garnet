@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -19,17 +19,19 @@ class Program
     }
     static unsafe void Main(string[] args)
     {
-        // IntPtr memory = Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE);
+        // // IntPtr memory = Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE);
 
-        var pool = new SectorAlignedBufferPool(1, 4096);
-        var memoryBlock = pool.Get(4096);
-        var memory = (IntPtr)memoryBlock.aligned_pointer;
+        // var pool = new SectorAlignedBufferPool(1, 4096);
+        // var memoryBlock = pool.Get(4096);
+        // var memory = (IntPtr)memoryBlock.aligned_pointer;
         // SectorAlignedMemory* ptr = (SectorAlignedMemory*)memory;
-        BTreeNode* node = (BTreeNode*)memory;
-        node->memoryHandle = memoryBlock;
-        node->Initialize(BTreeNodeType.Leaf, pool);
-        something(pool, ptr);
-        return;
+        // BTreeNode* node = (BTreeNode*)memory;
+        // // node->memoryHandle = memoryBlock;
+        // node->Initialize(BTreeNodeType.Leaf, memoryBlock);
+        // StreamID sample = new StreamID(1, 0);
+        // node->SetKey(0, (byte*)Unsafe.AsPointer(ref sample.idBytes[0]));
+        // // something(pool, ptr);
+        // return;
         var tree = new BTree(4096);
 
         ulong N = 1000;
@@ -54,12 +56,12 @@ class Program
                 }
             }
         }
-        GarnetStreamID[] streamIDs = new GarnetStreamID[N];
+        StreamID[] streamIDs = new StreamID[N];
         long duration = 0;
         long dur2 = 0;
         for (ulong i = 0; i < N; i++)
         {
-            GarnetStreamID x = new GarnetStreamID(i + 1, 0);
+            StreamID x = new StreamID(i + 1, 0);
             Debug.Assert(x.ms > 0);
             streamIDs[i] = x;
         }
@@ -68,7 +70,8 @@ class Program
         sw.Start();
         for (ulong i = 0; i < N; i++)
         {
-            tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(i + 1));
+            Value val = new Value(i + 1);
+            tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), val);
         }
         sw.Stop();
         dur2 = sw.ElapsedTicks;

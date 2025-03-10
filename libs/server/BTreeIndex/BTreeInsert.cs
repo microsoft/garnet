@@ -82,9 +82,13 @@ namespace Garnet.server.BTreeIndex
 
         public BTreeNode* CreateNewLeafNode(ref BTreeNode* leafToSplit)
         {
-            BTreeNode* newLeaf = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
+            // BTreeNode* newLeaf = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
             // newLeaf->memoryBlock = (IntPtr)newLeaf;
-            newLeaf->Initialize(BTreeNodeType.Leaf, bufferPool);
+            var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            var memory = (IntPtr)memoryBlock.aligned_pointer;
+            BTreeNode* newLeaf = (BTreeNode*)memory;
+            // newLeaf->memoryHandle = memoryBlock;
+            newLeaf->Initialize(BTreeNodeType.Leaf, memoryBlock);
             leafToSplit->info.count = SPLIT_LEAF_POSITION;
             leafToSplit->info.next = newLeaf;
             newLeaf->info.previous = leafToSplit;
@@ -142,8 +146,12 @@ namespace Garnet.server.BTreeIndex
 
         public BTreeNode* CreateInternalNode(ref BTreeNode* node, int splitPos)
         {
-            BTreeNode* newNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode));
-            newNode->Initialize(BTreeNodeType.Internal, bufferPool);
+            // BTreeNode* newNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode));
+            var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            var memory = (IntPtr)memoryBlock.aligned_pointer;
+            BTreeNode* newNode = (BTreeNode*)memory;
+            // newNode->memoryHandle = memoryBlock;
+            newNode->Initialize(BTreeNodeType.Internal, memoryBlock);
             stats.numInternalNodes++;
 
             node->info.count = splitPos;
@@ -184,8 +192,12 @@ namespace Garnet.server.BTreeIndex
 
         public void CreateNewRoot(byte* key, BTreeNode* newlySplitNode)
         {
-            BTreeNode* leftNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
-            leftNode->Initialize(root->info.type, bufferPool);
+            // BTreeNode* leftNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
+            var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            var memory = (IntPtr)memoryBlock.aligned_pointer;
+            BTreeNode* leftNode = (BTreeNode*)memory;
+            // leftNode->memoryHandle = memoryBlock;
+            leftNode->Initialize(root->info.type, memoryBlock);
 
             // copy the root node to the left node
             // Buffer.MemoryCopy(root->info, leftNode->info, BTreeNode.PAGE_SIZE, BTreeNode.PAGE_SIZE);

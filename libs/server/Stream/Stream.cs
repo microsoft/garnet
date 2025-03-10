@@ -48,7 +48,7 @@ namespace Garnet.server
         /// Increment the stream ID
         /// </summary>
         /// <param name="incrementedID">carries the incremented stream id</param>
-        public void IncrementID(ref GarnetStreamID incrementedID)
+        public void IncrementID(ref StreamID incrementedID)
         {
             while (true)
             {
@@ -91,7 +91,7 @@ namespace Garnet.server
         /// Generate the next stream ID
         /// </summary>
         /// <returns>StreamID generated</returns>
-        public void GenerateNextID(ref GarnetStreamID id)
+        public void GenerateNextID(ref StreamID id)
         {
             // ulong timestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             ulong timestamp = (ulong)Stopwatch.GetTimestamp() / (ulong)(Stopwatch.Frequency / 1000);
@@ -109,7 +109,7 @@ namespace Garnet.server
         }
 
         // TODO: implement this using parseState functions without operating with RespReadUtils
-        unsafe bool parseIDString(ArgSlice idSlice, ref GarnetStreamID id)
+        unsafe bool parseIDString(ArgSlice idSlice, ref StreamID id)
         {
             // if we have to auto-generate the whole ID
             if (*idSlice.ptr == '*' && idSlice.length == 1)
@@ -239,58 +239,58 @@ namespace Garnet.server
             MemoryHandle ptrHandle = default;
             bool isMemory = false;
             byte* tmpPtr = null;
-            GarnetStreamID id = default;
+            StreamID id = default;
             // take a lock to ensure thread safety
-            _lock.WriteLock();
-            try
-            {
-                bool canParseID = parseIDString(idSlice, ref id);
-                if (!canParseID)
-                {
-                    while (!RespWriteUtils.WriteError("ERR Syntax", ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
+            // _lock.WriteLock();
+            // try
+            // {
+            //     bool canParseID = parseIDString(idSlice, ref id);
+            //     if (!canParseID)
+            //     {
+            //         // while (!RespWriteUtils.WriteError("ERR Syntax", ref curr, end))
+            //         //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            //         return;
+            //     }
 
-                // add the entry to the log
-                {
-                    bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(GarnetStreamID), numPairs, value, valueLength, out long retAddress);
-                    if (!enqueueInLog)
-                    {
-                        while (!RespWriteUtils.WriteError("ERR StreamAdd failed", ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        return;
-                    }
+            //     // add the entry to the log
+            //     {
+            //         bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
+            //         if (!enqueueInLog)
+            //         {
+            //             while (!RespWriteUtils.WriteError("ERR StreamAdd failed", ref curr, end))
+            //                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            //             return;
+            //         }
 
-                    var streamValue = new Value((ulong)retAddress);
+            //         var streamValue = new Value((ulong)retAddress);
 
-                    bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
-                    // bool added = true;
-                    if (!added)
-                    {
-                        while (!RespWriteUtils.WriteError("ERR StreamAdd failed", ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        return;
-                    }
-                    lastId.setMS(id.ms);
-                    lastId.setSeq(id.seq);
+            //         bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
+            //         // bool added = true;
+            //         if (!added)
+            //         {
+            //             while (!RespWriteUtils.WriteError("ERR StreamAdd failed", ref curr, end))
+            //                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            //             return;
+            //         }
+            //         lastId.setMS(id.ms);
+            //         lastId.setSeq(id.seq);
 
-                    totalEntriesAdded++;
-                    // write back the ID of the entry added
-                    string idString = $"{id.getMS()}-{id.getSeq()}";
-                    while (!RespWriteUtils.WriteSimpleString(idString, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-            }
-            finally
-            {
-                // log.Commit();
+            //         totalEntriesAdded++;
+            //         // write back the ID of the entry added
+            //         string idString = $"{id.getMS()}-{id.getSeq()}";
+            //         while (!RespWriteUtils.WriteSimpleString(idString, ref curr, end))
+            //             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            //     }
+            // }
+            // finally
+            // {
+            //     // log.Commit();
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
-                _lock.WriteUnlock();
+            //     if (isMemory) ptrHandle.Dispose();
+            //     output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
+            //     _lock.WriteUnlock();
 
-            }
+            // }
 
         }
 
@@ -322,7 +322,7 @@ namespace Garnet.server
         public unsafe bool DeleteEntry(ArgSlice idSlice)
         {
             // first parse the idString
-            if (!parseCompleteID(idSlice, out GarnetStreamID entryID))
+            if (!parseCompleteID(idSlice, out StreamID entryID))
             {
                 return false;
             }
@@ -340,7 +340,7 @@ namespace Garnet.server
             return deleted;
         }
 
-        unsafe bool parseCompleteID(ArgSlice idSlice, out GarnetStreamID streamID)
+        unsafe bool parseCompleteID(ArgSlice idSlice, out StreamID streamID)
         {
             streamID = default;
             // complete ID is of the format ts-seq in input where both ts and seq are ulong

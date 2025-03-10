@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31808.319
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -110,6 +110,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Garnet.resources", "libs\resources\Garnet.resources.csproj", "{A48412B4-FD60-467E-A5D9-F155CAB4F907}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoOpModule", "playground\NoOpModule\NoOpModule.csproj", "{D4C9A1A0-7053-F072-21F5-4E0C5827136D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Btree", "playground\BTree\Btree.csproj", "{CE12831B-2805-469E-8208-759DC4B4862C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -335,6 +337,14 @@ Global
 		{D4C9A1A0-7053-F072-21F5-4E0C5827136D}.Release|Any CPU.Build.0 = Release|Any CPU
 		{D4C9A1A0-7053-F072-21F5-4E0C5827136D}.Release|x64.ActiveCfg = Release|Any CPU
 		{D4C9A1A0-7053-F072-21F5-4E0C5827136D}.Release|x64.Build.0 = Release|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Debug|x64.Build.0 = Debug|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Release|x64.ActiveCfg = Release|Any CPU
+		{CE12831B-2805-469E-8208-759DC4B4862C}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -370,6 +380,7 @@ Global
 		{DF2DD03E-87EE-482A-9FBA-6C8FBC23BDC5} = {697766CD-2046-46D9-958A-0FD3B46C98D4}
 		{A48412B4-FD60-467E-A5D9-F155CAB4F907} = {147FCE31-EC09-4C90-8E4D-37CA87ED18C3}
 		{D4C9A1A0-7053-F072-21F5-4E0C5827136D} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
+		{CE12831B-2805-469E-8208-759DC4B4862C} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2C02C405-4798-41CA-AF98-61EDFEF6772E}

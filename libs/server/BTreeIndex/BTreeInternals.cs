@@ -68,9 +68,10 @@ namespace Garnet.server.BTreeIndex
     {
         public static int PAGE_SIZE = 4096;
         public static int KEY_SIZE = 16; // key size in bytes.
+        public static int HEADER_SIZE = sizeof(BTreeNode);
         public static int METADATA_SIZE = sizeof(NodeInfo) + sizeof(SectorAlignedMemory);
-        public static int LEAF_CAPACITY = (PAGE_SIZE - METADATA_SIZE) / (KEY_SIZE + sizeof(Value));
-        public static int INTERNAL_CAPACITY = (PAGE_SIZE - METADATA_SIZE - sizeof(BTreeNode*)) / (KEY_SIZE + sizeof(IntPtr*));
+        public static int LEAF_CAPACITY = (PAGE_SIZE - HEADER_SIZE) / (KEY_SIZE + sizeof(Value));
+        public static int INTERNAL_CAPACITY = (PAGE_SIZE - HEADER_SIZE - sizeof(BTreeNode*)) / (KEY_SIZE + sizeof(IntPtr*));
 
         public NodeInfo info;
         public byte* keys;
@@ -82,10 +83,11 @@ namespace Garnet.server.BTreeIndex
         /// Allocates memory for a node
         /// </summary>
         /// <param name="type">type of node to allocate memory for</param>
-        public void Initialize(BTreeNodeType type, SectorAlignedBufferPool bufferPool)
+        public void Initialize(BTreeNodeType type, SectorAlignedMemory handle)
         {
             // assume this is called after memory has been allocated and memoryBlock is set (it is the first field)
             // we are only assigning different parts of the memory to different fields
+            memoryHandle = handle;
             var startAddr = (byte*)memoryHandle.aligned_pointer;
             info.type = type;
             info.count = 0;
@@ -93,7 +95,8 @@ namespace Garnet.server.BTreeIndex
             info.previous = null;
             info.validCount = 0;
 
-            var baseAddress = startAddr + sizeof(NodeInfo);
+            // var baseAddress = startAddr + sizeof(NodeInfo) + sizeof(SectorAlignedMemory);
+            var baseAddress = startAddr + HEADER_SIZE;
             keys = (byte*)baseAddress;
 
             int capacity = type == BTreeNodeType.Leaf ? LEAF_CAPACITY : INTERNAL_CAPACITY;
@@ -107,7 +110,7 @@ namespace Garnet.server.BTreeIndex
                 data.children = (BTreeNode**)dataAddress;
             }
         }
-
+ 
         public byte* GetKey(int index)
         {
             byte* keyAddress = keys + (index * KEY_SIZE);
