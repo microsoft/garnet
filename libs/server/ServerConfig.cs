@@ -131,6 +131,7 @@ namespace Garnet.server
             string certPassword = null;
             string clusterUsername = null;
             string clusterPassword = null;
+            string notifiyKeyspaceEventsArguments = null;
             var unknownOption = false;
             var unknownKey = "";
 
@@ -147,6 +148,8 @@ namespace Garnet.server
                     clusterUsername = Encoding.ASCII.GetString(value);
                 else if (key.SequenceEqual(CmdStrings.ClusterPassword))
                     clusterPassword = Encoding.ASCII.GetString(value);
+                else if (key.SequenceEqual(CmdStrings.NotifiyKeyspaceEvents))
+                    notifiyKeyspaceEventsArguments = Encoding.ASCII.GetString(value);
                 else
                 {
                     if (!unknownOption)

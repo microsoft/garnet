@@ -30,6 +30,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
         public static ReadOnlySpan<byte> ClusterPassword => "cluster-password"u8;
+        public static ReadOnlySpan<byte> NotifiyKeyspaceEvents => "notify-keyspace-events"u8;
         public static ReadOnlySpan<byte> ECHO => "ECHO"u8;
         public static ReadOnlySpan<byte> ACL => "ACL"u8;
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
