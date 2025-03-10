@@ -1688,8 +1688,17 @@ namespace Garnet.server
 
         void ExecuteFlushDb(bool unsafeTruncateLog)
         {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            if (storeWrapper.serverOptions.EnableAOF)
+            {
+                storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+                storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+                storeWrapper.appendOnlyFile?.Reset();
+            }
+            else
+            {
+                storeWrapper.Reset();
+                storeWrapper.clusterProvider.ResetStore();
+            }
         }
 
         /// <summary>

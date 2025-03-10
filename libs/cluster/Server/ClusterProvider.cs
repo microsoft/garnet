@@ -106,6 +106,14 @@ namespace Garnet.cluster
             } while (Interlocked.CompareExchange(ref authContainer, newAuthContainer, oldAuthContainer) != oldAuthContainer);
         }
 
+        /// <summary>
+        /// Reset store
+        /// </summary>
+        public void ResetStore()
+        {
+            replicationManager.ResetStore();
+        }
+
         /// <inheritdoc />
         public void Dispose()
         {

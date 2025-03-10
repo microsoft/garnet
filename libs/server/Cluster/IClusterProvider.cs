@@ -131,5 +131,10 @@ namespace Garnet.server
         /// Update cluster auth (atomically)
         /// </summary>
         void UpdateClusterAuth(string clusterUsername, string clusterPassword);
+
+        /// <summary>
+        /// ResetStore
+        /// </summary>
+        void ResetStore();
     }
 }
