@@ -48,10 +48,10 @@ In addition, newly configured replicas, added to the cluster, could face longer 
 The cluster operator can choose between various replication options to achieve a trade-off between performance and durability.
 A summary of these options is shown below:
 
-- Main Memory Replication (MMR)
+- Fast AOF Truncation (FAT)
 	This option forces the primary to aggressively truncate the AOF so it does not spill into disk. It can be used in combination with aof-memory option which determines the maximum AOF memory buffer size.
-	When a replica attaches to a primary with MMR turned on, the AOF is not guaranteed to be truncated which may result in writes being lost.
-	To overcome this issue MMR should be used with ODC.
+	When a replica attaches to a primary with FAT turned on, the AOF is not guaranteed to be truncated which may result in writes being lost.
+	To overcome this issue FAT should be used with ODC.
 - On Demand Checkpoint (ODC)
 	This option forces the primary to take a checkpoint if no checkpoint is available when replica tries to attach and recover. If a checkpoint becomes or was availalbe and the CCRO has not been truncated, then
 	the primary will lock it to prevent truncation while a replica is recovering. In this case, they AOF log could spill to disk as the AOF in memory buffer becomes full.
@@ -226,6 +226,25 @@ replica_announced:1
 192.168.1.26:7001>
 ```
 
+# Diskless Replication
 
+When AOF gets truncated, full synchronization requires taking a checkpoint and sending that checkpoint over to the attaching replica.
+This operation can be expensive because it involves multiple I/O operations at the primary and replica.
+For this reason, we added a variant of full synchronization called diskless replication.
+This is implemented using a streaming checkpoint that allows clients to continue issuing read and writes at the primary while attaching replicas synchronize.
+To enable diskless replication the server needs to be started with the following flags
 
+--repl-diskless-sync=true
+This is used to enable diskless replication
 
+--repl-diskless-sync-delay=\<seconds\>.
+This is used to determine how many seconds to wait before starting the full sync, in order to give the opportunity to multiple replicas to attach and receive the streaming checkpoint.
+
+There is no additional requirements to that of using the aforementioned flags in order to leverage diskless replication.
+The APIs for mapping replicas remain the same (i.e. CLUSTER REPLICATE, REPLICAOF etc.).
+
+Note that diskless replication does not take an actual checkpoint.
+Hence every time a full sync is performed, the AOF is not automatically truncated (unless FAT flag is used).
+This happens to ensure durability in the event of a failure which will not be possible if the AOF gets truncated without a persistent checkpoint.
+However, the store version gets incremented to ensure consistency across different instances that may be fully synced at different times.
+Users can still utilize SAVE/BGSAVE commands or --aof-size-limit to periodically take a checkpoint and safely truncates the AOF.
