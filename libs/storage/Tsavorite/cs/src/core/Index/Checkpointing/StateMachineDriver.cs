@@ -23,9 +23,12 @@ namespace Tsavorite.core
         SemaphoreSlim waitForTransitionIn;
         // All threads have exited the given state
         SemaphoreSlim waitForTransitionOut;
+        // Transactions drained in last version
+        public SemaphoreSlim lastVersionTransactionsDone;
         List<IStateMachineCallback> callbacks;
         readonly LightEpoch epoch;
         readonly ILogger logger;
+        readonly long[] NumActiveTransactions;
 
         public SystemState SystemState => SystemState.Copy(ref systemState);
 
@@ -34,13 +37,94 @@ namespace Tsavorite.core
             this.epoch = epoch;
             this.systemState = SystemState.Make(Phase.REST, 1);
             this.waitingList = [];
+            this.NumActiveTransactions = new long[2];
             this.logger = logger;
         }
 
         public void SetSystemState(SystemState state)
+            => systemState = SystemState.Copy(ref state);
+
+        internal long GetNumActiveTransactions(long txnVersion)
+            => Interlocked.Read(ref NumActiveTransactions[txnVersion & 0x1]);
+
+        void IncrementActiveTransactions(long txnVersion)
+            => _ = Interlocked.Increment(ref NumActiveTransactions[txnVersion & 0x1]);
+
+        void DecrementActiveTransactions(long txnVersion)
         {
-            systemState = SystemState.Copy(ref state);
+            if (Interlocked.Decrement(ref NumActiveTransactions[txnVersion & 0x1]) == 0)
+            {
+                lastVersionTransactionsDone?.Release();
+            }
         }
+
+        /// <summary>
+        /// Acquire a transaction version - this should be called before
+        /// BeginLockable is called for all sessions in the transaction.
+        /// </summary>
+        /// <returns></returns>
+        public long AcquireTransactionVersion()
+        {
+            var isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
+                epoch.Resume();
+            try
+            {
+                while (systemState.Phase == Phase.PREPARE_GROW)
+                {
+                    epoch.ProtectAndDrain();
+                    Thread.Yield();
+                }
+                var txnVersion = systemState.Version;
+                Debug.Assert(txnVersion > 0);
+                IncrementActiveTransactions(txnVersion);
+                return txnVersion;
+            }
+            finally
+            {
+                if (!isProtected)
+                    epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Verify transaction version - this should be called after
+        /// all locks have been acquired for the transaction.
+        /// </summary>
+        /// <returns></returns>
+        public long VerifyTransactionVersion(long txnVersion)
+        {
+            var isProtected = epoch.ThisInstanceProtected();
+            if (!isProtected)
+                epoch.Resume();
+            try
+            {
+                Debug.Assert(txnVersion > 0);
+                var currentTxnVersion = systemState.Version;
+                if (currentTxnVersion > txnVersion)
+                {
+                    // We transfer the active transaction from txnVersion to currentTxnVersion
+                    Debug.Assert(currentTxnVersion == txnVersion + 1);
+                    DecrementActiveTransactions(txnVersion);
+                    IncrementActiveTransactions(currentTxnVersion);
+                }
+                return currentTxnVersion;
+            }
+            finally
+            {
+                if (!isProtected)
+                    epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// End transaction running in specified version. Should be called
+        /// after EndLockable() is called for all relevant sessions.
+        /// </summary>
+        /// <param name="txnVersion">Transaction version</param>
+        /// <returns></returns>
+        public void EndTransaction(long txnVersion)
+            => DecrementActiveTransactions(txnVersion);
 
         internal void AddToWaitingList(SemaphoreSlim waiter)
         {

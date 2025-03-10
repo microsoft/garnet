@@ -68,6 +68,7 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
+        private readonly StateMachineDriver stateMachineDriver;
         internal int txnStartHead;
         internal int operationCntTxn;
 
@@ -79,6 +80,7 @@ namespace Garnet.server
         private const int initialKeyBufferSize = 1 << 10;
         StoreType transactionStoreType;
         readonly ILogger logger;
+        long txnVersion;
 
         internal LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableContext
             => lockableContext;
@@ -146,7 +148,9 @@ namespace Garnet.server
                         throw new Exception("Trying to perform object store transaction with object store disabled");
                     objectStoreLockableContext.EndLockable();
                 }
+                stateMachineDriver.EndTransaction(txnVersion);
             }
+            this.txnVersion = 0;
             this.txnStartHead = 0;
             this.operationCntTxn = 0;
             this.state = TxnState.None;
@@ -294,30 +298,29 @@ namespace Garnet.server
 
         void BeginLockable(StoreType transactionStoreType)
         {
-            while (true)
+            if (transactionStoreType is StoreType.All or StoreType.Main)
             {
-                if (transactionStoreType is StoreType.All or StoreType.Main)
-                {
-                    lockableContext.BeginLockable();
-                }
-                if (transactionStoreType is StoreType.All or StoreType.Object)
-                {
-                    if (objectStoreBasicContext.IsNull)
-                        throw new Exception("Trying to perform object store transaction with object store disabled");
-                    if (objectStoreLockableContext.TryBeginLockable())
-                    {
-                        // If we managed to begin lockable for the object store, we MUST be in the same version as the main store
-                        break;
-                    }
-                    objectStoreLockableContext.Refresh();
-                    if (transactionStoreType is StoreType.All or StoreType.Main)
-                    {
-                        lockableContext.EndLockable();
-                        lockableContext.Refresh();
-                    }
-                    continue;
-                }
-                break;
+                lockableContext.BeginLockable();
+            }
+            if (transactionStoreType is StoreType.All or StoreType.Object)
+            {
+                if (objectStoreBasicContext.IsNull)
+                    throw new Exception("Trying to perform object store transaction with object store disabled");
+                objectStoreLockableContext.BeginLockable();
+            }
+        }
+
+        void LocksAcquired(StoreType transactionStoreType, long txnVersion)
+        {
+            if (transactionStoreType is StoreType.All or StoreType.Main)
+            {
+                lockableContext.LocksAcquired(txnVersion);
+            }
+            if (transactionStoreType is StoreType.All or StoreType.Object)
+            {
+                if (objectStoreBasicContext.IsNull)
+                    throw new Exception("Trying to perform object store transaction with object store disabled");
+                objectStoreLockableContext.LocksAcquired(txnVersion);
             }
         }
 
@@ -326,6 +329,9 @@ namespace Garnet.server
             // Save watch keys to lock list
             if (!internal_txn)
                 watchContainer.SaveKeysToLock(this);
+
+            // Acquire transaction version
+            txnVersion = stateMachineDriver.AcquireTransactionVersion();
 
             // Acquire lock sessions
             BeginLockable(transactionStoreType);
@@ -353,6 +359,12 @@ namespace Garnet.server
                     watchContainer.Reset();
                 return false;
             }
+
+            // Verify transaction version
+            txnVersion = stateMachineDriver.VerifyTransactionVersion(txnVersion);
+
+            // Update sessions with transaction version
+            LocksAcquired(transactionStoreType, txnVersion);
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {

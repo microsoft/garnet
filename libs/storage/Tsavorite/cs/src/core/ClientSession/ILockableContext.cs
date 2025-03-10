@@ -20,9 +20,10 @@ namespace Tsavorite.core
         void BeginLockable();
 
         /// <summary>
-        /// Try to begin a series of lock operations on possibly multiple keys; call before any locks are taken.
+        /// Call after all locks are acquired. Provide transaction version
+        /// acquired from StateMachineDriver.AcquireTransactionVersion().
         /// </summary>
-        bool TryBeginLockable();
+        void LocksAcquired(long txnVersion);
 
         /// <summary>
         /// Ends a series of lock operations on possibly multiple keys; call after all locks are released.

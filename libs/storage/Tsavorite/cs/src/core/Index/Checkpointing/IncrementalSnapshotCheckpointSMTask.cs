@@ -36,8 +36,6 @@ namespace Tsavorite.core
 
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
-
                     if (store._hybridLogCheckpoint.deltaLog == null)
                     {
                         store._hybridLogCheckpoint.deltaFileDevice = store.checkpointManager.GetDeltaLogDevice(store._hybridLogCheckpointToken);

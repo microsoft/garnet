@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Threading;
+using System.Diagnostics;
 
 namespace Tsavorite.core
 {
@@ -13,6 +13,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        long lastVersion;
 
         public IndexResizeSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
@@ -25,14 +26,16 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
+                    lastVersion = next.Version;
+                    stateMachineDriver.lastVersionTransactionsDone = new(0);
                     break;
 
                 case Phase.IN_PROGRESS_GROW:
-                    // Wait for PREPARE_GROW threads to finish active transactions and enter barrier
-                    while (store.hlogBase.NumActiveLockingSessions > 0)
-                    {
-                        _ = Thread.Yield();
-                    }
+                    // Wait for active transactions in the last version to complete (drain out)
+                    // Note that we DO NOT allow new transactions to start in PREPARE_GROW (i.e., this is a full barrier)
+                    stateMachineDriver.lastVersionTransactionsDone.Wait();
+                    stateMachineDriver.lastVersionTransactionsDone = null;
+                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
 
                     // Set up the transition to new version of HT
                     var numChunks = (int)(store.state[store.resizeInfo.version].size / Constants.kSizeofChunk);

@@ -68,12 +68,6 @@ namespace Tsavorite.core
 
         internal readonly OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> LockTable;
 
-        internal void IncrementNumLockingSessions()
-        {
-            Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
-        }
-        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
-
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
         internal RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator> RevivificationManager;

@@ -26,7 +26,7 @@ namespace Tsavorite.core
             overflowBucketsAllocatorResize = null;
         }
 
-        private void SplitBuckets(long hash)
+        internal void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
             int chunkOffset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);

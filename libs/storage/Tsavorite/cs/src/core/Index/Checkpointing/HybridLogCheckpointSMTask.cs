@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -35,18 +35,24 @@ namespace Tsavorite.core
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
+                    stateMachineDriver.lastVersionTransactionsDone = new(0);
                     break;
 
                 case Phase.IN_PROGRESS:
-                    // Wait for PREPARE threads to finish active transactions and enter barrier
-                    while (store.hlogBase.NumActiveLockingSessions > 0)
-                    {
-                        _ = Thread.Yield();
-                    }
                     store.CheckpointVersionShift(lastVersion, next.Version);
                     break;
 
                 case Phase.WAIT_FLUSH:
+                    // Wait for active transactions in last version to complete (drain out)
+                    // Note that we allow new transactions to process in parallel
+                    stateMachineDriver.lastVersionTransactionsDone.Wait();
+                    stateMachineDriver.lastVersionTransactionsDone = null;
+                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
+
+                    // Grab final logical address (end of fuzzy region)
+                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
+
+                    // Grab other metadata for the checkpoint
                     store._hybridLogCheckpoint.info.headAddress = store.hlogBase.HeadAddress;
                     store._hybridLogCheckpoint.info.nextVersion = next.Version;
                     break;
