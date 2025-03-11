@@ -13,7 +13,7 @@ namespace Garnet.cluster
         /// </summary>
         NoRecovery,
         /// <summary>
-        /// Recovery at initilization
+        /// Recovery at initialization
         /// </summary>
         InitializeRecover,
         /// <summary>
@@ -25,7 +25,7 @@ namespace Garnet.cluster
         /// </summary>
         ClusterFailover,
         /// <summary>
-        /// Recovery at replicaof no one
+        /// Recovery at replica of no one
         /// </summary>
         ReplicaOfNoOne
     }
