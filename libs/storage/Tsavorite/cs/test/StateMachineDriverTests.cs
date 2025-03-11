@@ -40,11 +40,9 @@ namespace Tsavorite.test.recovery
             DeleteDirectory(MethodTestDir, true);
         }
 
-        protected abstract void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store);
+        protected abstract void OperationThread(int thread_id, bool fuzz, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store);
 
-        public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, bool isAsync, long indexSize, bool useTimingFuzzing)
         {
             // Create the original store
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
@@ -63,7 +61,7 @@ namespace Tsavorite.test.recovery
             for (int i = 0; i < numOpThreads; i++)
             {
                 var thread_id = i;
-                opTasks[i] = Task.Run(() => OperationThread(thread_id, store1));
+                opTasks[i] = Task.Run(() => OperationThread(thread_id, useTimingFuzzing, store1));
             }
 
             // Wait for some operations to complete in v1
@@ -91,7 +89,7 @@ namespace Tsavorite.test.recovery
             await Task.WhenAll(opTasks);
 
             // Verify the final state of the old store
-            using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
             var bc1 = s1.BasicContext;
             for (long key = 0; key < numKeys; key++)
             {
@@ -136,7 +134,7 @@ namespace Tsavorite.test.recovery
             }
 
             // Verify the state of the new store
-            using var s2 = store2.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            using var s2 = store2.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
             var bc2 = s2.BasicContext;
             for (long key = 0; key < numKeys; key++)
             {
@@ -162,7 +160,33 @@ namespace Tsavorite.test.recovery
 
         public class SumFunctions : SimpleSimpleFunctions<long, long>
         {
-            public SumFunctions() : base((l, r) => l + r) { }
+            readonly Random fuzzer;
+
+            public SumFunctions(int thread_id, bool useTimingFuzzing) : base((l, r) => l + r)
+            {
+                if (useTimingFuzzing) fuzzer = new Random(thread_id);
+            }
+
+            public override bool InPlaceUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            {
+                Fuzz();
+                var ret = base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                Fuzz();
+                return ret;
+            }
+
+            public override bool CopyUpdater(ref long key, ref long input, ref long oldValue, ref long newValue, ref long output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            {
+                Fuzz();
+                var ret = base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
+                Fuzz();
+                return ret;
+            }
+
+            void Fuzz()
+            {
+                if (fuzzer != null) Thread.Sleep(fuzzer.Next(30));
+            }
         }
     }
 
@@ -175,9 +199,9 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        protected override void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
+        protected override void OperationThread(int thread_id, bool fuzz, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, fuzz));
             var bc = s.BasicContext;
             var r = new Random(thread_id);
 
@@ -211,8 +235,9 @@ namespace Tsavorite.test.recovery
         public async ValueTask CheckpointVersionSwitchRmwTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] bool isAsync,
-            [Values(1L << 13, 1L << 16)] long indexSize)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize);
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize, useTimingFuzzing);
     }
 
     [TestFixture]
@@ -224,9 +249,9 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        protected override void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
+        protected override void OperationThread(int thread_id, bool fuzz, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, fuzz));
             var lc = s.LockableContext;
             var r = new Random(thread_id);
 
@@ -294,7 +319,8 @@ namespace Tsavorite.test.recovery
         public async ValueTask CheckpointVersionSwitchTxnTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] bool isAsync,
-            [Values(1L << 13, 1L << 16)] long indexSize)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize);
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize, useTimingFuzzing);
     }
 }
