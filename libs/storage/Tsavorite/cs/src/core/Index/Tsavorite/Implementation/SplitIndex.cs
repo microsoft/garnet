@@ -19,6 +19,10 @@ namespace Tsavorite.core
                 _ = SplitSingleBucket(i, numChunks);
             }
 
+            // Wait for all chunks to be split
+            while (numPendingChunksToBeSplit > 0)
+                _ = Thread.Yield();
+
             // Splits done, GC the old version of the hash table
             Debug.Assert(numPendingChunksToBeSplit == 0);
             state[1 - resizeInfo.version] = default;
@@ -54,9 +58,7 @@ namespace Tsavorite.core
             }
 
             while (Interlocked.Read(ref splitStatus[chunkOffset & (numChunks - 1)]) == 1)
-            {
-                Thread.Yield();
-            }
+                _ = Thread.Yield();
         }
 
         private bool SplitSingleBucket(int i, int numChunks)
@@ -105,6 +107,7 @@ namespace Tsavorite.core
                 long* left_end = left + Constants.kOverflowBucketIndex;
                 long* right_end = right + Constants.kOverflowBucketIndex;
 
+                var systemState = stateMachineDriver.SystemState;
                 // Verify that we are not moving latched buckets
                 Debug.Assert(!HashBucket.IsLatched(src_start));
 

@@ -22,15 +22,27 @@ namespace Tsavorite.core
                 SystemState.Equal(sessionFunctions.Ctx.SessionState, stateMachineDriver.SystemState))
                 return;
 
-            // If not, acquire a session-local copy of the system state
-            sessionFunctions.Ctx.SessionState = stateMachineDriver.SystemState;
-
-            // Adjust session's effective state if there is an ongoing transaction
-            if (sessionFunctions.Ctx.txnVersion > 0 &&
-                sessionFunctions.Ctx.SessionState.Phase == Phase.IN_PROGRESS &&
-                sessionFunctions.Ctx.txnVersion == sessionFunctions.Ctx.SessionState.Version - 1)
+            while (true)
             {
-                sessionFunctions.Ctx.SessionState = SystemState.Make(Phase.PREPARE, sessionFunctions.Ctx.txnVersion);
+                // If not, acquire a session-local copy of the system state
+                sessionFunctions.Ctx.SessionState = stateMachineDriver.SystemState;
+
+                // Adjust session's effective state if there is an ongoing transaction
+                if (sessionFunctions.Ctx.txnVersion > 0 &&
+                    sessionFunctions.Ctx.SessionState.Phase == Phase.IN_PROGRESS &&
+                    sessionFunctions.Ctx.txnVersion == sessionFunctions.Ctx.SessionState.Version - 1)
+                {
+                    sessionFunctions.Ctx.SessionState = SystemState.Make(Phase.PREPARE, sessionFunctions.Ctx.txnVersion);
+                }
+
+                // Session threads need to wait in PREPARE_GROW phase unless they are in a transaction
+                if (sessionFunctions.Ctx.phase == Phase.PREPARE_GROW && !sessionFunctions.Ctx.isAcquiredLockable)
+                {
+                    epoch.ProtectAndDrain();
+                    _ = Thread.Yield();
+                    continue;
+                }
+                break;
             }
         }
 

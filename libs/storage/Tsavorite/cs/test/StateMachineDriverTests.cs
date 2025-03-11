@@ -158,6 +158,78 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        public async ValueTask DoGrowIndexVersionSwitchEquivalenceCheck(bool isAsync, long indexSize, bool useTimingFuzzing)
+        {
+            // Create the original store
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            // Start operation threads
+            var opTasks = new Task[numOpThreads];
+            for (int i = 0; i < numOpThreads; i++)
+            {
+                var thread_id = i;
+                opTasks[i] = Task.Run(() => OperationThread(thread_id, useTimingFuzzing, store1));
+            }
+
+            // Wait for some operations to complete in v1
+            await Task.Delay(500);
+
+            // Initiate growth of index concurrent to the operation threads
+            var task = store1.GrowIndexAsync();
+
+            // Wait for the index growth to complete
+            if (isAsync)
+            {
+                var status = await task;
+                ClassicAssert.IsTrue(status);
+            }
+            else
+            {
+                var status = task.GetAwaiter().GetResult();
+                ClassicAssert.IsTrue(status);
+            }
+
+            // Wait for some operations to complete in v2
+            await Task.Delay(500);
+
+            // Signal operation threads to stop, and wait for them to finish
+            opsDone = true;
+            await Task.WhenAll(opTasks);
+
+            // Verify the final state of the store
+            using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+            var bc1 = s1.BasicContext;
+            for (long key = 0; key < numKeys; key++)
+            {
+                long output = default;
+                var status = bc1.Read(ref key, ref output);
+                if (status.IsPending)
+                {
+                    var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
+                    ClassicAssert.IsTrue(completed);
+                    bool result = completedOutputs.Next();
+                    ClassicAssert.IsTrue(result);
+                    status = completedOutputs.Current.Status;
+                    output = completedOutputs.Current.Output;
+                    result = completedOutputs.Next();
+                    ClassicAssert.IsFalse(result);
+                }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+
+                // The store should have the latest expected state
+                ClassicAssert.AreEqual(expectedV2Count[key], output, $"output = {output}");
+            }
+        }
+
         public class SumFunctions : SimpleSimpleFunctions<long, long>
         {
             readonly Random fuzzer;
@@ -238,6 +310,13 @@ namespace Tsavorite.test.recovery
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] bool useTimingFuzzing)
             => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize, useTimingFuzzing);
+
+        [Test]
+        public async ValueTask GrowIndexVersionSwitchRmwTest(
+            [Values] bool isAsync,
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(isAsync, indexSize, useTimingFuzzing);
     }
 
     [TestFixture]
@@ -322,5 +401,12 @@ namespace Tsavorite.test.recovery
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] bool useTimingFuzzing)
             => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize, useTimingFuzzing);
+
+        [Test]
+        public async ValueTask GrowIndexVersionSwitchTxnTest(
+            [Values] bool isAsync,
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(isAsync, indexSize, useTimingFuzzing);
     }
 }
