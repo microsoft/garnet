@@ -53,8 +53,8 @@ namespace Embedded.perftest
             if (opts.OpPercent == null || opts.OpWorkload == null)
                 throw new Exception("OpPercent and OpWorkload must be specified!");
 
-            opPercent = opts.OpPercent.ToArray();
-            opWorkload = opts.OpWorkload.ToArray();
+            opPercent = [.. opts.OpPercent];
+            opWorkload = [.. opts.OpWorkload];
 
             if (opPercent.Length != opWorkload.Length)
                 throw new Exception($"opPercent {opWorkload.Length} and opWorkload {opWorkload.Length} mismatch!");

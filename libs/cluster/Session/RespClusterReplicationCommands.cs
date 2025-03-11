@@ -404,7 +404,7 @@ namespace Garnet.cluster
             else
                 replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata);
 
-            if (errorMessage != default)
+            if (!errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();

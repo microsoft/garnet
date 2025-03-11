@@ -159,13 +159,15 @@ namespace Garnet.common
                     Assembly assembly;
                     try
                     {
-                        assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+                        // NET9 seems to hold the assembly locked if it's opened from the path directly, causing tests to fail.
+                        using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
+                        assembly = AssemblyLoadContext.Default.LoadFromStream(fileStream);
                     }
                     catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
                                                ex is NotSupportedException || ex is BadImageFormatException ||
                                                ex is SecurityException)
                     {
-                        if (ex is FileLoadException && ex.Message == "Assembly with same name is already loaded")
+                        if (ex is FileLoadException && ex.Message.Contains("Assembly with same name is already loaded"))
                         {
                             var assemblyName = AssemblyName.GetAssemblyName(path).Name;
                             tmpAssemblies.Add(AssemblyLoadContext.Default.Assemblies.First(a => a.GetName().Name == assemblyName));

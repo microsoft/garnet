@@ -123,10 +123,10 @@ namespace Garnet.test.cluster
         }
 
         public IPEndPoint[] GetEndpoints()
-            => endpoints.Select(x => (IPEndPoint)x).ToArray();
+            => [.. endpoints.Select(x => (IPEndPoint)x)];
 
         public IPEndPoint[] GetEndpointsWithout(IPEndPoint endPoint) =>
-            endpoints.Select(x => (IPEndPoint)x).Where(x => x.Port != endPoint.Port || x.Address != endPoint.Address).ToArray();
+            [.. endpoints.Select(x => (IPEndPoint)x).Where(x => x.Port != endPoint.Port || x.Address != endPoint.Address)];
 
         public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null)
         {
@@ -146,7 +146,7 @@ namespace Garnet.test.cluster
         }
 
         public RedisResult NodesV2(IPEndPoint endPoint, ILogger logger = null)
-            => Execute(endPoint, "cluster", new List<object> { "nodes" }, skipLogging: true, logger);
+            => Execute(endPoint, "cluster", ["nodes"], skipLogging: true, logger);
 
         public string NodesMyself(IPEndPoint endPoint, ClusterInfoTag tag, ILogger logger)
         {
@@ -252,7 +252,7 @@ namespace Garnet.test.cluster
 
         private static List<(int, int)>[] GetSlotRanges(int primary_count)
         {
-            List<(int, int)>[] slotRanges = new List<(int, int)>[primary_count];
+            var slotRanges = new List<(int, int)>[primary_count];
             int slotCount = 16384;
 
             for (int i = 0; i < primary_count; i++)
@@ -1050,7 +1050,7 @@ namespace Garnet.test.cluster
         public void WaitForConfigPropagation(int fromNode, List<int> nodes = null, ILogger logger = null)
         {
             if (nodes == null)
-                nodes = Enumerable.Range(0, endpoints.Count).ToList();
+                nodes = [.. Enumerable.Range(0, endpoints.Count)];
             var fromNodeConfig = ClusterNodes(fromNode, logger: logger);
             while (true)
             {
@@ -1419,7 +1419,7 @@ namespace Garnet.test.cluster
                 var server = redis.GetServer((IPEndPoint)endpoints[nodeIndex]);
                 var resp = server.Execute("cluster", "getkeysinslot", $"{slot}", $"{keyCount}");
 
-                return ((RedisResult[])resp).Select(x => Encoding.ASCII.GetBytes((string)x)).ToList();
+                return [.. ((RedisResult[])resp).Select(x => Encoding.ASCII.GetBytes((string)x))];
             }
             catch (Exception ex)
             {
@@ -2371,7 +2371,7 @@ namespace Garnet.test.cluster
             try
             {
                 var result = server.Execute("mget", args, CommandFlags.NoRedirect);
-                getResult = ((RedisResult[])result).Select(x => (byte[])x).ToList();
+                getResult = [.. ((RedisResult[])result).Select(x => (byte[])x)];
                 return "OK";
             }
             catch (Exception e)
