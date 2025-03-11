@@ -856,6 +856,13 @@
         "Summary": "Processes a forwarded published message from a node in the same shard",
         "Group": "Cluster",
         "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "Summary": "Send by primary to replica to force to FLUSH its database",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
       }
     ]
   }
