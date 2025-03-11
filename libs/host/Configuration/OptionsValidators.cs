@@ -361,8 +361,7 @@ namespace Garnet
                 return initValidationResult;
 
             var logger = ((Options)validationContext.ObjectInstance).runtimeLogger;
-
-            if (!Format.TryParseAddressList(ipAddresses, 0, out var endpoints, out var errorHostnameOrAddress, useForBind: false, logger: logger))
+            if (!Format.TryParseAddressList(ipAddresses, 0, out _, out var errorHostnameOrAddress, useForBind: false, logger: logger))
             {
                 var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
                 var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {errorHostnameOrAddress}";
