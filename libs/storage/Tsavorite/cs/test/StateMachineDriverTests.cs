@@ -60,6 +60,8 @@ namespace Tsavorite.test.recovery
 
             for (currentIteration = 0; currentIteration < numIterations; currentIteration++)
             {
+                opsDone = false;
+
                 // Start operation threads
                 var opTasks = new Task[numOpThreads];
                 for (int i = 0; i < numOpThreads; i++)
@@ -185,6 +187,7 @@ namespace Tsavorite.test.recovery
 
             for (currentIteration = 0; currentIteration < numIterations; currentIteration++)
             {
+                opsDone = false;
 
                 // Start operation threads
                 var opTasks = new Task[numOpThreads];
