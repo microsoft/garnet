@@ -21,7 +21,7 @@ namespace Garnet.server
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
-        public EtagState etagState;
+        public ETagState etagState;
         public readonly ILogger logger;
         public bool StoredProcMode;
 
@@ -34,7 +34,7 @@ namespace Garnet.server
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = garnetObjectSerializer;
-            this.etagState = new EtagState();
+            this.etagState = new ETagState();
             this.logger = logger;
         }
 

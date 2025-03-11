@@ -229,7 +229,7 @@ namespace Tsavorite.core
             var key = logRecord.Key;
             *(int*)ptr = key.Length;
             ptr += SpanField.FieldLengthPrefixSize;
-            key.CopyTo(new Span<byte>(ptr, key.Length));
+            key.CopyTo(new SpanByte(key.Length, (IntPtr)ptr));
             ptr += key.Length;
             return ptr;
         }
@@ -1625,6 +1625,8 @@ namespace Tsavorite.core
                     fromAddress = pageStartAddress,
                     untilAddress = pageEndAddress
                 };
+
+                // If either fromAddress or untilAddress is in the middle of the page, prepare to handle a partial page
                 if (
                     ((fromAddress > pageStartAddress) && (fromAddress < pageEndAddress)) ||
                     ((untilAddress > pageStartAddress) && (untilAddress < pageEndAddress))
@@ -1656,10 +1658,10 @@ namespace Tsavorite.core
                     skip = true;
                 }
 
-                if (skip) continue;
+                if (skip)
+                    continue;
 
-                // Partial page starting point, need to wait until the
-                // ongoing adjacent flush is completed to ensure correctness
+                // Partial page starting point, need to wait until the ongoing adjacent flush is completed to ensure correctness
                 if (GetOffsetInPage(asyncResult.fromAddress) > 0)
                 {
                     var index = GetPageIndexForAddress(asyncResult.fromAddress);

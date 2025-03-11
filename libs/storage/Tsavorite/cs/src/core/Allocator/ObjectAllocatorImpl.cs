@@ -227,18 +227,27 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void SerializeRecordToIteratorBuffer(ref LogRecord<TValue> logRecord, ref SectorAlignedMemory recordBuffer, out TValue valueObject)
         {
-            // InlineRecordSize includes size for the objectId, which is >= sizeof(int), which is what we use for a placeholder for this DiskLogRecord instance.
             var inlineRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
             if (inlineRecordSize > int.MaxValue)
                 throw new TsavoriteException("Total size out of range");
 
             var ptr = SerializeCommonRecordFieldsToBuffer(logRecord, ref recordBuffer, inlineRecordSize);
 
-            // Empty value; we'll return the deserialized value object. See note above regarding allocated space for this in the DiskLogRecord.
-            *(int*)ptr = 0;
-            ptr += SpanField.FieldLengthPrefixSize;
-
-            valueObject = logRecord.ValueObject;
+            if (logRecord.Info.ValueIsObject)
+            {
+                *(int*)ptr = 0;
+                ptr += ObjectIdMap.ObjectIdSize;
+                valueObject = logRecord.ValueObject;
+            }
+            else
+            {
+                var value = logRecord.ValueSpan;
+                *(int*)ptr = value.Length;
+                ptr += SpanField.FieldLengthPrefixSize;
+                value.CopyTo(new SpanByte(value.Length, (IntPtr)ptr));
+                ptr += value.Length;
+                valueObject = default;
+            }
         }
 
         /// <inheritdoc/>

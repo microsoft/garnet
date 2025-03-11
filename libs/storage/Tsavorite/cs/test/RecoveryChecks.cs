@@ -1085,3 +1085,4 @@ namespace Tsavorite.test.recovery
         }
     }
 }
+#endif

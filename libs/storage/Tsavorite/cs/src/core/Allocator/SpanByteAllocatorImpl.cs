@@ -200,7 +200,7 @@ namespace Tsavorite.core
             var value = logRecord.ValueSpan;
             *(int*)ptr = value.Length;
             ptr += SpanField.FieldLengthPrefixSize;
-            value.CopyTo(new Span<byte>(ptr, value.Length));
+            value.CopyTo(new SpanByte(value.Length, (IntPtr)ptr));
             ptr += value.Length;
 
             valueObject = default;

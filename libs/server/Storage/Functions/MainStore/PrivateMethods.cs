@@ -650,7 +650,7 @@ namespace Garnet.server
             int desiredLength = 4;
 
             // get etag to write, default etag 0 for when no etag
-            long etag = hasETag ? functionsState.etagState.etag : LogRecord.NoETag;
+            long etag = hasETag ? functionsState.etagState.ETag : LogRecord.NoETag;
 
             // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
             // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n

@@ -48,13 +48,13 @@ namespace Garnet.server
             }
 
             if (srcLogRecord.Info.HasETag)
-                EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
             {
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
-                EtagState.ResetState(ref functionsState.etagState);
+                ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
@@ -64,7 +64,7 @@ namespace Garnet.server
                 CopyRespToWithInput(ref srcLogRecord, ref input, ref output, readInfo.IsFromPending);
 
             if (srcLogRecord.Info.HasETag)
-                EtagState.ResetState(ref functionsState.etagState);
+                ETagState.ResetState(ref functionsState.etagState);
 
             return true;
         }
@@ -103,13 +103,13 @@ namespace Garnet.server
             }
 
             if (srcLogRecord.Info.HasETag)
-                EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
-                EtagState.ResetState(ref functionsState.etagState);
+                ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
@@ -120,7 +120,7 @@ namespace Garnet.server
                 CopyRespToWithInput(ref srcLogRecord, ref input, ref output, readInfo.IsFromPending);
 
             if (srcLogRecord.Info.HasETag)
-                EtagState.ResetState(ref functionsState.etagState);
+                ETagState.ResetState(ref functionsState.etagState);
             return true;
         }
 

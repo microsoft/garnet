@@ -14,16 +14,15 @@ namespace Garnet.server
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
         /// </summary>
-        /// <param name="length">Length of byte array</param>
-        /// <param name="source">Pointer to byte array</param>
+        /// <param name="source">Source string to evaluate</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidNumber(int length, byte* source, out long val)
+        static bool IsValidNumber(SpanByte source, out long val)
         {
             try
             {
                 // Check for valid number
-                return NumUtils.TryReadInt64(length, source, out val);
+                return NumUtils.TryReadInt64(source.Length, source.ToPointer(), out val);
             }
             catch
             {
@@ -36,16 +35,15 @@ namespace Garnet.server
         /// <summary>
         /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
         /// </summary>
-        /// <param name="length">Length of byte array</param>
-        /// <param name="source">Pointer to byte array</param>
+        /// <param name="source">Source string to evaluate</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidDouble(int length, byte* source, out double val)
+        static bool IsValidDouble(SpanByte source, out double val)
         {
             try
             {
                 // Check for valid number
-                return NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val);
+                return NumUtils.TryReadDouble(source.Length, source.ToPointer(), out val) || !double.IsFinite(val);
             }
             catch
             {
@@ -153,7 +151,7 @@ namespace Garnet.server
             {
                 KeyDataSize = srcLogRecord.Key.Length,
                 ValueDataSize = 0,
-                HasETag = input.header.CheckWithETagFlag(),
+                HasETag = input.header.CheckWithETagFlag() || srcLogRecord.Info.HasETag,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -167,29 +165,44 @@ namespace Garnet.server
                     case RespCommand.INCRBY:
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        var curr = NumUtils.ReadInt64(srcLogRecord.ValueSpan.AsSpan());
-                        var next = curr + incrByValue;
+                        var value = srcLogRecord.ValueSpan;
+                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)  TODO: Raise and handle an error or false return instead, to avoid the log record allocation
+                        if (IsValidNumber(value, out _))
+                        {
+                            var curr = NumUtils.ReadInt64(value.AsSpan());
+                            var next = curr + incrByValue;
 
-                        fieldInfo.ValueDataSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
+                            fieldInfo.ValueDataSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
+                        }
                         return fieldInfo;
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
-                        curr = NumUtils.ReadInt64(srcLogRecord.ValueSpan.AsSpan());
-                        next = curr - decrByValue;
+                        value = srcLogRecord.ValueSpan;
+                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+                        if (IsValidNumber(value, out _))
+                        {
+                            var curr = NumUtils.ReadInt64(srcLogRecord.ValueSpan.AsSpan());
+                            var next = curr - decrByValue;
 
-                        fieldInfo.ValueDataSize = NumUtils.CountDigits(next, out isNegative) + (isNegative ? 1 : 0);
+                            fieldInfo.ValueDataSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
+                        }
                         return fieldInfo;
                     case RespCommand.INCRBYFLOAT:
                         // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
                         var incrByFloat = input.parseState.GetDouble(0);
 
-                        _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan.AsSpan(), out var currVal);
-                        var nextVal = currVal + incrByFloat;
+                        value = srcLogRecord.ValueSpan;
+                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+                        if (IsValidDouble(value, out _))
+                        {
+                            _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan.AsSpan(), out var currVal);
+                            var nextVal = currVal + incrByFloat;
 
-                        fieldInfo.ValueDataSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
+                            fieldInfo.ValueDataSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
+                        }
                         return fieldInfo;
 
                     case RespCommand.SETBIT:
@@ -204,10 +217,12 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.PFADD:
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods
                         fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.ValueSpan.ToPointer());
                         return fieldInfo;
 
                     case RespCommand.PFMERGE:
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods
                         var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
                         var dstHLL = srcLogRecord.ValueSpan.ToPointer();
                         fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
@@ -239,7 +254,39 @@ namespace Garnet.server
                     case RespCommand.PEXPIRE:
                     case RespCommand.EXPIREAT:
                     case RespCommand.PEXPIREAT:
-                        fieldInfo.HasExpiration = true;
+                        {
+                            // Set HasExpiration to match with EvaluateExpireInPlace.
+                            var expireOption = (ExpireOption)input.arg1;
+                            if (srcLogRecord.Info.HasExpiration)
+                            {
+                                    // case ExpireOption.NX:                // HasExpiration is true so we will retain it
+                                    // case ExpireOption.XX:
+                                    // case ExpireOption.None:
+                                    // case ExpireOption.GT:
+                                    // case ExpireOption.XXGT:
+                                    // case ExpireOption.LT:
+                                    // case ExpireOption.XXLT:
+                                    fieldInfo.HasExpiration = true;         // Will update or retain
+                            }
+                            else
+                            {
+                                switch (expireOption)
+                                {
+                                    case ExpireOption.NX:
+                                    case ExpireOption.None:
+                                    case ExpireOption.LT:                   // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
+                                        fieldInfo.HasExpiration = true;     // Will update or retain
+                                        break;
+                                    default:
+                                        // case ExpireOption.XX:
+                                        // case ExpireOption.GT:            // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
+                                        // case ExpireOption.XXGT:
+                                        // case ExpireOption.XXLT:
+                                        fieldInfo.HasExpiration = false;    // Will not add one and there is not one there now
+                                        break;
+                                }
+                            }
+                        }
                         fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
 
@@ -255,7 +302,7 @@ namespace Garnet.server
 
                     case RespCommand.GETDEL:
                         // No additional allocation needed.
-                        break;
+                        return fieldInfo;
 
                     case RespCommand.GETEX:
                         fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;

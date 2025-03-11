@@ -20,8 +20,8 @@ namespace Tsavorite.core
 
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
-        /// <summary>Invalid ETag</summary>
-        public const int NoETag = sizeof(long);
+        /// <summary>Invalid ETag, and also the pre-incremented value</summary>
+        public const int NoETag = 0;
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
         /// <summary>Number of bytes required to store the FillerLen</summary>
@@ -578,18 +578,21 @@ namespace Tsavorite.core
 
             //  - Preserve Expiration if present; set ETag; re-enter Expiration if present
             var expiration = 0L;
-            var expirationSize = 0;
             if (Info.HasExpiration)
             {
-                expirationSize = LogRecord.ExpirationSize;
-                address -= expirationSize;
+                address -= LogRecord.ExpirationSize;
                 expiration = *(long*)address;
             }
+
             *(long*)address = eTag;
             InfoRef.SetHasETag();
+            address += LogRecord.ETagSize;
 
-            *(long*)address = expiration;   // will be 0 or a valid expiration
-            address += expirationSize;      // repositions to fillerAddress if expirationSize is nonzero
+            if (Info.HasExpiration)
+            {
+                *(long*)address = expiration;           // will be 0 or a valid expiration
+                address += LogRecord.ExpirationSize;    // repositions to fillerAddress
+            }
 
             //  - Set the new (reduced) FillerLength if there is still space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
