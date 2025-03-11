@@ -295,11 +295,7 @@ namespace Tsavorite.core
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
-        internal bool KeyIsInline
-        {
-            readonly get => (word & kKeyIsInlineBitMask) != 0;
-            set => word = value ? word | kKeyIsInlineBitMask : word & ~kKeyIsInlineBitMask;
-        }
+        internal readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
         public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
         public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
         public bool KeyIsOverflow => !KeyIsInline;

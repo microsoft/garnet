@@ -495,12 +495,12 @@ namespace Tsavorite.core
         public readonly int OptionalSize => ETagLen + ExpirationLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly long GetETagAddress() => GetOptionalStartAddress();
+        internal readonly long GetETagAddress() => GetOptionalStartAddress();
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
+        internal readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly long GetFillerLengthAddress() => physicalAddress + ActualRecordSize;
+        internal readonly long GetFillerLengthAddress() => physicalAddress + ActualRecordSize;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetFillerLength() => GetFillerLength(GetFillerLengthAddress());
 
@@ -632,20 +632,18 @@ namespace Tsavorite.core
                 expiration = *(long*)address;
                 *(long*)address = 0L;  // To ensure zero-init
             }
-            if (Info.HasETag)
-            {
-                // Expiration will be either zero or a valid expiration, and we have not changed the info.HasExpiration flag
-                address -= LogRecord.ETagSize;
-                *(long*)address = expiration;   // will be 0 or a valid expiration
-                address += expirationSize;      // repositions to fillerAddress if expirationSize is nonzero
-                InfoRef.ClearHasETag();
-            }
+
+            // Expiration will be either zero or a valid expiration, and we have not changed the info.HasExpiration flag
+            address -= LogRecord.ETagSize;
+            *(long*)address = expiration;       // will be 0 or a valid expiration
+            address += expirationSize;          // repositions to fillerAddress if expirationSize is nonzero
+            InfoRef.ClearHasETag();
 
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= LogRecord.FillerLengthSize)
             {
                 InfoRef.SetHasFiller();         // May already be set, but will definitely now be true since we opened up more than FillerLengthSize bytes
-                *(int*)fillerLenAddress = fillerLen;
+                *(int*)address = fillerLen;
             }
             return true;
         }

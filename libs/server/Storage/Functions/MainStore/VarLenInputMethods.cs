@@ -166,7 +166,8 @@ namespace Garnet.server
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
                         var value = srcLogRecord.ValueSpan;
-                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)  TODO: Raise and handle an error or false return instead, to avoid the log record allocation
+                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+                                                     // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
                         if (IsValidNumber(value, out _))
                         {
                             var curr = NumUtils.ReadInt64(value.AsSpan());
@@ -181,7 +182,7 @@ namespace Garnet.server
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
                         value = srcLogRecord.ValueSpan;
-                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+                        fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead).
                         if (IsValidNumber(value, out _))
                         {
                             var curr = NumUtils.ReadInt64(srcLogRecord.ValueSpan.AsSpan());
@@ -217,7 +218,7 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.PFADD:
-                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'
                         fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.ValueSpan.ToPointer());
                         return fieldInfo;
 
