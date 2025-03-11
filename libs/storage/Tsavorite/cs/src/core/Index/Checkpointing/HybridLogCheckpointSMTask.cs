@@ -39,20 +39,12 @@ namespace Tsavorite.core
 
                 case Phase.IN_PROGRESS:
                     store.CheckpointVersionShiftStart(lastVersion, next.Version);
-
-                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
-                        stateMachineDriver.lastVersionTransactionsDone = new(0);
-                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
-                        stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
-                    // State machine should wait for active transactions in the last version to complete (drain out).
-                    // Note that we allow new transactions to process in parallel.
-
                     break;
 
                 case Phase.WAIT_FLUSH:
-                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
+                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.lastVersionTransactionsDone = null;
-
+                    stateMachineDriver.lastVersion = 0;
                     // Grab final logical address (end of fuzzy region)
                     store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
 
@@ -91,6 +83,20 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public virtual void GlobalAfterEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
+            switch (next.Phase)
+            {
+                case Phase.IN_PROGRESS:
+                    // State machine should wait for active transactions in the last version to complete (drain out).
+                    // Note that we allow new transactions to process in parallel.
+                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                    {
+                        stateMachineDriver.lastVersion = lastVersion;
+                        stateMachineDriver.lastVersionTransactionsDone = new(0);
+                    }
+                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                        stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
+                    break;
+            }
         }
     }
 }

@@ -24,6 +24,7 @@ namespace Tsavorite.core
         // All threads have exited the given state
         SemaphoreSlim waitForTransitionOut;
         // Transactions drained in last version
+        public long lastVersion;
         public SemaphoreSlim lastVersionTransactionsDone;
         List<IStateMachineCallback> callbacks;
         readonly LightEpoch epoch;
@@ -54,7 +55,10 @@ namespace Tsavorite.core
         {
             if (Interlocked.Decrement(ref NumActiveTransactions[txnVersion & 0x1]) == 0)
             {
-                lastVersionTransactionsDone?.Release();
+                if (lastVersionTransactionsDone != null && txnVersion == lastVersion)
+                {
+                    lastVersionTransactionsDone.Release();
+                }
             }
         }
 
@@ -223,7 +227,6 @@ namespace Tsavorite.core
             {
                 epoch.Suspend();
             }
-            AddToWaitingList(waitForTransitionIn);
         }
 
         /// <summary>
@@ -264,6 +267,7 @@ namespace Tsavorite.core
 
         async Task ProcessWaitingListAsync(CancellationToken token = default)
         {
+            await waitForTransitionIn.WaitAsync(token);
             foreach (var waiter in waitingList)
             {
                 await waiter.WaitAsync(token);
