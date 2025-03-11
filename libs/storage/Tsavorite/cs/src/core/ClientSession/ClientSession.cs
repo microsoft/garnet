@@ -63,6 +63,7 @@ namespace Tsavorite.core
             if (TotalLockCount > 0)
                 throw new TsavoriteException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
             sessionFunctions.Ctx.isAcquiredLockable = false;
+            sessionFunctions.Ctx.txnVersion = 0;
         }
 
         internal void CheckIsAcquiredLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
