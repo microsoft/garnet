@@ -3,7 +3,6 @@
 
 using System;
 using System.ComponentModel;
-using System.Net.NetworkInformation;
 
 namespace Garnet.server
 {

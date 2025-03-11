@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -18,6 +17,7 @@ namespace Garnet.server
         public LuaMemoryManagementMode MemoryManagementMode = LuaMemoryManagementMode.Native;
         public string MemoryLimit = "";
         public TimeSpan Timeout = System.Threading.Timeout.InfiniteTimeSpan;
+        public LuaLoggingMode LogMode = LuaLoggingMode.Silent;
 
         /// <summary>
         /// Construct options with default options.
@@ -30,11 +30,12 @@ namespace Garnet.server
         /// <summary>
         /// Construct options with specific settings.
         /// </summary>
-        public LuaOptions(LuaMemoryManagementMode memoryMode, string memoryLimit, TimeSpan timeout, ILogger logger = null) : this(logger)
+        public LuaOptions(LuaMemoryManagementMode memoryMode, string memoryLimit, TimeSpan timeout, LuaLoggingMode logMode, ILogger logger = null) : this(logger)
         {
             MemoryManagementMode = memoryMode;
             MemoryLimit = memoryLimit;
             Timeout = timeout;
+            LogMode = logMode;
         }
 
         /// <summary>
@@ -87,5 +88,31 @@ namespace Garnet.server
         /// Limits are pre-allocated when scripts runs, which can increase allocation pressure.
         /// </summary>
         Managed = 2,
+    }
+
+    /// <summary>
+    /// Behavior of redis.log(...) when called in a Lua script.
+    /// </summary>
+    public enum LuaLoggingMode
+    {
+        /// <summary>
+        /// Calls to redis.log(...) pass through and are record in Garnet's configered logging provider.
+        /// 
+        /// redis.LOG_DEBUG is mapped to <see cref="LogLevel.Debug"/>.
+        /// redis.LOG_VERBOSE is mapped to <see cref="LogLevel.Information"/>.
+        /// redis.LOG_NOTICE is mapped to <see cref="LogLevel.Warning"/>.
+        /// redis.LOG_WARNING is mapped to <see cref="LogLevel.Error"/>.
+        /// </summary>
+        Enable = 0,
+
+        /// <summary>
+        /// Calls to redis.log(...) succeed, but do nothing.
+        /// </summary>
+        Silent = 1,
+
+        /// <summary>
+        /// Calls to redis.log(...) raise an error reporting logging is disabled.
+        /// </summary>
+        Disable = 2,
     }
 }
