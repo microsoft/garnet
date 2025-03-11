@@ -100,7 +100,7 @@ namespace Garnet.server
         public abstract void FlushAllDatabases(bool unsafeTruncateLog);
 
         /// <inheritdoc/>
-        public abstract bool TrySwapDatabases(int dbId1, int dbId2);
+        public abstract bool TrySwapDatabases(int dbId1, int dbId2, CancellationToken token = default);
 
         /// <inheritdoc/>
         public abstract FunctionsState CreateFunctionsState(int dbId = 0);

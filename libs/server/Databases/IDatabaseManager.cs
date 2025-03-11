@@ -233,8 +233,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId1">First database ID</param>
         /// <param name="dbId2">Second database ID</param>
+        /// <param name="token">Cancellation token</param>
         /// <returns>True if swap successful</returns>
-        public bool TrySwapDatabases(int dbId1, int dbId2);
+        public bool TrySwapDatabases(int dbId1, int dbId2, CancellationToken token = default);
 
         /// <summary>
         /// Create a shallow copy of the IDatabaseManager instance and copy databases to the new instance

@@ -561,7 +561,7 @@ namespace Garnet.server
         {
             if (databaseManager is SingleDatabaseManager) return false;
 
-            return this.databaseManager.TrySwapDatabases(dbId1, dbId2);
+            return this.databaseManager.TrySwapDatabases(dbId1, dbId2, ctsCommit.Token);
         }
 
         /// <summary>

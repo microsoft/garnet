@@ -20,7 +20,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, commitFrequencyMs: 1000);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, commitFrequencyMs: 1000000);
             server.Start();
         }
 
@@ -940,7 +940,6 @@ namespace Garnet.test
                     Task.Delay(TimeSpan.FromMilliseconds(100), cts.Token);
                 }
 
-                var prevLastSave = expectedLastSave;
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave));
 

@@ -304,7 +304,7 @@ namespace Garnet.server
             FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
 
         /// <inheritdoc/>
-        public override bool TrySwapDatabases(int dbId1, int dbId2) => false;
+        public override bool TrySwapDatabases(int dbId1, int dbId2, CancellationToken token = default) => false;
 
         /// <inheritdoc/>
         public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
