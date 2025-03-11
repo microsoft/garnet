@@ -128,7 +128,7 @@ namespace Garnet.common
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error while trying to resolve hostname:{hostname}", singleAddressOrHostname);
+                logger?.LogError("Error while trying to resolve hostname: {exMessage} [{hostname}]", ex.Message, singleAddressOrHostname);
             }
 
             return null;
