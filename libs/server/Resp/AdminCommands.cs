@@ -601,7 +601,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < -1)
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                         SendAndReset();
@@ -872,7 +872,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < -1)
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                         SendAndReset();
@@ -983,7 +983,7 @@ namespace Garnet.server
                         return true;
                     }
 
-                    if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < -1)
+                    if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                     {
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                             SendAndReset();

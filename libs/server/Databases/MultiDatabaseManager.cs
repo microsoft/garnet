@@ -50,7 +50,7 @@ namespace Garnet.server
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(MultiDatabaseManager));
 
             var maxDatabases = storeWrapper.serverOptions.MaxDatabases;
-            
+
             // Create default databases map of size 1
             databases = new ExpandableMap<GarnetDatabase>(1, 0, maxDatabases - 1);
 
