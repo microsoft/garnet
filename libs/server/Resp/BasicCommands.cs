@@ -909,7 +909,7 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkFLUSHALL()
         {
-            if (parseState.Count > 2)
+            if (parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
             }

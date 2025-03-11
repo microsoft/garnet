@@ -715,6 +715,14 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "IsInternal": true,
+        "Arity": 2,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_FORGET",
         "Name": "CLUSTER|FORGET",
         "Arity": 3,
