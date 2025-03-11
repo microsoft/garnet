@@ -860,7 +860,7 @@
       {
         "Command": "CLUSTER_FLUSHALL",
         "Name": "CLUSTER|FLUSHALL",
-        "Summary": "Send by primary to replica to force to FLUSH its database",
+        "Summary": "Sent by primary to replica to force to FLUSH its database",
         "Group": "Cluster",
         "Complexity": "O(1)"
       }
