@@ -178,8 +178,6 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
-            // If cluster mode is off and more than one database allowed multi-db mode is turned on
-
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
@@ -314,11 +312,72 @@ namespace Garnet.server
             CancellationToken token = default) => databaseManager.TakeCheckpoint(background, storeType, logger, token);
 
         /// <summary>
+        /// Take checkpoint of all active database IDs or a specified database ID
+        /// </summary>
+        /// <param name="background">True if method can return before checkpoint is taken</param>
+        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
+        /// <param name="storeType">Store type to checkpoint</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>False if another checkpointing process is already in progress</returns>
+        public bool TakeCheckpoint(bool background, int dbId = -1, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
+        {
+            if (dbId == -1)
+            {
+                return databaseManager.TakeCheckpoint(background, storeType, logger, token);
+            }
+
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
+
+            return databaseManager.TakeCheckpoint(background, dbId, storeType, logger, token);
+        }
+
+        /// <summary>
+        /// Take a checkpoint if no checkpoint was taken after the provided time offset
+        /// </summary>
+        /// <param name="entryTime"></param>
+        /// <param name="dbId"></param>
+        /// <returns></returns>
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
+
+            await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId);
+        }
+
+        /// <summary>
         /// Recover checkpoint
         /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
             bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
             => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
+
+        /// <summary>
+        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
+        /// </summary>
+        /// <param name="dbId">ID of database to lock</param>
+        /// <returns>True if lock acquired</returns>
+        public bool TryPauseCheckpoints(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.TryPauseCheckpoints)} with DB ID: {dbId}");
+
+            return databaseManager.TryPauseCheckpoints(dbId);
+        }
+
+        /// <summary>
+        /// Release checkpoint task lock
+        /// </summary>
+        /// <param name="dbId">ID of database to unlock</param>
+        public void ResumeCheckpoints(int dbId = 0)
+        {
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.ResumeCheckpoints)} with DB ID: {dbId}");
+
+            databaseManager.ResumeCheckpoints(dbId);
+        }
 
         /// <summary>
         /// Recover AOF
@@ -344,6 +403,67 @@ namespace Garnet.server
             this.databaseManager.EnqueueCommit(entryType, version, dbId);
         }
 
+        /// <summary>
+        /// Commit AOF for all active databases
+        /// </summary>
+        /// <param name="spinWait">True if should wait until all commits complete</param>
+        internal void CommitAOF(bool spinWait)
+        {
+            if (!serverOptions.EnableAOF) return;
+
+            var task = databaseManager.CommitToAofAsync();
+            if (!spinWait) return;
+
+            task.GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Wait for commits from all active databases
+        /// </summary>
+        internal void WaitForCommit() =>
+            WaitForCommitAsync().GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Asynchronously wait for commits from all active databases
+        /// </summary>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>ValueTask</returns>
+        internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
+        {
+            if (!serverOptions.EnableAOF) return;
+
+            await databaseManager.WaitForCommitToAofAsync(token);
+        }
+
+        /// <summary>
+        /// Asynchronously wait for AOF commits on all active databases,
+        /// unless specific database ID specified (by default: -1 = all)
+        /// </summary>
+        /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>ValueTask</returns>
+        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
+        {
+            if (!serverOptions.EnableAOF) return;
+
+            if (dbId == -1)
+            {
+                await databaseManager.CommitToAofAsync(token, logger);
+                return;
+            }
+
+            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
+                throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
+
+            await databaseManager.CommitToAofAsync(dbId, token);
+        }
+
+        /// <summary>
+        /// Create database functions state
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <returns>Functions state</returns>
+        /// <exception cref="GarnetException"></exception>
         internal FunctionsState CreateFunctionsState(int dbId = 0)
         {
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
@@ -363,11 +483,6 @@ namespace Garnet.server
 
             databaseManager.Reset(dbId);
         }
-
-        /// <summary>
-        /// Resets the revivification stats.
-        /// </summary>
-        public void ResetRevivificationStats() => databaseManager.ResetRevivificationStats();
 
         /// <summary>
         /// Get a snapshot of all active databases
@@ -448,6 +563,11 @@ namespace Garnet.server
 
             return this.databaseManager.TrySwapDatabases(dbId1, dbId2);
         }
+
+        /// <summary>
+        /// Resets the revivification stats.
+        /// </summary>
+        public void ResetRevivificationStats() => databaseManager.ResetRevivificationStats();
 
         async Task AutoCheckpointBasedOnAofSizeLimit(long aofSizeLimit, CancellationToken token = default, ILogger logger = null)
         {
@@ -562,81 +682,27 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Commit AOF for all active databases
-        /// </summary>
-        /// <param name="spinWait">True if should wait until all commits complete</param>
-        internal void CommitAOF(bool spinWait)
+        /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
+        /// <param name="token"></param>
+        private async void IndexAutoGrowTask(CancellationToken token)
         {
-            if (!serverOptions.EnableAOF) return;
-
-            var task = databaseManager.CommitToAofAsync();
-            if (!spinWait) return;
-
-            task.GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// Wait for commits from all active databases
-        /// </summary>
-        internal void WaitForCommit() =>
-            WaitForCommitAsync().GetAwaiter().GetResult();
-
-        /// <summary>
-        /// Asynchronously wait for commits from all active databases
-        /// </summary>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
-        {
-            if (!serverOptions.EnableAOF) return;
-
-            await databaseManager.WaitForCommitToAofAsync(token);
-        }
-
-        /// <summary>
-        /// Asynchronously wait for AOF commits on all active databases,
-        /// unless specific database ID specified (by default: -1 = all)
-        /// </summary>
-        /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
-        {
-            if (!serverOptions.EnableAOF) return;
-
-            if (dbId == -1)
+            try
             {
-                await databaseManager.CommitToAofAsync(token, logger);
-                return;
+                var allIndexesMaxedOut = false;
+
+                while (!allIndexesMaxedOut)
+                {
+                    if (token.IsCancellationRequested) break;
+
+                    await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
+
+                    allIndexesMaxedOut = databaseManager.GrowIndexesIfNeeded(token);
+                }
             }
-
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
-
-            await databaseManager.CommitToAofAsync(dbId, token);
-        }
-
-        /// <summary>
-        /// Take checkpoint of all active database IDs or a specified database ID
-        /// </summary>
-        /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
-        /// <param name="storeType">Store type to checkpoint</param>
-        /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
-        /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId = -1, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
-        {
-            if (dbId == -1)
+            catch (Exception ex)
             {
-                return databaseManager.TakeCheckpoint(background, storeType, logger, token);
+                logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
-
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
-
-            return databaseManager.TakeCheckpoint(background, dbId, storeType, logger, token);
         }
 
         internal void Start()
@@ -672,86 +738,6 @@ namespace Garnet.server
             }
 
             databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
-        }
-
-        /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
-        /// <param name="token"></param>
-        private async void IndexAutoGrowTask(CancellationToken token)
-        {
-            try
-            {
-                var allIndexesMaxedOut = false;
-
-                while (!allIndexesMaxedOut)
-                {
-                    if (token.IsCancellationRequested) break;
-
-                    await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
-
-                    allIndexesMaxedOut = databaseManager.GrowIndexesIfNeeded(token);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
-            }
-        }
-
-        /// <summary>
-        /// Dispose
-        /// </summary>
-        public void Dispose()
-        {
-            if (disposed) return;
-            disposed = true;
-
-            itemBroker?.Dispose();
-            monitor?.Dispose();
-            luaTimeoutManager?.Dispose();
-            ctsCommit?.Cancel();
-            databaseManager.Dispose();
-
-            ctsCommit?.Dispose();
-            clusterProvider?.Dispose();
-        }
-
-        /// <summary>
-        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
-        /// </summary>
-        /// <param name="dbId">ID of database to lock</param>
-        /// <returns>True if lock acquired</returns>
-        public bool TryPauseCheckpoints(int dbId = 0)
-        {
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.TryPauseCheckpoints)} with DB ID: {dbId}");
-
-            return databaseManager.TryPauseCheckpoints(dbId);
-        }
-
-        /// <summary>
-        /// Release checkpoint task lock
-        /// </summary>
-        /// <param name="dbId">ID of database to unlock</param>
-        public void ResumeCheckpoints(int dbId = 0)
-        {
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.ResumeCheckpoints)} with DB ID: {dbId}");
-
-            databaseManager.ResumeCheckpoints(dbId);
-        }
-
-        /// <summary>
-        /// Take a checkpoint if no checkpoint was taken after the provided time offset
-        /// </summary>
-        /// <param name="entryTime"></param>
-        /// <param name="dbId"></param>
-        /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime, int dbId = 0)
-        {
-            if (dbId != 0 && !CheckMultiDatabaseCompatibility())
-                throw new GarnetException($"Unable to call {nameof(databaseManager.TakeOnDemandCheckpointAsync)} with DB ID: {dbId}");
-
-            await databaseManager.TakeOnDemandCheckpointAsync(entryTime, dbId);
         }
 
         public bool HasKeysInSlots(List<int> slots)
@@ -795,13 +781,18 @@ namespace Garnet.server
             return false;
         }
 
+        /// <summary>
+        /// Check if database manager supports multiple databases. 
+        /// If not - try to swap it with a new MultiDatabaseManager.
+        /// </summary>
+        /// <returns>True if database manager supports multiple databases</returns>
         private bool CheckMultiDatabaseCompatibility()
         {
-            if (databaseManager is MultiDatabaseManager)
-                return true;
-
             if (!serverOptions.AllowMultiDb)
                 return false;
+
+            if (databaseManager is MultiDatabaseManager)
+                return true;
 
             databaseManagerLock.WriteLock();
             try
@@ -815,6 +806,24 @@ namespace Garnet.server
             {
                 databaseManagerLock.WriteUnlock();
             }
+        }
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        public void Dispose()
+        {
+            if (disposed) return;
+            disposed = true;
+
+            itemBroker?.Dispose();
+            monitor?.Dispose();
+            luaTimeoutManager?.Dispose();
+            ctsCommit?.Cancel();
+            databaseManager.Dispose();
+
+            ctsCommit?.Dispose();
+            clusterProvider?.Dispose();
         }
     }
 }

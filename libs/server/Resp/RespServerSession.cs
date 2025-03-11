@@ -102,7 +102,7 @@ namespace Garnet.server
 
         // True if multiple logical databases are enabled on this session
         readonly bool allowMultiDb;
-        
+
         // Map of all active database sessions (default of size 1, containing DB 0 session)
         private ExpandableMap<GarnetDatabaseSession> databaseSessions;
 
@@ -229,16 +229,19 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
+            allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
+
+            // Create the default DB session (for DB 0) & add it to the session map
+            activeDbId = 0;
             var dbSession = CreateDatabaseSession(0);
             var maxDbs = storeWrapper.serverOptions.MaxDatabases;
-            activeDbId = 0;
-            allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
 
             databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
             if (!databaseSessions.TrySetValue(0, ref dbSession))
                 throw new GarnetException("Failed to set initial database session in database sessions map");
 
-            SwitchActiveDatabaseSession(0, ref dbSession);
+            // Set the current active session to the default session
+            SwitchActiveDatabaseSession(ref dbSession);
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
@@ -274,6 +277,7 @@ namespace Garnet.server
             var databaseSessionsMapSize = databaseSessions.ActualSize;
             var databaseSessionsMapSnapshot = databaseSessions.Map;
 
+            // If there is only 1 active session, it is the default session
             if (databaseSessionsMapSize == 1)
                 return [databaseSessionsMapSnapshot[0]];
 
@@ -1322,42 +1326,69 @@ namespace Garnet.server
             return header;
         }
 
+        /// <summary>
+        /// Set the current database session
+        /// </summary>
+        /// <param name="dbId">Database ID of the current session</param>
+        /// <returns>True if successful</returns>
         internal bool TrySwitchActiveDatabaseSession(int dbId)
         {
             if (!allowMultiDb) return false;
 
+            // Try to get or set the database session by ID
             ref var dbSession = ref TryGetOrSetDatabaseSession(dbId, out var success);
             if (!success) return false;
 
-            SwitchActiveDatabaseSession(dbId, ref dbSession);
+            // Set the active database session
+            SwitchActiveDatabaseSession(ref dbSession);
             return true;
         }
 
+        /// <summary>
+        /// Swap between two database sessions
+        /// </summary>
+        /// <param name="dbId1">Database ID of first session</param>
+        /// <param name="dbId2">Database ID of second session</param>
+        /// <returns></returns>
         internal bool TrySwapDatabaseSessions(int dbId1, int dbId2)
         {
             if (!allowMultiDb) return false;
             if (dbId1 == dbId2) return true;
 
+            // Try to get or set the database sessions
+            // Note that the dbIdForSessionCreation is set to the other DB ID - 
+            // That is because the databases have been swapped prior to the session swap
             ref var dbSession1 = ref TryGetOrSetDatabaseSession(dbId1, out var success, dbId2);
             if (!success) return false;
             ref var dbSession2 = ref TryGetOrSetDatabaseSession(dbId2, out success, dbId1);
             if (!success) return false;
 
+            // Swap the sessions in the session map
             var tmp = dbSession1;
             databaseSessions.Map[dbId1] = dbSession2;
             databaseSessions.Map[dbId2] = tmp;
 
+            // Update the database IDs in the session structs
             databaseSessions.Map[dbId1].Id = dbId1;
             databaseSessions.Map[dbId2].Id = dbId2;
 
+            // If any of the IDs are the current active database ID -
+            // Set the new active database session to the swapped session
             if (activeDbId == dbId1)
-                SwitchActiveDatabaseSession(dbId1, ref databaseSessions.Map[dbId1]);
+                SwitchActiveDatabaseSession(ref databaseSessions.Map[dbId1]);
             else if (activeDbId == dbId2)
-                SwitchActiveDatabaseSession(dbId2, ref databaseSessions.Map[dbId2]);
+                SwitchActiveDatabaseSession(ref databaseSessions.Map[dbId2]);
 
             return true;
         }
 
+        /// <summary>
+        /// Try to retrieve or create a new database session by DB ID
+        /// </summary>
+        /// <param name="dbId">Database ID of the session</param>
+        /// <param name="success">True if successful</param>
+        /// <param name="dbIdForSessionCreation">Database ID session creation (defaults to dbId, this option is used for SWAPDB only)</param>
+        /// <returns>Reference to the retrieved or created database session</returns>
         private ref GarnetDatabaseSession TryGetOrSetDatabaseSession(int dbId, out bool success, int dbIdForSessionCreation = -1)
         {
             success = false;
@@ -1367,26 +1398,31 @@ namespace Garnet.server
             var databaseSessionsMapSize = databaseSessions.ActualSize;
             var databaseSessionsMapSnapshot = databaseSessions.Map;
 
+            // If database already exists, return
             if (dbId >= 0 && dbId < databaseSessionsMapSize && !databaseSessionsMapSnapshot[dbId].IsDefault())
             {
                 success = true;
                 return ref databaseSessionsMapSnapshot[dbId];
             }
 
+            // Take a lock on the database sessions map (this is required since this method can be called from a thread-unsafe context)
             databaseSessions.mapLock.WriteLock();
 
             try
             {
+                // If database already exists, return
                 if (dbId >= 0 && dbId < databaseSessionsMapSize && !databaseSessionsMapSnapshot[dbId].IsDefault())
                 {
                     success = true;
                     return ref databaseSessionsMapSnapshot[dbId];
                 }
 
+                // Create a new database session and set it in the sessions map
                 var dbSession = CreateDatabaseSession(dbIdForSessionCreation);
                 if (!databaseSessions.TrySetValueUnsafe(dbId, ref dbSession, false))
                     return ref GarnetDatabaseSession.Empty;
 
+                // Update the session map snapshot and return a reference to the inserted session
                 success = true;
                 databaseSessionsMapSnapshot = databaseSessions.Map;
                 return ref databaseSessionsMapSnapshot[dbId];
@@ -1397,6 +1433,11 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Create a new database session
+        /// </summary>
+        /// <param name="dbId">Database ID</param>
+        /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
@@ -1405,9 +1446,13 @@ namespace Garnet.server
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
         }
 
-        private void SwitchActiveDatabaseSession(int dbId, ref GarnetDatabaseSession dbSession)
+        /// <summary>
+        /// Switch current active database session
+        /// </summary>
+        /// <param name="dbSession">Database Session</param>
+        private void SwitchActiveDatabaseSession(ref GarnetDatabaseSession dbSession)
         {
-            this.activeDbId = dbId;
+            this.activeDbId = dbSession.Id;
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;

@@ -27,7 +27,6 @@ namespace Garnet.server
 
         int isStarted = 0;
         private const int deltaFraction = 10; // 10% of target size
-        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
 
         internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
 
@@ -64,7 +63,6 @@ namespace Garnet.server
             Debug.Assert(logSettings != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
-            this.store = store;
             this.TargetSize = targetSize;
             this.ReadCacheTargetSize = readCacheTargetSize;
             var logSizeCalculator = new LogSizeCalculator();

@@ -68,7 +68,7 @@ namespace Garnet.server
 
             this.activeDbId = 0;
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
-            
+
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(ref storeWrapper.DefaultDatabase, true);
 
