@@ -487,7 +487,7 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // Expecting exactly 3 arguments
+            // Expecting exactly 0 arguments
             if (parseState.Count != 0)
             {
                 invalidParameters = true;
