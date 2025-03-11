@@ -569,7 +569,7 @@ namespace Garnet
         [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
         public int UnixSocketPermission { get; set; }
 
-        [IntRangeValidation(1, 256, isRequired: false)]
+        [IntRangeValidation(1, 256, isRequired: true)]
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
 
