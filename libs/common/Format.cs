@@ -115,7 +115,7 @@ namespace Garnet.common
                 {
                     var machineHostname = GetHostName();
 
-                    // Hostname does match the one acquired from machine name
+                    // User-provided hostname does not match the machine hostname
                     if (!singleAddressOrHostname.Equals(machineHostname, StringComparison.OrdinalIgnoreCase))
                     {
                         logger?.LogError("Provided hostname does not much acquired machine name {addressOrHostname} {machineHostname}!", singleAddressOrHostname, machineHostname);
