@@ -593,7 +593,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                 {
                     // Cluster mode does not allow DBID
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
@@ -601,7 +601,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < -1)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                         SendAndReset();
@@ -864,7 +864,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                 {
                     // Cluster mode does not allow DBID
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
@@ -872,7 +872,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < -1)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                         SendAndReset();
@@ -918,7 +918,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                 {
                     // Cluster mode does not allow DBID
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
@@ -926,7 +926,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                         SendAndReset();
@@ -975,7 +975,7 @@ namespace Garnet.server
                         return true;
                     }
 
-                    if (dbId != 0 && storeWrapper.serverOptions.EnableCluster)
+                    if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                     {
                         // Cluster mode does not allow DBID
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
@@ -983,7 +983,7 @@ namespace Garnet.server
                         return true;
                     }
 
-                    if (dbId >= storeWrapper.serverOptions.MaxDatabases)
+                    if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < -1)
                     {
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
                             SendAndReset();

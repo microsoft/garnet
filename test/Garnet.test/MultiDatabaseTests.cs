@@ -832,6 +832,7 @@ namespace Garnet.test
             var db2data1 = new SortedSetEntry[] { new("db2:a", -1), new("db2:b", -2), new("db2:c", -3) };
             var db2data2 = new SortedSetEntry[] { new("db2:d", 4), new("db2:e", 5), new("db2:f", 6) };
             long expectedLastSave;
+            long actualLastSave;
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
@@ -872,6 +873,7 @@ namespace Garnet.test
 
                 expectedLastSave = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 Assert.That(lastSave, Is.InRange(expectedLastSave - 2, expectedLastSave));
+                actualLastSave = lastSave;
 
                 // Verify DB 0 was not saved
                 lastSaveStr = db1.Execute("LASTSAVE").ToString();
@@ -947,7 +949,7 @@ namespace Garnet.test
                 lastSaveStr = db1.Execute("LASTSAVE", "1").ToString();
                 parsed = long.TryParse(lastSaveStr, out lastSave);
                 ClassicAssert.IsTrue(parsed);
-                Assert.That(lastSave, Is.InRange(prevLastSave - 2, prevLastSave));
+                ClassicAssert.AreEqual(actualLastSave, lastSave);
             }
 
             // Restart server
