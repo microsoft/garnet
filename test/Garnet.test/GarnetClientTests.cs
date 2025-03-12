@@ -518,7 +518,7 @@ namespace Garnet.test
                 var sc = new CancellationTokenSource();
                 var t = sc.Token;
                 ManualResetEventSlim mrObj = new(false);
-                var tDeletingK = Task.Run(async () => { await DeleteKeysWithCT(keys.Skip(iterationSize).Take(iterationSize).ToArray(), null, mrObj, t); });
+                var tDeletingK = Task.Run(async () => { await DeleteKeysWithCT([.. keys.Skip(iterationSize).Take(iterationSize)], null, mrObj, t); });
 
                 // send the cancellation so the task throws an exception
                 sc.Cancel();
@@ -547,7 +547,7 @@ namespace Garnet.test
                 ManualResetEventSlim mrObj = new(false);
 
                 // try delete using Memory<byte> type
-                var tDeletingKeysMB = Task.Run(async () => { await DeleteKeysWithCT(null, keysMemoryByte.Skip(iterationSize).Take(iterationSize).ToArray(), mrObj, t, true); });
+                var tDeletingKeysMB = Task.Run(async () => { _ = await DeleteKeysWithCT(null, [.. keysMemoryByte.Skip(iterationSize).Take(iterationSize)], mrObj, t, true); });
                 sc.Cancel();
                 mrObj.Set();
                 Assert.Throws<OperationCanceledException>(() => tDeletingKeysMB.Wait(sc.Token));
