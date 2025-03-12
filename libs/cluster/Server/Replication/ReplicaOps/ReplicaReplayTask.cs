@@ -60,7 +60,11 @@ namespace Garnet.cluster
                 var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
                 if (payloadLength > 0)
                 {
-                    aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true);
+                    aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
+                    // point when we take a checkpoint at the checkpoint end marker
+                    if (isCheckpointStart)
+                        ReplicationCheckpointStartOffset = ReplicationOffset;
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
                 else if (payloadLength < 0)

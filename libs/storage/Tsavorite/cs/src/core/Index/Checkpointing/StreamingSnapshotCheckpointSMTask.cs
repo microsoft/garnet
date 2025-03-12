@@ -20,6 +20,7 @@ namespace Tsavorite.core
         public StreamingSnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
+            isStreaming = true;
         }
 
         /// <inheritdoc />

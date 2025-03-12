@@ -194,10 +194,6 @@ namespace Garnet.cluster
             // Wait for flush and response to complete
             replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
 
-            // Enqueue commit end marker
-            var entryType = isMainStore ? AofEntryType.MainStoreStreamingCheckpointEndCommit : AofEntryType.ObjectStoreStreamingCheckpointEndCommit;
-            replicationSyncManager.ClusterProvider.storeWrapper.EnqueueCommit(entryType, targetVersion);
-
             logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
                 nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
 

@@ -194,7 +194,13 @@ namespace Garnet.cluster
         {
             Debug.Assert(serverOptions.EnableCluster);
             if (serverOptions.EnableAOF && clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
-                CheckpointCoveredAofAddress = replicationManager.ReplicationOffset;
+            {
+                // When the replica takes a checkpoint on encountering the checkpoint end marker, it needs to truncate the AOF only
+                // until the checkpoint start marker. Otherwise, we will be left with an AOF that starts at the checkpoint end marker.
+                // ReplicationCheckpointStartOffset is set by { ReplicaReplayTask.Consume -> AofProcessor.ProcessAofRecordInternal } when
+                // it encounters the checkpoint start marker.
+                CheckpointCoveredAofAddress = replicationManager.ReplicationCheckpointStartOffset;
+            }
             else
                 CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.TailAddress;
 

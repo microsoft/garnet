@@ -16,13 +16,15 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
-        long lastVersion;
+        protected long lastVersion;
         protected readonly Guid guid;
+        protected bool isStreaming;
 
         public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
             this.guid = guid;
+            this.isStreaming = false;
         }
 
         /// <inheritdoc />
@@ -38,10 +40,12 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.IN_PROGRESS:
-                    store.CheckpointVersionShiftStart(lastVersion, next.Version);
+                    store.CheckpointVersionShiftStart(lastVersion, next.Version, isStreaming);
                     break;
 
                 case Phase.WAIT_FLUSH:
+                    store.CheckpointVersionShiftEnd(lastVersion, next.Version, isStreaming);
+
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.lastVersionTransactionsDone = null;
                     stateMachineDriver.lastVersion = 0;

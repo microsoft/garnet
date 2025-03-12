@@ -63,14 +63,16 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="oldVersion"></param>
         /// <param name="newVersion"></param>
-        void CheckpointVersionShiftStart(long oldVersion, long newVersion);
+        /// <param name="isStreaming"></param>
+        void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming);
 
         /// <summary>
         /// Callback to indicate end of version shift during checkpoint
         /// </summary>
         /// <param name="oldVersion"></param>
         /// <param name="newVersion"></param>
-        void CheckpointVersionShiftEnd(long oldVersion, long newVersion);
+        /// <param name="isStreaming"></param>
+        void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming);
 
         /// <summary>
         /// Commit log incremental checkpoint (incremental snapshot)

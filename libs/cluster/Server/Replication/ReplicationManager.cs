@@ -53,6 +53,8 @@ namespace Garnet.cluster
             set { replicationOffset = value; }
         }
 
+        public long ReplicationCheckpointStartOffset;
+
         /// <summary>
         /// Replication offset until which AOF address is valid for old primary if failover has occurred
         /// </summary>
@@ -156,24 +158,44 @@ namespace Garnet.cluster
 
         public string GetBufferPoolStats() => networkPool.GetStats();
 
-        void CheckpointVersionShiftStart(bool isMainStore, long oldVersion, long newVersion)
+        void CheckpointVersionShiftStart(bool isMainStore, long oldVersion, long newVersion, bool isStreaming)
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            var entryType = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointStartCommit : AofEntryType.ObjectStoreStreamingCheckpointStartCommit) :
-                (isMainStore ? AofEntryType.MainStoreCheckpointStartCommit : AofEntryType.ObjectStoreCheckpointStartCommit);
-            storeWrapper.EnqueueCommit(entryType, newVersion);
+
+            if (isStreaming)
+            {
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.MainStoreStreamingCheckpointStartCommit, newVersion);
+                else
+                    storeWrapper.EnqueueCommit(AofEntryType.ObjectStoreStreamingCheckpointStartCommit, newVersion);
+            }
+            else
+            {
+                // We enqueue a single checkpoint start marker, since we have unified checkpointing
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.CheckpointStartCommit, newVersion);
+            }
         }
 
-        void CheckpointVersionShiftEnd(bool isMainStore, long oldVersion, long newVersion)
+        void CheckpointVersionShiftEnd(bool isMainStore, long oldVersion, long newVersion, bool isStreaming)
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            var entryType = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointEndCommit : AofEntryType.ObjectStoreStreamingCheckpointEndCommit) :
-                (isMainStore ? AofEntryType.MainStoreCheckpointEndCommit : AofEntryType.ObjectStoreCheckpointEndCommit);
-            storeWrapper.EnqueueCommit(entryType, newVersion);
+
+            if (isStreaming)
+            {
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.MainStoreStreamingCheckpointEndCommit, newVersion);
+                else
+                    storeWrapper.EnqueueCommit(AofEntryType.ObjectStoreStreamingCheckpointEndCommit, newVersion);
+            }
+            else
+            {
+                // We enqueue a single checkpoint start marker, since we have unified checkpointing
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.CheckpointEndCommit, newVersion);
+            }
         }
 
         /// <summary>
