@@ -1372,6 +1372,10 @@ namespace Garnet.server
             databaseSessions.Map[dbId1].Id = dbId1;
             databaseSessions.Map[dbId2].Id = dbId2;
 
+            // If Lua is enabled, switch the database sessions in the script cache
+            if (storeWrapper.serverOptions.EnableLua)
+                sessionScriptCache?.TrySwapDatabaseSessions(dbId1, dbId2);
+
             // If any of the IDs are the current active database ID -
             // Set the new active database session to the swapped session
             if (activeDbId == dbId1)

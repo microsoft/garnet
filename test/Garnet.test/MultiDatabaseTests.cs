@@ -20,7 +20,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, commitFrequencyMs: 1000000);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, commitFrequencyMs: 1000, enableLua: true);
             server.Start();
         }
 
@@ -62,6 +62,66 @@ namespace Garnet.test
 
             ClassicAssert.IsFalse(db12.KeyExists(db12Key1));
             ClassicAssert.IsFalse(db12.KeyExists(db12Key2));
+        }
+
+        [Test]
+        public void MultiDatabaseBasicSelectFromScriptTestSE()
+        {
+            var db1Key1 = "db1:key1";
+            var db1Key2 = "db1:key2";
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key2";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db1 = redis.GetDatabase(0);
+
+            db1.StringSet(db1Key1, "db1:value1");
+            db1.ListLeftPush(db1Key2, [new RedisValue("db1:val1"), new RedisValue("db1:val2")]);
+
+            var db2 = redis.GetDatabase(1);
+            db2.StringSet(db2Key1, "db2:value2");
+            db2.SetAdd(db2Key2, [new RedisValue("db2:val2"), new RedisValue("db2:val2")]);
+
+            var response = db1.ScriptEvaluate("redis.call('SELECT', 1); return redis.call('GET', KEYS[1])", [db2Key1]);
+            ClassicAssert.AreEqual("db2:value2", response.ToString());
+        }
+
+        [Test]
+        public void MultiDatabaseSwapDatabaseFromScriptTestLC()
+        {
+            var db1Key1 = "db1:key1";
+            var db2Key1 = "db2:key1";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Add data to DB 0
+            var response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
+            var expectedResponse = "+OK\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Add data to DB 1
+            response = lightClientRequest.SendCommand($"SELECT 1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Select DB 0 
+            response = lightClientRequest.SendCommand($"SELECT 0");
+            expectedResponse = "+OK\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            var evalCmd = $"*4\r\n$4\r\nEVAL\r\n$61\r\nredis.call('SWAPDB', 0, 1); return redis.call('GET', KEYS[1])\r\n$1\r\n1\r\n${db2Key1.Length}\r\n{db2Key1}\r\n";
+            response = lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(evalCmd));
+            expectedResponse = "$10\r\ndb2:value1\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
