@@ -27,7 +27,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
-    public sealed class StoreWrapper
+    public sealed class StoreWrapper : IDisposable
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
@@ -934,6 +934,31 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+        public void ExecuteFlushDb(RespCommand cmd, bool unsafeTruncateLog, byte databaseId)
+        {
+            store.Log.ShiftBeginAddress(store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            objectStore?.Log.ShiftBeginAddress(objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+
+            if (serverOptions.EnableCluster && serverOptions.EnableAOF)
+            {
+                clusterProvider.SafeTruncateAOF(appendOnlyFile.TailAddress);
+                if (clusterProvider.IsPrimary())
+                {
+                    AofHeader header = new()
+                    {
+                        opType = cmd == RespCommand.FLUSHDB ? AofEntryType.FlushDb : AofEntryType.FlushAll,
+                        storeVersion = 0,
+                        sessionID = -1,
+                        unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                        databaseId = databaseId
+                    };
+                    appendOnlyFile?.Enqueue(header, out _);
+                }
+            }
+            else
+                appendOnlyFile?.TruncateUntil(appendOnlyFile.TailAddress);
         }
     }
 }

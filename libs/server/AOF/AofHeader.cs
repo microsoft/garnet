@@ -44,6 +44,16 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(12)]
         public int sessionID;
+        /// <summary>
+        /// Unsafe truncate log (used with FLUSH command)
+        /// </summary>
+        [FieldOffset(1)]
+        public byte unsafeTruncateLog;
+        /// <summary>
+        /// Database ID (used with FLUSH command)
+        /// </summary>
+        [FieldOffset(3)]
+        public byte databaseId;
 
         public AofHeader()
         {
