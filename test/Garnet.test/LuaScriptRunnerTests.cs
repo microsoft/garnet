@@ -656,7 +656,7 @@ namespace Garnet.test
                         var forFunc = funcs[i];
                         var funcType = (string)defined[i];
 
-                        ClassicAssert.AreNotEqual("nil", funcs, $"{funcGroup}.{forFunc} is not defined when it should be");
+                        ClassicAssert.AreNotEqual("nil", funcType, $"{funcGroup}.{forFunc} is not defined when it should be");
                     }
                 }
 
