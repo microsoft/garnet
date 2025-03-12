@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -655,17 +654,11 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            EndPoint[] endpoints;
+            if (!Format.TryParseAddressList(Address, Port, out var endpoints, out _) || endpoints.Length == 0)
+                throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
+
             if (!string.IsNullOrEmpty(UnixSocketPath))
-            {
-                endpoints = new EndPoint[1];
-                endpoints[0] = new UnixDomainSocketEndPoint(UnixSocketPath);
-            }
-            else
-            {
-                if (!Format.TryParseAddressList(Address, Port, out endpoints, out _) || endpoints.Length == 0)
-                    throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
-            }
+                endpoints = [.. endpoints, new UnixDomainSocketEndPoint(UnixSocketPath)];
 
             // Unix file permission octal to UnixFileMode
             var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
