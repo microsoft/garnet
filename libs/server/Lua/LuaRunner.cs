@@ -428,15 +428,15 @@ table.move = nil
 
 -- in Lua 5.1 but not 5.4, so implemented on the .NET side
 local loadstring = chain_func(error_wrapper_r2, garnet_loadstring)
-math.atan2 = garnet_atan2
-math.cosh = garnet_cosh
-math.frexp = garnet_frexp
-math.ldexp = garnet_ldexp
-math.log10 = garnet_log10
-math.pow = garnet_pow
-math.sinh = garnet_sinh
-math.tanh = garnet_tanh
-table.maxn = garnet_maxn
+math.atan2 = chain_func(error_wrapper_r1, garnet_atan2)
+math.cosh = chain_func(error_wrapper_r1, garnet_cosh)
+math.frexp = chain_func(error_wrapper_r2, garnet_frexp)
+math.ldexp = chain_func(error_wrapper_r1, garnet_ldexp)
+math.log10 = chain_func(error_wrapper_r1, garnet_log10)
+math.pow = chain_func(error_wrapper_r1, garnet_pow)
+math.sinh = chain_func(error_wrapper_r1, garnet_sinh)
+math.tanh = chain_func(error_wrapper_r1, garnet_tanh)
+table.maxn = chain_func(error_wrapper_r1, garnet_maxn)
 
 local collectgarbageRef = collectgarbage
 local setMetatableRef = setmetatable
@@ -1093,7 +1093,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to atan2");
+                return LuaWrappedError(1, "bad argument to atan2"u8);
             }
 
             var x = state.CheckNumber(1);
@@ -1115,7 +1115,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to cosh");
+                return LuaWrappedError(1, "bad argument to cosh"u8);
             }
 
             var value = state.CheckNumber(1);
@@ -1144,7 +1144,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to frexp");
+                return LuaWrappedError(2, "bad argument to frexp"u8);
             }
 
             var number = state.CheckNumber(1);
@@ -1202,7 +1202,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to ldexp");
+                return LuaWrappedError(1, "bad argument to ldexp"u8);
             }
 
             var m = state.CheckNumber(1);
@@ -1234,7 +1234,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to log10");
+                return LuaWrappedError(1, "bad argument to log10"u8);
             }
 
             var val = state.CheckNumber(1);
@@ -1256,7 +1256,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to pow");
+                return LuaWrappedError(1, "bad argument to pow"u8);
             }
 
             var x = state.CheckNumber(1);
@@ -1279,7 +1279,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to sinh");
+                return LuaWrappedError(1, "bad argument to sinh"u8);
             }
 
             var val = state.CheckNumber(1);
@@ -1301,7 +1301,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to tanh");
+                return LuaWrappedError(1, "bad argument to tanh"u8);
             }
 
             var val = state.CheckNumber(1);
@@ -1323,7 +1323,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Table)
             {
-                return state.RaiseError("bad argument to maxn");
+                return LuaWrappedError(1, "bad argument to maxn"u8);
             }
 
             state.ForceMinimumStackCapacity(2);
