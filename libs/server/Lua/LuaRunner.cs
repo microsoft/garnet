@@ -341,7 +341,7 @@ local struct = {
 }
 
 -- define redis for (optional, but almost always) inclusion into sandbox_env
-local garnetCallRef = garnet_call
+local garnetCallRef = chain_func(error_wrapper_r1, garnet_call)
 local pCallRef = pcall
 local redis = {
     status_reply = function(text)
@@ -3291,14 +3291,14 @@ end
 
                 if (argCount <= 0)
                 {
-                    return LuaStaticError(constStrs.PleaseSpecifyRedisCall);
+                    return LuaWrappedError(1, constStrs.PleaseSpecifyRedisCall);
                 }
 
                 state.ForceMinimumStackCapacity(AdditionalStackSpace);
 
                 if (!state.CheckBuffer(1, out var cmdSpan))
                 {
-                    return LuaStaticError(constStrs.ErrBadArg);
+                    return LuaWrappedError(1, constStrs.ErrBadArg);
                 }
 
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
@@ -3306,12 +3306,12 @@ end
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.SET))
                     {
-                        return LuaStaticError(constStrs.ErrNoAuth);
+                        return LuaWrappedError(1, constStrs.ErrNoAuth);
                     }
 
                     if (!state.CheckBuffer(2, out var keySpan) || !state.CheckBuffer(3, out var valSpan))
                     {
-                        return LuaStaticError(constStrs.ErrBadArg);
+                        return LuaWrappedError(1, constStrs.ErrBadArg);
                     }
 
                     // Note these spans are implicitly pinned, as they're actually on the Lua stack
@@ -3327,12 +3327,12 @@ end
                 {
                     if (!respServerSession.CheckACLPermissions(RespCommand.GET))
                     {
-                        return LuaStaticError(constStrs.ErrNoAuth);
+                        return LuaWrappedError(1, constStrs.ErrNoAuth);
                     }
 
                     if (!state.CheckBuffer(2, out var keySpan))
                     {
-                        return LuaStaticError(constStrs.ErrBadArg);
+                        return LuaWrappedError(1, constStrs.ErrBadArg);
                     }
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
@@ -3379,7 +3379,7 @@ end
                     }
                     else
                     {
-                        return LuaStaticError(constStrs.ErrBadArg);
+                        return LuaWrappedError(1, constStrs.ErrBadArg);
                     }
                 }
 
@@ -3447,6 +3447,28 @@ end
         }
 
         /// <summary>
+        /// We can't use Lua's normal error handling functions on Linux, so instead we go through wrappers.
+        /// 
+        /// The last slot on the stack is used for an error message, the rest are filled with nils.
+        /// 
+        /// Raising the error is handled (on the Lua side) with the error_wrapper_r# functions.
+        /// </summary>
+        private int LuaWrappedError([ConstantExpected] int nonErrorReturns, int constStringRegistryIndex)
+        {
+            Debug.Assert(nonErrorReturns <= LuaStateWrapper.LUA_MINSTACK - 1, "Cannot safely return this many returns in an error path");
+
+            state.ClearStack();
+            state.ForceMinimumStackCapacity(nonErrorReturns + 1);
+            for (var i = 0; i < nonErrorReturns; i++)
+            {
+                state.PushNil();
+            }
+
+            state.PushConstantString(constStringRegistryIndex);
+            return nonErrorReturns + 1;
+        }
+
+        /// <summary>
         /// Process a RESP(2|3)-formatted response.
         /// 
         /// Pushes result onto Lua stack and returns 1, or raises an error and never returns.
@@ -3459,7 +3481,7 @@ end
 
             if (respPtr != respEnd)
             {
-                throw new InvalidOperationException("RESP3 Response not fully consumed, this should never happen");
+                return LuaWrappedError(1, "RESP3 Response not fully consumed, this should never happen"u8);
             }
 
             return ret;
@@ -3509,14 +3531,10 @@ end
                         if (errSpan.SequenceEqual(CmdStrings.RESP_ERR_GENERIC_UNK_CMD))
                         {
                             // Gets a special response
-                            return LuaStaticError(constStrs.ErrUnknown);
+                            return LuaWrappedError(1, constStrs.ErrUnknown);
                         }
 
-                        state.ForceMinimumStackCapacity(1);
-
-                        state.PushBuffer(errSpan);
-                        return state.RaiseErrorFromStack();
-
+                        return LuaWrappedError(1, errSpan);
                     }
                     goto default;
 
@@ -3838,9 +3856,8 @@ end
                     }
                     goto default;
 
-
                 default:
-                    throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(respPtr, (int)(respEnd - respPtr))).Replace("\n", "|").Replace("\r", "") + "]");
+                    return LuaWrappedError(1, "Unexpected response, this should never happen"u8);
             }
         }
 
