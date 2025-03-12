@@ -478,5 +478,28 @@ namespace Garnet.cluster
 
             return true;
         }
+
+        /// <summary>
+        /// Implements CLUSTER FLUSHALL
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkClusterFlushAll(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 0 arguments
+            if (parseState.Count != 0)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            // Flush all keys
+            clusterProvider.storeWrapper.ExecuteFlushDb(RespCommand.FLUSHALL, false, 0);
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+            return true;
+        }
     }
 }
