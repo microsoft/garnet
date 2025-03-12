@@ -56,7 +56,7 @@ namespace Garnet
             }
 
             // HSET
-            var status = api.HashSet(myHash, pairs.Take(pairs.Length - 2).ToArray(), out var count);
+            var status = api.HashSet(myHash, [.. pairs.Take(pairs.Length - 2)], out var count);
             if (status != GarnetStatus.OK || count != pairs.Length - 2)
                 return false;
 

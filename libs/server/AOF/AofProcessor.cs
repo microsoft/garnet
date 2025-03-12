@@ -232,6 +232,12 @@ namespace Garnet.server
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                         storeWrapper.objectStore.SetVersion(header.storeVersion);
                     break;
+                case AofEntryType.FlushAll:
+                    storeWrapper.ExecuteFlushDb(RespCommand.FLUSHALL, unsafeTruncateLog: header.unsafeTruncateLog == 1, databaseId: header.databaseId);
+                    break;
+                case AofEntryType.FlushDb:
+                    storeWrapper.ExecuteFlushDb(RespCommand.FLUSHDB, unsafeTruncateLog: header.unsafeTruncateLog == 1, databaseId: header.databaseId);
+                    break;
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
@@ -411,6 +417,7 @@ namespace Garnet.server
                 AofStoreType.TxnType => false,
                 AofStoreType.ReplicationType => false,
                 AofStoreType.CheckpointType => false,
+                AofStoreType.FlushDbType => false,
                 _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
             };
         }
@@ -424,6 +431,7 @@ namespace Garnet.server
                 AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
                 AofEntryType.MainStoreCheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit or AofEntryType.MainStoreStreamingCheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
                 AofEntryType.MainStoreCheckpointEndCommit or AofEntryType.ObjectStoreCheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
+                AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
                 _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
             };
         }

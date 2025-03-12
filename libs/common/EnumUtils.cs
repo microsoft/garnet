@@ -42,7 +42,7 @@ namespace Garnet.common
         public static string[] GetEnumDescriptions<T>(T value) where T : Enum
         {
             var nameToDesc = GetEnumNameToDescription<T>();
-            return value.ToString().Split(',').Select(f => nameToDesc.ContainsKey(f.Trim()) ? nameToDesc[f.Trim()] : f).ToArray();
+            return [.. value.ToString().Split(',').Select(f => nameToDesc.ContainsKey(f.Trim()) ? nameToDesc[f.Trim()] : f)];
         }
 
         /// <summary>

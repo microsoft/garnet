@@ -892,6 +892,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             FlushDb(RespCommand.FLUSHDB);
 
             return true;
@@ -902,9 +909,16 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkFLUSHALL()
         {
-            if (parseState.Count > 2)
+            if (parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
+            }
+
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             // Since Garnet currently only supports a single database,
@@ -1663,19 +1677,13 @@ namespace Garnet.server
             }
 
             if (async)
-                Task.Run(() => ExecuteFlushDb(unsafeTruncateLog)).ConfigureAwait(false);
+                Task.Run(() => storeWrapper.ExecuteFlushDb(cmd, unsafeTruncateLog, 0)).ConfigureAwait(false);
             else
-                ExecuteFlushDb(unsafeTruncateLog);
+                storeWrapper.ExecuteFlushDb(cmd, unsafeTruncateLog, 0);
 
             logger?.LogInformation($"Running {nameof(cmd)} {{async}} {{mode}}", async ? "async" : "sync", unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
-        }
-
-        void ExecuteFlushDb(bool unsafeTruncateLog)
-        {
-            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <summary>

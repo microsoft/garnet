@@ -51,7 +51,7 @@ namespace Garnet
                 elements[i] = GetNextArg(ref procInput, ref offset);
             }
 
-            var status = api.SetAdd(setA, elements.Take(9).ToArray(), out var count);
+            var status = api.SetAdd(setA, [.. elements.Take(9)], out var count);
             if (status != GarnetStatus.OK || count != 9)
                 return false;
 
