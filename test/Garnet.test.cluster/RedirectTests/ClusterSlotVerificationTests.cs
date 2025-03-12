@@ -241,127 +241,6 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetIndex, sourceIndex, logger: context.logger);
         }
 
-        readonly List<string> clusterDownTestList = [
-                "GET",
-                "SET",
-                "GETSET",
-                "SETNX",
-                "SUBSTR",
-                "MGET",
-                "MSET",
-                "GETEX",
-                "PFADD",
-                "PFCOUNT",
-                "PFMERGE",
-                "SETBIT",
-                "GETBIT",
-                "BITCOUNT",
-                "BITPOS",
-                "BITOP",
-                "BITFIELD",
-                "BITFIELD_RO",
-                "SETRANGE",
-                "GETRANGE",
-                "INCR",
-                "INCRBYFLOAT",
-                "APPEND",
-                "STRLEN",
-                "RENAME",
-                "DEL",
-                "GETDEL",
-                "EXISTS",
-                "PERSIST",
-                "EXPIRE",
-                "TTL",
-                "DUMP",
-                "RESTORE",
-                "SDIFFSTORE",
-                "SDIFF",
-                "SMOVE",
-                "SUNIONSTORE",
-                "SUNION",
-                "SINTERSTORE",
-                "SINTER",
-                "LMOVE",
-                "LPUSH",
-                "LPOP",
-                "LMPOP",
-                "ZMPOP",
-                "BLPOP",
-                "BLMOVE",
-                "BRPOPLPUSH",
-                "LLEN",
-                "LTRIM",
-                "LRANGE",
-                "LINDEX",
-                "LINSERT",
-                "LREM",
-                "RPOPLPUSH",
-                "LSET",
-                "SADD",
-                "SREM",
-                "SCARD",
-                "SMEMBERS",
-                "SISMEMBER",
-                "SMISMEMBER",
-                "SPOP",
-                "SRANDMEMBER",
-                "GEOADD",
-                "GEOHASH",
-                "GEOSEARCHSTORE",
-                "ZADD",
-                "ZREM",
-                "ZCARD",
-                "ZRANGE",
-                "ZREVRANGEBYLEX",
-                "ZRANGESTORE",
-                "ZSCORE",
-                "ZMSCORE",
-                "ZPOPMAX",
-                "ZCOUNT",
-                "ZLEXCOUNT",
-                "ZINCRBY",
-                "ZRANK",
-                "ZREMRANGEBYRANK",
-                "ZRANDMEMBER",
-                "ZDIFF",
-                "ZDIFFSTORE",
-                "ZINTER",
-                "ZINTERCARD",
-                "ZINTERSTORE",
-                "ZUNION",
-                "ZUNIONSTORE",
-                "HSET",
-                "HGET",
-                "HGETALL",
-                "HMGET",
-                "HRANDFIELD",
-                "HLEN",
-                "HSTRLEN",
-                "HDEL",
-                "HEXISTS",
-                "HKEYS",
-                "HINCRBY",
-                "HEXPIRE",
-                "HPEXPIRE",
-                "HEXPIREAT",
-                "HPEXPIREAT",
-                "HTTL",
-                "HPTTL",
-                "HEXPIRETIME",
-                "HPEXPIRETIME",
-                "HPERSIST",
-                "HCOLLECT",
-                "CLUSTERGETPROC",
-                "CLUSTERSETPROC",
-                "WATCH",
-                "WATCHMS",
-                "WATCHOS",
-                "SINTERCARD",
-                "EVALSHA",
-                "LCS"
-            ];
-
         [OneTimeTearDown]
         public virtual void OneTimeTearDown()
         {
@@ -372,11 +251,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         public void ClusterCLUSTERDOWNTest()
         {
-            foreach (var commandName in clusterDownTestList)
+            foreach (var command in TestCommands)
             {
                 var requestNodeIndex = otherIndex;
-                var dummyCommand = new DummyCommand(commandName);
-                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
                 Initialize(command);
 
@@ -423,11 +300,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         public void ClusterOKTest()
         {
-            foreach (var commandName in clusterDownTestList)
+            foreach (var command in TestCommands)
             {
                 var requestNodeIndex = sourceIndex;
-                var dummyCommand = new DummyCommand(commandName);
-                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
                 Initialize(command);
                 for (var i = 0; i < iterations; i++)
@@ -482,11 +357,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         public void ClusterCROSSSLOTTest()
         {
-            foreach (var commandName in clusterDownTestList)
+            foreach (var command in TestCommands)
             {
                 var requestNodeIndex = sourceIndex;
-                var dummyCommand = new DummyCommand(commandName);
-                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
                 Initialize(command);
 
@@ -535,13 +408,11 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         public void ClusterMOVEDTest()
         {
-            foreach (var commandName in clusterDownTestList)
+            foreach (var command in TestCommands)
             {
                 var requestNodeIndex = targetIndex;
                 var address = "127.0.0.1";
                 var port = context.clusterTestUtils.GetPortFromNodeIndex(sourceIndex);
-                var dummyCommand = new DummyCommand(commandName);
-                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
                 Initialize(command);
 
@@ -595,13 +466,11 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         public void ClusterASKTest()
         {
-            foreach (var commandName in clusterDownTestList)
+            foreach (var command in TestCommands)
             {
                 var requestNodeIndex = sourceIndex;
                 var address = "127.0.0.1";
                 var port = context.clusterTestUtils.GetPortFromNodeIndex(targetIndex);
-                var dummyCommand = new DummyCommand(commandName);
-                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
 
                 Initialize(command);
 
@@ -673,14 +542,9 @@ namespace Garnet.test.cluster
         [Category("SLOT_VERIFY")]
         public void ClusterTRYAGAINTest()
         {
-            foreach (var commandName in clusterDownTestList)
+            foreach (var command in TestCommands)
             {
                 var requestNodeIndex = sourceIndex;
-                var dummyCommand = new DummyCommand(commandName);
-                ClassicAssert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), $"Command not found {commandName}");
-
-                if (command.Command.Equals("EVALSHA"))
-                    continue;
 
                 Initialize(command);
 
