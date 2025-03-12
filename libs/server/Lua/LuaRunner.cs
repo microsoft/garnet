@@ -596,7 +596,6 @@ end
         readonly RespServerSession respServerSession;
 
         readonly ScratchBufferManager scratchBufferManager;
-        readonly ILogger logger;
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
 
@@ -618,6 +617,8 @@ end
         string[] preambleArgv;
 
         int keyLength, argvLength;
+
+        internal readonly ILogger logger;
 
         /// <summary>
         /// Creates a new runner with the source of the script

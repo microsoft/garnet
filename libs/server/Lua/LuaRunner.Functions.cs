@@ -33,8 +33,8 @@ namespace Garnet.server
         /// 
         /// Call <see cref="CompileForRunner"/> instead.
         /// </summary>
-        internal int UnsafeCompileForRunner()
-        => CompileCommon(ref runnerAdapter);
+        internal int UnsafeCompileForRunner(nint luaStatePtr)
+        => CompileCommon(luaStatePtr, ref runnerAdapter);
 
         /// <summary>
         /// Actually compiles for runner.
@@ -43,8 +43,8 @@ namespace Garnet.server
         /// 
         /// Call <see cref="CompileForSession"/> instead.
         /// </summary>
-        internal int UnsafeCompileForSession()
-        => CompileCommon(ref sessionAdapter);
+        internal int UnsafeCompileForSession(nint luaStatePtr)
+        => CompileCommon(luaStatePtr, ref sessionAdapter);
 
         /// <summary>
         /// Setups a script to be run.
@@ -53,8 +53,10 @@ namespace Garnet.server
         /// 
         /// Call <see cref="RunForRunner"/> instead.
         /// </summary>
-        internal int UnsafeRunPreambleForRunner()
+        internal int UnsafeRunPreambleForRunner(nint luaStatePtr)
         {
+            state.CallFromLuaEntered(luaStatePtr);
+
             state.ExpectLuaStackEmpty();
 
             scratchBufferManager?.Reset();
@@ -69,8 +71,10 @@ namespace Garnet.server
         /// 
         /// Call <see cref="RunForSession"/> instead.
         /// </summary>
-        internal int UnsafeRunPreambleForSession()
+        internal int UnsafeRunPreambleForSession(nint luaStatePtr)
         {
+            state.CallFromLuaEntered(luaStatePtr);
+
             state.ExpectLuaStackEmpty();
 
             scratchBufferManager.Reset();
@@ -2476,13 +2480,14 @@ namespace Garnet.server
         /// <summary>
         /// Compile script, writing errors out to given response.
         /// </summary>
-        private unsafe int CompileCommon<TResponse>(ref TResponse resp)
+        private unsafe int CompileCommon<TResponse>(nint luaState, ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
             const int NeededStackSpace = 2;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
+            state.CallFromLuaEntered(luaState);
             state.ExpectLuaStackEmpty();
 
             state.ForceMinimumStackCapacity(NeededStackSpace);
@@ -2700,14 +2705,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Called if the 'exceptions cannot be propogated back to Lua'-invariant is violated.
+        /// 
+        /// In this case, we have no option but to crash.
+        /// 
+        /// We do try and log a bit before then.
+        /// </summary>
+        private static int FailOnException(Exception e, [CallerMemberName] string method = null)
+        {
+            const string FormatString = "Attempted to propogate exception back to Lua from {0}, this will corrupt the runtime.  Failing fast.";
+
+            CallbackContext?.logger?.LogCritical(e, FormatString, method);
+            Environment.FailFast(string.Format(FormatString, method ?? "!!UNKNOWN!!"), e);
+
+            // Invalid return which will also crash Lua, but we should never get here
+            return -1;
+        }
+
+        /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeCompileForRunner"/>.
         /// 
         /// We need this indirection to allow Lua to detect and report internal and memory errors
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int CompileForRunner(nint _)
-        => CallbackContext.UnsafeCompileForRunner();
+        internal static int CompileForRunner(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.UnsafeCompileForRunner(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeCompileForSession"/>.
@@ -2716,8 +2748,17 @@ namespace Garnet.server
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int CompileForSession(nint _)
-        => CallbackContext.UnsafeCompileForSession();
+        internal static int CompileForSession(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.UnsafeCompileForSession(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeRunPreambleForRunner"/>.
@@ -2726,8 +2767,17 @@ namespace Garnet.server
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int RunPreambleForRunner(nint _)
-        => CallbackContext.UnsafeRunPreambleForRunner();
+        internal static int RunPreambleForRunner(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.UnsafeRunPreambleForRunner(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for Lua PCall'ing into <see cref="LuaRunner.UnsafeRunPreambleForSession"/>.
@@ -2736,8 +2786,17 @@ namespace Garnet.server
         /// without crashing the process.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        internal static int RunPreambleForSession(nint _)
-        => CallbackContext.UnsafeRunPreambleForSession();
+        internal static int RunPreambleForSession(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.UnsafeRunPreambleForSession(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -2747,7 +2806,16 @@ namespace Garnet.server
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoSession(nint luaState)
-        => CallbackContext.NoSessionResponse(luaState);
+        {
+            try
+            {
+                return CallbackContext.NoSessionResponse(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -2756,7 +2824,16 @@ namespace Garnet.server
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallWithTransaction(nint luaState)
-        => CallbackContext.GarnetCallWithTransaction(luaState);
+        {
+            try
+            {
+                return CallbackContext.GarnetCallWithTransaction(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for Lua calling back into Garnet via redis.call(...).
@@ -2765,7 +2842,16 @@ namespace Garnet.server
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int GarnetCallNoTransaction(nint luaState)
-        => CallbackContext.GarnetCall(luaState);
+        {
+            try
+            {
+                return CallbackContext.GarnetCall(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for checking timeouts, called periodically from Lua.
@@ -2773,133 +2859,304 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Callback must take these parameters")]
         internal static void ForceTimeout(nint luaState, nint debugState)
-        => CallbackContext?.UnsafeForceTimeout();
+        {
+            try
+            {
+                CallbackContext?.UnsafeForceTimeout();
+            }
+            catch (Exception e)
+            {
+                _ = FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to redis.sha1hex.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int SHA1Hex(nint luaState)
-        => CallbackContext.SHA1Hex(luaState);
+        {
+            try
+            {
+                return CallbackContext.SHA1Hex(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to redis.log.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Log(nint luaState)
-        => CallbackContext.Log(luaState);
+        {
+            try
+            {
+                return CallbackContext.Log(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to redis.acl_check_cmd.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int AclCheckCommand(nint luaState)
-        => CallbackContext.AclCheckCommand(luaState);
+        {
+            try
+            {
+                return CallbackContext.AclCheckCommand(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to redis.setresp.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int SetResp(nint luaState)
-        => CallbackContext.SetResp(luaState);
+        {
+            try
+            {
+                return CallbackContext.SetResp(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.atan2.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Atan2(nint luaState)
-        => CallbackContext.Atan2(luaState);
+        {
+            try
+            {
+                return CallbackContext.Atan2(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.cosh.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Cosh(nint luaState)
-        => CallbackContext.Cosh(luaState);
+        {
+            try
+            {
+                return CallbackContext.Cosh(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.frexp.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Frexp(nint luaState)
-        => CallbackContext.Frexp(luaState);
+        {
+            try
+            {
+                return CallbackContext.Frexp(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.ldexp.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Ldexp(nint luaState)
-        => CallbackContext.Ldexp(luaState);
+        {
+            try
+            {
+                return CallbackContext.Ldexp(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.log10.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Log10(nint luaState)
-        => CallbackContext.Log10(luaState);
+        {
+            try
+            {
+                return CallbackContext.Log10(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.pow.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Pow(nint luaState)
-        => CallbackContext.Pow(luaState);
+        {
+            try
+            {
+                return CallbackContext.Pow(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.sinh.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Sinh(nint luaState)
-        => CallbackContext.Sinh(luaState);
+        {
+            try
+            {
+                return CallbackContext.Sinh(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to math.tanh.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Tanh(nint luaState)
-        => CallbackContext.Tanh(luaState);
+        {
+            try
+            {
+                return CallbackContext.Tanh(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to table.maxn.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Maxn(nint luaState)
-        => CallbackContext.Maxn(luaState);
+        {
+            try
+            {
+                return CallbackContext.Maxn(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to loadstring.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int LoadString(nint luaState)
-        => CallbackContext.LoadString(luaState);
+        {
+            try
+            {
+                return CallbackContext.LoadString(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to cjson.encode.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CJsonEncode(nint luaState)
-        => CallbackContext.CJsonEncode(luaState);
+        {
+            try
+            {
+                return CallbackContext.CJsonEncode(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to cjson.decode.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CJsonDecode(nint luaState)
-        => CallbackContext.CJsonDecode(luaState);
+        {
+            try
+            {
+                return CallbackContext.CJsonDecode(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to bit.tobit.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int BitToBit(nint luaState)
-        => CallbackContext.BitToBit(luaState);
+        {
+            try
+            {
+                return CallbackContext.BitToBit(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to bit.tohex.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int BitToHex(nint luaState)
-        => CallbackContext.BitToHex(luaState);
+        {
+            try
+            {
+                return CallbackContext.BitToHex(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to garnet_bitop, which backs
@@ -2907,34 +3164,79 @@ namespace Garnet.server
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int Bitop(nint luaState)
-        => CallbackContext.Bitop(luaState);
+        {
+            try
+            {
+                return CallbackContext.Bitop(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to bit.bswap.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int BitBswap(nint luaState)
-        => CallbackContext.BitBswap(luaState);
+        {
+            try
+            {
+                return CallbackContext.BitBswap(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to cmsgpack.pack.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CMsgPackPack(nint luaState)
-        => CallbackContext.CMsgPackPack(luaState);
+        {
+            try
+            {
+                return CallbackContext.CMsgPackPack(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to cmsgpack.unpack.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CMsgPackUnpack(nint luaState)
-        => CallbackContext.CMsgPackUnpack(luaState);
+        {
+            try
+            {
+                return CallbackContext.CMsgPackUnpack(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
 
         /// <summary>
         /// Entry point for calls to garnet_unpack_trampoline.
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int UnpackTrampoline(nint luaState)
-        => CallbackContext.UnpackTrampoline(luaState);
+        {
+            try
+            {
+                return CallbackContext.UnpackTrampoline(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
     }
 }
