@@ -8,40 +8,63 @@ namespace Garnet.common.Numerics
 {
     public static unsafe partial class TensorPrimitives
     {
-        /// <summary>x &amp; y</summary>
-        public readonly struct BitwiseAndOperator<T> : IBinaryOperator<T> where T : IBitwiseOperators<T, T, T>
-        {
-            public static T Invoke(T x, T y) => x & y;
-            public static Vector128<T> Invoke(Vector128<T> x, Vector128<T> y) => x & y;
-            public static Vector256<T> Invoke(Vector256<T> x, Vector256<T> y) => x & y;
-            public static Vector512<T> Invoke(Vector512<T> x, Vector512<T> y) => x & y;
-        }
-
-        /// <summary>x | y</summary>
-        public readonly struct BitwiseOrOperator<T> : IBinaryOperator<T> where T : IBitwiseOperators<T, T, T>
-        {
-            public static T Invoke(T x, T y) => x | y;
-            public static Vector128<T> Invoke(Vector128<T> x, Vector128<T> y) => x | y;
-            public static Vector256<T> Invoke(Vector256<T> x, Vector256<T> y) => x | y;
-            public static Vector512<T> Invoke(Vector512<T> x, Vector512<T> y) => x | y;
-        }
-
-        /// <summary>x ^ y</summary>
-        public readonly struct BitwiseXorOperator<T> : IBinaryOperator<T> where T : IBitwiseOperators<T, T, T>
-        {
-            public static T Invoke(T x, T y) => x ^ y;
-            public static Vector128<T> Invoke(Vector128<T> x, Vector128<T> y) => x ^ y;
-            public static Vector256<T> Invoke(Vector256<T> x, Vector256<T> y) => x ^ y;
-            public static Vector512<T> Invoke(Vector512<T> x, Vector512<T> y) => x ^ y;
-        }
-
         /// <summary>Operator that takes two input values and returns a single value.</summary>
-        public interface IBinaryOperator<T>
+        public interface IBinaryOperator
         {
-            static abstract T Invoke(T x, T y);
-            static abstract Vector128<T> Invoke(Vector128<T> x, Vector128<T> y);
-            static abstract Vector256<T> Invoke(Vector256<T> x, Vector256<T> y);
-            static abstract Vector512<T> Invoke(Vector512<T> x, Vector512<T> y);
+            /// <summary>
+            /// Computes the binary operation of two scalar values.
+            /// </summary>
+            static abstract T Invoke<T>(T x, T y) where T : IBinaryInteger<T>;
+
+            /// <summary>
+            /// Computes the binary operation of two vectors.
+            /// </summary>
+            static abstract Vector128<byte> Invoke(Vector128<byte> x, Vector128<byte> y);
+
+            /// <inheritdoc cref="Invoke(Vector128{byte}, Vector128{byte})"/>
+            static abstract Vector256<byte> Invoke(Vector256<byte> x, Vector256<byte> y);
+
+            /// <inheritdoc cref="Invoke(Vector128{byte}, Vector128{byte})"/>
+            static abstract Vector512<byte> Invoke(Vector512<byte> x, Vector512<byte> y);
+        }
+
+        /// <summary><c>x &amp; y</c></summary>
+        public readonly struct BitwiseAndOperator : IBinaryOperator
+        {
+            /// <inheritdoc/>
+            public static T Invoke<T>(T x, T y) where T : IBinaryInteger<T> => x & y;
+            /// <inheritdoc/>
+            public static Vector128<byte> Invoke(Vector128<byte> x, Vector128<byte> y) => x & y;
+            /// <inheritdoc/>
+            public static Vector256<byte> Invoke(Vector256<byte> x, Vector256<byte> y) => x & y;
+            /// <inheritdoc/>
+            public static Vector512<byte> Invoke(Vector512<byte> x, Vector512<byte> y) => x & y;
+        }
+
+        /// <summary><c>x | y</c></summary>
+        public readonly struct BitwiseOrOperator : IBinaryOperator
+        {
+            /// <inheritdoc/>
+            public static T Invoke<T>(T x, T y) where T : IBinaryInteger<T> => x | y;
+            /// <inheritdoc/>
+            public static Vector128<byte> Invoke(Vector128<byte> x, Vector128<byte> y) => x | y;
+            /// <inheritdoc/>
+            public static Vector256<byte> Invoke(Vector256<byte> x, Vector256<byte> y) => x | y;
+            /// <inheritdoc/>
+            public static Vector512<byte> Invoke(Vector512<byte> x, Vector512<byte> y) => x | y;
+        }
+
+        /// <summary><c>x ^ y</c></summary>
+        public readonly struct BitwiseXorOperator : IBinaryOperator
+        {
+            /// <inheritdoc/>
+            public static T Invoke<T>(T x, T y) where T : IBinaryInteger<T> => x ^ y;
+            /// <inheritdoc/>
+            public static Vector128<byte> Invoke(Vector128<byte> x, Vector128<byte> y) => x ^ y;
+            /// <inheritdoc/>
+            public static Vector256<byte> Invoke(Vector256<byte> x, Vector256<byte> y) => x ^ y;
+            /// <inheritdoc/>
+            public static Vector512<byte> Invoke(Vector512<byte> x, Vector512<byte> y) => x ^ y;
         }
     }
 }
