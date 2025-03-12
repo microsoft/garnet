@@ -398,7 +398,7 @@ namespace Garnet.server
                     recordInfo.SetHasETag();
 
                     long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : (etagFromClient + 1);
-                    
+
                     long oldExtraMetadata = value.ExtraMetadata;
 
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
