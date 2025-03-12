@@ -248,18 +248,19 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            if (opts.EndPoints[0] is UnixDomainSocketEndPoint)
-            {
-                // Delete existing unix socket file, if it exists.
-                File.Delete(opts.UnixSocketPath);
-            }
-
             // Create Garnet TCP server if none was provided.
             if (servers == null)
             {
                 servers = new IGarnetServer[opts.EndPoints.Length];
                 for (var i = 0; i < servers.Length; i++)
+                {
+                    if (opts.EndPoints[i] is UnixDomainSocketEndPoint)
+                    {
+                        // Delete existing unix socket file, if it exists.
+                        File.Delete(opts.UnixSocketPath);
+                    }
                     servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+                }
             }
 
             storeWrapper = new StoreWrapper(version, RedisProtocolVersion, servers, store, objectStore, objectStoreSizeTracker,
