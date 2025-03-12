@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -388,7 +389,7 @@ namespace Garnet.test.cluster
             context.nodes[restartingNode].Dispose(deleteDir: true);
 
             context.nodes[restartingNode] = context.CreateInstance(
-                context.clusterTestUtils.GetEndPoint(restartingNode).Port,
+                context.clusterTestUtils.GetEndPoint(restartingNode),
                 disableObjects: true,
                 tryRecover: false,
                 enableAOF: true,
@@ -412,9 +413,94 @@ namespace Garnet.test.cluster
         public void ClusterClientList()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, FastAofTruncate: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
+
+            // Wait for all nodes to be fully connected
+            for (var nodeIx = 0; nodeIx < NodeCount; nodeIx++)
+            {
+                for (var otherNodeIx = 0; otherNodeIx < NodeCount; otherNodeIx++)
+                {
+                    if (nodeIx == otherNodeIx)
+                    {
+                        continue;
+                    }
+
+                    context.clusterTestUtils.WaitUntilNodeIsKnown(nodeIx, otherNodeIx);
+                }
+            }
+
+            // Wait for at least one Gossip messages to be exchanged between all nodes
+            //
+            // This is necessary because that Gossip message is how a connection is classified
+            // as from a replica/master.
+            var waitingForGossip = true;
+            while (waitingForGossip)
+            {
+                waitingForGossip = false;
+
+                for (var nodeIx = 0; nodeIx < NodeCount; nodeIx++)
+                {
+                    var node = context.nodes[nodeIx];
+
+                    var clusterNodes = (string)context.clusterTestUtils.GetServer(nodeIx).Execute("CLUSTER", "NODES");
+                    var connectionState = new List<(string NodeId, long LastPingSent, long LastPongRecv)>();
+                    foreach (var entry in clusterNodes.Split("\n", StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var parts = Regex.Match(entry, @"^(?<id>[^\s]+) \s+ (?<ip>[^\s]+) \s+ (?<flags>[^\s]+) \s+ (?<primary>[^\s]+) \s+ (?<pingSent>[^\s]+) \s+ (?<pongRecv>[^\s]+) \s+ (?<configEpoch>[^\s]+) \s+ (?<linkStart>[^\s]+)", RegexOptions.IgnorePatternWhitespace);
+                        var id = parts.Groups["id"].Value;
+                        var pingSent = long.Parse(parts.Groups["pingSent"].Value);
+                        var pongRecv = long.Parse(parts.Groups["pongRecv"].Value);
+
+                        connectionState.Add((id, pingSent, pongRecv));
+                    }
+
+                    for (var otherNodeIx = 0; otherNodeIx < NodeCount; otherNodeIx++)
+                    {
+                        if (nodeIx == otherNodeIx)
+                        {
+                            continue;
+                        }
+
+                        var otherNodeId = context.clusterTestUtils.GetNodeIdFromNode(otherNodeIx, context.logger);
+
+                        var matching = connectionState.Single(x => x.NodeId == otherNodeId);
+
+                        if (matching.LastPingSent == 0 || matching.LastPongRecv == 0)
+                        {
+                            waitingForGossip = true;
+                            goto waitAndTryAgain;
+                        }
+                    }
+                }
+
+            waitAndTryAgain:
+                ClusterTestUtils.BackOff(context.cts.Token);
+            }
+
+            // At this point, the cluster should look like
+            // Node 1 (master)
+            //  * connected to node 2 (master <-> master)
+            //  * connected to node 3 (master <-> replica)
+            //  * connected to node 4 (master <-> replica)
+            // Node 2 (master)
+            //  * connected to node 1 (master <-> master)
+            //  * connected to node 3 (master <-> replica)
+            //  * connected to node 4 (master <-> replica)
+            // Node 3 (replica of Node 1)
+            //  * connected to node 1 (replica <-> master)
+            //  * connected to node 2 (replica <-> master)
+            //  * connected to node 4 (replica <-> replica)
+            // Node 4 (replica of Node 2)
+            //  * connected to node 1 (replica <-> master)
+            //  * connected to node 2 (replica <-> master)
+            //  * connected to node 3 (replica <-> replica)
+            //
+            // Then we establish a connection to every node, so every node has 1 normal connection
+            //
+            // So each master has 1 normal connection, 1 connection from a master, and 2 connections from replicas
+            // and each replica has 1 normal connection, 2 connections from masters, and 1 connection from a replica
 
             // Check that all nodes have 4 connections
             var numWithTwoMasterConnections = 0;
@@ -428,26 +514,26 @@ namespace Garnet.test.cluster
                 var numReplica = fullList.Split("\n").Count(static x => x.Contains(" flags=S "));
                 var numMaster = fullList.Split("\n").Count(static x => x.Contains(" flags=M "));
 
-                ClassicAssert.AreEqual(1, numNormal);
-                ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2);
-                ClassicAssert.IsTrue(numMaster >= 1 && numMaster <= 2);
+                ClassicAssert.AreEqual(1, numNormal, $"normalCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2, $"replicaCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.IsTrue(numMaster >= 1 && numMaster <= 2, $"masterCheck: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
 
                 if (numMaster == 1)
                 {
-                    ClassicAssert.AreEqual(2, numReplica);
+                    ClassicAssert.AreEqual(2, numReplica, $"unexpected replica count for master: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
                     numWithTwoReplicaConnections++;
                 }
                 else
                 {
-                    ClassicAssert.AreEqual(1, numReplica);
+                    ClassicAssert.AreEqual(1, numReplica, $"unexpected replica count for replica: nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
                     numWithTwoMasterConnections++;
                 }
 
                 var replicaList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "REPLICA"]);
                 var masterList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "MASTER"]);
 
-                ClassicAssert.AreEqual(numReplica, replicaList.Split("\n").Length);
-                ClassicAssert.AreEqual(numMaster, masterList.Split("\n").Length);
+                ClassicAssert.AreEqual(numReplica, replicaList.Split("\n").Length, $"nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.AreEqual(numMaster, masterList.Split("\n").Length, $"nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
             }
 
             ClassicAssert.AreEqual(2, numWithTwoMasterConnections);
@@ -458,7 +544,7 @@ namespace Garnet.test.cluster
         public void ClusterClientKill()
         {
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, FastAofTruncate: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -475,7 +561,7 @@ namespace Garnet.test.cluster
             // Test SLAVE separately - it's equivalent to REPLICA, but needed for compatibility
 
             const int NodeCount = 4;
-            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateInstances(NodeCount, enableAOF: true, FastAofTruncate: true, CommitFrequencyMs: -1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
 
@@ -605,6 +691,98 @@ namespace Garnet.test.cluster
                 var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "IMPORTING"]);
                 ClassicAssert.AreEqual("ERR syntax error", errorMsg);
             }
+        }
+
+        [Test, Order(11)]
+        public void ClusterRoleCommand()
+        {
+            var node_count = 3;
+            var replica_count = node_count - 1;
+            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, replica_count, logger: context.logger);
+
+            var result = context.clusterTestUtils.GetServer(0).Execute("ROLE");
+            ClassicAssert.AreEqual(3, result.Length);
+            ClassicAssert.AreEqual("master", result[0].ToString());
+            ClassicAssert.True(int.TryParse(result[1].ToString(), out _));
+            ClassicAssert.AreEqual(2, result[2].Length);
+            ClassicAssert.AreEqual("127.0.0.1", result[2][0][0].ToString());
+            ClassicAssert.AreEqual("127.0.0.1", result[2][1][0].ToString());
+
+            result = context.clusterTestUtils.GetServer(1).Execute("ROLE");
+            ClassicAssert.AreEqual(5, result.Length);
+            ClassicAssert.AreEqual("slave", result[0].ToString());
+            ClassicAssert.AreEqual("127.0.0.1", result[1].ToString());
+            ClassicAssert.True(int.TryParse(result[2].ToString(), out _));
+            ClassicAssert.AreEqual("connected", result[3].ToString());
+            ClassicAssert.True(int.TryParse(result[4].ToString(), out _));
+        }
+
+        [Test, Order(12)]
+        public void ClusterNodeCommand()
+        {
+            var primary_count = 1;
+            var node_count = 3;
+            var replica_count = node_count - primary_count;
+            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateConnection();
+            var (shardInfo, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+            var endpoint = (IPEndPoint)context.endpoints[0];
+            var result = context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["NODES"]);
+            ClassicAssert.IsNotNull(result);
+            var lines = result.ToString().Split("\n", StringSplitOptions.RemoveEmptyEntries);
+            ClassicAssert.AreEqual(node_count, lines.Length);
+
+            var primaries = shardInfo[0].nodes.Where(x => x.role == NodeRole.PRIMARY).Select(w => w.nodeid).ToArray();
+            foreach (var line in lines)
+            {
+                var fields = line.Split(' ');
+                ClassicAssert.IsTrue(shardInfo[0].nodes.Any(e => e.nodeid == fields[0]));
+
+                var node = shardInfo[0].nodes.Single(e => e.nodeid == fields[0]);
+                if (node.role == NodeRole.PRIMARY)
+                {
+                    ClassicAssert.GreaterOrEqual(fields.Length, 8);
+                    ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
+                    ClassicAssert.IsTrue(fields[2].Contains("master"));
+                    ClassicAssert.AreEqual("-", fields[3]); // primary node id
+                    ClassicAssert.AreEqual("1", fields[6]); // default config-epoch
+                    ClassicAssert.AreEqual("connected", fields[7]);
+                }
+                else
+                {
+                    ClassicAssert.GreaterOrEqual(fields.Length, 8);
+                    ClassicAssert.IsTrue(fields[1].StartsWith("127.0.0.1"));
+                    ClassicAssert.AreEqual("slave", fields[2]);
+                    ClassicAssert.Contains(fields[3], primaries);
+                    ClassicAssert.AreEqual("connected", fields[7]);
+                }
+            }
+        }
+
+        [Test, Order(13)]
+        public void ClusterMeetHostname([Values] bool useLoopback)
+        {
+            var hostname = useLoopback ? "localhost" : TestUtils.GetHostName(context.logger);
+            ClassicAssert.IsNotNull(hostname);
+            ClassicAssert.IsNotEmpty(hostname);
+
+            var node_count = 3;
+            context.CreateInstances(node_count, enableAOF: true, useHostname: !useLoopback);
+            context.CreateConnection();
+
+            for (var i = 0; i < node_count; i++)
+                context.clusterTestUtils.SetConfigEpoch(i, i + 1, context.logger);
+
+
+            for (var i = 1; i < node_count; i++)
+                context.clusterTestUtils.Meet(0, i, hostname, context.logger);
+
+            for (var i = 0; i < node_count; i++)
+                for (var j = 0; j < node_count; j++)
+                    if (i != j)
+                        context.clusterTestUtils.WaitUntilNodeIsKnown(i, j, context.logger);
         }
     }
 }

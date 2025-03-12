@@ -246,8 +246,18 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    var respVersion = input.arg1;
+
+                    if (respVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteDoubleNumeric(score, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
                 }
                 outputHeader.result1 = 1;
             }
@@ -416,6 +426,7 @@ namespace Garnet.server
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
+            var rangeOpts = (SortedSetRangeOpts)input.arg2;
             var count = input.parseState.Count;
             var respProtocolVersion = input.arg1;
 
@@ -436,27 +447,13 @@ namespace Garnet.server
                 var maxSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
 
                 // read the rest of the arguments
-                ZRangeOptions options = new();
-                switch (input.header.SortedSetOp)
+                ZRangeOptions options = new()
                 {
-                    case SortedSetOperation.ZRANGESTORE:
-                        options.WithScores = true;
-                        break;
-                    case SortedSetOperation.ZRANGEBYSCORE:
-                        options.ByScore = true;
-                        break;
-                    case SortedSetOperation.ZREVRANGE:
-                        options.Reverse = true;
-                        break;
-                    case SortedSetOperation.ZREVRANGEBYSCORE:
-                        options.ByScore = true;
-                        options.Reverse = true;
-                        break;
-                    case SortedSetOperation.ZREVRANGEBYLEX:
-                        options.ByLex = true;
-                        options.Reverse = true;
-                        break;
-                }
+                    ByScore = (rangeOpts & SortedSetRangeOpts.ByScore) != 0,
+                    ByLex = (rangeOpts & SortedSetRangeOpts.ByLex) != 0,
+                    Reverse = (rangeOpts & SortedSetRangeOpts.Reverse) != 0,
+                    WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
+                };
 
                 if (count > 2)
                 {
@@ -1037,10 +1034,9 @@ namespace Garnet.server
 
                 if (validLimit)
                 {
-                    elementsInLex = elementsInLex
+                    elementsInLex = [.. elementsInLex
                                         .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)
-                                        .ToList();
+                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
@@ -1089,10 +1085,9 @@ namespace Garnet.server
             if (doReverse) scoredElements.Reverse();
             if (validLimit)
             {
-                scoredElements = scoredElements
+                scoredElements = [.. scoredElements
                                  .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)
-                                 .ToList();
+                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)];
             }
 
             if (rem)

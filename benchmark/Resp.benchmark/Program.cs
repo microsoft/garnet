@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using CommandLine;
 using Garnet.client;
@@ -195,7 +196,7 @@ namespace Resp.benchmark
 
         static void WaitForServer(Options opts)
         {
-            using var client = new GarnetClientSession(opts.Address, opts.Port, new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+            using var client = new GarnetClientSession(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
             while (true)
             {
                 try
@@ -215,11 +216,11 @@ namespace Resp.benchmark
 
         static void RunBasicCommandsBenchmark(Options opts)
         {
-            int[] threadBench = opts.NumThreads.ToArray();
+            int[] threadBench = [.. opts.NumThreads];
             int keyLen = opts.KeyLength;
             int valueLen = opts.ValueLength;
 
-            if (opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD)
+            if (opts.Op == OpType.PUBLISH || opts.Op == OpType.SPUBLISH || opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD)
                 opts.SkipLoad = true;
 
             //if we have scripts ops we need to load them in memory
@@ -228,7 +229,7 @@ namespace Resp.benchmark
                 unsafe
                 {
                     var onResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
-                    using var client = new LightClient(opts.Address, opts.Port, (int)OpType.GET, onResponseDelegate, opts.DbSize, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    using var client = new LightClient(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), (int)OpType.GET, onResponseDelegate, opts.DbSize, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                     client.Connect();
                     client.Authenticate(opts.Auth);
                     BenchUtils.LoadSetGetScripts(client, out BenchUtils.sha1SetScript, out BenchUtils.sha1GetScript);
@@ -275,7 +276,7 @@ namespace Resp.benchmark
         static void RunHLLBenchmark(Options opts)
         {
             var bench = new RespPerfBench(opts, 0, redis);
-            int[] threadBench = opts.NumThreads.ToArray();
+            int[] threadBench = [.. opts.NumThreads];
 
             int loadThreads = 8;
             int loadBatchSize = opts.DbSize / loadThreads;

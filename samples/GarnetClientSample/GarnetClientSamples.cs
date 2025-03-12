@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -16,14 +17,12 @@ namespace GarnetClientSample
     /// </summary>
     public class GarnetClientSamples
     {
-        readonly string address;
-        readonly int port;
+        readonly EndPoint endpoint;
         readonly bool useTLS;
 
-        public GarnetClientSamples(string address, int port, bool useTLS)
+        public GarnetClientSamples(EndPoint endpoint, bool useTLS)
         {
-            this.address = address;
-            this.port = port;
+            this.endpoint = endpoint;
             this.useTLS = useTLS;
         }
 
@@ -44,7 +43,7 @@ namespace GarnetClientSample
 
         async Task PingAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
             var pong = await db.PingAsync();
             if (pong != "PONG")
@@ -54,7 +53,7 @@ namespace GarnetClientSample
 
         async Task SetGetAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             string origValue = "abcdefg";
@@ -69,7 +68,7 @@ namespace GarnetClientSample
 
         void SetGetSync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             db.Connect();
 
             string origValue = "abcdefg";
@@ -83,7 +82,7 @@ namespace GarnetClientSample
 
         async Task IncrAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
@@ -107,7 +106,7 @@ namespace GarnetClientSample
 
         async Task IncrByAsync(long nIncr)
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
@@ -132,7 +131,7 @@ namespace GarnetClientSample
 
         async Task DecrByAsync(long nDecr)
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
@@ -157,7 +156,7 @@ namespace GarnetClientSample
 
         async Task DecrAsync(string strKey, int nVal)
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             await db.StringSetAsync(strKey, $"{nVal}");
@@ -178,7 +177,7 @@ namespace GarnetClientSample
 
         async Task IncrNoKeyAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
@@ -198,7 +197,7 @@ namespace GarnetClientSample
 
         async Task ExistsAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
@@ -214,7 +213,7 @@ namespace GarnetClientSample
 
         async Task DeleteAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
@@ -232,7 +231,7 @@ namespace GarnetClientSample
 
         async Task SetGetMemoryAsync()
         {
-            using var db = new GarnetClient(address, port, GetSslOpts());
+            using var db = new GarnetClient(endpoint, GetSslOpts());
             await db.ConnectAsync();
 
             var key = new Memory<byte>(new byte[17]);
@@ -252,9 +251,18 @@ namespace GarnetClientSample
             Console.WriteLine("SetGetMemoryAsync: Success");
         }
 
+        static X509Certificate2 GetClientCertificate(string filename, string password)
+        {
+#if NET9_0_OR_GREATER
+            return X509CertificateLoader.LoadPkcs12FromFile(filename, password);
+#else
+            return new X509Certificate2(filename, password);
+#endif
+        }
+
         SslClientAuthenticationOptions GetSslOpts() => useTLS ? new()
         {
-            ClientCertificates = [new X509Certificate2("testcert.pfx", "placeholder")],
+            ClientCertificates = [GetClientCertificate("testcert.pfx", "placeholder")],
             TargetHost = "GarnetTest",
             RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,
         } : null;
@@ -272,7 +280,7 @@ namespace GarnetClientSample
                 int i = 0;
                 while (true)
                 {
-                    using var client = new GarnetClient(address, port, GetSslOpts());
+                    using var client = new GarnetClient(endpoint, GetSslOpts());
                     client.Connect();
                     Console.WriteLine($"{thread_id}:{i++}: {client.PingAsync().GetAwaiter().GetResult()}");
                     client.Dispose();

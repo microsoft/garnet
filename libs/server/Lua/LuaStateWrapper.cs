@@ -22,6 +22,8 @@ namespace Garnet.server
     {
         private const int LUA_MINSTACK = 20;
 
+        private SingleWriterMultiReaderLock hookLock;
+
         private GCHandle customAllocatorHandle;
 
         private nint state;
@@ -50,6 +52,8 @@ namespace Garnet.server
                     _ => throw new InvalidOperationException($"Unexpected mode/limit combination: {memMode}/{memLimitBytes}")
                 };
 
+            hookLock = new();
+
             if (customAllocator != null)
             {
                 customAllocatorHandle = GCHandle.Alloc(customAllocator, GCHandleType.Normal);
@@ -75,11 +79,23 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (state != 0)
+            // Synchronize with respect to hook'ing
+            hookLock.WriteLock();
+            try
             {
-                NativeMethods.Close(state);
-                state = 0;
+                // make sure we only close once
+                if (state != 0)
+                {
+
+                    NativeMethods.Close(state);
+                    state = 0;
+                }
             }
+            finally
+            {
+                hookLock.WriteUnlock();
+            }
+
 
             if (customAllocatorHandle.IsAllocated)
             {
@@ -185,6 +201,19 @@ namespace Garnet.server
             AssertLuaStackNotFull();
 
             NativeMethods.PushNil(state);
+            UpdateStackTop(1);
+        }
+
+        /// <summary>
+        /// This should be used for all PushInteger calls into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PushNumber(double number)
+        {
+            AssertLuaStackNotFull();
+
+            NativeMethods.PushNumber(state, number);
+
             UpdateStackTop(1);
         }
 
@@ -398,6 +427,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// This should be used for all SetGlobals into Lua.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        internal void SetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
+        {
+            AssertLuaStackNotEmpty();
+
+            NativeMethods.SetGlobal(state, nullTerminatedGlobalName);
+
+            UpdateStackTop(-1);
+        }
+
+        /// <summary>
         /// This should be used for all LoadBuffers into Lua.
         /// 
         /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
@@ -498,7 +541,74 @@ namespace Garnet.server
         internal void PushConstantString(int constStringRegistryIndex)
         => RawGetInteger(LuaType.String, (int)LuaRegistry.Index, constStringRegistryIndex);
 
+        /// <summary>
+        /// This should be used for all Nexts into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int Next(int tableIndex)
+        {
+            AssertLuaStackIndexInBounds(tableIndex);
+
+            // Will always remove 1 key, and _may_ push 2 new values for a net growth of 1
+            AssertLuaStackNotFull(1);
+
+            var ret = NativeMethods.Next(state, tableIndex);
+
+            if (ret == 0)
+            {
+                // Removed key, so net negative one
+                UpdateStackTop(-1);
+                return ret;
+            }
+
+
+            UpdateStackTop(1);
+
+            return ret;
+        }
+
+        /// <summary>
+        /// This should be used for all PushValues into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void PushValue(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+            AssertLuaStackNotFull();
+
+            NativeMethods.PushValue(state, stackIndex);
+
+            UpdateStackTop(1);
+        }
+
         // Rarely used
+
+        /// <summary>
+        /// This should be used to set all debug hooks for Lua when multiple threads are involved.
+        /// 
+        /// This can fail if there's a thread race to close the state.
+        /// 
+        /// This is the ONLY thread-safe method on <see cref="LuaStateWrapper"/>.
+        /// </summary>
+        internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
+        {
+            hookLock.ReadLock();
+            try
+            {
+                if (state == 0)
+                {
+                    return false;
+                }
+
+                NativeMethods.SetHook(state, hook, mask, count);
+            }
+            finally
+            {
+                hookLock.ReadUnlock();
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Remove everything from the Lua stack.
@@ -571,6 +681,15 @@ namespace Garnet.server
         {
             Debug.Assert((StackTop + probe) <= curStackSize, "Lua stack should have been grown before pushing");
         }
+
+        /// <summary>
+        /// Check that there's space to push some number of elements.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private readonly void AssertLuaStackNotEmpty()
+        {
+            Debug.Assert(StackTop > 0, "Lua stack should not be empty when called");
+        }
     }
 
     /// <summary>
@@ -632,7 +751,7 @@ namespace Garnet.server
         /// 
         /// If allocation cannot be performed, null is returned.
         /// </summary>
-        /// <param name="udPtr">Pointer to user data provided during <see cref="Lua.SetAllocFunction"/></param>
+        /// <param name="udPtr">Pointer to user data provided during allocation function registration</param>
         /// <param name="ptr">Either null (if new alloc) or pointer to existing allocation being resized or freed.</param>
         /// <param name="osize">If <paramref name="ptr"/> is not null, the <paramref name="nsize"/> value passed when allocation was obtained or resized.</param>
         /// <param name="nsize">The desired size of the allocation, in bytes.</param>

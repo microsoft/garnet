@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
 
@@ -30,7 +29,7 @@ namespace Garnet.server
         /// <summary>
         /// Broker
         /// </summary>
-        protected readonly SubscribeBroker<TKey, TValue, IKeySerializer<TKey>> broker;
+        protected readonly SubscribeBroker broker;
 
         /// <summary>
         /// Size settings
@@ -46,7 +45,7 @@ namespace Garnet.server
         /// <param name="recoverStore"></param>
         /// <param name="maxSizeSettings"></param>
         public TsavoriteKVProviderBase(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TParameterSerializer serializer,
-                SubscribeBroker<TKey, TValue, IKeySerializer<TKey>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
+                SubscribeBroker broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             if (recoverStore)

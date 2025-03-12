@@ -1,12 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using Embedded.server;
 using Microsoft.Extensions.Logging;
 
@@ -57,8 +53,8 @@ namespace Embedded.perftest
             if (opts.OpPercent == null || opts.OpWorkload == null)
                 throw new Exception("OpPercent and OpWorkload must be specified!");
 
-            opPercent = opts.OpPercent.ToArray();
-            opWorkload = opts.OpWorkload.ToArray();
+            opPercent = [.. opts.OpPercent];
+            opWorkload = [.. opts.OpWorkload];
 
             if (opPercent.Length != opWorkload.Length)
                 throw new Exception($"opPercent {opWorkload.Length} and opWorkload {opWorkload.Length} mismatch!");

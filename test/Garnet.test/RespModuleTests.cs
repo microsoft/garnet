@@ -46,6 +46,8 @@ namespace Garnet.test
 
             var referenceFiles = new[]
             {
+                Path.Combine(runtimePath, "System.dll"),
+                Path.Combine(runtimePath, "System.Core.dll"),
                 Path.Combine(runtimePath, "System.Collections.dll"),
                 Path.Combine(runtimePath, "System.Private.CoreLib.dll"),
                 Path.Combine(runtimePath, "System.Runtime.dll"),

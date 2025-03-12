@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
@@ -304,12 +303,10 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(parseState.Count == 2);
-            var key = parseState.GetArgSliceByRef(0);
-            var value = parseState.GetArgSliceByRef(1);
-            var getOption = ArgSlice.FromPinnedSpan(CmdStrings.GET);
-            parseState.InitializeWithArguments(key, value, getOption);
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
 
-            return NetworkSETEXNX(ref storageApi);
+            return NetworkSET_Conditional(RespCommand.SET, 0, ref key, true,
+                                          false, false, ref storageApi);
         }
 
         /// <summary>
@@ -432,7 +429,11 @@ namespace Garnet.server
         private bool NetworkSETNX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETNX));
+            }
+
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
@@ -658,27 +659,37 @@ namespace Garnet.server
 
             if (!getValue && !withEtag)
             {
-                // the following debug assertion is the catch any edge case leading to SETIFMATCH skipping the above block
-                Debug.Assert(cmd != RespCommand.SETIFMATCH, "SETIFMATCH should have gone though pointing to right output variable");
+                // the following debug assertion is the catch any edge case leading to SETIFMATCH, or SETIFGREATER skipping the above block
+                Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right output variable");
 
-                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
+                var status = storageApi.SET_Conditional(ref key, ref input);
 
-                bool ok = status != GarnetStatus.NOTFOUND;
-
-                // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
-                if (cmd == RespCommand.SETEXNX)
-                    ok = !ok;
-
-                if (ok)
+                // KEEPTTL without flags doesn't care whether it was found or not.
+                if (cmd == RespCommand.SETKEEPTTL)
                 {
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    var ok = status != GarnetStatus.NOTFOUND;
+
+                    // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
+                    if (cmd == RespCommand.SETEXNX)
+                        ok = !ok;
+
+                    if (ok)
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
+
                 return true;
             }
             else
@@ -970,10 +981,10 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             var cmdCount = 0;
 
-            foreach (var customCmd in storeWrapper.customCommandManager.customCommandsInfo.Values)
+            foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
             {
                 cmdCount++;
-                resultSb.Append(customCmd.RespFormat);
+                resultSb.Append(customCmd.Value.RespFormat);
             }
 
             if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
@@ -1033,7 +1044,7 @@ namespace Garnet.server
                     respCommandCount = 0;
                 }
 
-                var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount + respCommandCount;
+                var commandCount = customCommandManagerSession.GetCustomCommandInfoCount() + respCommandCount;
 
                 while (!RespWriteUtils.TryWriteInt32(commandCount, ref dcurr, dend))
                     SendAndReset();
@@ -1064,10 +1075,10 @@ namespace Garnet.server
                     resultSb.Append(cmdDocs.RespFormat);
                 }
 
-                foreach (var customCmd in storeWrapper.customCommandManager.customCommandsDocs.Values)
+                foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsDocs())
                 {
                     docsCount++;
-                    resultSb.Append(customCmd.RespFormat);
+                    resultSb.Append(customCmd.Value.RespFormat);
                 }
             }
             else
@@ -1076,7 +1087,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
                     if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
-                        storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                        customCommandManagerSession.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
                         docsCount++;
                         resultSb.Append(cmdDocs.RespFormat);
@@ -1129,7 +1140,7 @@ namespace Garnet.server
                     var cmdName = parseState.GetString(i);
 
                     if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                        storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
+                        customCommandManagerSession.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.TryWriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
                             SendAndReset();
@@ -1679,7 +1690,7 @@ namespace Garnet.server
             var remoteEndpoint = targetSession.networkSender.RemoteEndpointName;
             var localEndpoint = targetSession.networkSender.LocalEndpointName;
             var clientName = targetSession.clientName;
-            var user = targetSession._user;
+            var user = targetSession._userHandle.User;
             var resp = targetSession.respProtocolVersion;
             var nodeId = targetSession?.clusterSession?.RemoteNodeId;
 
@@ -1731,7 +1742,7 @@ namespace Garnet.server
         bool ParseGETAndKey(ref SpanByte key)
         {
             var oldEndReadHead = readHead = endReadHead;
-            var cmd = ParseCommand(out var success);
+            var cmd = ParseCommand(writeErrorOnFailure: true, out var success);
             if (!success || cmd != RespCommand.GET)
             {
                 // If we either find no command or a different command, we back off

@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 
@@ -30,11 +30,15 @@ COPY test/testcerts test/testcerts
 WORKDIR /src/main/GarnetServer
 RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
+# Separate stage to install libaio1 on amd64 (avoiding QEMU issues on arm64)
+FROM --platform=linux/amd64 ubuntu:22.04 AS builder
+RUN apt-get update && apt-get install -y libaio1
+
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy AS runtime
 
-# Install libaio
-RUN apt-get update && apt-get install -y libaio1 && rm -rf /var/lib/apt/lists/*
+# Copy libaio1 from amd64 builder stage (avoiding installation under QEMU)
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libaio.so.1 /usr/lib/x86_64-linux-gnu/
 
 RUN mkdir /data /app \
     && chown -R $APP_UID:$APP_UID /data /app

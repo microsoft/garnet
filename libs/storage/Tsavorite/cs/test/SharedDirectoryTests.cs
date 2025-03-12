@@ -9,7 +9,6 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
@@ -196,7 +195,7 @@ namespace Tsavorite.test.recovery.sumstore
             var checkpointInfo = default(HybridLogRecoveryInfo);
             checkpointInfo.Recover(checkpointToken,
                 new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
+                    new LocalStorageNamedDeviceFactoryCreator(),
                         new DefaultCheckpointNamingScheme(
                           new DirectoryInfo(tsavoriteInstance.CheckpointDirectory).FullName)));
 

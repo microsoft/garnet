@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -33,6 +33,21 @@ namespace Garnet.server.ACL
         public bool IsPasswordless { get; set; }
 
         /// <summary>
+        /// Returns a copy of the <see cref="User"/>s passwords.
+        /// </summary>
+        public ISet<ACLPassword> Passwords
+        {
+            get
+            {
+                lock (_passwordHashes)
+                {
+                    // Eventually replace with ReadOnlySet<T> in .NET 9
+                    return _passwordHashes.ToImmutableHashSet<ACLPassword>();
+                }
+            }
+        }
+
+        /// <summary>
         /// Creates a new user with the given name
         /// </summary>
         /// <param name="name">Name of the new user</param>
@@ -42,6 +57,19 @@ namespace Garnet.server.ACL
             IsEnabled = false;
             IsPasswordless = false;
             _enabledCommands = CommandPermissionSet.None;
+        }
+
+        /// <summary>
+        /// Copy constructor for a <see cref="User"/>.
+        /// </summary>
+        /// <param name="user">The <see cref="User"/> the new <see cref="User"/> is constructed from.</param>
+        public User(User user)
+        {
+            Name = user.Name;
+            IsEnabled = user.IsEnabled;
+            IsPasswordless = user.IsPasswordless;
+            _enabledCommands = user._enabledCommands.Copy();
+            _passwordHashes = user.CopyPasswordHashes();
         }
 
         /// <summary>
@@ -416,8 +444,16 @@ namespace Garnet.server.ACL
                 stringBuilder.Append($" {permsStr}");
             }
 
-
             return stringBuilder.ToString();
+        }
+
+        /// <summary>
+        /// Returns a <see cref="string"/> containing the enabled commands.
+        /// </summary>
+        /// <returns>A <see cref="string"/> containing the enabled commands.</returns>
+        public string GetEnabledCommandsDescription()
+        {
+            return _enabledCommands.Description;
         }
 
         /// <summary>
@@ -484,6 +520,22 @@ namespace Garnet.server.ACL
         /// </summary>
         internal CommandPermissionSet CopyCommandPermissionSet()
         => _enabledCommands.Copy();
+
+        /// <summary>
+        /// Returns a copy of the password hashes for the <see cref="User"/>.
+        /// </summary>
+        /// <returns>A <see cref="HashSet{T}"/> of <see cref="ACLPassword"/> representing password hashes for the user.</returns>
+        private HashSet<ACLPassword> CopyPasswordHashes()
+        {
+            HashSet<ACLPassword> passwordHashesCopy = null;
+
+            lock (_passwordHashes)
+            {
+                passwordHashesCopy = new HashSet<ACLPassword>(_passwordHashes);
+            }
+
+            return passwordHashesCopy;
+        }
 
         /// <summary>
         /// Commands enabled for the user

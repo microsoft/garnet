@@ -23,7 +23,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, EnableTLS: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: true);
             server.Start();
         }
 
@@ -90,7 +90,7 @@ namespace Garnet.test
             var result = db.StringSet(input);
             ClassicAssert.IsTrue(result);
 
-            var value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var value = db.StringGet([.. input.Select(e => e.Key)]);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)

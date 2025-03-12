@@ -25,7 +25,7 @@ namespace Garnet.server
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
-            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
+            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
                 // Write output to wire
@@ -62,7 +62,7 @@ namespace Garnet.server
 
             var output = new MemoryResult<byte>(null, 0);
 
-            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx);
+            var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
             if (proc.Execute(basicGarnetApi, ref procInput, ref output))
             {
                 if (output.MemoryOwner != null)
@@ -200,14 +200,14 @@ namespace Garnet.server
         /// <param name="customCommand">Parsed raw string command</param>
         /// <returns>True if command found, false otherwise</returns>
         public bool ParseCustomRawStringCommand(string cmd, out CustomRawStringCommand customCommand) =>
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customCommand);
+            customCommandManagerSession.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customCommand);
 
         /// <summary>Parse custom object command</summary>
         /// <param name="cmd">Command name</param>
         /// <param name="customObjCommand">Parsed object command</param>
         /// <returns>True if command found, false othrewise</returns>
         public bool ParseCustomObjectCommand(string cmd, out CustomObjectCommand customObjCommand) =>
-            storeWrapper.customCommandManager.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customObjCommand);
+            customCommandManagerSession.Match(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(cmd)), out customObjCommand);
 
         /// <summary>Execute a specific custom raw string command</summary>
         /// <typeparam name="TGarnetApi"></typeparam>

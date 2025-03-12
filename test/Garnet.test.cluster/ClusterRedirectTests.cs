@@ -486,7 +486,6 @@ ClusterRedirectTests.TestFlags testFlags)
                 result,
                 out _,
                 out _,
-                out _,
                 out var value,
                 out var values);
             if (checkAssert)
@@ -501,14 +500,13 @@ ClusterRedirectTests.TestFlags testFlags)
             while (otherNodeIndex == nodeIndex) otherNodeIndex = context.r.Next(0, connections.Length);
 
             var result = connections[otherNodeIndex].SendCommand(cmd);
-            var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var _address, out var _port, out var _value, out var _values);
+            var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var endpoint, out var _value, out var _values);
             ClassicAssert.AreEqual(status, ResponseState.MOVED, cmd);
             ClassicAssert.AreEqual(_slot, slot, cmd);
-            ClassicAssert.AreEqual(_address, connections[nodeIndex].Address, cmd);
-            ClassicAssert.AreEqual(_port, connections[nodeIndex].Port, cmd);
+            ClassicAssert.AreEqual(endpoint, connections[nodeIndex].EndPoint, cmd);
 
             result = connections[nodeIndex].SendCommand(cmd);
-            status = ClusterTestUtils.ParseResponseState(result, out _, out _, out _, out _value, out _values);
+            status = ClusterTestUtils.ParseResponseState(result, out _, out _, out _value, out _values);
             ClassicAssert.AreEqual(status, ResponseState.OK, cmdTag);
 
             return (status, _value, _values);
@@ -530,7 +528,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     for (var j = 0; j < setupCmd.Length; j++)
                     {
                         var resp = connections[targetNodeIndex].SendCommand(setupCmd[j]);
-                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
+                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _);
                         ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                         ClusterTestUtils.Asking(ref connections[targetNodeIndex]);
                     }
@@ -538,7 +536,7 @@ ClusterRedirectTests.TestFlags testFlags)
             }
 
             var result = connections[targetNodeIndex].SendCommand(testCmd);
-            var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var _address, out var _port, out var _value, out var _values);
+            var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var endpoint, out var _value, out var _values);
 
             if (CheckFlag(command.testFlags, TestFlags.ASKING))
             {
@@ -558,7 +556,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     {
                         ClusterTestUtils.Asking(ref connections[targetNodeIndex]);
                         var resp = connections[targetNodeIndex].SendCommand(cleanCmd[j]);
-                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
+                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _);
                         ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                     }
                 }
@@ -566,8 +564,7 @@ ClusterRedirectTests.TestFlags testFlags)
             else
             {
                 ClassicAssert.AreEqual(status, ResponseState.MOVED);
-                ClassicAssert.AreEqual(_address, connections[sourceNodeIndex].Address);
-                ClassicAssert.AreEqual(_port, connections[sourceNodeIndex].Port);
+                ClassicAssert.AreEqual(endpoint, connections[sourceNodeIndex].EndPoint);
                 ClassicAssert.AreEqual(_slot, slots[0]);
             }
         }
@@ -592,7 +589,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     for (var j = 0; j < setupCmd.Length; j++)
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(setupCmd[j]);
-                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
+                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _);
                         ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                     }
                 }
@@ -602,7 +599,7 @@ ClusterRedirectTests.TestFlags testFlags)
             ClassicAssert.AreEqual(respMigrating, "OK");
 
             result = connections[sourceNodeIndex].SendCommand(testCmd);
-            status = ClusterTestUtils.ParseResponseState(result, out _, out var _address, out var _port, out _, out _);
+            status = ClusterTestUtils.ParseResponseState(result, out _, out var endpoint, out _, out _);
 
             var respMigratingStable = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "STABLE", "");
             ClassicAssert.AreEqual(respMigratingStable, "OK");
@@ -618,8 +615,7 @@ ClusterRedirectTests.TestFlags testFlags)
             else
             {
                 ClassicAssert.AreEqual(status, ResponseState.ASK, command.cmdTag);
-                ClassicAssert.AreEqual(_port, connections[targetNodeIndex].Port, command.cmdTag);
-                ClassicAssert.AreEqual(_address, connections[targetNodeIndex].Address, command.cmdTag);
+                ClassicAssert.AreEqual(endpoint, connections[targetNodeIndex].EndPoint, command.cmdTag);
             }
 
             if (CheckFlag(command.testFlags, TestFlags.KEY_EXISTS))
@@ -629,7 +625,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     for (var j = 0; j < cleanCmd.Length; j++)
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(cleanCmd[j]);
-                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
+                        var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _);
                         ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                     }
                 }
@@ -647,7 +643,7 @@ ClusterRedirectTests.TestFlags testFlags)
             context.CreateInstances(Shards, cleanClusterConfig: true);
             context.CreateConnection();
 
-            var connections = ClusterTestUtils.CreateLightRequestConnections(Enumerable.Range(Port, Shards).ToArray());
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             //1. Regular operation redirect responses
@@ -712,7 +708,7 @@ ClusterRedirectTests.TestFlags testFlags)
             context.CreateInstances(Shards, cleanClusterConfig: true);
             context.CreateConnection();
 
-            var connections = ClusterTestUtils.CreateLightRequestConnections(Enumerable.Range(Port, Shards).ToArray());
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
 
             //1. test regular operation redirection

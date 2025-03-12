@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -14,20 +15,34 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ReplicaSyncSession(StoreWrapper storeWrapper, ClusterProvider clusterProvider, string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress, ILogger logger = null) : IDisposable
+    internal sealed partial class ReplicaSyncSession(
+        StoreWrapper storeWrapper,
+        ClusterProvider clusterProvider,
+        SyncMetadata replicaSyncMetadata = null,
+        TimeSpan timeout = default,
+        CancellationToken token = default,
+        string replicaNodeId = null,
+        string replicaAssignedPrimaryId = null,
+        CheckpointEntry replicaCheckpointEntry = null,
+        long replicaAofBeginAddress = 0,
+        long replicaAofTailAddress = 0,
+        ILogger logger = null) : IDisposable
     {
         readonly StoreWrapper storeWrapper = storeWrapper;
         readonly ClusterProvider clusterProvider = clusterProvider;
-        readonly CancellationTokenSource ctsCheckpointRetrievalSession = new();
-        private SectorAlignedBufferPool bufferPool = null;
-        private readonly SemaphoreSlim semaphore = new(0);
+        public readonly SyncMetadata replicaSyncMetadata = replicaSyncMetadata;
+        readonly TimeSpan timeout = timeout;
+        readonly CancellationToken token = token;
+        readonly CancellationTokenSource cts = new();
+        SectorAlignedBufferPool bufferPool = null;
+        readonly SemaphoreSlim semaphore = new(0);
 
-        public readonly string remoteNodeId = remoteNodeId;
-        public readonly string remote_primary_replid = remote_primary_replid;
+        public readonly string replicaNodeId = replicaNodeId;
+        public readonly string replicaAssignedPrimaryId = replicaAssignedPrimaryId;
         private readonly long replicaAofBeginAddress = replicaAofBeginAddress;
         private readonly long replicaAofTailAddress = replicaAofTailAddress;
 
-        private readonly CheckpointEntry remoteEntry = remoteEntry;
+        private readonly CheckpointEntry replicaCheckpointEntry = replicaCheckpointEntry;
 
         private readonly ILogger logger = logger;
 
@@ -35,8 +50,10 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            ctsCheckpointRetrievalSession.Cancel();
-            ctsCheckpointRetrievalSession.Dispose();
+            AofSyncTask?.garnetClient?.Dispose();
+            AofSyncTask = null;
+            cts.Cancel();
+            cts.Dispose();
             semaphore?.Dispose();
             bufferPool?.Free();
         }
@@ -51,18 +68,17 @@ namespace Garnet.cluster
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
             var objectStoreCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object);
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var (address, port) = current.GetWorkerAddressFromNodeId(remoteNodeId);
+            var (address, port) = current.GetWorkerAddressFromNodeId(replicaNodeId);
 
             if (address == null || port == -1)
             {
-                errorMsg = $"PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
+                errorMsg = $"PRIMARY-ERR don't know about replicaId: {replicaNodeId}";
                 logger?.LogError("{errorMsg}", errorMsg);
                 return false;
             }
 
             GarnetClientSession gcs = new(
-                address,
-                port,
+                new IPEndPoint(IPAddress.Parse(address), port),
                 clusterProvider.replicationManager.GetRSSNetworkBufferSettings,
                 clusterProvider.replicationManager.GetNetworkPool,
                 tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
@@ -75,7 +91,7 @@ namespace Garnet.cluster
             try
             {
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion} replicaObjectStoreVersion:{replicaObjectStoreVersion}",
-                    remoteNodeId, remoteEntry.metadata.storeVersion, remoteEntry.metadata.objectStoreVersion);
+                    replicaNodeId, replicaCheckpointEntry.metadata.storeVersion, replicaCheckpointEntry.metadata.objectStoreVersion);
                 gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
 
             retry:
@@ -86,13 +102,13 @@ namespace Garnet.cluster
                 // Local and remote checkpoints are of same history if both of the following hold
                 // 1. There is a checkpoint available at remote node
                 // 2. Remote and local checkpoints contain the same PrimaryReplId
-                var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.metadata.storePrimaryReplId) && remoteEntry.metadata.storePrimaryReplId.Equals(localEntry.metadata.storePrimaryReplId);
-                var sameObjectStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.metadata.objectStorePrimaryReplId) && remoteEntry.metadata.objectStorePrimaryReplId.Equals(localEntry.metadata.objectStorePrimaryReplId);
+                var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(replicaCheckpointEntry.metadata.storePrimaryReplId) && replicaCheckpointEntry.metadata.storePrimaryReplId.Equals(localEntry.metadata.storePrimaryReplId);
+                var sameObjectStoreCheckpointHistory = !string.IsNullOrEmpty(replicaCheckpointEntry.metadata.objectStorePrimaryReplId) && replicaCheckpointEntry.metadata.objectStorePrimaryReplId.Equals(localEntry.metadata.objectStorePrimaryReplId);
                 // We will not send the latest local checkpoint if any of the following hold
                 // 1. Local node does not have any checkpoints
                 // 2. Local checkpoint is of same version and history as the remote checkpoint
-                var skipLocalMainStoreCheckpoint = localEntry.metadata.storeHlogToken == default || (sameMainStoreCheckpointHistory && localEntry.metadata.storeVersion == remoteEntry.metadata.storeVersion);
-                var skipLocalObjectStoreCheckpoint = clusterProvider.serverOptions.DisableObjects || localEntry.metadata.objectStoreHlogToken == default || (sameObjectStoreCheckpointHistory && localEntry.metadata.objectStoreVersion == remoteEntry.metadata.objectStoreVersion);
+                var skipLocalMainStoreCheckpoint = localEntry.metadata.storeHlogToken == default || (sameMainStoreCheckpointHistory && localEntry.metadata.storeVersion == replicaCheckpointEntry.metadata.storeVersion);
+                var skipLocalObjectStoreCheckpoint = clusterProvider.serverOptions.DisableObjects || localEntry.metadata.objectStoreHlogToken == default || (sameObjectStoreCheckpointHistory && localEntry.metadata.objectStoreVersion == replicaCheckpointEntry.metadata.objectStoreVersion);
 
                 LogFileInfo hlog_size = default;
                 long index_size = -1;
@@ -195,26 +211,26 @@ namespace Garnet.cluster
 
                 var recoverFromRemote = !skipLocalMainStoreCheckpoint || !skipLocalObjectStoreCheckpoint;
                 var replayAOF = false;
-                var RecoveredReplicationOffset = localEntry.GetMinAofCoveredAddress();
-                var beginAddress = RecoveredReplicationOffset;
+                var checkpointAofBeginAddress = localEntry.GetMinAofCoveredAddress();
+                var beginAddress = checkpointAofBeginAddress;
                 if (!recoverFromRemote)
                 {
                     // If replica is ahead of this primary it will force itself to forget and start syncing from RecoveredReplicationOffset
-                    if (replicaAofBeginAddress > ReplicationManager.kFirstValidAofAddress && replicaAofBeginAddress > RecoveredReplicationOffset)
+                    if (replicaAofBeginAddress > ReplicationManager.kFirstValidAofAddress && replicaAofBeginAddress > checkpointAofBeginAddress)
                     {
                         logger?.LogInformation(
                             "ReplicaSyncSession: replicaAofBeginAddress {replicaAofBeginAddress} > PrimaryCheckpointRecoveredReplicationOffset {RecoveredReplicationOffset}, cannot use remote AOF",
-                            replicaAofBeginAddress, RecoveredReplicationOffset);
+                            replicaAofBeginAddress, checkpointAofBeginAddress);
                     }
                     else
                     {
                         // Tail address cannot be behind the recovered address since above we checked replicaAofBeginAddress and it appears after RecoveredReplicationOffset
                         // unless we are performing MainMemoryReplication
                         // TODO: shouldn't we use the remote cEntry's tail address here since replica will recover to that?
-                        if (replicaAofTailAddress < RecoveredReplicationOffset && !clusterProvider.serverOptions.MainMemoryReplication)
+                        if (replicaAofTailAddress < checkpointAofBeginAddress && !clusterProvider.serverOptions.FastAofTruncate)
                         {
-                            logger?.LogCritical("ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {RecoveredReplicationOffset}", replicaAofTailAddress, RecoveredReplicationOffset);
-                            throw new Exception($"ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {RecoveredReplicationOffset}");
+                            logger?.LogCritical("ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {RecoveredReplicationOffset}", replicaAofTailAddress, checkpointAofBeginAddress);
+                            throw new Exception($"ReplicaSyncSession replicaAofTail {replicaAofTailAddress} < canServeFromAofAddress {checkpointAofBeginAddress}");
                         }
 
                         // If we are behind this primary we need to decide until where to replay
@@ -226,16 +242,16 @@ namespace Garnet.cluster
                         }
 
                         // Replay only if records not included in checkpoint
-                        if (replayUntilAddress > RecoveredReplicationOffset)
+                        if (replayUntilAddress > checkpointAofBeginAddress)
                         {
                             logger?.LogInformation("ReplicaSyncSession: have to replay remote AOF from {beginAddress} until {untilAddress}", beginAddress, replayUntilAddress);
                             replayAOF = true;
                             // Bound replayUntilAddress to ReplicationOffset2 to avoid replaying divergent history only if connecting replica was attached to old primary
                             if (!string.IsNullOrEmpty(clusterProvider.replicationManager.PrimaryReplId2) &&
-                                clusterProvider.replicationManager.PrimaryReplId2.Equals(remote_primary_replid) &&
+                                clusterProvider.replicationManager.PrimaryReplId2.Equals(replicaAssignedPrimaryId) &&
                                 replayUntilAddress > clusterProvider.replicationManager.ReplicationOffset2)
                                 replayUntilAddress = clusterProvider.replicationManager.ReplicationOffset2;
-                            RecoveredReplicationOffset = replayUntilAddress;
+                            checkpointAofBeginAddress = replayUntilAddress;
                         }
                     }
                 }
@@ -249,13 +265,13 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
                     beginAddress,
-                    RecoveredReplicationOffset).ConfigureAwait(false);
+                    checkpointAofBeginAddress).ConfigureAwait(false);
                 var syncFromAofAddress = long.Parse(resp);
 
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                    (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
+                    (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
                 if (!possibleAofDataLoss)
                 {
@@ -280,9 +296,9 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                if (!clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo))
+                if (!clusterProvider.replicationManager.TryAddReplicationTask(replicaNodeId, syncFromAofAddress, out aofSyncTaskInfo))
                     throw new GarnetException("Failed trying to try update replication task");
-                if (!clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
+                if (!clusterProvider.replicationManager.TryConnectToReplica(replicaNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
                     throw new GarnetException("Failed connecting to replica for aofSync");
             }
             catch (Exception ex)
@@ -306,7 +322,7 @@ namespace Garnet.cluster
         {
             // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
             var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
+                (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
             aofSyncTaskInfo = null;
 
@@ -325,7 +341,7 @@ namespace Garnet.cluster
 
                 // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
                 // We do this to avoid waiting indefinitely for a checkpoint that will never be taken
-                if (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint)
+                if (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint)
                 {
                     logger?.LogWarning("MainMemoryReplication: OnDemandCheckpoint is turned off, skipping valid checkpoint acquisition.");
                     break;
@@ -347,7 +363,7 @@ namespace Garnet.cluster
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
-                if (clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, startAofAddress, out aofSyncTaskInfo))
+                if (clusterProvider.replicationManager.TryAddReplicationTask(replicaNodeId, startAofAddress, out aofSyncTaskInfo))
                     break;
 
                 // Unlock last checkpoint because associated startAofAddress is no longer available

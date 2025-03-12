@@ -1,9 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
+using System.Net;
 using System.Net.Security;
-using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -13,7 +12,7 @@ namespace Embedded.server
 {
     internal class GarnetServerEmbedded : GarnetServerBase, IServerHook
     {
-        public GarnetServerEmbedded() : base("0.0.0.0", 0, 1 << 10)
+        public GarnetServerEmbedded() : base(new IPEndPoint(IPAddress.Loopback, 0), 1 << 10)
         {
         }
 
@@ -36,7 +35,7 @@ namespace Embedded.server
                             throw new Exception("Unable to add handler to dictionary");
 
                         handler.Start(tlsOptions, remoteEndpointName);
-                        incr_conn_recv();
+                        IncrementConnectionsReceived();
                         return handler;
                     }
                     catch (Exception ex)
@@ -59,7 +58,7 @@ namespace Embedded.server
             if (activeHandlers.TryRemove(session, out _))
             {
                 Interlocked.Decrement(ref activeHandlerCount);
-                incr_conn_disp();
+                IncrementConnectionsDisposed();
                 try
                 {
                     session.Session?.Dispose();

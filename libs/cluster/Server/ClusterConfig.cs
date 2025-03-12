@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using System.Net;
+using System.Text;
 
 namespace Garnet.cluster
 {
@@ -253,14 +255,14 @@ namespace Garnet.cluster
         /// Get list of endpoints for all replicas of this node.
         /// </summary>
         /// <returns>List of (address,port) pairs.</returns>
-        public List<(string, int)> GetLocalNodeReplicaEndpoints()
+        public List<IPEndPoint> GetLocalNodeReplicaEndpoints()
         {
-            List<(string, int)> replicas = new();
+            List<IPEndPoint> replicas = new();
             for (ushort i = 2; i < workers.Length; i++)
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(workers[1].Nodeid, StringComparison.OrdinalIgnoreCase))
-                    replicas.Add((workers[i].Address, workers[i].Port));
+                    replicas.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
             }
             return replicas;
         }
@@ -270,17 +272,17 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="includeMyPrimaryFirst"></param>
         /// <returns>List of pairs (address,port) representing known primary endpoints</returns>
-        public List<(string, int)> GetLocalNodePrimaryEndpoints(bool includeMyPrimaryFirst = false)
+        public List<IPEndPoint> GetLocalNodePrimaryEndpoints(bool includeMyPrimaryFirst = false)
         {
             string myPrimaryId = includeMyPrimaryFirst ? LocalNodePrimaryId : "";
-            List<(string, int)> primaries = new();
+            List<IPEndPoint> primaries = new();
             for (ushort i = 2; i < workers.Length; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY && !workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
-                    primaries.Add((workers[i].Address, workers[i].Port));
+                    primaries.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
 
                 if (workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
-                    primaries.Insert(0, (workers[i].Address, workers[i].Port));
+                    primaries.Insert(0, new(IPAddress.Parse(workers[i].Address), workers[i].Port));
             }
             return primaries;
         }
@@ -475,10 +477,10 @@ namespace Garnet.cluster
         /// <param name="nodeid">Node-id.</param>
         /// <returns>Pair of (string,integer) representing endpoint.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (string address, int port) GetEndpointFromNodeId(string nodeid)
+        public IPEndPoint GetEndpointFromNodeId(string nodeid)
         {
             var workerId = GetWorkerIdFromNodeId(nodeid);
-            return (workers[workerId].Address, workers[workerId].Port);
+            return new(IPAddress.Parse(workers[workerId].Address), workers[workerId].Port);
         }
         #endregion
 
@@ -488,14 +490,14 @@ namespace Garnet.cluster
         /// <returns>Formatted string.</returns>
         public string GetClusterInfo(ClusterProvider clusterProvider)
         {
-            var nodes = "";
+            var nodesStringBuilder = new StringBuilder();
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 var info = default(ConnectionInfo);
                 _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[i].Nodeid, out info);
-                nodes += GetNodeInfo(i, info);
+                GetNodeInfo(i, info, nodesStringBuilder);
             }
-            return nodes;
+            return nodesStringBuilder.ToString();
         }
 
         /// <summary>
@@ -515,24 +517,33 @@ namespace Garnet.cluster
             //<config-epoch>
             //<link-state>
             //<slot> <slot> ... <slot>
-
-            return $"{workers[workerId].Nodeid} " +
-                $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
-                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
-                $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
-                $"{info.ping} " +
-                $"{info.pong} " +
-                $"{workers[workerId].ConfigEpoch} " +
-                $"{(info.connected || workerId == 1 ? "connected" : "disconnected")}" +
-                $"{GetSlotRange(workerId)}" +
-                $"{GetSpecialStates(workerId)}\n";
+            var nodeInfoStringBuilder = new StringBuilder();
+            GetNodeInfo(workerId, info, nodeInfoStringBuilder);
+            return nodeInfoStringBuilder.ToString();
         }
 
-        private string GetSpecialStates(ushort workerId)
+        private void GetNodeInfo(ushort workerId, ConnectionInfo info, StringBuilder nodeInfoStringBuilder)
+        {
+            _ = nodeInfoStringBuilder
+                .Append(workers[workerId].Nodeid).Append(' ')
+                .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
+                .Append('@').Append(workers[workerId].Port + 10000).Append(',').Append(workers[workerId].hostname).Append(' ')
+                .Append(workerId == 1 ? "myself," : "")
+                .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(' ')
+                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : '-').Append(' ')
+                .Append(info.ping).Append(' ')
+                .Append(info.pong).Append(' ')
+                .Append(workers[workerId].ConfigEpoch).Append(' ')
+                .Append(info.connected || workerId == 1 ? "connected" : "disconnected");
+            AppendSlotRange(nodeInfoStringBuilder, workerId);
+            AppendSpecialStates(nodeInfoStringBuilder, workerId);
+            _ = nodeInfoStringBuilder.Append('\n');
+        }
+
+        private void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
         {
             // Only print special states for local node
-            if (workerId != 1) return "";
-            var specialStates = "";
+            if (workerId != 1) return;
             for (var slot = 0; slot < slotMap.Length; slot++)
             {
                 var _workerId = slotMap[slot]._workerId;
@@ -544,14 +555,14 @@ namespace Garnet.cluster
                 var _nodeId = workers[_workerId].Nodeid;
                 if (_nodeId == null) continue;
 
-                specialStates += _state switch
+                stringBuilder.Append(_state switch
                 {
                     SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
                     SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
                     _ => ""
-                };
+                });
             }
-            return specialStates;
+            return;
         }
 
         /// <summary>
@@ -720,9 +731,8 @@ namespace Garnet.cluster
             return completeSlotInfo;
         }
 
-        private string GetSlotRange(ushort workerId)
+        private void AppendSlotRange(StringBuilder stringBuilder, uint workerId)
         {
-            string result = "";
             ushort start = ushort.MaxValue, end = 0;
             for (ushort i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
@@ -735,8 +745,8 @@ namespace Garnet.cluster
                 {
                     if (start != ushort.MaxValue)
                     {
-                        if (end == start) result += $" {start}";
-                        else result += $" {start}-{end}";
+                        if (end == start) stringBuilder.Append($" {start}");
+                        else stringBuilder.Append($" {start}-{end}");
                         start = ushort.MaxValue;
                         end = 0;
                     }
@@ -744,10 +754,9 @@ namespace Garnet.cluster
             }
             if (start != ushort.MaxValue)
             {
-                if (end == start) result += $" {start}";
-                else result += $" {start}-{end}";
+                if (end == start) stringBuilder.Append($" {start}");
+                else stringBuilder.Append($" {start}-{end}");
             }
-            return result;
         }
 
         /// <summary>
@@ -783,6 +792,32 @@ namespace Garnet.cluster
                 }
             }
             return replicas;
+        }
+
+        /// <summary>
+        /// Get all know node ids
+        /// </summary>
+        public void GetAllNodeIds(out List<(string NodeId, IPEndPoint EndPoint)> allNodeIds)
+        {
+            allNodeIds = [];
+            for (ushort i = 2; i < workers.Length; i++)
+                allNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].Address), workers[i].Port)));
+        }
+
+        /// <summary>
+        /// Get node-ids for nodes in the local shard
+        /// </summary>
+        /// <returns></returns>
+        public void GetNodeIdsForShard(out List<(string NodeId, IPEndPoint EndPoint)> shardNodeIds)
+        {
+            var primaryId = LocalNodeRole == NodeRole.PRIMARY ? LocalNodeId : workers[1].ReplicaOfNodeId;
+            shardNodeIds = [];
+            for (ushort i = 2; i < workers.Length; i++)
+            {
+                var replicaOf = workers[i].ReplicaOfNodeId;
+                if (primaryId != null && ((replicaOf != null && replicaOf.Equals(primaryId, StringComparison.OrdinalIgnoreCase)) || primaryId.Equals(workers[i].Nodeid)))
+                    shardNodeIds.Add((workers[i].Nodeid, new IPEndPoint(IPAddress.Parse(workers[i].Address), workers[i].Port)));
+            }
         }
 
         /// <summary>

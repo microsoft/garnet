@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
@@ -190,12 +189,12 @@ namespace Tsavorite.test
         {
             internal int currentEntry = 0;
 
-            public void Consume(ReadOnlySpan<byte> entry, long currentAddress, long nextAddress)
+            public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
             {
                 if (currentEntry < entryLength)
                 {
                     // Span Batch only added first entry several times so have separate verification
-                    ClassicAssert.AreEqual((byte)entryFlag, entry[currentEntry]);
+                    ClassicAssert.AreEqual((byte)entryFlag, *(payloadPtr + currentEntry));
                     currentEntry++;
                 }
             }

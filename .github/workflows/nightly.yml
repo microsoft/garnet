@@ -8,6 +8,9 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
 
+permissions:
+  contents: read
+  
 jobs:
   build-test-garnet:
     name: Garnet
@@ -16,16 +19,20 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, ubuntu-20.04, windows-2022, windows-2019 ]
-        framework: [ 'net8.0' ]
+        framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
         test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Setup .NET
+      - name: Setup .NET 8.0
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Setup .NET 9.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore
       - name: Check style format
@@ -50,7 +57,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, ubuntu-20.04, windows-2022, windows-2019 ]
-        framework: [ 'net8.0' ]
+        framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
@@ -61,10 +68,14 @@ jobs:
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
-      - name: Setup .NET
+      - name: Setup .NET 8.0
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      - name: Setup .NET 9.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:

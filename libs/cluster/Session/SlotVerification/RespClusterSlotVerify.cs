@@ -110,6 +110,14 @@ namespace Garnet.cluster
             return true;
         }
 
+        /// <summary>
+        /// Verify multi-key slot ownership
+        /// </summary>
+        /// <param name="parseState"></param>
+        /// <param name="csvi"></param>
+        /// <param name="dcurr"></param>
+        /// <param name="dend"></param>
+        /// <returns></returns>
         public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
         {
             // If cluster is not enabled or a transaction is running skip slot check
@@ -123,6 +131,25 @@ namespace Garnet.cluster
             else
                 WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
             return true;
+        }
+
+        /// <summary>
+        /// Verify multi-key slot ownership without generating a response
+        /// </summary>
+        /// <param name="parseState"></param>
+        /// <param name="csvi"></param>
+        /// <param name="dcurr"></param>
+        /// <param name="dend"></param>
+        /// <returns></returns>
+        public unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        {
+            // If cluster is not enabled or a transaction is running skip slot check
+            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
+
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
+
+            return vres.state != SlotVerifiedState.OK;
         }
     }
 }

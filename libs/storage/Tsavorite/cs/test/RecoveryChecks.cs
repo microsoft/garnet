@@ -734,7 +734,8 @@ namespace Tsavorite.test.recovery
                 _ = bc1.CompletePending(true);
             }
 
-            _ = store1.GrowIndex();
+            var result = await store1.GrowIndexAsync();
+            ClassicAssert.IsTrue(result);
 
             for (long key = 0; key < 1000; key++)
             {
@@ -814,14 +815,14 @@ namespace Tsavorite.test.recovery
             if (deviceMode == DeviceMode.Local)
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
+                    new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
             }
             else
             {
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
-                    new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
+                    TestUtils.AzureStorageNamedDeviceFactoryCreator,
                     new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 

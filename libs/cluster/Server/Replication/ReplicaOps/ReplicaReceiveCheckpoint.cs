@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -39,7 +40,6 @@ namespace Garnet.cluster
             // Ensure two replicate commands do not execute at the same time.
             if (!replicateLock.TryWriteLock())
             {
-                errorMessage = "ERR Replicate already in progress"u8;
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
                 return false;
             }
@@ -150,8 +150,7 @@ namespace Garnet.cluster
             try
             {
                 gcs = new(
-                    address,
-                    port,
+                    new IPEndPoint(IPAddress.Parse(address), port),
                     clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
                     clusterProvider.replicationManager.GetNetworkPool,
                     tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
@@ -228,32 +227,6 @@ namespace Garnet.cluster
             }
         }
 
-        private IDevice GetStoreHLogDevice()
-        {
-            var opts = clusterProvider.serverOptions;
-            if (opts.EnableStorageTier)
-            {
-                var LogDir = opts.LogDir;
-                if (LogDir is null or "") LogDir = Directory.GetCurrentDirectory();
-                var logFactory = opts.GetInitializedDeviceFactory(LogDir);
-                return logFactory.Get(new FileDescriptor("Store", "hlog"));
-            }
-            return null;
-        }
-
-        private IDevice GetObjectStoreHLogDevice(bool obj)
-        {
-            var opts = clusterProvider.serverOptions;
-            if (opts.EnableStorageTier)
-            {
-                var LogDir = opts.LogDir;
-                if (LogDir is null or "") LogDir = Directory.GetCurrentDirectory();
-                var logFactory = opts.GetInitializedDeviceFactory(LogDir);
-                return obj ? logFactory.Get(new FileDescriptor("ObjectStore", "hlog.obj")) : logFactory.Get(new FileDescriptor("ObjectStore", "hlog"));
-            }
-            return null;
-        }
-
         /// <summary>
         /// Check if device needs to be initialized with a specifi segment size depending on the checkpoint file type
         /// </summary>
@@ -292,6 +265,32 @@ namespace Garnet.cluster
             if (ShouldInitialize(type))
                 device.Initialize(segmentSize: 1L << clusterProvider.serverOptions.SegmentSizeBits());
             return device;
+
+            IDevice GetStoreHLogDevice()
+            {
+                var opts = clusterProvider.serverOptions;
+                if (opts.EnableStorageTier)
+                {
+                    var LogDir = opts.LogDir;
+                    if (LogDir is null or "") LogDir = Directory.GetCurrentDirectory();
+                    var logFactory = opts.GetInitializedDeviceFactory(LogDir);
+                    return logFactory.Get(new FileDescriptor("Store", "hlog"));
+                }
+                return null;
+            }
+
+            IDevice GetObjectStoreHLogDevice(bool obj)
+            {
+                var opts = clusterProvider.serverOptions;
+                if (opts.EnableStorageTier)
+                {
+                    var LogDir = opts.LogDir;
+                    if (LogDir is null or "") LogDir = Directory.GetCurrentDirectory();
+                    var logFactory = opts.GetInitializedDeviceFactory(LogDir);
+                    return obj ? logFactory.Get(new FileDescriptor("ObjectStore", "hlog.obj")) : logFactory.Get(new FileDescriptor("ObjectStore", "hlog"));
+                }
+                return null;
+            }
         }
 
         /// <summary>

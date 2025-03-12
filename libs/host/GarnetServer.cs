@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -29,6 +30,11 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        /// <summary>
+        /// Resp protocol version
+        /// </summary>
+        internal const string RedisProtocolVersion = "7.2.5";
+
         static readonly string version = GetVersion();
         static string GetVersion()
         {
@@ -44,7 +50,7 @@ namespace Garnet
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
-        private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
+        private SubscribeBroker subscribeBroker;
         private KVSettings<SpanByte, SpanByte> kvSettings;
         private KVSettings<byte[], IGarnetObject> objKvSettings;
         private INamedDeviceFactory logFactory;
@@ -58,11 +64,6 @@ namespace Garnet
         /// Store and associated information used by this Garnet server
         /// </summary>
         protected StoreWrapper storeWrapper;
-
-        /// <summary>
-        /// Resp protocol version
-        /// </summary>
-        readonly string redisProtocolVersion = "7.2.5";
 
         /// <summary>
         /// Metrics API
@@ -96,7 +97,7 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, this.initLogger))
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, logger: this.initLogger))
             {
                 if (exitGracefully)
                     Environment.Exit(0);
@@ -170,18 +171,20 @@ namespace Garnet
                 var magenta = "\u001b[35m";
                 var normal = "\u001b[0m";
 
-                Console.WriteLine($@"{red}    _________
-   /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
-   '. \   / .'      {normal}Port: {opts.Port}{red}
-     '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
-       '.'
-{normal}");
+                Console.WriteLine($"""
+                    {red}    _________
+                       /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
+                       '. \   / .'      {normal}Listening on: {opts.EndPoint}{red}
+                         '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
+                           '.'
+                    {normal}
+                    """);
             }
 
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
-            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Port: {port}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.Port);
+            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoint);
 
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
@@ -228,7 +231,7 @@ namespace Garnet
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true, logger);
 
             CreateAOF();
 
@@ -242,11 +245,17 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            // Create Garnet TCP server if none was provided.
-            this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, logger);
+            if (opts.EndPoint is UnixDomainSocketEndPoint)
+            {
+                // Delete existing unix socket file, if it exists.
+                File.Delete(opts.UnixSocketPath);
+            }
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
-                    customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+            // Create Garnet TCP server if none was provided.
+            this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+
+            storeWrapper = new StoreWrapper(version, RedisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
+                    customCommandManager, appendOnlyFile, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
@@ -293,17 +302,15 @@ namespace Garnet
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-            kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-            var checkpointFactory = opts.DeviceFactoryCreator();
             if (opts.EnableCluster)
             {
-                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(checkpointFactory,
+                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), isMainStore: true, logger);
             }
             else
             {
-                kvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(checkpointFactory,
+                kvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), removeOutdated: true);
             }
 
@@ -322,15 +329,14 @@ namespace Garnet
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
-                objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
                 if (opts.EnableCluster)
                     objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(
-                        opts.DeviceFactoryCreator(),
+                        opts.DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
                         isMainStore: false, logger);
                 else
-                    objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),
+                    objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator,
                         new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
                         removeOutdated: true);
 
@@ -350,7 +356,7 @@ namespace Garnet
         {
             if (opts.EnableAOF)
             {
-                if (opts.MainMemoryReplication && opts.CommitFrequencyMs != -1)
+                if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                     throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
 
                 opts.GetAofSettings(out var aofSettings);
@@ -398,9 +404,8 @@ namespace Garnet
                 logFactory?.Delete(new FileDescriptor { directoryName = "" });
                 if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
                 {
-                    var ckptdir = opts.DeviceFactoryCreator();
-                    ckptdir.Initialize(opts.CheckpointDir);
-                    ckptdir.Delete(new FileDescriptor { directoryName = "" });
+                    var checkpointDeviceFactory = opts.DeviceFactoryCreator.Create(opts.CheckpointDir);
+                    checkpointDeviceFactory.Delete(new FileDescriptor { directoryName = "" });
                 }
             }
         }

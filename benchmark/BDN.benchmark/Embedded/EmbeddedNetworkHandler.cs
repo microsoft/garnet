@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
@@ -21,6 +19,12 @@ namespace Embedded.server
 
         public override string RemoteEndpointName => throw new NotImplementedException();
         public override string LocalEndpointName => throw new NotImplementedException();
+
+        public override bool IsLocalConnection()
+        {
+            return false;
+        }
+
         public override void Dispose()
         {
             DisposeImpl();

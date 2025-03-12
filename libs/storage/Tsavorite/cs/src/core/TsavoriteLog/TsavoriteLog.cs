@@ -190,7 +190,7 @@ namespace Tsavorite.core
             AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
-                (new LocalStorageNamedDeviceFactory(),
+                (new LocalStorageNamedDeviceFactoryCreator(),
                     new DefaultCheckpointNamingScheme(
                         logSettings.LogCommitDir ??
                         new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
@@ -919,6 +919,32 @@ namespace Tsavorite.core
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            safeTailRefreshEntryEnqueued?.Signal();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// </summary>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue(ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = item1.TotalSize + item2.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            item1.CopyTo(physicalAddress + headerSize);
+            item2.CopyTo(physicalAddress + headerSize + item1.TotalSize);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();

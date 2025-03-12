@@ -82,7 +82,7 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             manager = new DeviceLogCommitCheckpointManager(
-                new LocalStorageNamedDeviceFactory(deleteOnClose: deleteOnClose),
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: deleteOnClose),
                 new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), false);
             this.deleteOnClose = deleteOnClose;
         }
@@ -332,9 +332,9 @@ namespace Tsavorite.test
                 this.entry = entry;
             }
 
-            public void Consume(ReadOnlySpan<byte> result, long currentAddress, long nextAddress)
+            public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
             {
-                ClassicAssert.IsTrue(result.SequenceEqual(entry));
+                ClassicAssert.IsTrue(new ReadOnlySpan<byte>(payloadPtr, payloadLength).SequenceEqual(entry));
                 counter.IncrementAndMaybeTruncateUntil(nextAddress);
             }
         }

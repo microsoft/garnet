@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-
 namespace Tsavorite.core
 {
     /// <summary>
@@ -13,10 +11,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Consumes the given entry.
         /// </summary>
-        /// <param name="entry"> the entry to consume </param>
-        /// <param name="currentAddress"> address of the consumed entry </param>
-        /// <param name="nextAddress"> (predicted) address of the next entry </param>
-        public void Consume(ReadOnlySpan<byte> entry, long currentAddress, long nextAddress);
+        /// <param name="payloadPtr"></param>
+        /// <param name="payloadLength"></param>
+        /// <param name="currentAddress">Address of the consumed entry (excluding log header)</param>
+        /// <param name="nextAddress">Expected address of the next log entry</param>
+        /// <param name="isProtected">Whether call is under epoch protection</param>
+        unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected);
     }
 
     /// <summary>

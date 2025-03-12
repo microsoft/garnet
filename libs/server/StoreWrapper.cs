@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
+using Garnet.server.Lua;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -26,7 +27,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
-    public sealed class StoreWrapper
+    public sealed class StoreWrapper : IDisposable
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
@@ -47,12 +48,18 @@ namespace Garnet.server
         /// Server options
         /// </summary>
         public readonly GarnetServerOptions serverOptions;
+
+        /// <summary>
+        /// Subscribe broker
+        /// </summary>
+        public readonly SubscribeBroker subscribeBroker;
+
         internal readonly IClusterProvider clusterProvider;
 
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp GetTcpServer() => (GarnetServerTcp)server;
+        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
 
         /// <summary>
         /// Access control list governing all commands
@@ -98,11 +105,17 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string run_id;
         private SingleWriterMultiReaderLock _checkpointTaskLock;
+        internal readonly SlowLogContainer slowLogContainer;
 
         /// <summary>
         /// Lua script cache
         /// </summary>
         public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
+
+        /// <summary>
+        /// Shared timeout manager for all <see cref="LuaRunner"/> across all sessions.
+        /// </summary>
+        internal readonly LuaTimeoutManager luaTimeoutManager;
 
         public readonly TimeSpan loggingFrequncy;
 
@@ -124,6 +137,7 @@ namespace Garnet.server
             CustomCommandManager customCommandManager,
             TsavoriteLog appendOnlyFile,
             GarnetServerOptions serverOptions,
+            SubscribeBroker subscribeBroker,
             AccessControlList accessControlList = null,
             IClusterFactory clusterFactory = null,
             ILoggerFactory loggerFactory = null
@@ -137,6 +151,7 @@ namespace Garnet.server
             this.objectStore = objectStore;
             this.appendOnlyFile = appendOnlyFile;
             this.serverOptions = serverOptions;
+            this.subscribeBroker = subscribeBroker;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
@@ -150,12 +165,21 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
+            if (serverOptions.SlowLogThreshold > 0)
+                this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker();
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
+            {
                 this.storeScriptCache = [];
+
+                if (serverOptions.LuaOptions.Timeout != Timeout.InfiniteTimeSpan)
+                {
+                    this.luaTimeoutManager = new(serverOptions.LuaOptions.Timeout, loggerFactory?.CreateLogger<LuaTimeoutManager>());
+                }
+            }
 
             if (accessControlList == null)
             {
@@ -196,7 +220,9 @@ namespace Garnet.server
         /// <returns></returns>
         public string GetIp()
         {
-            var localEndpoint = GetTcpServer().GetEndPoint;
+            if (TcpServer.EndPoint is not IPEndPoint localEndpoint)
+                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
+
             if (localEndpoint.Address.Equals(IPAddress.Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
@@ -469,13 +495,13 @@ namespace Garnet.server
         /// <summary>
         /// Append a checkpoint commit to the AOF
         /// </summary>
-        /// <param name="isMainStore"></param>
+        /// <param name="entryType"></param>
         /// <param name="version"></param>
-        public void EnqueueCommit(bool isMainStore, long version)
+        public void EnqueueCommit(AofEntryType entryType, long version)
         {
             AofHeader header = new()
             {
-                opType = isMainStore ? AofEntryType.MainStoreCheckpointCommit : AofEntryType.ObjectStoreCheckpointCommit,
+                opType = entryType,
                 storeVersion = version,
                 sessionID = -1
             };
@@ -595,6 +621,7 @@ namespace Garnet.server
         {
             monitor?.Start();
             clusterProvider?.Start();
+            luaTimeoutManager?.Start();
 
             if (serverOptions.AofSizeLimit.Length > 0)
             {
@@ -641,11 +668,11 @@ namespace Garnet.server
 
                     if (!indexMaxedOut)
                         indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
-                            () => store.IndexSize, () => store.GrowIndex());
+                            () => store.IndexSize, async () => await store.GrowIndexAsync());
 
                     if (!objectStoreIndexMaxedOut)
                         objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, objectStore.OverflowBucketAllocations,
-                            () => objectStore.IndexSize, () => objectStore.GrowIndex());
+                            () => objectStore.IndexSize, async () => await objectStore.GrowIndexAsync());
                 }
             }
             catch (Exception ex)
@@ -687,11 +714,12 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            //Wait for checkpoints to complete and disable checkpointing
+            // Wait for checkpoints to complete and disable checkpointing
             _checkpointTaskLock.WriteLock();
 
             itemBroker?.Dispose();
             monitor?.Dispose();
+            luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
 
             while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)
@@ -816,18 +844,30 @@ namespace Garnet.server
             if (full)
             {
                 if (storeType is StoreType.Main or StoreType.All)
+                {
                     storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
+                }
 
                 if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
                     objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                }
             }
             else
             {
                 if (storeType is StoreType.Main or StoreType.All)
+                {
                     storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
+                }
 
                 if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                {
                     objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                }
             }
 
             // If cluster is enabled the replication manager is responsible for truncating AOF

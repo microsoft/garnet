@@ -12,7 +12,7 @@ namespace Garnet.server
 {
     class GarnetInfoMetrics
     {
-        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues<InfoMetricsType>()
+        public static readonly InfoMetricsType[] defaultInfo = [.. Enum.GetValues<InfoMetricsType>()
             .Where(e => e switch
             {
                 InfoMetricsType.STOREHASHTABLE => false,
@@ -20,8 +20,7 @@ namespace Garnet.server
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
                 _ => true
-            })
-            .ToArray();
+            })];
 
         MetricsItem[] serverInfo = null;
         MetricsItem[] memoryInfo = null;
@@ -207,7 +206,6 @@ namespace Garnet.server
                 [
                     new("CurrentVersion", storeWrapper.store.CurrentVersion.ToString()),
                     new("LastCheckpointedVersion", storeWrapper.store.LastCheckpointedVersion.ToString()),
-                    new("RecoveredVersion", storeWrapper.store.RecoveredVersion.ToString()),
                     new("SystemState", storeWrapper.store.SystemState.ToString()),
                     new("IndexSize", storeWrapper.store.IndexSize.ToString()),
                     new("LogDir", storeWrapper.serverOptions.LogDir),
@@ -234,7 +232,6 @@ namespace Garnet.server
                 [
                     new("CurrentVersion", storeWrapper.objectStore.CurrentVersion.ToString()),
                     new("LastCheckpointedVersion", storeWrapper.objectStore.LastCheckpointedVersion.ToString()),
-                    new("RecoveredVersion", storeWrapper.objectStore.RecoveredVersion.ToString()),
                     new("SystemState", storeWrapper.objectStore.SystemState.ToString()),
                     new("IndexSize", storeWrapper.objectStore.IndexSize.ToString()),
                     new("LogDir", storeWrapper.serverOptions.LogDir),
@@ -291,7 +288,7 @@ namespace Garnet.server
 
         private void PopulateClusterBufferPoolStats(StoreWrapper storeWrapper)
         {
-            bufferPoolStats = [new("server_socket", storeWrapper.GetTcpServer().GetBufferPoolStats())];
+            bufferPoolStats = [new("server_socket", storeWrapper.TcpServer.GetBufferPoolStats())];
             if (storeWrapper.clusterProvider != null)
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
         }
@@ -305,17 +302,17 @@ namespace Garnet.server
                 InfoMetricsType.CLUSTER => "Cluster",
                 InfoMetricsType.REPLICATION => "Replication",
                 InfoMetricsType.STATS => "Stats",
-                InfoMetricsType.STORE => "Main Store",
-                InfoMetricsType.OBJECTSTORE => "Object Store",
-                InfoMetricsType.STOREHASHTABLE => "Main Store Hash Table Distribution",
-                InfoMetricsType.OBJECTSTOREHASHTABLE => "Object Store Hash Table Distribution",
-                InfoMetricsType.STOREREVIV => "Main Store Deleted Record Revivification",
-                InfoMetricsType.OBJECTSTOREREVIV => "Object Store Deleted Record Revivification",
+                InfoMetricsType.STORE => "MainStore",
+                InfoMetricsType.OBJECTSTORE => "ObjectStore",
+                InfoMetricsType.STOREHASHTABLE => "MainStoreHashTableDistribution",
+                InfoMetricsType.OBJECTSTOREHASHTABLE => "ObjectStoreHashTableDistribution",
+                InfoMetricsType.STOREREVIV => "MainStoreDeletedRecordRevivification",
+                InfoMetricsType.OBJECTSTOREREVIV => "ObjectStoreDeletedRecordRevivification",
                 InfoMetricsType.PERSISTENCE => "Persistence",
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
-                InfoMetricsType.BPSTATS => "BufferPool Stats",
+                InfoMetricsType.BPSTATS => "BufferPoolStats",
                 _ => "Default",
             };
         }

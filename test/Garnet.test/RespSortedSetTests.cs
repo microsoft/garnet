@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -188,6 +189,9 @@ namespace Garnet.test
             var added = db.SortedSetAdd(key, entries);
             ClassicAssert.AreEqual(entries.Length, added);
 
+            var lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b", "c" }, lex);
+
             // XX - Only update elements that already exist. Don't add new elements.
             var testEntries = new[]
             {
@@ -199,6 +203,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.Exists);
             ClassicAssert.AreEqual(0, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "c", "b" }, lex);
             var scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b")]);
             CollectionAssert.AreEqual(new double[] { 3, 4 }, scores);
             var count = db.SortedSetLength(key);
@@ -215,6 +221,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.NotExists);
             ClassicAssert.AreEqual(2, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "c", "b" }, lex);
             scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("k"), new RedisValue("l")]);
             CollectionAssert.AreEqual(new double[] { 3, 4, 11, 12 }, scores);
             count = db.SortedSetLength(key);
@@ -230,6 +238,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.LessThan);
             ClassicAssert.AreEqual(1, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "a", "b", "c" }, lex);
             scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("m")]);
             CollectionAssert.AreEqual(new double[] { 3, 3, 13 }, scores);
             count = db.SortedSetLength(key);
@@ -245,6 +255,8 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.GreaterThan);
             ClassicAssert.AreEqual(1, added);
+            lex = db.SortedSetRangeByValue(key, default, "c");
+            CollectionAssert.AreEqual(new RedisValue[] { "b", "c", "a" }, lex);
             scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("n")]);
             CollectionAssert.AreEqual(new double[] { 4, 3, 14 }, scores);
             count = db.SortedSetLength(key);
@@ -268,7 +280,7 @@ namespace Garnet.test
             testArgs = [key, "INCR", "3.5", "a"];
 
             resp = db.Execute("ZADD", testArgs);
-            ClassicAssert.IsTrue(double.TryParse(resp.ToString(), out var newVal));
+            ClassicAssert.IsTrue(double.TryParse(resp.ToString(), CultureInfo.InvariantCulture, out var newVal));
             ClassicAssert.AreEqual(4.5, newVal);
         }
 
@@ -296,13 +308,13 @@ namespace Garnet.test
 
             foreach (var argCombination in argCombinations)
             {
-                args = argCombination.Union(sampleEntries).ToArray<object>();
+                args = [.. argCombination.Union(sampleEntries)];
                 ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE), ex.Message);
             }
 
             // INCR option supports only one score-element pair
-            args = new[] { key, "INCR" }.Union(sampleEntries).ToArray<object>();
+            args = [.. new[] { key, "INCR" }.Union(sampleEntries)];
             ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR), ex.Message);
 
@@ -372,7 +384,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remove all entries
-            var removed = db.SortedSetRemove(key, entries.Select(e => e.Element).ToArray());
+            var removed = db.SortedSetRemove(key, [.. entries.Select(e => e.Element)]);
             ClassicAssert.AreEqual(entries.Length, removed);
 
             // length should be 0
@@ -398,7 +410,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remove the single entry
-            removed = db.SortedSetRemove(key, entries.Take(1).Select(e => e.Element).ToArray());
+            removed = db.SortedSetRemove(key, [.. entries.Take(1).Select(e => e.Element)]);
             ClassicAssert.AreEqual(1, removed);
 
             // length should be 0
@@ -440,7 +452,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remaining entries removed
-            removed = db.SortedSetRemove(key, entries.Select(e => e.Element).ToArray());
+            removed = db.SortedSetRemove(key, [.. entries.Select(e => e.Element)]);
             ClassicAssert.AreEqual(entries.Length - 1, removed);
 
             keyExists = db.KeyExists(key);
@@ -1435,7 +1447,7 @@ namespace Garnet.test
             {
                 var resultWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect,
                     command.Contains("WEIGHTS") ? [new RedisKey("zset1"), new RedisKey("zset2")] :
-                        Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}")).ToArray(),
+                        [.. Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}"))],
                     command.Contains("WEIGHTS") ? [2.0, 3.0] : null,
                     command.Contains("MAX") ? Aggregate.Max :
                     command.Contains("MIN") ? Aggregate.Min : Aggregate.Sum);
@@ -1450,7 +1462,7 @@ namespace Garnet.test
             else
             {
                 var result = db.SortedSetCombine(SetOperation.Intersect,
-                    Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}")).ToArray());
+                    [.. Enumerable.Range(1, numKeys).Select(i => new RedisKey($"zset{i}"))]);
 
                 ClassicAssert.AreEqual(expectedValues.Length, result.Length);
                 for (int i = 0; i < expectedValues.Length; i++)
@@ -2043,6 +2055,12 @@ namespace Garnet.test
             expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX board - [c", 4);
+            //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -2081,6 +2099,12 @@ namespace Garnet.test
             expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZREVRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZREVRANGEBYLEX board [c - REV", 4);
+            //expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -2095,6 +2119,12 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("ZRANGE mycity - + BYLEX LIMIT 2 3", 4);
             expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // ZRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX mycity - + LIMIT 2 3", 4);
+            //expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }

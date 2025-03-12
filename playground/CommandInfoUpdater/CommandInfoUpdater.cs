@@ -15,7 +15,7 @@ namespace CommandInfoUpdater
     /// </summary>
     public class CommandInfoUpdater
     {
-        const int QUERY_CMD_BATCH_SIZE = 25;
+        const int QUERY_CMD_BATCH_SIZE = 10;
         private static readonly string CommandInfoFileName = "RespCommandsInfo.json";
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
 
@@ -45,7 +45,7 @@ namespace CommandInfoUpdater
             }
 
             var (commandsToAdd, commandsToRemove) =
-                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
+                CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands, null);
 
             if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {
@@ -165,7 +165,7 @@ namespace CommandInfoUpdater
             byte[] response;
             try
             {
-                var lightClient = new LightClientRequest(respServerHost.ToString(), respServerPort, 0);
+                var lightClient = new LightClientRequest(new IPEndPoint(respServerHost, respServerPort), 0);
                 response = lightClient.SendCommand($"COMMAND INFO {string.Join(' ', commandsToQuery)}");
             }
             catch (Exception e)
@@ -276,7 +276,7 @@ namespace CommandInfoUpdater
                 if (existingCommandsInfo.ContainsKey(command.Command))
                 {
                     updatedSubCommands = existingCommandsInfo[command.Command].SubCommands == null
-                        ? new List<RespCommandsInfo>()
+                        ? []
                         : [.. existingCommandsInfo[command.Command].SubCommands];
 
                     // Add sub-commands with updated queried command info

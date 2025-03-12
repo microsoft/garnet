@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -22,6 +24,7 @@ namespace Garnet.test
     {
         GarnetServer server;
         Random r;
+        private TaskFactory taskFactory = new();
 
         [SetUp]
         public void Setup()
@@ -491,7 +494,10 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             const int length = 15000;
-            KeyValuePair<RedisKey, RedisValue>[] input = new KeyValuePair<RedisKey, RedisValue>[length];
+            var input = new KeyValuePair<RedisKey, RedisValue>[length];
+            var inputNX = new KeyValuePair<RedisKey, RedisValue>[length];
+            var inputXX = new KeyValuePair<RedisKey, RedisValue>[length];
+
             for (int i = 0; i < length; i++)
                 input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
 
@@ -499,7 +505,7 @@ namespace Garnet.test
             var result = db.StringSet(input, When.NotExists);
             ClassicAssert.IsTrue(result);
 
-            var value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var value = db.StringGet([.. input.Select(e => e.Key)]);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
@@ -509,7 +515,8 @@ namespace Garnet.test
             result = db.StringSet(input);
             ClassicAssert.IsTrue(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var keys = input.Select(e => e.Key).ToArray();
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
@@ -517,32 +524,79 @@ namespace Garnet.test
 
             // MSET NX - existing values
             for (int i = 0; i < length; i++)
-                input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
+                inputXX[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
 
-            result = db.StringSet(input, When.NotExists);
+            result = db.StringSet(inputXX, When.NotExists);
             ClassicAssert.IsFalse(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
+            // Should not change existing keys
             for (int i = 0; i < length; i++)
                 ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
 
             // MSET NX - non-existing and existing values
             for (int i = 0; i < length; i++)
-                input[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
+                inputNX[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
 
-            result = db.StringSet(input, When.NotExists);
-            ClassicAssert.IsTrue(result);
+            result = db.StringSet(inputNX, When.NotExists);
+            ClassicAssert.IsFalse(result);
 
-            value = db.StringGet(input.Select(e => e.Key).ToArray());
+            value = db.StringGet(keys);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
             {
-                ClassicAssert.AreEqual(i % 2 == 0 ? new RedisValue((int.Parse(input[i].Value) - length).ToString()) :
-                        input[i].Value, value[i]);
+                ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
             }
+
+            // Should not create new keys if any existing keys were also specified
+            var nxKeys = inputNX.Select(x => x.Key).Where(x => !keys.Contains(x)).Take(10).ToArray();
+            value = db.StringGet(nxKeys);
+            for (int i = 0; i < value.Length; i++)
+            {
+                ClassicAssert.IsEmpty(value[i].ToString());
+            }
+        }
+
+        [Test]
+        public void MultiSetNX()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Set keys
+            var response = lightClientRequest.SendCommand("MSETNX key1 5 key2 6");
+            var expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key1 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Verify values
+            response = lightClientRequest.SendCommand("GET key1");
+            expectedResponse = "$1\r\n5\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("GET key2");
+            expectedResponse = "$1\r\n6\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // Should not be set even though it was 'before' existing key1.
+            response = lightClientRequest.SendCommand("GET key3");
+            expectedResponse = "$-1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            response = lightClientRequest.SendCommand("HSET key4 first 1");
+            expectedResponse = ":1\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // MSETNX command should fail since key exists even if it's an object.
+            response = lightClientRequest.SendCommand("MSETNX key3 7 key4 8");
+            expectedResponse = ":0\r\n";
+            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         [Test]
@@ -621,6 +675,26 @@ namespace Garnet.test
             Thread.Sleep(2000);
             retValue = db.StringGet("mykey");
             ClassicAssert.AreEqual(null, retValue);
+        }
+
+        [Test]
+        public void SetExpiryThenExpireAndAppend()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "user:string1";
+            string value1 = "a";
+            string value2 = "ab";
+            var ttl = TimeSpan.FromMilliseconds(100);
+
+            var ok = db.StringSet(key, value1, ttl);
+            ClassicAssert.IsTrue(ok);
+
+            Thread.Sleep(ttl * 2);
+
+            var len = db.StringAppend(key, value2);
+            ClassicAssert.IsTrue(len == 2);
         }
 
         [Test]
@@ -1364,7 +1438,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
             server.Start();
 
             var key = "delKey";
@@ -1386,8 +1460,7 @@ namespace Garnet.test
         private string GetRandomString(int len)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string(Enumerable.Repeat(chars, len)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
+            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[r.Next(s.Length)])]);
         }
 
         [Test]
@@ -1396,7 +1469,7 @@ namespace Garnet.test
             TearDown();
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1431,13 +1504,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void GarnetObjectStoreDisabledError()
+        {
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var iter = 100;
+            var mykey = "mykey";
+            for (var i = 0; i < iter; i++)
+            {
+                var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
+                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
+            }
+
+            // Ensure connection is still healthy
+            for (var i = 0; i < iter; i++)
+            {
+                var myvalue = "myvalue" + i;
+                var result = db.StringSet(mykey, myvalue);
+                ClassicAssert.IsTrue(result);
+                var returned = (string)db.StringGet(mykey);
+                ClassicAssert.AreEqual(myvalue, returned);
+            }
+        }
+
+        [Test]
         public void MultiKeyDelete([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1505,7 +1608,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
 
@@ -1571,7 +1674,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1836,7 +1939,7 @@ namespace Garnet.test
             {
                 TearDown();
                 TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: true);
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: true);
                 server.Start();
             }
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -2555,7 +2658,7 @@ namespace Garnet.test
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
-            args[1] = 15;
+            args[1] = 500;
             args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
@@ -3559,6 +3662,8 @@ namespace Garnet.test
             string value = db.StringGet(keyA);
             ClassicAssert.AreEqual(null, value);
 
+            ClassicAssert.AreEqual("OK", db.Execute("SET", keyA, keyA, "KEEPTTL")?.ToString());
+
             value = db.StringGet(keyB);
             ClassicAssert.AreEqual(keyB, value);
         }
@@ -3649,6 +3754,17 @@ namespace Garnet.test
         }
 
         [Test]
+        public void GetRole()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+            var role = server.Role();
+            ClassicAssert.True(role is Role.Master);
+            var master = role as Role.Master;
+            ClassicAssert.AreEqual("master", master.Value);
+        }
+
+        [Test]
         public void AppendTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3735,7 +3851,7 @@ namespace Garnet.test
             // Set up low-memory database
             TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, disableObjects: true);
             server.Start();
 
             string firstKey = null, firstValue = null, lastKey = null, lastValue = null;
@@ -4830,5 +4946,145 @@ namespace Garnet.test
         }
 
         #endregion
+
+        [Test]
+        [TestCase("BLOCKING", "ERROR", true, Description = "Unblock normal client with ERROR")]
+        [TestCase("BLOCKING", "TIMEOUT", true, Description = "Unblock normal client with TIMEOUT")]
+        [TestCase("BLOCKING", null, true, Description = "Unblock normal client without mode")]
+        public async Task ClientUnblockBasicTest(string clientType, string mode, bool expectedResult)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+            Task blockingTask = null;
+            bool isError = false;
+            if (clientType == "BLOCKING")
+            {
+                blockingTask = taskFactory.StartNew(() =>
+                {
+                    var startTime = Stopwatch.GetTimestamp();
+                    var response = blockingClient.SendCommand("BLMPOP 10 1 keyA LEFT");
+                    if (Encoding.ASCII.GetString(response).Substring(0, "-UNBLOCKED".Length) == "-UNBLOCKED")
+                    {
+                        isError = true;
+                    }
+                    var totalTime = Stopwatch.GetElapsedTime(startTime);
+                    ClassicAssert.Less(totalTime.TotalSeconds, 9);
+                });
+            }
+            // Add other mode like XREAD Readis steam here
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000);
+
+            // Unblock from main connection
+            var args = new List<string> { "UNBLOCK", clientId };
+            if (mode != null)
+            {
+                args.Add(mode);
+            }
+            var unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
+            ClassicAssert.AreEqual(expectedResult ? 1 : 0, unblockResult);
+            blockingTask.Wait();
+
+            if (mode == "ERROR")
+            {
+                ClassicAssert.IsTrue(isError);
+            }
+            else
+            {
+                ClassicAssert.IsFalse(isError);
+            }
+
+            // Attempt to unblock again will return 0
+            unblockResult = (int)mainDB.Execute("CLIENT", [.. args]);
+            ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        [TestCase(0, Description = "Guarantied concurrent unblock test")]
+        [TestCase(3, Description = "Random chance unblock sucess/failed case")]
+        [TestCase(20, Description = "Probable unblock failed case")]
+        public async Task MultipleClientsUnblockAndAddTest(int numberOfItems)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "blockingList";
+            var value = "testValue";
+
+            // Start blocking client
+            using var blockingClient = TestUtils.CreateRequest();
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+
+            string blockingResult = null;
+            var blockingTask = Task.Run(() =>
+            {
+                var response = blockingClient.SendCommand($"BLMPOP 10 1 {key} LEFT COUNT 30");
+                blockingResult = Encoding.ASCII.GetString(response);
+            });
+
+            // Wait for client to enter blocking state
+            await Task.Delay(1000);
+
+            // Start parallel unblock and add tasks
+            var unblockTasks = new List<Task<int>>();
+            var addTasks = new List<Task>();
+            for (int i = 0; i < numberOfItems; i++)
+            {
+                var _i = i;
+                addTasks.Add(Task.Run(() => redis.GetDatabase(0).ListLeftPush(key, $"{value}{_i}")));
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                unblockTasks.Add(Task.Run(() => (int)redis.GetDatabase(0).Execute("CLIENT", "UNBLOCK", clientId, "ERROR")));
+            }
+
+            await Task.WhenAll(unblockTasks);
+            await Task.WhenAll(addTasks);
+            await blockingTask;
+
+            var numberOfItemsReturned = Regex.Matches(blockingResult, value).Count;
+
+            var listLength = db.ListLength(key);
+            ClassicAssert.AreEqual(numberOfItems - numberOfItemsReturned, listLength);
+
+            if (numberOfItemsReturned == 0)
+            {
+                ClassicAssert.IsTrue(blockingResult.StartsWith("-UNBLOCKED"));
+                ClassicAssert.IsTrue(unblockTasks.Any(x => x.Result == 1));
+            }
+            else
+            {
+                ClassicAssert.IsTrue(unblockTasks.All(x => x.Result == 0));
+            }
+        }
+
+        [Test]
+        [TestCase(-1, Description = "Unblock with invalid client ID")]
+        [TestCase(999999, Description = "Unblock with non-existent client ID")]
+        public void ClientUnblockInvalidIdTest(int invalidId)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var unblockResult = (int)mainDB.Execute("CLIENT", "UNBLOCK", invalidId);
+            ClassicAssert.AreEqual(0, unblockResult);
+        }
+
+        [Test]
+        public void ClientUnblockInvalidModeTest()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            Assert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "UNBLOCK", 123, "INVALID"));
+        }
     }
 }

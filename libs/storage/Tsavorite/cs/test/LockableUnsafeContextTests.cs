@@ -471,7 +471,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
         public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget,
-                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -556,7 +556,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 long dummyInOut = 0;
                 status = useRMW
                     ? luContext.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
@@ -610,7 +610,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         [Test]
         [Category(LockableUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+        public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase,
                                          [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -702,7 +702,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 status = useRMW
                     ? luContext.RMW(resultKey, (readValue24 + readValue51) * valueMult2)
                     : luContext.Upsert(resultKey, (readValue24 + readValue51) * valueMult2);
@@ -741,7 +741,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         [Category(SmokeTestCategory)]
 #pragma warning disable IDE0060 // Remove unused parameter: readCopyDestination is used by Setup
         public void InMemoryDeleteTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
-                                       [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+                                       [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
             // Phase.INTERMEDIATE is to test the non-Phase.REST blocks
@@ -770,7 +770,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 status = luContext.Delete(ref resultKey);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
@@ -1336,7 +1336,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
-                    };
+                    }
                     ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 }
                 catch (Exception)
@@ -1477,7 +1477,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
-                    };
+                    }
+                    ;
                     ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                     lastUpdaterKeys[2] = key;
                 }
