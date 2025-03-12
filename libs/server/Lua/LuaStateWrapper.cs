@@ -21,7 +21,7 @@ namespace Garnet.server
     /// </summary>
     internal struct LuaStateWrapper : IDisposable
     {
-        private const int LUA_MINSTACK = 20;
+        internal const int LUA_MINSTACK = 20;
 
         private SingleWriterMultiReaderLock hookLock;
 

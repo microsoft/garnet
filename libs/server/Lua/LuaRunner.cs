@@ -7,6 +7,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
@@ -254,6 +255,29 @@ ARGV = {}
 -- disable for sandboxing purposes
 import = function () end
 
+-- common functions for handling error replies from Garnet
+local chain_func = function(f1, f2)
+    return function(...)
+        return f1(f2, ...)
+    end
+end
+
+local error_wrapper_r0 = function(rawFunc, ...) 
+    local err = rawFunc(...)
+    if err then
+        error(err, 0)
+    end
+end
+
+local error_wrapper_r1 = function(rawFunc, ...) 
+    local r1, err = rawFunc(...)
+    if err then
+        error(err, 0)
+    end
+
+    return r1
+end
+
 -- cutdown os for sandboxing purposes
 local osClockRef = os.clock
 os = {
@@ -262,8 +286,8 @@ os = {
 
 -- define cjson for (optional) inclusion into sandbox_env
 local cjson = {
-    encode = garnet_cjson_encode;
-    decode = garnet_cjson_decode;
+    encode = chain_func(error_wrapper_r1, garnet_cjson_encode);
+    decode = chain_func(error_wrapper_r1, garnet_cjson_decode);
 }
 
 -- define bit for (optional) inclusion into sandbox_env
@@ -473,10 +497,10 @@ function reset_keys_and_argv(fromKey, fromArgv)
         table.remove(argvRef)
     end
 end
+-- force new 'global' environment to be readonly
+recursively_readonly_table(sandbox_env)
 -- responsible for sandboxing user provided code
 function load_sandboxed(source)
-    recursively_readonly_table(sandbox_env)
-
     local rawFunc, err = load(source, nil, nil, sandbox_env)
 
     return err, rawFunc
@@ -1565,27 +1589,30 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1)
             {
-                return state.RaiseError("bad argument to encode");
+                return LuaWrappedError(1, "bad argument to encode"u8);
             }
 
-            Encode(this, 0);
+            var ret = Encode(this, 0);
 
-            // Encoding should leave nothing on the stack
-            state.ExpectLuaStackEmpty();
+            if (ret == 1)
+            {
+                // Encoding should leave nothing on the stack
+                state.ExpectLuaStackEmpty();
 
-            // Push the encoded string
-            var result = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
-            state.PushBuffer(result);
+                // Push the encoded string
+                var result = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
+                state.PushBuffer(result);
+            }
 
-            return 1;
+            return ret;
 
             // Encode the unknown type on the top of the stack
-            static void Encode(LuaRunner self, int depth)
+            static int Encode(LuaRunner self, int depth)
             {
                 if (depth > 1000)
                 {
                     // Match Redis max decoding depth
-                    _ = self.state.RaiseError("Cannot serialise, excessive nesting (1001)");
+                    return self.LuaWrappedError(1, "Cannot serialise, excessive nesting (1001)"u8);
                 }
 
                 var argType = self.state.Type(self.state.StackTop);
@@ -1593,33 +1620,32 @@ end
                 switch (argType)
                 {
                     case LuaType.Boolean:
-                        EncodeBool(self);
-                        break;
+                        return EncodeBool(self);
                     case LuaType.Nil:
-                        EncodeNull(self);
-                        break;
+                        return EncodeNull(self);
                     case LuaType.Number:
-                        EncodeNumber(self);
-                        break;
+                        return EncodeNumber(self);
                     case LuaType.String:
-                        EncodeString(self);
-                        break;
+                        return EncodeString(self);
                     case LuaType.Table:
-                        EncodeTable(self, depth);
-                        break;
+                        return EncodeTable(self, depth);
                     case LuaType.Function:
+                        return self.LuaWrappedError(1, "Cannot serialise Function to JSON"u8);
                     case LuaType.LightUserData:
+                        return self.LuaWrappedError(1, "Cannot serialise LightUserData to JSON"u8);
                     case LuaType.None:
+                        return self.LuaWrappedError(1, "Cannot serialise None to JSON"u8);
                     case LuaType.Thread:
+                        return self.LuaWrappedError(1, "Cannot serialise Thread to JSON"u8);
                     case LuaType.UserData:
+                        return self.LuaWrappedError(1, "Cannot serialise UserData to JSON"u8);
                     default:
-                        _ = self.state.RaiseError($"Cannot serialise {argType} to JSON");
-                        break;
+                        return self.LuaWrappedError(1, "Cannot serialise Unknown to JSON"u8);
                 }
             }
 
             // Encode the boolean on the top of the stack and remove it
-            static void EncodeBool(LuaRunner self)
+            static int EncodeBool(LuaRunner self)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
 
@@ -1630,10 +1656,12 @@ end
                 self.scratchBufferManager.MoveOffset(data.Length);
 
                 self.state.Pop(1);
+
+                return 1;
             }
 
             // Encode the nil on the top of the stack and remove it
-            static void EncodeNull(LuaRunner self)
+            static int EncodeNull(LuaRunner self)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
 
@@ -1642,10 +1670,12 @@ end
                 self.scratchBufferManager.MoveOffset(4);
 
                 self.state.Pop(1);
+
+                return 1;
             }
 
             // Encode the number on the top of the stack and remove it
-            static void EncodeNumber(LuaRunner self)
+            static int EncodeNumber(LuaRunner self)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Number, "Expected number on top of stack");
 
@@ -1655,7 +1685,7 @@ end
 
                 if (!number.TryFormat(space, out var written, "G", CultureInfo.InvariantCulture))
                 {
-                    _ = self.state.RaiseError("Unable to format number");
+                    return self.LuaWrappedError(1, "Unable to format number"u8);
                 }
 
                 var into = self.scratchBufferManager.ViewRemainingArgSlice(written).Span;
@@ -1663,10 +1693,12 @@ end
                 self.scratchBufferManager.MoveOffset(written);
 
                 self.state.Pop(1);
+
+                return 1;
             }
 
             // Encode the string on the top of the stack and remove it
-            static void EncodeString(LuaRunner self)
+            static int EncodeString(LuaRunner self)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.String, "Expected string on top of stack");
 
@@ -1705,10 +1737,12 @@ end
                 self.scratchBufferManager.MoveOffset(buff.Length + 1);
 
                 self.state.Pop(1);
+
+                return 1;
             }
 
             // Encode the table on the top of the stack and remove it
-            static void EncodeTable(LuaRunner self, int depth)
+            static int EncodeTable(LuaRunner self, int depth)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
@@ -1750,16 +1784,16 @@ end
 
                 if (isArray)
                 {
-                    EncodeArray(self, arrayLength, depth);
+                    return EncodeArray(self, arrayLength, depth);
                 }
                 else
                 {
-                    EncodeObject(self, depth);
+                    return EncodeObject(self, depth);
                 }
             }
 
             // Encode the table on the top of the stack as an array and remove it
-            static void EncodeArray(LuaRunner self, int length, int depth)
+            static int EncodeArray(LuaRunner self, int length, int depth)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
@@ -1780,7 +1814,11 @@ end
                     }
 
                     _ = self.state.RawGetInteger(null, tableIndex, ix);
-                    Encode(self, depth + 1);
+                    var r = Encode(self, depth + 1);
+                    if (r != 1)
+                    {
+                        return r;
+                    }
                 }
 
                 self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)']';
@@ -1788,10 +1826,12 @@ end
 
                 // Remove table
                 self.state.Pop(1);
+
+                return 1;
             }
 
             // Encode the table on the top of the stack as an object and remove it
-            static void EncodeObject(LuaRunner self, int depth)
+            static int EncodeObject(LuaRunner self, int depth)
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
@@ -1839,13 +1879,21 @@ end
                     }
 
                     // Encode key
-                    Encode(self, depth + 1);
+                    var r1 = Encode(self, depth + 1);
+                    if (r1 != 1)
+                    {
+                        return r1;
+                    }
 
                     self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)':';
                     self.scratchBufferManager.MoveOffset(1);
 
                     // Encode value
-                    Encode(self, depth + 1);
+                    var r2 = Encode(self, depth + 1);
+                    if (r2 != 1)
+                    {
+                        return r2;
+                    }
 
                     firstValue = false;
                 }
@@ -1855,6 +1903,8 @@ end
 
                 // Remove table
                 self.state.Pop(1);
+
+                return 1;
             }
         }
 
@@ -1868,7 +1918,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1)
             {
-                return state.RaiseError("bad argument to decode");
+                return LuaWrappedError(1, "bad argument to decode"u8);
             }
 
             var argType = state.Type(1);
@@ -1883,7 +1933,7 @@ end
 
             if (argType != LuaType.String)
             {
-                return state.RaiseError("bad argument to decode");
+                return LuaWrappedError(1, "bad argument to decode"u8);
             }
 
             _ = state.CheckBuffer(1, out var buff);
@@ -1891,47 +1941,43 @@ end
             try
             {
                 var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = 1000 });
-                Decode(this, parsed);
-
-                return 1;
+                return Decode(this, parsed);
             }
             catch (Exception e)
             {
                 if (e.Message.Contains("maximum configured depth of 1000"))
                 {
                     // Maximum depth exceeded, munge to a compatible Redis error
-                    return state.RaiseError("Found too many nested data structures (1001)");
+                    return LuaWrappedError(1, "Found too many nested data structures (1001)"u8);
                 }
 
                 // Invalid token is implied (and matches Redis error replies)
-                //
-                // Additinal error details can be gleaned from messages
-                return state.RaiseError($"Expected value but found invalid token.  Inner Message = {e.Message}");
+                return LuaWrappedError(1, "Expected value but found invalid token."u8);
             }
 
             // Convert the JsonNode into a Lua value on the stack
-            static void Decode(LuaRunner self, JsonNode node)
+            static int Decode(LuaRunner self, JsonNode node)
             {
                 if (node is JsonValue v)
                 {
-                    DecodeValue(self, v);
+                    return DecodeValue(self, v);
                 }
                 else if (node is JsonArray a)
                 {
-                    DecodeArray(self, a);
+                    return DecodeArray(self, a);
                 }
                 else if (node is JsonObject o)
                 {
-                    DecodeObject(self, o);
+                    return DecodeObject(self, o);
                 }
                 else
                 {
-                    _ = self.state.RaiseError($"Unexpected json node type: {node.GetType().Name}");
+                    return self.LuaWrappedError(1, "Unexpected json node type"u8);
                 }
             }
 
             // Convert the JsonValue int to a Lua string, nil, or number on the stack
-            static void DecodeValue(LuaRunner self, JsonValue value)
+            static int DecodeValue(LuaRunner self, JsonValue value)
             {
                 // Reserve space for the value
                 self.state.ForceMinimumStackCapacity(1);
@@ -1951,16 +1997,20 @@ end
                         self.state.PushBuffer(buf);
                         break;
                     case JsonValueKind.Undefined:
+                        return self.LuaWrappedError(1, "Unexpected json value kind: Undefined"u8);
                     case JsonValueKind.Object:
+                        return self.LuaWrappedError(1, "Unexpected json value kind: Object"u8);
                     case JsonValueKind.Array:
+                        return self.LuaWrappedError(1, "Unexpected json value kind: Array"u8);
                     default:
-                        _ = self.state.RaiseError($"Unexpected json value kind: {value.GetValueKind()}");
-                        break;
+                        return self.LuaWrappedError(1, "Unexpected json value kind: Unknown"u8);
                 }
+
+                return 1;
             }
 
             // Convert the JsonArray into a Lua table on the stack
-            static void DecodeArray(LuaRunner self, JsonArray arr)
+            static int DecodeArray(LuaRunner self, JsonArray arr)
             {
                 // Reserve space for the table
                 self.state.ForceMinimumStackCapacity(1);
@@ -1973,16 +2023,23 @@ end
                 foreach (var item in arr)
                 {
                     // Places item on the stack
-                    Decode(self, item);
+                    var r = Decode(self, item);
+                    if (r != 1)
+                    {
+                        // Propogate error return
+                        return r;
+                    }
 
                     // Save into the table
                     self.state.RawSetInteger(tableIndex, storeAtIx);
                     storeAtIx++;
                 }
+
+                return 1;
             }
 
             // Convert the JsonObject into a Lua table on the stack
-            static void DecodeObject(LuaRunner self, JsonObject obj)
+            static int DecodeObject(LuaRunner self, JsonObject obj)
             {
                 // Reserve space for table and key
                 self.state.ForceMinimumStackCapacity(2);
@@ -1999,10 +2056,16 @@ end
                     self.state.PushBuffer(buf);
 
                     // Decode value
-                    Decode(self, value);
+                    var r = Decode(self, value);
+                    if (r != 1)
+                    {
+                        return r;
+                    }
 
                     self.state.RawSet(tableIndex);
                 }
+
+                return 1;
             }
         }
 
@@ -3297,6 +3360,29 @@ end
 
             state.PushConstantString(constStringRegistryIndex);
             return state.RaiseErrorFromStack();
+        }
+
+        /// <summary>
+        /// We can't use Lua's normal error handling functions on Linux, so instead we go through wrappers.
+        /// 
+        /// The last slot on the stack is used for an error message, the rest are filled with nils.
+        /// 
+        /// Raising the error is handled (on the Lua side) with the error_wrapper_r# functions.
+        /// </summary>
+        private int LuaWrappedError([ConstantExpected] int nonErrorReturns, ReadOnlySpan<byte> errorMsg)
+        {
+            Debug.Assert(nonErrorReturns <= LuaStateWrapper.LUA_MINSTACK - 1, "Cannot safely return this many returns in an error path");
+
+            state.ClearStack();
+            state.ForceMinimumStackCapacity(nonErrorReturns + 1);
+            for (var i = 0; i < nonErrorReturns; i++)
+            {
+                state.PushNil();
+            }
+
+            // TODO: These should be constants, otherwise they can also fail
+            state.PushBuffer(errorMsg);
+            return nonErrorReturns + 1;
         }
 
         /// <summary>
