@@ -48,13 +48,17 @@ function CleanUpFiles {
 	}
 
 	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/$nativeFile"
-	
-	Get-ChildItem -Path $publishPath -Filter '*.xml' | Remove-Item -Force
-	Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
-	Get-ChildItem -Path $publishPath -Filter '*.pdb' | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
 
-	# Copy proper native run time to publish directory
-	Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
+	if (Test-Path -Path $publishPath) {
+		Get-ChildItem -Path $publishPath -Filter '*.xml' | Remove-Item -Force
+		Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
+		Get-ChildItem -Path $publishPath -Filter '*.pdb' | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
+
+		# Copy proper native run time to publish directory
+		Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
+	} else {
+		Write-Host "Publish Path not found: $publishPath"
+	}
 
 	# Delete the runtimes folder
 	if ($deleteRunTimes -eq $true) {
