@@ -281,6 +281,15 @@ local error_wrapper_r1 = function(rawFunc, ...)
     return r1
 end
 
+local error_wrapper_r2 = function(rawFunc, ...) 
+    local r1, r2, err = rawFunc(...)
+    if err then
+        error(err, 0)
+    end
+
+    return r1, r2
+end
+
 local unpackTrampolineRef = garnet_unpack_trampoline
 
 local error_wrapper_rvar = function(rawFunc, ...)
@@ -418,7 +427,7 @@ table.unpack = nil
 table.move = nil
 
 -- in Lua 5.1 but not 5.4, so implemented on the .NET side
-local loadstring = garnet_loadstring
+local loadstring = chain_func(error_wrapper_r2, garnet_loadstring)
 math.atan2 = garnet_atan2
 math.cosh = garnet_cosh
 math.frexp = garnet_frexp
@@ -1355,7 +1364,7 @@ end
                 (luaArgCount > 2)
               )
             {
-                return state.RaiseError("bad argument to loadstring");
+                return LuaWrappedError(2, "bad argument to loadstring"u8);
             }
 
             // Ignore chunk name
@@ -1367,7 +1376,7 @@ end
             _ = state.CheckBuffer(1, out var buff);
             if (buff.Contains((byte)0))
             {
-                return state.RaiseError("bad argument to loadstring, interior null byte");
+                return LuaWrappedError(2, "bad argument to loadstring, interior null byte"u8);
             }
 
             state.ForceMinimumStackCapacity(1);
