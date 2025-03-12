@@ -77,6 +77,14 @@ namespace Garnet.server
         /// StoredProcedure
         /// </summary>
         StoredProcedure = 0x50,
+        /// <summary>
+        /// Flush all
+        /// </summary>
+        FlushAll = 0x60,
+        /// <summary>
+        /// Flush db
+        /// </summary>
+        FlushDb = 0x61,
     }
 
     internal enum AofStoreType : byte
@@ -85,6 +93,7 @@ namespace Garnet.server
         ObjectStoreType = 0x1,
         TxnType = 0x2,
         ReplicationType = 0x3,
-        CheckpointType = 0x4
+        CheckpointType = 0x4,
+        FlushDbType = 0x5,
     }
 }
