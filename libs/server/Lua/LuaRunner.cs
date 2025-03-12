@@ -363,14 +363,14 @@ local redis = {
         return { err = errOrRes }
     end,
 
-    sha1hex = garnet_sha1hex,
+    sha1hex = chain_func(error_wrapper_r1, garnet_sha1hex),
 
     LOG_DEBUG = 0,
     LOG_VERBOSE = 1,
     LOG_NOTICE = 2,
     LOG_WARNING = 3,
 
-    log = garnet_log,
+    log = chain_func(error_wrapper_r0, garnet_log),
 
     REPL_ALL = 3,
     REPL_AOF = 1,
@@ -967,8 +967,7 @@ end
             var argCount = state.StackTop;
             if (argCount != 1)
             {
-                state.PushConstantString(constStrs.ErrWrongNumberOfArgs);
-                return state.RaiseErrorFromStack();
+                return LuaWrappedError(1, constStrs.ErrWrongNumberOfArgs);
             }
 
             if (!state.CheckBuffer(1, out var bytes))
@@ -995,23 +994,23 @@ end
             var argCount = state.StackTop;
             if (argCount < 2)
             {
-                return LuaStaticError(constStrs.ErrRedisLogRequired);
+                return LuaWrappedError(0, constStrs.ErrRedisLogRequired);
             }
 
             if (state.Type(1) != LuaType.Number)
             {
-                return LuaStaticError(constStrs.ErrFirstArgMustBeNumber);
+                return LuaWrappedError(0, constStrs.ErrFirstArgMustBeNumber);
             }
 
             var rawLevel = state.CheckNumber(1);
             if (rawLevel is not (0 or 1 or 2 or 3))
             {
-                return LuaStaticError(constStrs.ErrInvalidDebugLevel);
+                return LuaWrappedError(0, constStrs.ErrInvalidDebugLevel);
             }
 
             if (logMode == LuaLoggingMode.Disable)
             {
-                return LuaStaticError(constStrs.ErrLoggingDisabled);
+                return LuaWrappedError(0, constStrs.ErrLoggingDisabled);
             }
 
             // When shipped as a service, allowing arbitrary writes to logs is dangerous
