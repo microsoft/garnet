@@ -361,6 +361,22 @@ Simple string reply: OK.
 
 ---
 
+### SWAPDB
+
+#### Syntax
+
+```bash
+SWAPDB index1 index2
+```
+
+This command swaps two Garnet databases, so that immediately all the clients connected to a given database will see the data of the other database, and the other way around.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
+
 ### TIME
 #### Syntax
 

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -54,7 +55,7 @@ namespace Garnet.server
                 new("monitor_task", storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? "enabled" : "disabled"),
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
-                new("run_id", storeWrapper.run_id),
+                new("run_id", storeWrapper.runId),
                 new("redis_version", storeWrapper.redisProtocolVersion),
                 new("redis_mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
             ];
@@ -62,10 +63,10 @@ namespace Garnet.server
 
         private void PopulateMemoryInfo(StoreWrapper storeWrapper)
         {
-            var main_store_index_size = storeWrapper.store.IndexSize * 64;
-            var main_store_log_memory_size = storeWrapper.store.Log.MemorySizeBytes;
-            var main_store_read_cache_size = (storeWrapper.store.ReadCache != null ? storeWrapper.store.ReadCache.MemorySizeBytes : 0);
-            var total_main_store_size = main_store_index_size + main_store_log_memory_size + main_store_read_cache_size;
+            var main_store_index_size = -1L;
+            var main_store_log_memory_size = -1L;
+            var main_store_read_cache_size = -1L;
+            var total_main_store_size = -1L;
 
             var object_store_index_size = -1L;
             var object_store_log_memory_size = -1L;
@@ -73,18 +74,32 @@ namespace Garnet.server
             var object_store_heap_memory_size = -1L;
             var object_store_read_cache_heap_memory_size = -1L;
             var total_object_store_size = -1L;
+
+            var aof_log_memory_size = -1L;
+
+            var databases = storeWrapper.GetDatabasesSnapshot();
             var disableObj = storeWrapper.serverOptions.DisableObjects;
 
-            var aof_log_memory_size = storeWrapper.appendOnlyFile?.MemorySizeBytes ?? -1;
-
-            if (!disableObj)
+            foreach (var db in databases)
             {
-                object_store_index_size = storeWrapper.objectStore.IndexSize * 64;
-                object_store_log_memory_size = storeWrapper.objectStore.Log.MemorySizeBytes;
-                object_store_read_cache_log_memory_size = storeWrapper.objectStore.ReadCache?.MemorySizeBytes ?? 0;
-                object_store_heap_memory_size = storeWrapper.objectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
-                object_store_read_cache_heap_memory_size = storeWrapper.objectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
-                total_object_store_size = object_store_index_size + object_store_log_memory_size + object_store_read_cache_log_memory_size + object_store_heap_memory_size + object_store_read_cache_heap_memory_size;
+                main_store_index_size += db.MainStore.IndexSize * 64;
+                main_store_log_memory_size += db.MainStore.Log.MemorySizeBytes;
+                main_store_read_cache_size += db.MainStore.ReadCache?.MemorySizeBytes ?? 0;
+                total_main_store_size += main_store_index_size + main_store_log_memory_size + main_store_read_cache_size;
+
+                aof_log_memory_size = db.AppendOnlyFile?.MemorySizeBytes ?? -1;
+
+                if (!disableObj)
+                {
+                    object_store_index_size += db.ObjectStore.IndexSize * 64;
+                    object_store_log_memory_size += db.ObjectStore.Log.MemorySizeBytes;
+                    object_store_read_cache_log_memory_size += db.ObjectStore.ReadCache?.MemorySizeBytes ?? 0;
+                    object_store_heap_memory_size += db.ObjectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
+                    object_store_read_cache_heap_memory_size += db.ObjectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
+                    total_object_store_size += object_store_index_size + object_store_log_memory_size +
+                                              object_store_read_cache_log_memory_size + object_store_heap_memory_size +
+                                              object_store_read_cache_heap_memory_size;
+                }
             }
 
             var gcMemoryInfo = GC.GetGCMemoryInfo();
@@ -202,76 +217,160 @@ namespace Garnet.server
 
         private void PopulateStoreStats(StoreWrapper storeWrapper)
         {
-            storeInfo =
-                [
-                    new("CurrentVersion", storeWrapper.store.CurrentVersion.ToString()),
-                    new("LastCheckpointedVersion", storeWrapper.store.LastCheckpointedVersion.ToString()),
-                    new("SystemState", storeWrapper.store.SystemState.ToString()),
-                    new("IndexSize", storeWrapper.store.IndexSize.ToString()),
-                    new("LogDir", storeWrapper.serverOptions.LogDir),
-                    new("Log.BeginAddress", storeWrapper.store.Log.BeginAddress.ToString()),
-                    new("Log.BufferSize", storeWrapper.store.Log.BufferSize.ToString()),
-                    new("Log.EmptyPageCount", storeWrapper.store.Log.EmptyPageCount.ToString()),
-                    new("Log.FixedRecordSize", storeWrapper.store.Log.FixedRecordSize.ToString()),
-                    new("Log.HeadAddress", storeWrapper.store.Log.HeadAddress.ToString()),
-                    new("Log.MemorySizeBytes", storeWrapper.store.Log.MemorySizeBytes.ToString()),
-                    new("Log.SafeReadOnlyAddress", storeWrapper.store.Log.SafeReadOnlyAddress.ToString()),
-                    new("Log.TailAddress", storeWrapper.store.Log.TailAddress.ToString()),
-                    new("ReadCache.BeginAddress", storeWrapper.store.ReadCache?.BeginAddress.ToString() ?? "N/A"),
-                    new("ReadCache.BufferSize", storeWrapper.store.ReadCache?.BufferSize.ToString() ?? "N/A"),
-                    new("ReadCache.EmptyPageCount", storeWrapper.store.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
-                    new("ReadCache.HeadAddress", storeWrapper.store.ReadCache?.HeadAddress.ToString() ?? "N/A"),
-                    new("ReadCache.MemorySizeBytes", storeWrapper.store.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
-                    new("ReadCache.TailAddress", storeWrapper.store.ReadCache?.TailAddress.ToString() ?? "N/A"),
-                ];
+            var databases = storeWrapper.GetDatabasesSnapshot();
+
+            for (var i = 0; i < databases.Length; i++)
+            {
+                var storeStats = GetDatabaseStoreStats(storeWrapper, ref databases[i]);
+                if (i == 0)
+                    storeInfo = new MetricsItem[databases.Length * storeStats.Length];
+
+                Array.Copy(storeStats, 0, storeInfo, storeStats.Length * i, storeStats.Length);
+            }
         }
+
+        private MetricsItem[] GetDatabaseStoreStats(StoreWrapper storeWrapper, ref GarnetDatabase db) =>
+        [
+            new($"db{db.Id}.CurrentVersion", db.MainStore.CurrentVersion.ToString()),
+            new($"db{db.Id}.LastCheckpointedVersion", db.MainStore.LastCheckpointedVersion.ToString()),
+            new($"db{db.Id}.SystemState", db.MainStore.SystemState.ToString()),
+            new($"db{db.Id}.IndexSize", db.MainStore.IndexSize.ToString()),
+            new($"db{db.Id}.LogDir", storeWrapper.serverOptions.LogDir),
+            new($"db{db.Id}.Log.BeginAddress", db.MainStore.Log.BeginAddress.ToString()),
+            new($"db{db.Id}.Log.BufferSize", db.MainStore.Log.BufferSize.ToString()),
+            new($"db{db.Id}.Log.EmptyPageCount", db.MainStore.Log.EmptyPageCount.ToString()),
+            new($"db{db.Id}.Log.FixedRecordSize", db.MainStore.Log.FixedRecordSize.ToString()),
+            new($"db{db.Id}.Log.HeadAddress", db.MainStore.Log.HeadAddress.ToString()),
+            new($"db{db.Id}.Log.MemorySizeBytes", db.MainStore.Log.MemorySizeBytes.ToString()),
+            new($"db{db.Id}.Log.SafeReadOnlyAddress", db.MainStore.Log.SafeReadOnlyAddress.ToString()),
+            new($"db{db.Id}.Log.TailAddress", db.MainStore.Log.TailAddress.ToString()),
+            new($"db{db.Id}.ReadCache.BeginAddress", db.MainStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.BufferSize", db.MainStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.EmptyPageCount", db.MainStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.HeadAddress", db.MainStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.MemorySizeBytes", db.MainStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.TailAddress", db.MainStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
+        ];
 
         private void PopulateObjectStoreStats(StoreWrapper storeWrapper)
         {
-            objectStoreInfo =
-                [
-                    new("CurrentVersion", storeWrapper.objectStore.CurrentVersion.ToString()),
-                    new("LastCheckpointedVersion", storeWrapper.objectStore.LastCheckpointedVersion.ToString()),
-                    new("SystemState", storeWrapper.objectStore.SystemState.ToString()),
-                    new("IndexSize", storeWrapper.objectStore.IndexSize.ToString()),
-                    new("LogDir", storeWrapper.serverOptions.LogDir),
-                    new("Log.BeginAddress", storeWrapper.objectStore.Log.BeginAddress.ToString()),
-                    new("Log.BufferSize", storeWrapper.objectStore.Log.BufferSize.ToString()),
-                    new("Log.EmptyPageCount", storeWrapper.objectStore.Log.EmptyPageCount.ToString()),
-                    new("Log.FixedRecordSize", storeWrapper.objectStore.Log.FixedRecordSize.ToString()),
-                    new("Log.HeadAddress", storeWrapper.objectStore.Log.HeadAddress.ToString()),
-                    new("Log.MemorySizeBytes", storeWrapper.objectStore.Log.MemorySizeBytes.ToString()),
-                    new("Log.SafeReadOnlyAddress", storeWrapper.objectStore.Log.SafeReadOnlyAddress.ToString()),
-                    new("Log.TailAddress", storeWrapper.objectStore.Log.TailAddress.ToString()),
-                    new("ReadCache.BeginAddress", storeWrapper.objectStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
-                    new("ReadCache.BufferSize", storeWrapper.objectStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
-                    new("ReadCache.EmptyPageCount", storeWrapper.objectStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
-                    new("ReadCache.HeadAddress", storeWrapper.objectStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
-                    new("ReadCache.MemorySizeBytes", storeWrapper.objectStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
-                    new("ReadCache.TailAddress", storeWrapper.objectStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
-                ];
+            var databases = storeWrapper.GetDatabasesSnapshot();
+
+            for (var i = 0; i < databases.Length; i++)
+            {
+                var storeStats = GetDatabaseObjectStoreStats(storeWrapper, ref databases[i]);
+                if (i == 0)
+                    objectStoreInfo = new MetricsItem[databases.Length * storeStats.Length];
+
+                Array.Copy(storeStats, 0, objectStoreInfo, storeStats.Length * i, storeStats.Length);
+            }
         }
 
-        private void PopulateStoreHashDistribution(StoreWrapper storeWrapper) => storeHashDistrInfo = [new("", storeWrapper.store.DumpDistribution())];
+        private MetricsItem[] GetDatabaseObjectStoreStats(StoreWrapper storeWrapper, ref GarnetDatabase db) =>
+        [
+            new($"db{db.Id}.CurrentVersion", db.ObjectStore.CurrentVersion.ToString()),
+            new($"db{db.Id}.LastCheckpointedVersion", db.ObjectStore.LastCheckpointedVersion.ToString()),
+            new($"db{db.Id}.SystemState", db.ObjectStore.SystemState.ToString()),
+            new($"db{db.Id}.IndexSize", db.ObjectStore.IndexSize.ToString()),
+            new($"db{db.Id}.LogDir", storeWrapper.serverOptions.LogDir),
+            new($"db{db.Id}.Log.BeginAddress", db.ObjectStore.Log.BeginAddress.ToString()),
+            new($"db{db.Id}.Log.BufferSize", db.ObjectStore.Log.BufferSize.ToString()),
+            new($"db{db.Id}.Log.EmptyPageCount", db.ObjectStore.Log.EmptyPageCount.ToString()),
+            new($"db{db.Id}.Log.FixedRecordSize", db.ObjectStore.Log.FixedRecordSize.ToString()),
+            new($"db{db.Id}.Log.HeadAddress", db.ObjectStore.Log.HeadAddress.ToString()),
+            new($"db{db.Id}.Log.MemorySizeBytes", db.ObjectStore.Log.MemorySizeBytes.ToString()),
+            new($"db{db.Id}.Log.SafeReadOnlyAddress", db.ObjectStore.Log.SafeReadOnlyAddress.ToString()),
+            new($"db{db.Id}.Log.TailAddress", db.ObjectStore.Log.TailAddress.ToString()),
+            new($"db{db.Id}.ReadCache.BeginAddress", db.ObjectStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.BufferSize", db.ObjectStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.EmptyPageCount", db.ObjectStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.HeadAddress", db.ObjectStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.MemorySizeBytes", db.ObjectStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+            new($"db{db.Id}.ReadCache.TailAddress", db.ObjectStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
+        ];
 
-        private void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper) => objectStoreHashDistrInfo = [new("", storeWrapper.objectStore.DumpDistribution())];
+        private void PopulateStoreHashDistribution(StoreWrapper storeWrapper)
+        {
+            var databases = storeWrapper.GetDatabasesSnapshot();
 
-        private void PopulateStoreRevivInfo(StoreWrapper storeWrapper) => storeRevivInfo = [new("", storeWrapper.store.DumpRevivificationStats())];
+            var sb = new StringBuilder();
+            foreach (var db in databases)
+            {
+                sb.AppendLine($"db{db.Id}:");
+                sb.Append(db.MainStore.DumpDistribution());
+            }
 
-        private void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper) => objectStoreRevivInfo = [new("", storeWrapper.objectStore.DumpRevivificationStats())];
+            storeHashDistrInfo = [new("", sb.ToString())];
+        }
+
+        private void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper)
+        {
+            var databases = storeWrapper.GetDatabasesSnapshot();
+
+            var sb = new StringBuilder();
+            foreach (var db in databases)
+            {
+                sb.AppendLine($"db{db.Id}:");
+                sb.Append(db.ObjectStore.DumpDistribution());
+            }
+
+            objectStoreHashDistrInfo = [new("", sb.ToString())];
+        }
+
+        private void PopulateStoreRevivInfo(StoreWrapper storeWrapper)
+        {
+            var databases = storeWrapper.GetDatabasesSnapshot();
+
+            var sb = new StringBuilder();
+            foreach (var db in databases)
+            {
+                sb.AppendLine($"db{db.Id}:");
+                sb.Append(db.MainStore.DumpRevivificationStats());
+            }
+
+            storeRevivInfo = [new("", sb.ToString())];
+        }
+
+        private void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper)
+        {
+            var databases = storeWrapper.GetDatabasesSnapshot();
+            var sb = new StringBuilder();
+            foreach (var db in databases)
+            {
+                sb.AppendLine($"db{db.Id}:");
+                sb.Append(db.ObjectStore.DumpRevivificationStats());
+            }
+
+            objectStoreRevivInfo = [new("", sb.ToString())];
+        }
 
         private void PopulatePersistenceInfo(StoreWrapper storeWrapper)
         {
-            bool aofEnabled = storeWrapper.serverOptions.EnableAOF;
-            persistenceInfo =
-                [
-                    new("CommittedBeginAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.CommittedBeginAddress.ToString()),
-                    new("CommittedUntilAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.CommittedUntilAddress.ToString()),
-                    new("FlushedUntilAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.FlushedUntilAddress.ToString()),
-                    new("BeginAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.BeginAddress.ToString()),
-                    new("TailAddress", !aofEnabled ? "N/A" : storeWrapper.appendOnlyFile.TailAddress.ToString()),
-                    new("SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.SafeAofAddress.ToString())
-                ];
+            var databases = storeWrapper.GetDatabasesSnapshot();
+
+            for (var i = 0; i < databases.Length; i++)
+            {
+                var persistenceStats = GetDatabasePersistenceStats(storeWrapper, ref databases[i]);
+                if (i == 0)
+                    persistenceInfo = new MetricsItem[databases.Length * persistenceStats.Length];
+
+                Array.Copy(persistenceStats, 0, persistenceInfo, persistenceStats.Length * i, persistenceStats.Length);
+            }
+        }
+
+        private MetricsItem[] GetDatabasePersistenceStats(StoreWrapper storeWrapper, ref GarnetDatabase db)
+        {
+            var aofEnabled = storeWrapper.serverOptions.EnableAOF;
+
+            return
+            [
+                new($"db{db.Id}.CommittedBeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedBeginAddress.ToString()),
+                new($"db{db.Id}.CommittedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedUntilAddress.ToString()),
+                new($"db{db.Id}.FlushedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.FlushedUntilAddress.ToString()),
+                new($"db{db.Id}.BeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.BeginAddress.ToString()),
+                new($"db{db.Id}.TailAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.TailAddress.ToString()),
+                new($"db{db.Id}.SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString())
+            ];
         }
 
         private void PopulateClientsInfo(StoreWrapper storeWrapper)
@@ -360,25 +459,25 @@ namespace Garnet.server
                     PopulateStoreStats(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.STORE, storeInfo);
                 case InfoMetricsType.OBJECTSTORE:
-                    if (storeWrapper.objectStore == null) return "";
+                    if (storeWrapper.serverOptions.DisableObjects) return "";
                     PopulateObjectStoreStats(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.OBJECTSTORE, objectStoreInfo);
                 case InfoMetricsType.STOREHASHTABLE:
                     PopulateStoreHashDistribution(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.STOREHASHTABLE, storeHashDistrInfo);
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
-                    if (storeWrapper.objectStore == null) return "";
+                    if (storeWrapper.serverOptions.DisableObjects) return "";
                     PopulateObjectStoreHashDistribution(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.OBJECTSTOREHASHTABLE, objectStoreHashDistrInfo);
                 case InfoMetricsType.STOREREVIV:
                     PopulateStoreRevivInfo(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.STOREREVIV, storeRevivInfo);
                 case InfoMetricsType.OBJECTSTOREREVIV:
-                    if (storeWrapper.objectStore == null) return "";
+                    if (storeWrapper.serverOptions.DisableObjects) return "";
                     PopulateObjectStoreRevivInfo(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.OBJECTSTOREREVIV, objectStoreRevivInfo);
                 case InfoMetricsType.PERSISTENCE:
-                    if (storeWrapper.appendOnlyFile == null) return "";
+                    if (!storeWrapper.serverOptions.EnableAOF) return "";
                     PopulatePersistenceInfo(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.PERSISTENCE, persistenceInfo);
                 case InfoMetricsType.CLIENTS:
@@ -434,25 +533,25 @@ namespace Garnet.server
                     PopulateStoreStats(storeWrapper);
                     return storeInfo;
                 case InfoMetricsType.OBJECTSTORE:
-                    if (storeWrapper.objectStore == null) return null;
+                    if (storeWrapper.serverOptions.DisableObjects) return null;
                     PopulateObjectStoreStats(storeWrapper);
                     return objectStoreInfo;
                 case InfoMetricsType.STOREHASHTABLE:
                     PopulateStoreHashDistribution(storeWrapper);
                     return storeHashDistrInfo;
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
-                    if (storeWrapper.objectStore == null) return null;
+                    if (storeWrapper.serverOptions.DisableObjects) return null;
                     PopulateObjectStoreHashDistribution(storeWrapper);
                     return objectStoreHashDistrInfo;
                 case InfoMetricsType.STOREREVIV:
                     PopulateStoreRevivInfo(storeWrapper);
                     return storeRevivInfo;
                 case InfoMetricsType.OBJECTSTOREREVIV:
-                    if (storeWrapper.objectStore == null) return null;
+                    if (storeWrapper.serverOptions.DisableObjects) return null;
                     PopulateObjectStoreRevivInfo(storeWrapper);
                     return objectStoreRevivInfo;
                 case InfoMetricsType.PERSISTENCE:
-                    if (storeWrapper.appendOnlyFile == null) return null;
+                    if (!storeWrapper.serverOptions.EnableAOF) return null;
                     PopulatePersistenceInfo(storeWrapper);
                     return persistenceInfo;
                 case InfoMetricsType.CLIENTS:

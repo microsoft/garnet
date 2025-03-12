@@ -447,6 +447,74 @@ namespace Garnet.server
         public UnixFileMode UnixSocketPermission { get; set; }
 
         /// <summary>
+        /// Max number of logical databases allowed
+        /// </summary>
+        public int MaxDatabases = 16;
+
+        /// <summary>
+        /// Allow more than one logical database in server
+        /// </summary>
+        public bool AllowMultiDb => !EnableCluster && MaxDatabases > 1;
+
+        /// <summary>
+        /// Gets the base directory for storing checkpoints
+        /// </summary>
+        public string CheckpointBaseDirectory => (CheckpointDir ?? LogDir) ?? string.Empty;
+
+        /// <summary>
+        /// Gets the base directory for storing main-store checkpoints
+        /// </summary>
+        public string MainStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "Store");
+
+        /// <summary>
+        /// Gets the base directory for storing object-store checkpoints
+        /// </summary>
+        public string ObjectStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "ObjectStore");
+
+        /// <summary>
+        /// Get the directory name for database checkpoints
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory name</returns>
+        public string GetCheckpointDirectoryName(int dbId) => $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}";
+
+        /// <summary>
+        /// Get the directory for main-store database checkpoints
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory</returns>
+        public string GetMainStoreCheckpointDirectory(int dbId) =>
+            Path.Combine(MainStoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
+
+        /// <summary>
+        /// Get the directory for object-store database checkpoints
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory</returns>
+        public string GetObjectStoreCheckpointDirectory(int dbId) =>
+            Path.Combine(ObjectStoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
+
+        /// <summary>
+        /// Gets the base directory for storing AOF commits
+        /// </summary>
+        public string AppendOnlyFileBaseDirectory => CheckpointDir ?? string.Empty;
+
+        /// <summary>
+        /// Get the directory name for database AOF commits
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory name</returns>
+        public string GetAppendOnlyFileDirectoryName(int dbId) => $"AOF{(dbId == 0 ? string.Empty : $"_{dbId}")}";
+
+        /// <summary>
+        /// Get the directory for database AOF commits
+        /// </summary>
+        /// <param name="dbId">Database Id</param>
+        /// <returns>Directory</returns>
+        public string GetAppendOnlyFileDirectory(int dbId) =>
+            Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -730,14 +798,15 @@ namespace Garnet.server
         /// <summary>
         /// Get AOF settings
         /// </summary>
-        /// <param name="tsavoriteLogSettings"></param>
-        public void GetAofSettings(out TsavoriteLogSettings tsavoriteLogSettings)
+        /// <param name="dbId">DB ID</param>
+        /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
                 MemorySizeBits = AofMemorySizeBits(),
                 PageSizeBits = AofPageSizeBits(),
-                LogDevice = GetAofDevice(),
+                LogDevice = GetAofDevice(dbId),
                 TryRecoverLatest = false,
                 SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
@@ -749,9 +818,11 @@ namespace Garnet.server
                 logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
                 throw new Exception("AOF Page size cannot be more than the AOF memory size.");
             }
+
+            var aofDir = GetAppendOnlyFileDirectory(dbId);
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
-                    new DefaultCheckpointNamingScheme(CheckpointDir + "/AOF"),
+                    new DefaultCheckpointNamingScheme(aofDir),
                     removeOutdated: true,
                     fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
         }
@@ -835,12 +906,14 @@ namespace Garnet.server
         /// Get device for AOF
         /// </summary>
         /// <returns></returns>
-        IDevice GetAofDevice()
+        IDevice GetAofDevice(int dbId)
         {
             if (UseAofNullDevice && EnableCluster && !FastAofTruncate)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
-            else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
+
+            return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), "aof.log"));
         }
     }
 }

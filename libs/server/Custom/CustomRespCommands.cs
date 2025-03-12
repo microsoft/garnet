@@ -23,7 +23,7 @@ namespace Garnet.server
             // Run procedure
             Debug.Assert(txnManager.state == TxnState.None);
 
-            latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
+            LatencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
@@ -44,7 +44,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteError($"ERR Transaction failed.", ref dcurr, dend))
                         SendAndReset();
             }
-            latencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
+            LatencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
 
             return true;
         }
