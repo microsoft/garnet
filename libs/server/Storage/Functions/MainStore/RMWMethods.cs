@@ -101,11 +101,11 @@ namespace Garnet.server
                     var newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
                     if (!logRecord.TrySetValueSpan(newInputValue, ref sizeInfo))
                         return false;
-                    if (logRecord.Info.HasExpiration)
+                    if (sizeInfo.FieldInfo.HasExpiration)
                         _ = logRecord.TrySetExpiration(input.arg1);
 
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                    if (logRecord.Info.HasETag)
+                    if (sizeInfo.FieldInfo.HasETag)
                         _ = logRecord.TrySetETag(input.parseState.GetLong(1) + 1);
                     ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
 
@@ -694,7 +694,8 @@ namespace Garnet.server
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                    if (newValue.Length + offset > logRecord.ValueSpan.Length)
+                    if (newValue.Length + offset > logRecord.ValueSpan.Length
+                            && !logRecord.TrySetValueLength(newValue.Length + offset, ref sizeInfo))
                         return false;
 
                     newValue.CopyTo(logRecord.ValueSpan.AsSpan().Slice(offset));
@@ -1215,8 +1216,7 @@ namespace Garnet.server
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
-                    newInputValue = input.parseState.GetArgSliceByRef(1).SpanByte;
-                    newInputValue.CopyTo(newValue.AsSpan().Slice(offset));
+                    input.parseState.GetArgSliceByRef(1).ReadOnlySpan.CopyTo(newValue.AsSpan().Slice(offset));
 
                     _ = CopyValueLengthToOutput(newValue, ref output);
                     break;

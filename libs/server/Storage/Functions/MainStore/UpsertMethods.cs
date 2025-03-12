@@ -37,7 +37,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            if (ConcurrentWriterWorker(ref logRecord, ref sizeInfo, srcValue, ref input, ref upsertInfo))
+            if (ConcurrentWriterWorker(ref logRecord, ref sizeInfo, srcValue, ref input, ref output, ref upsertInfo))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -48,12 +48,23 @@ namespace Garnet.server
             return false;
         }
 
-        static bool ConcurrentWriterWorker(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, SpanByte srcValue, ref RawStringInput input, ref UpsertInfo upsertInfo)
+        bool ConcurrentWriterWorker(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, SpanByte srcValue, ref RawStringInput input, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             if (!logRecord.TrySetValueSpan(srcValue, ref sizeInfo))
                 return false;
-            // TODO ETag
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
+            if (ok)
+            {
+                if (input.header.CheckWithETagFlag())
+                {
+                    var newETag = functionsState.etagState.ETag + 1;
+                    ok = logRecord.TrySetETag(newETag);
+                    if (ok)
+                        functionsState.CopyRespNumber(newETag, ref output);
+                }
+                else
+                    ok = logRecord.RemoveETag();
+            }
             if (ok)
                 sizeInfo.AssertOptionals(logRecord.Info);
             return ok;

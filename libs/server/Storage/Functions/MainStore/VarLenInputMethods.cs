@@ -82,6 +82,13 @@ namespace Garnet.server
                     fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
                     return fieldInfo;
 
+                case RespCommand.SETIFGREATER:
+                case RespCommand.SETIFMATCH:
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                    fieldInfo.HasETag = true;
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    return fieldInfo;
+
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
@@ -238,6 +245,7 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
                         fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
 
                     case RespCommand.PERSIST:
@@ -249,6 +257,7 @@ namespace Garnet.server
                     case RespCommand.SETIFMATCH:
                         fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
                         fieldInfo.HasETag = true;
+                        fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
 
                     case RespCommand.EXPIRE:
@@ -295,10 +304,9 @@ namespace Garnet.server
                         var offset = input.parseState.GetInt(0);
                         var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-                        var newValueSize = newValue.Length + offset;
-                        fieldInfo.ValueDataSize = (newValueSize > srcLogRecord.ValueSpan.Length)
-                            ? newValueSize + offset
-                            : srcLogRecord.ValueSpan.Length;
+                        fieldInfo.ValueDataSize = newValue.Length + offset;
+                        if (fieldInfo.ValueDataSize < srcLogRecord.ValueSpan.Length)
+                            fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
 
                     case RespCommand.GETDEL:
