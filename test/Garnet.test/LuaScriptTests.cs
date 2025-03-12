@@ -2737,12 +2737,8 @@ return cjson.encode(nested)");
             var basic = (int)db.ScriptEvaluate("local x = loadstring('return 123'); return x()");
             ClassicAssert.AreEqual(123, basic);
 
-            // TODO: Once refactored to avoid longjmp issues, restore on Linux
-            if (CanTestLuaErrors)
-            {
-                var rejectNullExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return \"\\0\"'); return x()"));
-                ClassicAssert.True(rejectNullExc.Message.Contains("bad argument to loadstring, interior null byte"));
-            }
+            var rejectNullExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return \"\\0\"'); return x()"));
+            ClassicAssert.True(rejectNullExc.Message.Contains("bad argument to loadstring, interior null byte"));
         }
 
         [Test]
