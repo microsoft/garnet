@@ -402,7 +402,7 @@ local redis = {
     end,
 
     acl_check_cmd = chain_func(error_wrapper_r1, garnet_acl_check_cmd),
-    setresp = garnet_setresp,
+    setresp = chain_func(error_wrapper_r0, garnet_setresp),
 
     REDIS_VERSION = garnet_REDIS_VERSION,
     REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
@@ -791,6 +791,8 @@ end
         /// </summary>
         public unsafe void CompileForRunner()
         {
+            state.ExpectLuaStackEmpty();
+
             runnerAdapter = new RunnerAdapter(scratchBufferManager);
             try
             {
@@ -827,6 +829,8 @@ end
         /// </summary>
         public unsafe bool CompileForSession(RespServerSession session)
         {
+            state.ExpectLuaStackEmpty();
+
             sessionAdapter = new RespResponseAdapter(session);
 
             try
@@ -868,19 +872,6 @@ end
         /// </summary>
         public void Dispose()
         => state.Dispose();
-
-        /// <summary>
-        /// Cause a Lua error to be raised with a message previously registered.
-        /// </summary>
-        private int LuaStaticError(int constStringRegistryIndex)
-        {
-            const int NeededStackSize = 1;
-
-            state.ForceMinimumStackCapacity(NeededStackSize);
-
-            state.PushConstantString(constStringRegistryIndex);
-            return state.RaiseErrorFromStack();
-        }
 
         /// <summary>
         /// We can't use Lua's normal error handling functions on Linux, so instead we go through wrappers.

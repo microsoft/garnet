@@ -2209,13 +2209,13 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1)
             {
-                return LuaStaticError(constStrs.ErrRedisSetRespArg);
+                return LuaWrappedError(0, constStrs.ErrRedisSetRespArg);
             }
 
             double num;
             if (state.Type(1) != LuaType.Number || (num = state.CheckNumber(1)) is not (2 or 3))
             {
-                return LuaStaticError(constStrs.ErrRespVersion);
+                return LuaWrappedError(0, constStrs.ErrRespVersion);
             }
 
             respServerSession.respProtocolVersion = (byte)num;
