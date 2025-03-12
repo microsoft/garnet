@@ -241,7 +241,9 @@ namespace Garnet.server
                     }
                     else
                     {
-                        // Old AOF format: take checkpoint immediately as we do not have a fuzzy region
+                        // We are parsing the old AOF format: take checkpoint immediately as we do not have a fuzzy region
+                        // Note: we will not truncate the AOF as ReplicationCheckpointStartOffset is not set
+                        // Once a new checkpoint is transferred, the replica will truncate the AOF.
                         if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             _ = storeWrapper.TakeCheckpoint(false, logger);
                     }
