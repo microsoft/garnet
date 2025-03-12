@@ -311,19 +311,20 @@ local cjson = {
 }
 
 -- define bit for (optional) inclusion into sandbox_env
+local garnetBitopRef = chain_func(error_wrapper_r1, garnet_bitop)
 local bit = {
-    tobit = garnet_bit_tobit;
-    tohex = garnet_bit_tohex;
-    bnot = function(...) return garnet_bitop(0, ...); end;
-    bor = function(...) return garnet_bitop(1, ...); end;
-    band = function(...) return garnet_bitop(2, ...); end;
-    bxor = function(...) return garnet_bitop(3, ...); end;
-    lshift = function(...) return garnet_bitop(4, ...); end;
-    rshift = function(...) return garnet_bitop(5, ...); end;
-    arshift = function(...) return garnet_bitop(6, ...); end;
-    rol = function(...) return garnet_bitop(7, ...); end;
-    ror = function(...) return garnet_bitop(8, ...); end;
-    bswap = garnet_bit_bswap;
+    tobit = chain_func(error_wrapper_r1, garnet_bit_tobit);
+    tohex = chain_func(error_wrapper_r1, garnet_bit_tohex);
+    bnot = function(...) return garnetBitopRef(0, ...); end;
+    bor = function(...) return garnetBitopRef(1, ...); end;
+    band = function(...) return garnetBitopRef(2, ...); end;
+    bxor = function(...) return garnetBitopRef(3, ...); end;
+    lshift = function(...) return garnetBitopRef(4, ...); end;
+    rshift = function(...) return garnetBitopRef(5, ...); end;
+    arshift = function(...) return garnetBitopRef(6, ...); end;
+    rol = function(...) return garnetBitopRef(7, ...); end;
+    ror = function(...) return garnetBitopRef(8, ...); end;
+    bswap = chain_func(error_wrapper_r1, garnet_bit_bswap);
 }
 
 -- define cmsgpack for (optional) inclusion into sandbox_env
@@ -1407,7 +1408,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount < 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to tobit");
+                return LuaWrappedError(1, "bad argument to tobit"u8);
             }
 
             var rawValue = state.CheckNumber(1);
@@ -1430,7 +1431,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to tohex");
+                return LuaWrappedError(1, "bad argument to tohex"u8);
             }
 
             var numDigits = 8;
@@ -1439,7 +1440,7 @@ end
             {
                 if (state.Type(2) != LuaType.Number)
                 {
-                    return state.RaiseError("bad argument to tohex");
+                    return LuaWrappedError(1, "bad argument to tohex"u8);
                 }
 
                 numDigits = (int)state.CheckNumber(2);
@@ -1492,7 +1493,7 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bad argument to bswap");
+                return LuaWrappedError(1, "bad argument to bswap"u8);
             }
 
             var value = LuaNumberToBitValue(state.CheckNumber(1));
@@ -1527,13 +1528,13 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
             {
-                return state.RaiseError("bitop was not indicated, should never happen");
+                return LuaWrappedError(1, "bitop was not indicated, should never happen"u8);
             }
 
             var bitop = (int)state.CheckNumber(1);
-            if (bitop < BNot || bitop > Ror)
+            if (bitop is < BNot or > Ror)
             {
-                return state.RaiseError($"invalid bitop {bitop} was indicated, should never happen");
+                return LuaWrappedError(1, "invalid bitop was passed, should never happen"u8);
             }
 
             // Handle bnot specially
@@ -1541,7 +1542,7 @@ end
             {
                 if (luaArgCount < 2 || state.Type(2) != LuaType.Number)
                 {
-                    return state.RaiseError("bad argument to bnot");
+                    return LuaWrappedError(1, "bad argument to bnot"u8);
                 }
 
                 var val = LuaNumberToBitValue(state.CheckNumber(2));
@@ -1552,22 +1553,22 @@ end
                 return 1;
             }
 
-            var binOpName =
+            var binOpErr =
                 bitop switch
                 {
-                    BOr => "bor",
-                    BAnd => "band",
-                    BXor => "bxor",
-                    LShift => "lshift",
-                    RShift => "rshift",
-                    ARShift => "arshift",
-                    Rol => "rol",
-                    _ => "ror",
+                    BOr => "bad argument to bor"u8,
+                    BAnd => "bad argument to band"u8,
+                    BXor => "bad argument to bxor"u8,
+                    LShift => "bad argument to lshift"u8,
+                    RShift => "bad argument to rshift"u8,
+                    ARShift => "bad argument to arshift"u8,
+                    Rol => "bad argument to rol"u8,
+                    _ => "bad argument to ror"u8,
                 };
 
             if (luaArgCount < 2)
             {
-                return state.RaiseError($"bad argument to {binOpName}");
+                return LuaWrappedError(1, binOpErr);
             }
 
             if (bitop is BOr or BAnd or BXor)
@@ -1584,7 +1585,7 @@ end
                 {
                     if (state.Type(argIx) != LuaType.Number)
                     {
-                        return state.RaiseError($"bad argument to {binOpName}");
+                        return LuaWrappedError(1, binOpErr);
                     }
 
                     var nextValue = LuaNumberToBitValue(state.CheckNumber(argIx));
@@ -1606,7 +1607,7 @@ end
 
             if (luaArgCount < 3 || state.Type(2) != LuaType.Number || state.Type(3) != LuaType.Number)
             {
-                return state.RaiseError($"bad argument to {binOpName}");
+                return LuaWrappedError(1, binOpErr);
             }
 
             var x = LuaNumberToBitValue(state.CheckNumber(2));
