@@ -167,34 +167,73 @@ namespace Garnet.server
             internal int ErrUnknown { get; }
             /// <see cref="CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers"/>
             internal int ErrBadArg { get; }
-            /// <see cref="CmdStrings.Lua_ERR_wrong_number_of_arguments"/>
+            /// <see cref="CmdStrings.LUA_ERR_wrong_number_of_arguments"/>
             internal int ErrWrongNumberOfArgs { get; }
-            /// <see cref="CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more"/>
+            /// <see cref="CmdStrings.LUA_ERR_redis_log_requires_two_arguments_or_more"/>
             internal int ErrRedisLogRequired { get; }
-            /// <see cref="CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level"/>
+            /// <see cref="CmdStrings.LUA_ERR_First_argument_must_be_a_number_log_level"/>
             internal int ErrFirstArgMustBeNumber { get; }
-            /// <see cref="CmdStrings.Lua_ERR_Invalid_debug_level"/>
+            /// <see cref="CmdStrings.LUA_ERR_Invalid_debug_level"/>
             internal int ErrInvalidDebugLevel { get; }
-            /// <see cref="CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd"/>
+            /// <see cref="CmdStrings.LUA_ERR_Invalid_command_passed_to_redis_acl_check_cmd"/>
             internal int ErrInvalidCommand { get; }
-            /// <see cref="CmdStrings.Lua_ERR_redis_setresp_requires_one_argument"/>
+            /// <see cref="CmdStrings.LUA_ERR_redis_setresp_requires_one_argument"/>
             internal int ErrRedisSetRespArg { get; }
-            /// <see cref="CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3"/>
+            /// <see cref="CmdStrings.LUA_ERR_RESP_version_must_be_2_or_3"/>
             internal int ErrRespVersion { get; }
-            /// <see cref="CmdStrings.Lua_ERR_redis_log_disabled"/>
+            /// <see cref="CmdStrings.LUA_ERR_redis_log_disabled"/>
             internal int ErrLoggingDisabled { get; }
-            /// <see cref="CmdStrings.Lua_double"/>
+            /// <see cref="CmdStrings.LUA_double"/>
             internal int Double { get; }
-            /// <see cref="CmdStrings.Lua_map"/>
+            /// <see cref="CmdStrings.LUA_map"/>
             internal int Map { get; }
             /// <see cref="CmdStrings.Lua_set"/>
             internal int Set { get; }
-            /// <see cref="CmdStrings.Lua_big_number"/>
+            /// <see cref="CmdStrings.LUA_big_number"/>
             internal int BigNumber { get; }
-            /// <see cref="CmdStrings.Lua_format"/>
+            /// <see cref="CmdStrings.LUA_format"/>
             internal int Format { get; }
-            /// <see cref="CmdStrings.Lua_string"/>
+            /// <see cref="CmdStrings.LUA_string"/>
             internal int String { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_atan2"/>
+            internal int BadArgATan2 { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_cosh"/>
+            internal int BadArgCosh { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_frexp"/>
+            internal int BadArgFrexp { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_ldexp"/>
+            internal int BadArgLdexp { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_log10"/>
+            internal int BadArgLog10 { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_pow"/>
+            internal int BadArgPow { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_sinh"/>
+            internal int BadArgSinh { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_tanh"/>
+            internal int BadArgTanh { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_maxn"/>
+            internal int BadArgMaxn { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_loadstring"/>
+            internal int BadArgLoadString { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_loadstring_null_byte"/>
+            internal int BadArgLoadStringNullByte { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_tobit"/>
+            internal int BadArgToBit { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_tohex"/>
+            internal int BadArgToHex { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_bswap"/>
+            internal int BadArgBSwap { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_bnot"/>
+            internal int BadArgBNot { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_encode"/>
+            internal int BadArgEncode { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_decode"/>
+            internal int BadArgDecode { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_pack"/>
+            internal int BadArgPack { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_unpack"/>
+            internal int BadArgUnpack { get; }
+
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
@@ -209,20 +248,39 @@ namespace Garnet.server
                 ErrNoAuth = ConstantStringToRegistry(ref state, CmdStrings.RESP_ERR_NOAUTH);
                 ErrUnknown = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Unknown_Redis_command_called_from_script);
                 ErrBadArg = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Lua_redis_lib_command_arguments_must_be_strings_or_integers);
-                ErrWrongNumberOfArgs = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_wrong_number_of_arguments);
-                ErrRedisLogRequired = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_redis_log_requires_two_arguments_or_more);
-                ErrFirstArgMustBeNumber = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_First_argument_must_be_a_number_log_level);
-                ErrInvalidDebugLevel = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_Invalid_debug_level);
-                ErrInvalidCommand = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
-                ErrRedisSetRespArg = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_redis_setresp_requires_one_argument);
-                ErrRespVersion = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_RESP_version_must_be_2_or_3);
-                ErrLoggingDisabled = ConstantStringToRegistry(ref state, CmdStrings.Lua_ERR_redis_log_disabled);
-                Double = ConstantStringToRegistry(ref state, CmdStrings.Lua_double);
-                Map = ConstantStringToRegistry(ref state, CmdStrings.Lua_map);
+                ErrWrongNumberOfArgs = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_wrong_number_of_arguments);
+                ErrRedisLogRequired = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_redis_log_requires_two_arguments_or_more);
+                ErrFirstArgMustBeNumber = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_First_argument_must_be_a_number_log_level);
+                ErrInvalidDebugLevel = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Invalid_debug_level);
+                ErrInvalidCommand = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_Invalid_command_passed_to_redis_acl_check_cmd);
+                ErrRedisSetRespArg = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_redis_setresp_requires_one_argument);
+                ErrRespVersion = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_RESP_version_must_be_2_or_3);
+                ErrLoggingDisabled = ConstantStringToRegistry(ref state, CmdStrings.LUA_ERR_redis_log_disabled);
+                Double = ConstantStringToRegistry(ref state, CmdStrings.LUA_double);
+                Map = ConstantStringToRegistry(ref state, CmdStrings.LUA_map);
                 Set = ConstantStringToRegistry(ref state, CmdStrings.Lua_set);
-                BigNumber = ConstantStringToRegistry(ref state, CmdStrings.Lua_big_number);
-                Format = ConstantStringToRegistry(ref state, CmdStrings.Lua_format);
-                String = ConstantStringToRegistry(ref state, CmdStrings.Lua_string);
+                BigNumber = ConstantStringToRegistry(ref state, CmdStrings.LUA_big_number);
+                Format = ConstantStringToRegistry(ref state, CmdStrings.LUA_format);
+                String = ConstantStringToRegistry(ref state, CmdStrings.LUA_string);
+                BadArgATan2 = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_atan2);
+                BadArgCosh = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_cosh);
+                BadArgFrexp = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_frexp);
+                BadArgLdexp = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_ldexp);
+                BadArgLog10 = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_log10);
+                BadArgPow = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_pow);
+                BadArgSinh = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_sinh);
+                BadArgTanh = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_tanh);
+                BadArgMaxn = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_maxn);
+                BadArgLoadString = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_loadstring);
+                BadArgLoadStringNullByte = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_loadstring_null_byte);
+                BadArgToBit = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_tobit);
+                BadArgToHex = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_tohex);
+                BadArgBSwap = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bswap);
+                BadArgBNot = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bnot);
+                BadArgEncode = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_encode);
+                BadArgDecode = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_decode);
+                BadArgPack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_pack);
+                BadArgUnpack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_unpack);
             }
 
             /// <summary>

@@ -332,7 +332,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to atan2"u8);
+                return LuaWrappedError(1, constStrs.BadArgATan2);
             }
 
             var x = state.CheckNumber(1);
@@ -354,7 +354,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to cosh"u8);
+                return LuaWrappedError(1, constStrs.BadArgCosh);
             }
 
             var value = state.CheckNumber(1);
@@ -383,7 +383,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(2, "bad argument to frexp"u8);
+                return LuaWrappedError(2, constStrs.BadArgFrexp);
             }
 
             var number = state.CheckNumber(1);
@@ -441,7 +441,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to ldexp"u8);
+                return LuaWrappedError(1, constStrs.BadArgLdexp);
             }
 
             var m = state.CheckNumber(1);
@@ -473,7 +473,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to log10"u8);
+                return LuaWrappedError(1, constStrs.BadArgLog10);
             }
 
             var val = state.CheckNumber(1);
@@ -495,7 +495,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to pow"u8);
+                return LuaWrappedError(1, constStrs.BadArgPow);
             }
 
             var x = state.CheckNumber(1);
@@ -518,7 +518,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to sinh"u8);
+                return LuaWrappedError(1, constStrs.BadArgSinh);
             }
 
             var val = state.CheckNumber(1);
@@ -540,7 +540,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to tanh"u8);
+                return LuaWrappedError(1, constStrs.BadArgTanh);
             }
 
             var val = state.CheckNumber(1);
@@ -562,7 +562,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Table)
             {
-                return LuaWrappedError(1, "bad argument to maxn"u8);
+                return LuaWrappedError(1, constStrs.BadArgMaxn);
             }
 
             state.ForceMinimumStackCapacity(2);
@@ -603,7 +603,7 @@ namespace Garnet.server
                 (luaArgCount > 2)
               )
             {
-                return LuaWrappedError(2, "bad argument to loadstring"u8);
+                return LuaWrappedError(2, constStrs.BadArgLoadString);
             }
 
             // Ignore chunk name
@@ -615,7 +615,7 @@ namespace Garnet.server
             _ = state.CheckBuffer(1, out var buff);
             if (buff.Contains((byte)0))
             {
-                return LuaWrappedError(2, "bad argument to loadstring, interior null byte"u8);
+                return LuaWrappedError(2, constStrs.BadArgLoadStringNullByte);
             }
 
             state.ForceMinimumStackCapacity(1);
@@ -643,7 +643,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount < 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to tobit"u8);
+                return LuaWrappedError(1, constStrs.BadArgToBit);
             }
 
             var rawValue = state.CheckNumber(1);
@@ -666,7 +666,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to tohex"u8);
+                return LuaWrappedError(1, constStrs.BadArgToHex);
             }
 
             var numDigits = 8;
@@ -675,7 +675,7 @@ namespace Garnet.server
             {
                 if (state.Type(2) != LuaType.Number)
                 {
-                    return LuaWrappedError(1, "bad argument to tohex"u8);
+                    return LuaWrappedError(1, constStrs.BadArgToHex);
                 }
 
                 numDigits = (int)state.CheckNumber(2);
@@ -728,7 +728,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bad argument to bswap"u8);
+                return LuaWrappedError(1, constStrs.BadArgBSwap);
             }
 
             var value = LuaNumberToBitValue(state.CheckNumber(1));
@@ -777,7 +777,7 @@ namespace Garnet.server
             {
                 if (luaArgCount < 2 || state.Type(2) != LuaType.Number)
                 {
-                    return LuaWrappedError(1, "bad argument to bnot"u8);
+                    return LuaWrappedError(1, constStrs.BadArgBNot);
                 }
 
                 var val = LuaNumberToBitValue(state.CheckNumber(2));
@@ -873,7 +873,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1)
             {
-                return LuaWrappedError(1, "bad argument to encode"u8);
+                return LuaWrappedError(1, constStrs.BadArgEncode);
             }
 
             var ret = Encode(this, 0);
@@ -1202,7 +1202,7 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1)
             {
-                return LuaWrappedError(1, "bad argument to decode"u8);
+                return LuaWrappedError(1, constStrs.BadArgDecode);
             }
 
             var argType = state.Type(1);
@@ -1217,7 +1217,7 @@ namespace Garnet.server
 
             if (argType != LuaType.String)
             {
-                return LuaWrappedError(1, "bad argument to decode"u8);
+                return LuaWrappedError(1, constStrs.BadArgDecode);
             }
 
             _ = state.CheckBuffer(1, out var buff);
@@ -1364,7 +1364,7 @@ namespace Garnet.server
 
             if (numLuaArgs == 0)
             {
-                return LuaWrappedError(1, "bad argument to pack"u8);
+                return LuaWrappedError(1, constStrs.BadArgPack);
             }
 
             // Redis concatenates all the message packs together if there are multiple
@@ -1799,7 +1799,7 @@ namespace Garnet.server
             if (numLuaArgs == 0)
             {
                 // This method returns variable numbers of arguments, so the error goes in the first slot
-                return LuaWrappedError(0, "bad argument to unpack"u8);
+                return LuaWrappedError(0, constStrs.BadArgUnpack);
             }
 
             // 1 for error slot and 1 for count
