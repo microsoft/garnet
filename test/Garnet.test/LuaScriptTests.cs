@@ -926,14 +926,9 @@ return redis.status_reply("OK")
         public void RedisCallErrors()
         {
             // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently, as well as the environment variable setting in the CI.
+            // Once the issue is resolved the #if can be removed permanently.
 #if NET9_0_OR_GREATER
-            var legacyExceptionHandlingEnvVarName = "DOTNET_LegacyExceptionHandling";
-            var legacyExceptionHandlingEnvVarValue = Environment.GetEnvironmentVariable(legacyExceptionHandlingEnvVarName);
-            if (string.IsNullOrEmpty(legacyExceptionHandlingEnvVarValue))
-            {
-                Assert.Ignore($"Ignoring test when {legacyExceptionHandlingEnvVarName} environment variable is not set.");
-            }
+            Assert.Ignore($"Ignoring test when running in .NET9.");
 #endif
 
             // Testing that our error replies for redis.call match Redis behavior
