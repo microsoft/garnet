@@ -2025,6 +2025,12 @@ return count";
                 var doubleResp = (string)db.ScriptEvaluate("return cjson.encode(1.23)");
                 ClassicAssert.AreEqual("1.23", doubleResp);
 
+                var simpleStrResp = (string)db.ScriptEvaluate("return cjson.encode('hello')");
+                ClassicAssert.AreEqual("\"hello\"", simpleStrResp);
+
+                var encodedStrResp = (string)db.ScriptEvaluate("return cjson.encode('\"foo\" \\\\bar\\\\')");
+                ClassicAssert.AreEqual("\"\\\"foo\\\" \\\\bar\\\\\"", encodedStrResp);
+
                 var emptyTableResp = (string)db.ScriptEvaluate("return cjson.encode({})");
                 ClassicAssert.AreEqual("{}", emptyTableResp);
 

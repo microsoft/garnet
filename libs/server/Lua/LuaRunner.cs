@@ -1568,46 +1568,44 @@ end
                 return state.RaiseError("bad argument to encode");
             }
 
-            var jsonUtf8Builder = new List<byte>();
-
-            Encode(jsonUtf8Builder, 0, ref state);
+            Encode(this, 0);
 
             // Encoding should leave nothing on the stack
             state.ExpectLuaStackEmpty();
 
             // Push the encoded string
-            var result = jsonUtf8Builder.ToArray();
+            var result = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
             state.PushBuffer(result);
 
             return 1;
 
             // Encode the unknown type on the top of the stack
-            static void Encode(List<byte> utf8, int depth, ref LuaStateWrapper state)
+            static void Encode(LuaRunner self, int depth)
             {
                 if (depth > 1000)
                 {
                     // Match Redis max decoding depth
-                    _ = state.RaiseError("Cannot serialise, excessive nesting (1001)");
+                    _ = self.state.RaiseError("Cannot serialise, excessive nesting (1001)");
                 }
 
-                var argType = state.Type(state.StackTop);
+                var argType = self.state.Type(self.state.StackTop);
 
                 switch (argType)
                 {
                     case LuaType.Boolean:
-                        EncodeBool(utf8, ref state);
+                        EncodeBool(self);
                         break;
                     case LuaType.Nil:
-                        EncodeNull(utf8, ref state);
+                        EncodeNull(self);
                         break;
                     case LuaType.Number:
-                        EncodeNumber(utf8, ref state);
+                        EncodeNumber(self);
                         break;
                     case LuaType.String:
-                        EncodeString(utf8, ref state);
+                        EncodeString(self);
                         break;
                     case LuaType.Table:
-                        EncodeTable(utf8, depth, ref state);
+                        EncodeTable(self, depth);
                         break;
                     case LuaType.Function:
                     case LuaType.LightUserData:
@@ -1615,112 +1613,121 @@ end
                     case LuaType.Thread:
                     case LuaType.UserData:
                     default:
-                        _ = state.RaiseError($"Cannot serialise {argType} to JSON");
+                        _ = self.state.RaiseError($"Cannot serialise {argType} to JSON");
                         break;
                 }
             }
 
             // Encode the boolean on the top of the stack and remove it
-            static void EncodeBool(List<byte> utf8, ref LuaStateWrapper state)
+            static void EncodeBool(LuaRunner self)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
 
-                if (state.ToBoolean(state.StackTop))
-                {
-                    utf8.AddRange("true"u8);
-                }
-                else
-                {
-                    utf8.AddRange("false"u8);
-                }
+                var data = self.state.ToBoolean(self.state.StackTop) ? "true"u8 : "false"u8;
 
-                state.Pop(1);
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(data.Length).Span;
+                data.CopyTo(into);
+                self.scratchBufferManager.MoveOffset(data.Length);
+
+                self.state.Pop(1);
             }
 
             // Encode the nil on the top of the stack and remove it
-            static void EncodeNull(List<byte> utf8, ref LuaStateWrapper state)
+            static void EncodeNull(LuaRunner self)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
 
-                utf8.AddRange("null"u8);
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(4).Span;
+                "null"u8.CopyTo(into);
+                self.scratchBufferManager.MoveOffset(4);
 
-                state.Pop(1);
+                self.state.Pop(1);
             }
 
             // Encode the number on the top of the stack and remove it
-            static void EncodeNumber(List<byte> utf8, ref LuaStateWrapper state)
+            static void EncodeNumber(LuaRunner self)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Number, "Expected number on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Number, "Expected number on top of stack");
 
-                var number = state.CheckNumber(state.StackTop);
+                var number = self.state.CheckNumber(self.state.StackTop);
 
                 Span<byte> space = stackalloc byte[64];
 
                 if (!number.TryFormat(space, out var written, "G", CultureInfo.InvariantCulture))
                 {
-                    _ = state.RaiseError("Unable to format number");
+                    _ = self.state.RaiseError("Unable to format number");
                 }
 
-                utf8.AddRange(space[..written]);
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(written).Span;
+                space[..written].CopyTo(into);
+                self.scratchBufferManager.MoveOffset(written);
 
-                state.Pop(1);
+                self.state.Pop(1);
             }
 
             // Encode the string on the top of the stack and remove it
-            static void EncodeString(List<byte> utf8, ref LuaStateWrapper state)
+            static void EncodeString(LuaRunner self)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.String, "Expected string on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.String, "Expected string on top of stack");
 
-                _ = state.CheckBuffer(state.StackTop, out var buff);
+                _ = self.state.CheckBuffer(self.state.StackTop, out var buff);
 
-                utf8.Add((byte)'"');
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'"';
+                self.scratchBufferManager.MoveOffset(1);
 
                 var escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
                 while (escapeIx != -1)
                 {
-                    utf8.AddRange(buff[..escapeIx]);
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(escapeIx + 2).Span;
+                    buff[..escapeIx].CopyTo(into);
+
+                    into[escapeIx] = (byte)'\\';
 
                     var toEscape = buff[escapeIx];
                     if (toEscape == (byte)'"')
                     {
-                        utf8.AddRange("\""u8);
+                        into[escapeIx + 1] = (byte)'"';
                     }
                     else
                     {
-                        utf8.AddRange("\\\\"u8);
+                        into[escapeIx + 1] = (byte)'\\';
                     }
+
+                    self.scratchBufferManager.MoveOffset(escapeIx + 2);
 
                     buff = buff[(escapeIx + 1)..];
                     escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
                 }
 
-                utf8.AddRange(buff);
-                utf8.Add((byte)'"');
+                var tailInto = self.scratchBufferManager.ViewRemainingArgSlice(buff.Length + 1).Span;
+                buff.CopyTo(tailInto);
+                tailInto[buff.Length] = (byte)'"';
+                self.scratchBufferManager.MoveOffset(buff.Length + 1);
 
-                state.Pop(1);
+                self.state.Pop(1);
             }
 
             // Encode the table on the top of the stack and remove it
-            static void EncodeTable(List<byte> utf8, int depth, ref LuaStateWrapper state)
+            static void EncodeTable(LuaRunner self, int depth)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // Space for key & value
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
-                var tableIndex = state.StackTop;
+                var tableIndex = self.state.StackTop;
 
                 var isArray = false;
                 var arrayLength = 0;
 
-                state.PushNil();
-                while (state.Next(tableIndex) != 0)
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
                 {
                     // Pop value
-                    state.Pop(1);
+                    self.state.Pop(1);
 
                     double keyAsNumber;
-                    if (state.Type(tableIndex + 1) == LuaType.Number && (keyAsNumber = state.CheckNumber(tableIndex + 1)) >= 1 && keyAsNumber == (int)keyAsNumber)
+                    if (self.state.Type(tableIndex + 1) == LuaType.Number && (keyAsNumber = self.state.CheckNumber(tableIndex + 1)) >= 1 && keyAsNumber == (int)keyAsNumber)
                     {
                         if (keyAsNumber > arrayLength)
                         {
@@ -1735,7 +1742,7 @@ end
                         isArray = false;
 
                         // Remove key
-                        state.Pop(1);
+                        self.state.Pop(1);
 
                         break;
                     }
@@ -1743,78 +1750,83 @@ end
 
                 if (isArray)
                 {
-                    EncodeArray(utf8, arrayLength, depth, ref state);
+                    EncodeArray(self, arrayLength, depth);
                 }
                 else
                 {
-                    EncodeObject(utf8, depth, ref state);
+                    EncodeObject(self, depth);
                 }
             }
 
             // Encode the table on the top of the stack as an array and remove it
-            static void EncodeArray(List<byte> utf8, int length, int depth, ref LuaStateWrapper state)
+            static void EncodeArray(LuaRunner self, int length, int depth)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // Space for value
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
-                var tableIndex = state.StackTop;
+                var tableIndex = self.state.StackTop;
 
-                utf8.Add((byte)'[');
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'[';
+                self.scratchBufferManager.MoveOffset(1);
 
                 for (var ix = 1; ix <= length; ix++)
                 {
                     if (ix != 1)
                     {
-                        utf8.Add((byte)',');
+                        self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)',';
+                        self.scratchBufferManager.MoveOffset(1);
                     }
 
-                    _ = state.RawGetInteger(null, tableIndex, ix);
-                    Encode(utf8, depth + 1, ref state);
+                    _ = self.state.RawGetInteger(null, tableIndex, ix);
+                    Encode(self, depth + 1);
                 }
 
-                utf8.Add((byte)']');
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)']';
+                self.scratchBufferManager.MoveOffset(1);
 
                 // Remove table
-                state.Pop(1);
+                self.state.Pop(1);
             }
 
             // Encode the table on the top of the stack as an object and remove it
-            static void EncodeObject(List<byte> utf8, int depth, ref LuaStateWrapper state)
+            static void EncodeObject(LuaRunner self, int depth)
             {
-                Debug.Assert(state.Type(state.StackTop) == LuaType.Table, "Expected table on top of stack");
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // Space for key and value and a copy of key
-                state.ForceMinimumStackCapacity(3);
+                self.state.ForceMinimumStackCapacity(3);
 
-                var tableIndex = state.StackTop;
+                var tableIndex = self.state.StackTop;
 
-                utf8.Add((byte)'{');
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'{';
+                self.scratchBufferManager.MoveOffset(1);
 
                 var firstValue = true;
 
-                state.PushNil();
-                while (state.Next(tableIndex) != 0)
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
                 {
                     LuaType keyType;
-                    if ((keyType = state.Type(tableIndex + 1)) is not (LuaType.String or LuaType.Number))
+                    if ((keyType = self.state.Type(tableIndex + 1)) is not (LuaType.String or LuaType.Number))
                     {
                         // Ignore non-string-ify-abile keys
 
                         // Remove value
-                        state.Pop(1);
+                        self.state.Pop(1);
 
                         continue;
                     }
 
                     if (!firstValue)
                     {
-                        utf8.Add((byte)',');
+                        self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)',';
+                        self.scratchBufferManager.MoveOffset(1);
                     }
 
                     // Copy key to top of stack
-                    state.PushValue(tableIndex + 1);
+                    self.state.PushValue(tableIndex + 1);
 
                     // Force the _copy_ of the key to be a string
                     // if it is not already one.
@@ -1823,24 +1835,26 @@ end
                     // can continue using it with Next(...)
                     if (keyType == LuaType.Number)
                     {
-                        _ = state.CheckBuffer(tableIndex + 3, out _);
+                        _ = self.state.CheckBuffer(tableIndex + 3, out _);
                     }
 
                     // Encode key
-                    Encode(utf8, depth + 1, ref state);
+                    Encode(self, depth + 1);
 
-                    utf8.Add((byte)':');
+                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)':';
+                    self.scratchBufferManager.MoveOffset(1);
 
                     // Encode value
-                    Encode(utf8, depth + 1, ref state);
+                    Encode(self, depth + 1);
 
                     firstValue = false;
                 }
 
-                utf8.Add((byte)'}');
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'}';
+                self.scratchBufferManager.MoveOffset(1);
 
                 // Remove table
-                state.Pop(1);
+                self.state.Pop(1);
             }
         }
 
