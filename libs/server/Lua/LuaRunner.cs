@@ -397,7 +397,7 @@ local redis = {
         error('ERR redis.debug is not supported in Garnet', 0)
     end,
 
-    acl_check_cmd = garnet_acl_check_cmd,
+    acl_check_cmd = chain_func(error_wrapper_r1, garnet_acl_check_cmd),
     setresp = garnet_setresp,
 
     REDIS_VERSION = garnet_REDIS_VERSION,
@@ -2997,12 +2997,12 @@ end
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0)
             {
-                return LuaStaticError(constStrs.PleaseSpecifyRedisCall);
+                return LuaWrappedError(1, constStrs.PleaseSpecifyRedisCall);
             }
 
             if (!state.CheckBuffer(1, out var cmdSpan))
             {
-                return LuaStaticError(constStrs.ErrBadArg);
+                return LuaWrappedError(1, constStrs.ErrBadArg);
             }
 
             // It's most accurate to use our existing parsing code
@@ -3014,7 +3014,7 @@ end
             var cmdStr = Encoding.UTF8.GetString(cmdSpan);
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmdStr, out var info, externalOnly: false, includeSubCommands: true))
             {
-                return LuaStaticError(constStrs.ErrInvalidCommand);
+                return LuaWrappedError(1, constStrs.ErrInvalidCommand);
             }
 
             var providedRespArgCount = luaArgCount - 1;
@@ -3052,12 +3052,12 @@ end
 
                     if (badArg)
                     {
-                        return LuaStaticError(constStrs.ErrBadArg);
+                        return LuaWrappedError(1, constStrs.ErrBadArg);
                     }
 
                     if (parsedCmd == RespCommand.INVALID)
                     {
-                        return LuaStaticError(constStrs.ErrInvalidCommand);
+                        return LuaWrappedError(1, constStrs.ErrInvalidCommand);
                     }
 
                     if (!respServerSession.CheckACLPermissions(parsedCmd))
@@ -3124,12 +3124,12 @@ end
 
                         if (badArg)
                         {
-                            return LuaStaticError(constStrs.ErrBadArg);
+                            return LuaWrappedError(1, constStrs.ErrBadArg);
                         }
 
                         if (parsedCmd == RespCommand.INVALID)
                         {
-                            return LuaStaticError(constStrs.ErrInvalidCommand);
+                            return LuaWrappedError(1, constStrs.ErrInvalidCommand);
                         }
 
                         if (!respServerSession.CheckACLPermissions(parsedCmd))
@@ -3158,12 +3158,12 @@ end
 
                 if (badArg)
                 {
-                    return LuaStaticError(constStrs.ErrBadArg);
+                    return LuaWrappedError(1, constStrs.ErrBadArg);
                 }
 
                 if (parsedCommand == RespCommand.INVALID)
                 {
-                    return LuaStaticError(constStrs.ErrInvalidCommand);
+                    return LuaWrappedError(1, constStrs.ErrInvalidCommand);
                 }
 
                 success = respServerSession.CheckACLPermissions(parsedCommand);
