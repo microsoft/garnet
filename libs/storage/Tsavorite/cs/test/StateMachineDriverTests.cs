@@ -121,7 +121,7 @@ namespace Tsavorite.test.recovery
                     CheckpointDir = MethodTestDir
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
-                
+
                 _ = await store2.RecoverAsync(default, checkpointToken);
 
                 // Verify the state of the new store
