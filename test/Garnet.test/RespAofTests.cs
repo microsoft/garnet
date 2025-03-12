@@ -636,7 +636,7 @@ namespace Garnet.test
                 var count = db.ListLeftPush(key, ldata);
                 ClassicAssert.AreEqual(4, count);
 
-                ldata = ldata.Select(x => x).Reverse().ToArray();
+                ldata = [.. ldata.Select(x => x).Reverse()];
                 returned_data_before_recovery = db.ListRange(key);
                 ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
             }

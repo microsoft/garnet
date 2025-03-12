@@ -40,7 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0' ]
+        framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Release' ]
         test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.PubSubOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
@@ -49,7 +49,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: | 
+            8.0.x
+            9.0.x
       - name: Install dependencies
         run: dotnet restore
 
