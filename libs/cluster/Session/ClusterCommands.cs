@@ -152,6 +152,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_FAILOVER => NetworkClusterFailover(out invalidParameters),
                 RespCommand.CLUSTER_FAILREPLICATIONOFFSET => NetworkClusterFailReplicationOffset(out invalidParameters),
                 RespCommand.CLUSTER_FAILSTOPWRITES => NetworkClusterFailStopWrites(out invalidParameters),
+                RespCommand.CLUSTER_FLUSHALL => NetworkClusterFlushAll(out invalidParameters),
                 RespCommand.CLUSTER_FORGET => NetworkClusterForget(out invalidParameters),
                 RespCommand.CLUSTER_GOSSIP => NetworkClusterGossip(out invalidParameters),
                 RespCommand.CLUSTER_GETKEYSINSLOT => NetworkClusterGetKeysInSlot(out invalidParameters),
