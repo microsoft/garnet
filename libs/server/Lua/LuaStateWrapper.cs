@@ -632,6 +632,18 @@ namespace Garnet.server
             UpdateStackTop(-1);
         }
 
+        /// <summary>
+        /// This should be used for all Rotates into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Rotate(int stackIndex, int n)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+            Debug.Assert(Math.Abs(n) <= (StackTop - stackIndex), "Rotation cannot be larger than slice being rotated");
+
+            NativeMethods.Rotate(state, stackIndex, n);
+        }
+
         // Rarely used
 
         /// <summary>

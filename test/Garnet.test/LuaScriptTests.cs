@@ -2166,18 +2166,17 @@ return cjson.encode(nested)");
                 // TODO: Once refactored to avoid longjmp issues, restore on Linux
                 if (CanTestLuaErrors)
                 {
-
                     var deeplyNestedExc =
                     ClassicAssert.Throws<RedisServerException>(
                         () => db.ScriptEvaluate(
-@"local nested = 1
-for x = 1, 1001 do
-    local newNested = {}
-    newNested[1] = nested;
-    nested = newNested
-end
+    @"local nested = 1
+    for x = 1, 1001 do
+        local newNested = {}
+        newNested[1] = nested;
+        nested = newNested
+    end
 
-return cjson.encode(nested)"));
+    return cjson.encode(nested)"));
                     ClassicAssert.True(deeplyNestedExc.Message.Contains("Cannot serialise, excessive nesting (1001)"));
                 }
             }

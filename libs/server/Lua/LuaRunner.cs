@@ -255,6 +255,9 @@ ARGV = {}
 -- disable for sandboxing purposes
 import = function () end
 
+-- unpack moved after Lua 5.1, this provides Redis compat
+local unpack = table.unpack
+
 -- common functions for handling error replies from Garnet
 local chain_func = function(f1, f2)
     return function(...)
@@ -276,6 +279,23 @@ local error_wrapper_r1 = function(rawFunc, ...)
     end
 
     return r1
+end
+
+local unpackTrampolineRef = garnet_unpack_trampoline
+
+local error_wrapper_rvar = function(rawFunc, ...)
+    -- variable numbers of returns require extra work
+    -- and requires that the error token is FIRST, not last
+    -- and a count of expected returns is around to handle
+    -- trailing nils
+    local rets = {rawFunc(...)}
+    local err = rets[1]
+    local count = rets[2]
+    if err then
+        error(err, 0)
+    end
+
+    return unpackTrampolineRef(rets, count)
 end
 
 -- cutdown os for sandboxing purposes
@@ -308,8 +328,8 @@ local bit = {
 
 -- define cmsgpack for (optional) inclusion into sandbox_env
 local cmsgpack = {
-    pack = garnet_cmsgpack_pack;
-    unpack = garnet_cmsgpack_unpack;
+    pack = chain_func(error_wrapper_r1, garnet_cmsgpack_pack);
+    unpack = chain_func(error_wrapper_rvar, garnet_cmsgpack_unpack);
 }
 
 -- define struct for (optional) inclusion into sandbox_env
@@ -382,9 +402,6 @@ local redis = {
     REDIS_VERSION = garnet_REDIS_VERSION,
     REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
 }
-
--- unpack moved after Lua 5.1, this provides Redis compat
-local unpack = table.unpack
 
 -- added after Lua 5.1, removing to maintain Redis compat
 string.pack = nil
@@ -684,6 +701,7 @@ end
             state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
             state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
             state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
+            state.Register("garnet_unpack_trampoline\0"u8, &LuaRunnerTrampolines.UnpackTrampoline);
 
             var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
             state.PushBuffer(redisVersionBytes);
@@ -907,6 +925,36 @@ end
         /// </summary>
         public void Dispose()
         => state.Dispose();
+
+        /// <summary>
+        /// Entry point for garnet_unpack_trampoline from a Lua script.
+        /// 
+        /// This is an odd function, but is used to handle variable returns
+        /// after error checking has occurred.
+        /// </summary>
+        public int UnpackTrampoline(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            Debug.Assert(state.StackTop == 2, "Expected exactly 2 arguments");
+            Debug.Assert(state.Type(1) == LuaType.Table, "Expected table as first argument");
+            Debug.Assert(state.Type(2) == LuaType.Number, "Expected count as second argument");
+
+            // As an internal call, we know these are fine
+            var count = (int)state.CheckNumber(2);
+            state.Pop(1);
+
+            // We're going to return count items, + 1 for the passed table
+            state.ForceMinimumStackCapacity(count + 1);
+
+            for (var ix = 1; ix <= count; ix++)
+            {
+                // + 2 to skip err and count
+                _ = state.RawGetInteger(null, 1, ix + 2);
+            }
+
+            return count;
+        }
 
         /// <summary>
         /// Entry point for redis.sha1hex method from a Lua script.
@@ -2080,7 +2128,7 @@ end
 
             if (numLuaArgs == 0)
             {
-                return state.RaiseError("bad argument to pack");
+                return LuaWrappedError(1, "bad argument to pack"u8);
             }
 
             // Redis concatenates all the message packs together if there are multiple
@@ -2114,7 +2162,6 @@ end
                     case LuaType.Number: EncodeNumber(self, stackIndex); break;
                     case LuaType.String: EncodeBytes(self, stackIndex); break;
                     case LuaType.Table:
-
                         if (depth == 16)
                         {
                             // Redis treats a too deeply nested table as a null
@@ -2515,10 +2562,15 @@ end
 
             if (numLuaArgs == 0)
             {
-                return state.RaiseError("bad argument to unpack");
+                // This method returns variable numbers of arguments, so the error goes in the first slot
+                return LuaWrappedError(0, "bad argument to unpack"u8);
             }
 
+            // 1 for error slot and 1 for count
+            state.ForceMinimumStackCapacity(2);
+
             _ = state.CheckBuffer(1, out var data);
+
 
             var decodedCount = 0;
             while (!data.IsEmpty)
@@ -2533,12 +2585,20 @@ end
                 }
                 catch (Exception e)
                 {
+                    logger?.LogError(e, "During cmsgpack.unpack");
+
                     // Best effort at matching Redis behavior
-                    return state.RaiseError($"Missing bytes in input. {e.Message}");
+                    return LuaWrappedError(0, "Missing bytes in input."u8);
                 }
             }
 
-            return decodedCount;
+            // Error and count for error_wrapper_rvar
+            state.PushNil();
+            state.PushInteger(decodedCount);
+            state.Rotate(2, 2);
+
+            // +2 for the (nil) error slot and the count
+            return decodedCount + 2;
 
             // Decode a msg pack
             static void Decode(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
@@ -5235,5 +5295,12 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int CMsgPackUnpack(nint luaState)
         => CallbackContext.CMsgPackUnpack(luaState);
+
+        /// <summary>
+        /// Entry point for calls to garnet_unpack_trampoline.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int UnpackTrampoline(nint luaState)
+        => CallbackContext.UnpackTrampoline(luaState);
     }
 }
