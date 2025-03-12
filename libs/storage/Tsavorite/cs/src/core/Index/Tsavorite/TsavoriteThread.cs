@@ -30,14 +30,16 @@ namespace Tsavorite.core
                 switch (sessionFunctions.Ctx.SessionState.Phase)
                 {
                     case Phase.IN_PROGRESS:
-                        // Adjust session's effective state if there is an ongoing transaction
+                        // Adjust session's effective state if there is an ongoing active transaction.
                         if (sessionFunctions.Ctx.txnVersion == sessionFunctions.Ctx.SessionState.Version - 1)
                         {
                             sessionFunctions.Ctx.SessionState = SystemState.Make(Phase.PREPARE, sessionFunctions.Ctx.txnVersion);
                         }
                         break;
                     case Phase.PREPARE_GROW:
-                        // Session needs to wait in PREPARE_GROW phase unless they are in a transaction
+                        // Session needs to wait in PREPARE_GROW phase unless it is in an active transaction.
+                        // We cannot avoid spinning on hash table growth: operations (and transactions) in (v) have to drain
+                        // out before we grow the hash table because the lock table is co-located with the hash table.
                         if (!sessionFunctions.Ctx.isAcquiredLockable)
                         {
                             epoch.ProtectAndDrain();
