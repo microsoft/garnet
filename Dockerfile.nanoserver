@@ -1,4 +1,4 @@
-ARG TAG=ltsc2025
+ARG TAG=ltsc2022
 FROM mcr.microsoft.com/dotnet/sdk:9.0-nanoserver-$TAG AS build
 
 WORKDIR /source
