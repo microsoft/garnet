@@ -391,18 +391,24 @@ namespace Garnet.server
                     return;
                 }
 
-                // Read member
-                var member = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+                // Copy the member
+                var member = input.parseState.GetArgSliceByRef(1).ReadOnlySpan.ToArray();
 
-                if (Dictionary.TryGetValue(member, out var score))
+                // Avoid multiple hash calculations
+                ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, member, out var exists);
+
+                if (exists)
                 {
-                    Dictionary[member] += incrValue;
-                    sortedSet.Remove((score, member));
-                    sortedSet.Add((Dictionary[member], member));
+                    // Remove old sorted set entry
+                    sortedSet.Remove((scoreRef, member));
+
+                    // Update the score and insert new sorted set entry
+                    scoreRef += incrValue;
+                    sortedSet.Add((scoreRef, member));
                 }
                 else
                 {
-                    Dictionary.Add(member, incrValue);
+                    scoreRef = incrValue;
                     sortedSet.Add((incrValue, member));
 
                     this.UpdateSize(member);
