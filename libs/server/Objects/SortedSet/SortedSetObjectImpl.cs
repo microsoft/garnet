@@ -132,12 +132,12 @@ namespace Garnet.server
                     var member = memberSpan.ToArray();
 
                     // Add new member
-                    if (!sortedSetDict.TryGetValue(member, out var scoreStored))
+                    if (!Dictionary.TryGetValue(member, out var scoreStored))
                     {
                         // Don't add new member if XX flag is set
                         if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
 
-                        sortedSetDict.Add(member, score);
+                        Dictionary.Add(member, score);
                         if (sortedSet.Add((score, member)))
                             addedOrChanged++;
 
@@ -163,7 +163,7 @@ namespace Garnet.server
                             ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
                             ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score)) continue;
 
-                        sortedSetDict[member] = score;
+                        Dictionary[member] = score;
                         var success = sortedSet.Remove((scoreStored, member));
                         Debug.Assert(success);
                         success = sortedSet.Add((score, member));
@@ -206,11 +206,11 @@ namespace Garnet.server
                 var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
                 var valueArray = value.ToArray();
 
-                if (!sortedSetDict.TryGetValue(valueArray, out var key))
+                if (!Dictionary.TryGetValue(valueArray, out var key))
                     continue;
 
                 _output->result1++;
-                sortedSetDict.Remove(valueArray);
+                Dictionary.Remove(valueArray);
                 sortedSet.Remove((key, valueArray));
 
                 this.UpdateSize(value, false);
@@ -220,8 +220,8 @@ namespace Garnet.server
         private void SortedSetLength(byte* output)
         {
             // Check both objects
-            Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
-            ((ObjectOutputHeader*)output)->result1 = sortedSetDict.Count;
+            Debug.Assert(Dictionary.Count == sortedSet.Count, "SortedSet object is not in sync.");
+            ((ObjectOutputHeader*)output)->result1 = Dictionary.Count;
         }
 
         private void SortedSetScore(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -239,7 +239,7 @@ namespace Garnet.server
             ObjectOutputHeader outputHeader = default;
             try
             {
-                if (!sortedSetDict.TryGetValue(member, out var score))
+                if (!Dictionary.TryGetValue(member, out var score))
                 {
                     while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -294,7 +294,7 @@ namespace Garnet.server
                 {
                     var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                    if (!sortedSetDict.TryGetValue(member, out var score))
+                    if (!Dictionary.TryGetValue(member, out var score))
                     {
                         while (!RespWriteUtils.TryWriteNull(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -393,22 +393,22 @@ namespace Garnet.server
                 // Read member
                 var member = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
 
-                if (sortedSetDict.TryGetValue(member, out var score))
+                if (Dictionary.TryGetValue(member, out var score))
                 {
-                    sortedSetDict[member] += incrValue;
+                    Dictionary[member] += incrValue;
                     sortedSet.Remove((score, member));
-                    sortedSet.Add((sortedSetDict[member], member));
+                    sortedSet.Add((Dictionary[member], member));
                 }
                 else
                 {
-                    sortedSetDict.Add(member, incrValue);
+                    Dictionary.Add(member, incrValue);
                     sortedSet.Add((incrValue, member));
 
                     this.UpdateSize(member);
                 }
 
                 // Write the new score
-                while (!RespWriteUtils.TryWriteDoubleBulkString(sortedSetDict[member], ref curr, end))
+                while (!RespWriteUtils.TryWriteDoubleBulkString(Dictionary[member], ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
@@ -527,7 +527,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             return;
                         }
-                        else if (minValue > sortedSetDict.Count - 1)
+                        else if (minValue > Dictionary.Count - 1)
                         {
                             // return empty list
                             while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
@@ -539,15 +539,15 @@ namespace Garnet.server
                             //shift from the end of the set
                             if (minIndex < 0)
                             {
-                                minIndex = sortedSetDict.Count + minIndex;
+                                minIndex = Dictionary.Count + minIndex;
                             }
                             if (maxIndex < 0)
                             {
-                                maxIndex = sortedSetDict.Count + maxIndex;
+                                maxIndex = Dictionary.Count + maxIndex;
                             }
-                            else if (maxIndex >= sortedSetDict.Count)
+                            else if (maxIndex >= Dictionary.Count)
                             {
-                                maxIndex = sortedSetDict.Count - 1;
+                                maxIndex = Dictionary.Count - 1;
                             }
 
                             // No elements to return if both indexes fall outside the range or min is higher than max
@@ -659,14 +659,14 @@ namespace Garnet.server
                     return;
                 }
 
-                if (start > sortedSetDict.Count - 1)
+                if (start > Dictionary.Count - 1)
                     return;
 
                 // Shift from the end of the set
-                start = start < 0 ? sortedSetDict.Count + start : start;
+                start = start < 0 ? Dictionary.Count + start : start;
                 stop = stop < 0
-                    ? sortedSetDict.Count + stop
-                    : stop >= sortedSetDict.Count ? sortedSetDict.Count - 1 : stop;
+                    ? Dictionary.Count + stop
+                    : stop >= Dictionary.Count ? Dictionary.Count - 1 : stop;
 
                 // Calculate number of elements
                 var elementCount = stop - start + 1;
@@ -674,7 +674,7 @@ namespace Garnet.server
                 // Using to list to avoid modified enumerator exception
                 foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
                 {
-                    if (sortedSetDict.Remove(item.Item2, out var key))
+                    if (Dictionary.Remove(item.Item2, out var key))
                     {
                         sortedSet.Remove((key, item.Item2));
 
@@ -767,11 +767,11 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                var indexes = RandomUtils.PickKRandomIndexes(sortedSetDict.Count, Math.Abs(count), seed, count > 0);
+                var indexes = RandomUtils.PickKRandomIndexes(Dictionary.Count, Math.Abs(count), seed, count > 0);
 
                 foreach (var item in indexes)
                 {
-                    var (element, score) = sortedSetDict.ElementAt(item);
+                    var (element, score) = Dictionary.ElementAt(item);
 
                     while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -840,7 +840,7 @@ namespace Garnet.server
             {
                 var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-                if (!sortedSetDict.TryGetValue(member, out var score))
+                if (!Dictionary.TryGetValue(member, out var score))
                 {
                     while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -899,7 +899,7 @@ namespace Garnet.server
 
             var element = popMaxScoreElement ? sortedSet.Max : sortedSet.Min;
             sortedSet.Remove(element);
-            sortedSetDict.Remove(element.Element);
+            Dictionary.Remove(element.Element);
             this.UpdateSize(element.Element, false);
 
             return element;
@@ -937,7 +937,7 @@ namespace Garnet.server
                 {
                     var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
                     sortedSet.Remove(max);
-                    sortedSetDict.Remove(max.Element);
+                    Dictionary.Remove(max.Element);
 
                     this.UpdateSize(max.Element, false);
 
@@ -1019,9 +1019,9 @@ namespace Garnet.server
 
                     if (rem)
                     {
-                        if (sortedSetDict.TryGetValue(item.Item2, out var _key))
+                        if (Dictionary.TryGetValue(item.Item2, out var _key))
                         {
-                            sortedSetDict.Remove(item.Item2);
+                            Dictionary.Remove(item.Item2);
                             sortedSet.Remove((_key, item.Item2));
 
                             this.UpdateSize(item.Item2, false);
@@ -1094,9 +1094,9 @@ namespace Garnet.server
             {
                 foreach (var item in scoredElements.ToList())
                 {
-                    if (sortedSetDict.TryGetValue(item.Item2, out var _key))
+                    if (Dictionary.TryGetValue(item.Item2, out var _key))
                     {
-                        sortedSetDict.Remove(item.Item2);
+                        Dictionary.Remove(item.Item2);
                         sortedSet.Remove((_key, item.Item2));
 
                         this.UpdateSize(item.Item2, false);

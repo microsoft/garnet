@@ -55,7 +55,6 @@ namespace Garnet.server
             return (long)BitOperations.RotateRight(magicno * hashState, 4);
         }
 
-#if NET9_0_OR_GREATER
         /// <inheritdoc/>
         public bool Equals(ReadOnlySpan<byte> alternate, byte[] other) => alternate.SequenceEqual(other);
 
@@ -70,6 +69,5 @@ namespace Garnet.server
 
         /// <inheritdozc/>
         public byte[] Create(ReadOnlySpan<byte> alternate) => alternate.ToArray();
-#endif
     }
 }

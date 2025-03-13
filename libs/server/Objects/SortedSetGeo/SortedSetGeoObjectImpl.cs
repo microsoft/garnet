@@ -99,11 +99,11 @@ namespace Garnet.server
                     if (score != -1)
                     {
                         var memberByteArray = member.ToArray();
-                        if (!sortedSetDict.TryGetValue(memberByteArray, out var scoreStored))
+                        if (!Dictionary.TryGetValue(memberByteArray, out var scoreStored))
                         {
                             if (nx)
                             {
-                                sortedSetDict.Add(memberByteArray, score);
+                                Dictionary.Add(memberByteArray, score);
                                 sortedSet.Add((score, memberByteArray));
                                 elementsAdded++;
 
@@ -113,7 +113,7 @@ namespace Garnet.server
                         }
                         else if (!nx && scoreStored != score)
                         {
-                            sortedSetDict[memberByteArray] = score;
+                            Dictionary[memberByteArray] = score;
                             var success = sortedSet.Remove((scoreStored, memberByteArray));
                             Debug.Assert(success);
                             success = sortedSet.Add((score, memberByteArray));
@@ -156,7 +156,7 @@ namespace Garnet.server
                     // Read member
                     var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                    if (sortedSetDict.TryGetValue(member, out var value52Int))
+                    if (Dictionary.TryGetValue(member, out var value52Int))
                     {
                         var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
                         while (!RespWriteUtils.TryWriteAsciiBulkString(geoHash, ref curr, end))
@@ -202,7 +202,7 @@ namespace Garnet.server
                     ? input.parseState.GetArgSliceByRef(2).ReadOnlySpan
                     : "M"u8;
 
-                if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
+                if (Dictionary.TryGetValue(member1, out var scoreMember1) && Dictionary.TryGetValue(member2, out var scoreMember2))
                 {
                     var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
                     var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
@@ -251,7 +251,7 @@ namespace Garnet.server
                     // read member
                     var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                    if (sortedSetDict.TryGetValue(member, out var scoreMember1))
+                    if (Dictionary.TryGetValue(member, out var scoreMember1))
                     {
                         var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
 
@@ -437,7 +437,7 @@ namespace Garnet.server
 
                 // Get the results
                 // FROMMEMBER
-                if (opts.FromMember && sortedSetDict.TryGetValue(fromMember, out var centerPointScore))
+                if (opts.FromMember && Dictionary.TryGetValue(fromMember, out var centerPointScore))
                 {
                     var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
 
