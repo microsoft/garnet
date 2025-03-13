@@ -1,5 +1,5 @@
 ARG TAG=ltsc2022
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:9.0-windowsservercore-$TAG AS build
 
 WORKDIR /source
 
