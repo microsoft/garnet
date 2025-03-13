@@ -233,6 +233,22 @@ namespace Garnet.server
             internal int BadArgPack { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_unpack"/>
             internal int BadArgUnpack { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_bor"/>
+            internal int BadArgBOr { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_band"/>
+            internal int BadArgBAnd { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_bxor" />
+            internal int BadArgBXor { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_lshift"/>
+            internal int BadArgLShift { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_rshift"/>
+            internal int BadArgRShift { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_arshift"/>
+            internal int BadArgARShift { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_rol"/>
+            internal int BadArgRol { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_ror"/>
+            internal int BadArgRor { get; }
 
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
@@ -281,6 +297,14 @@ namespace Garnet.server
                 BadArgDecode = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_decode);
                 BadArgPack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_pack);
                 BadArgUnpack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_unpack);
+                BadArgBOr = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bor);
+                BadArgBAnd = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_band);
+                BadArgBXor = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bxor);
+                BadArgLShift = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_lshift);
+                BadArgARShift = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_arshift);
+                BadArgRShift = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_rshift);
+                BadArgRol = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_rol);
+                BadArgRor = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_ror);
             }
 
             /// <summary>

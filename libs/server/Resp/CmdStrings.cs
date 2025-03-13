@@ -436,5 +436,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_bad_arg_decode => "bad argument to decode"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_pack => "bad argument to pack"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_unpack => "bad argument to unpack"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_bor => "bad argument to bor"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_band => "bad argument to band"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_bxor => "bad argument to bxor"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_lshift => "bad argument to lshift"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_arshift => "bad argument to arshift"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_rshift => "bad argument to rshift"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_rol => "bad argument to rol"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_ror => "bad argument to ror"u8;
     }
 }

@@ -791,14 +791,14 @@ namespace Garnet.server
             var binOpErr =
                 bitop switch
                 {
-                    BOr => "bad argument to bor"u8,
-                    BAnd => "bad argument to band"u8,
-                    BXor => "bad argument to bxor"u8,
-                    LShift => "bad argument to lshift"u8,
-                    RShift => "bad argument to rshift"u8,
-                    ARShift => "bad argument to arshift"u8,
-                    Rol => "bad argument to rol"u8,
-                    _ => "bad argument to ror"u8,
+                    BOr => constStrs.BadArgBOr,
+                    BAnd => constStrs.BadArgBAnd,
+                    BXor => constStrs.BadArgBXor,
+                    LShift => constStrs.BadArgLShift,
+                    RShift => constStrs.BadArgRShift,
+                    ARShift => constStrs.BadArgARShift,
+                    Rol => constStrs.BadArgRol,
+                    _ => constStrs.BadArgRor,
                 };
 
             if (luaArgCount < 2)
