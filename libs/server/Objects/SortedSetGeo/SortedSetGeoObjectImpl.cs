@@ -198,23 +198,21 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                // Read 1st member
-                var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-
-                // Read 2nd member
-                var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+                var firstMember = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                var secondMember = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                 // Read units
                 var units = input.parseState.Count > 2
                     ? input.parseState.GetArgSliceByRef(2).ReadOnlySpan
                     : "M"u8;
 
-                if (Dictionary.TryGetValue(member1, out var scoreMember1) && Dictionary.TryGetValue(member2, out var scoreMember2))
+                if (TryGetScore(firstMember, out var firstScore) &&
+                    TryGetScore(secondMember, out var secondScore))
                 {
-                    var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
-                    var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
+                    var firstCoordinate = server.GeoHash.GetCoordinatesFromLong((long)firstScore);
+                    var secondCoordinate = server.GeoHash.GetCoordinatesFromLong((long)secondScore);
 
-                    var distance = server.GeoHash.Distance(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
+                    var distance = server.GeoHash.Distance(firstCoordinate.Latitude, firstCoordinate.Longitude, secondCoordinate.Latitude, secondCoordinate.Longitude);
 
                     var distanceValue = (units.Length == 1 && AsciiUtils.ToUpper(units[0]) == (byte)'M') ?
                         distance : server.GeoHash.ConvertMetersToUnits(distance, units);
