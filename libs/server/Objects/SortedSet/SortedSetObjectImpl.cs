@@ -981,7 +981,7 @@ namespace Garnet.server
         /// <param name="maxParamByteArray"></param>
         /// <param name="doReverse">Perfom reverse order</param>
         /// <param name="validLimit">Use a limit offset count</param>
-        /// <param name="rem">Remove elements</param>
+        /// <param name="remove">Remove elements</param>
         /// <param name="errorCode">errorCode</param>
         /// <param name="limit">offset and count values</param>
         /// <returns></returns>
@@ -990,7 +990,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> maxParamByteArray,
             bool doReverse,
             bool validLimit,
-            bool rem,
+            bool remove,
             out int errorCode,
             (int, int) limit = default)
         {
@@ -1013,29 +1013,22 @@ namespace Garnet.server
                     maxValueChars = tmpMinValueChars;
                 }
 
-                var iterator = sortedSet.GetViewBetween((sortedSet.Min.Item1, minValueChars.ToArray()), sortedSet.Max);
+                var iterator = sortedSet.GetViewBetween((sortedSet.Min.Score, minValueChars.ToArray()), sortedSet.Max);
 
-                // using ToList method so we avoid the Invalid operation ex. when removing
+                // Copy to avoid the Invalid operation ex. when removing
                 foreach (var item in iterator.ToList())
                 {
-                    var inRange = new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(minValueChars);
+                    var inRange = item.Element.AsSpan().SequenceCompareTo(minValueChars);
                     if (inRange < 0 || (inRange == 0 && minValueExclusive))
                         continue;
 
-                    var outRange = maxValueChars.IsEmpty ? -1 : new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(maxValueChars);
+                    var outRange = maxValueChars.IsEmpty ? -1 : item.Element.AsSpan().SequenceCompareTo(maxValueChars);
                     if (outRange > 0 || (outRange == 0 && maxValueExclusive))
                         break;
 
-                    if (rem)
-                    {
-                        if (Dictionary.TryGetValue(item.Item2, out var _key))
-                        {
-                            Dictionary.Remove(item.Item2);
-                            sortedSet.Remove((_key, item.Item2));
-
-                            this.UpdateSize(item.Item2, false);
-                        }
-                    }
+                    if (remove)
+                        Remove(item.Element, item.Score);
+                    
                     elementsInLex.Add(item);
                 }
 
