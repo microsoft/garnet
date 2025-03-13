@@ -168,12 +168,14 @@ namespace Garnet.server
         => ProcessCommandFromScripting(luaStatePtr, ref respServerSession.basicGarnetApi);
 
         /// <summary>
-        /// Raises a Lua error reporting that the script has timed out.
-        /// 
-        /// If you call this outside of PCALL context, the process will crash.
+        /// Registers a debug hook which forces a timeout.
         /// </summary>
-        internal void UnsafeForceTimeout()
-        => state.RaiseError("ERR Lua script exceeded configured timeout");
+        internal void RequestTimeout(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+            _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, requestTimeoutRegsitryIndex);
+            state.Call(0, 0);
+        }
 
         /// <summary>
         /// Entry point for garnet_unpack_trampoline from a Lua script.
@@ -2964,11 +2966,11 @@ namespace Garnet.server
         /// </summary>
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Callback must take these parameters")]
-        internal static void ForceTimeout(nint luaState, nint debugState)
+        internal static void RequestTimeout(nint luaState, nint debugState)
         {
             try
             {
-                CallbackContext?.UnsafeForceTimeout();
+                CallbackContext?.RequestTimeout(luaState);
             }
             catch (Exception e)
             {

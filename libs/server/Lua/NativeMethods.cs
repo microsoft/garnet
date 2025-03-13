@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KeraLua;
 using charptr_t = nint;
-using intptr_t = nint;
 using lua_CFunction = nint;
 using lua_Hook = nint;
 using lua_State = nint;
@@ -180,13 +179,6 @@ namespace Garnet.server
         private static partial void lua_setglobal(lua_State luaState, charptr_t name);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_error
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-        private static partial int lua_error(lua_State luaState);
-
-        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_next
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -273,17 +265,6 @@ namespace Garnet.server
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial int lua_toboolean(lua_State L, int ix);
-
-        /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_tointegerx
-        /// 
-        /// We should always have checked this is actually a number before calling, 
-        /// so the expensive paths won't be taken.
-        /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_tointegerx
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
-        private static partial long lua_tointegerx(lua_State L, int idex, intptr_t pisnum);
 
         /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_settop
@@ -481,14 +462,6 @@ namespace Garnet.server
         => lua_toboolean(luaState, index) != 0;
 
         /// <summary>
-        /// Read a long off the stack
-        /// 
-        /// Suppresses GC transition.
-        /// </summary>
-        internal static long ToInteger(lua_State luaState, int index)
-        => lua_tointegerx(luaState, index, 0);
-
-        /// <summary>
         /// Remove some number of items from the stack.
         /// 
         /// Suppresses GC transition.
@@ -679,14 +652,6 @@ namespace Garnet.server
         /// </summary>
         internal static void Rotate(lua_State luaState, int stackIndex, int n)
         => lua_rotate(luaState, stackIndex, n);
-
-        /// <summary>
-        /// Raise an error, using the top of the stack as an error item.
-        /// 
-        /// This method never returns, so be careful calling it.
-        /// </summary>
-        internal static int Error(lua_State luaState)
-        => lua_error(luaState);
 
         /// <summary>
         /// Set a debugging hook.

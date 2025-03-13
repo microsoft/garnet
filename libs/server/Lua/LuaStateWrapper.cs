@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -682,30 +681,6 @@ namespace Garnet.server
             StackTop = 0;
 
             AssertLuaStackExpected();
-        }
-
-        /// <summary>
-        /// Clear the stack and raise an error with the given message.
-        /// </summary>
-        [DoesNotReturn]
-        internal int RaiseError(string msg)
-        {
-            ClearStack();
-
-            var b = Encoding.UTF8.GetBytes(msg);
-            PushBuffer(b);
-            return RaiseErrorFromStack();
-        }
-
-        /// <summary>
-        /// Raise an error, where the top of the stack is the error message.
-        /// </summary>
-        [DoesNotReturn]
-        internal readonly int RaiseErrorFromStack()
-        {
-            Debug.Assert(StackTop != 0, "Expected error message on the stack");
-
-            return NativeMethods.Error(state);
         }
 
         /// <summary>

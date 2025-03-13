@@ -596,7 +596,14 @@ sandbox_env = {
 
 !!SANDBOX_ENV REPLACEMENT TARGET!!
 }
-
+-- timeout error must be raised on Lua
+local debugRef = debug
+local force_timeout = function()
+    error('ERR Lua script exceeded configured timeout', 0)
+end
+function request_timeout()
+    debugRef.sethook(force_timeout, '', 1)
+end
 -- no reference to outermost set of globals (_G) should survive sandboxing
 sandbox_env._G = sandbox_env
 -- lock down a table, recursively doing the same to all table members
@@ -706,6 +713,7 @@ end
         readonly int argvTableRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
         readonly int resetKeysAndArgvRegistryIndex;
+        readonly int requestTimeoutRegsitryIndex;
         readonly ConstantStringRegistryIndexes constStrs;
 
         readonly LuaLoggingMode logMode;
@@ -888,6 +896,9 @@ end
 
             state.GetGlobal(LuaType.Function, "reset_keys_and_argv\0"u8);
             resetKeysAndArgvRegistryIndex = state.Ref();
+
+            state.GetGlobal(LuaType.Function, "request_timeout\0"u8);
+            requestTimeoutRegsitryIndex = state.Ref();
 
             // Load all the constant strings into the VM
             constStrs = new(ref state);
@@ -1648,7 +1659,7 @@ end
         /// Request that the current execution of this <see cref="LuaRunner"/> timeout.
         /// </summary>
         internal unsafe void RequestTimeout()
-        => state.TrySetHook(&LuaRunnerTrampolines.ForceTimeout, LuaHookMask.Count, 1);
+        => state.TrySetHook(&LuaRunnerTrampolines.RequestTimeout, LuaHookMask.Count, 1);
 
         /// <summary>
         /// Remove extra keys and args from KEYS and ARGV globals.
