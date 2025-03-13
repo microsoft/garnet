@@ -35,7 +35,7 @@ param (
 #  
 ######################################################
 function CleanUpFiles {
-    param ($publishFolder, $platform, $deleteRunTimes = $true)
+    param ($publishFolder, $platform, $framework, $deleteRunTimes = $true)
 
 	$publishPath = "$basePath/main/GarnetServer/bin/Release/$framework/publish/$publishFolder"
 	$excludeGarnetServerPDB = 'GarnetServer.pdb'
@@ -98,6 +98,7 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	CleanUpFiles "osx-arm64" "linux-x64" "net8.0"
 	CleanUpFiles "osx-x64" "linux-x64" "net8.0"
 	#CleanUpFiles "portable" "win-x64" "net8.0" # don't clean up all files for portable ... leave as is
+	CleanUpFiles "win-x64\Service" "win-x64" "net8.0" $false
 	CleanUpFiles "win-x64" "win-x64" "net8.0"
 	CleanUpFiles "win-arm64" "win-x64" "net8.0"
 
@@ -106,7 +107,7 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	CleanUpFiles "osx-arm64" "linux-x64" "net9.0"
 	CleanUpFiles "osx-x64" "linux-x64" "net9.0"
 	#CleanUpFiles "portable" "win-x64" "net9.0" # don't clean up all files for portable ... leave as is
-	CleanUpFiles "win-x64\Service" "win-x64" $false
+	CleanUpFiles "win-x64\Service" "win-x64" "net9.0" $false
 	CleanUpFiles "win-x64" "win-x64" "net9.0"
 	CleanUpFiles "win-arm64" "win-x64" "net9.0"
 }
