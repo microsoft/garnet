@@ -225,10 +225,20 @@ namespace Garnet.server
         /// <returns></returns>
         public string GetIp()
         {
-            if (((GarnetServerTcp)TcpServer[0]).EndPoint is not IPEndPoint localEndpoint)
-                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
+            IPEndPoint localEndPoint = null;
+            foreach (var server in servers)
+            {
+                if (((GarnetServerTcp)server).EndPoint is IPEndPoint point)
+                {
+                    localEndPoint = point;
+                    break;
+                }
+            }
 
-            if (localEndpoint.Address.Equals(IPAddress.Any))
+            if (localEndPoint == null)
+                throw new GarnetException("Cluster mode requires definition of at least one TCP socket!");
+
+            if (localEndPoint.Address.Equals(IPAddress.Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
                 {
@@ -237,7 +247,7 @@ namespace Garnet.server
                     return endPoint.Address.ToString();
                 }
             }
-            else if (localEndpoint.Address.Equals(IPAddress.IPv6Any))
+            else if (localEndPoint.Address.Equals(IPAddress.IPv6Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetworkV6, SocketType.Dgram, 0))
                 {
@@ -246,7 +256,7 @@ namespace Garnet.server
                     return endPoint.Address.ToString();
                 }
             }
-            return localEndpoint.Address.ToString();
+            return localEndPoint.Address.ToString();
         }
 
         internal FunctionsState CreateFunctionsState()
