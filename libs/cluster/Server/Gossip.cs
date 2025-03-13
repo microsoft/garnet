@@ -164,7 +164,7 @@ namespace Garnet.cluster
                     var endpoints = await Format.TryCreateEndpoint(address, port, useForBind: true, logger: logger);
                     if (endpoints == null)
                     {
-                        logger?.LogError("Could not parse endpoint {address} {port}", address, port);
+                        logger?.LogError("Invalid CLUSTER MEET endpoint!");
                     }
                     gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, logger: logger);
                     created = true;
