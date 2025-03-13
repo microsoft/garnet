@@ -50,7 +50,6 @@ function CleanUpFiles {
 	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/$nativeFile"
 
 	if (Test-Path -Path $publishPath) {
-		Get-ChildItem -Path $publishPath -Filter '*.xml' | Remove-Item -Force
 		Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
 		Get-ChildItem -Path $publishPath -Filter '*.pdb' | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
 
@@ -159,7 +158,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 			Copy-Item -Path "$sourcePath\*" -Destination $destVersionPath -Recurse -Force
 		}
 	}
-
+ 
 	# Compress the files - both net80 and net90 in the same zip file
 	Write-Host "** Compressing the files ... **"
 	7z a -mmt20 -mx5 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
