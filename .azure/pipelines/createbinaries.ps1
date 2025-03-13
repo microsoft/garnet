@@ -35,42 +35,33 @@ param (
 #  
 ######################################################
 function CleanUpFiles {
-    param ($publishFolder, $platform, $framework)
+    param ($publishFolder, $platform, $framework, $deleteRunTimes = $true)
 
 	$publishPath = "$basePath/main/GarnetServer/bin/Release/$framework/publish/$publishFolder"
-	$garnetServerEXE = "$publishPath/GarnetServer.exe"
 	$excludeGarnetServerPDB = 'GarnetServer.pdb'
 
 	# Native binary is different based on OS by default
 	$nativeFile = "libnative_device.so"
-	$garnetServerEXE = "$publishPath/GarnetServer"
 
 	if ($platform -match "win-x64") {
 		$nativeFile = "native_device.dll"
-		$garnetServerEXE = "$publishPath/GarnetServer.exe"
 	}
 
 	$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/$nativeFile"
-	
-	if (Test-Path $garnetServerEXE) {
-		Get-ChildItem -Path $publishPath -Filter '*.xml' | Remove-Item -Force
+
+	if (Test-Path -Path $publishPath) {
 		Get-ChildItem -Path $publishPath -Filter '*.pfx' | Remove-Item -Force
-		Get-ChildItem -Path $publishPath -Filter *.pdb | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
+		Get-ChildItem -Path $publishPath -Filter '*.pdb' | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item
 
 		# Copy proper native run time to publish directory
 		Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
-
-		# Confirm the files are there
-		if (Test-Path "$publishPath/$nativeFile") {
-	
-			# Delete RunTimes folder
-			Remove-Item -Path "$publishPath/runtimes" -Recurse -Force
-
-		} else {
-			Write-Error "$publishPath/$nativeFile does not exist."
-		}
 	} else {
-		Write-Error "$garnetServerEXE was not found."
+		Write-Host "Publish Path not found: $publishPath"
+	}
+
+	# Delete the runtimes folder
+	if ($deleteRunTimes -eq $true) {
+		Remove-Item -Path "$publishPath/runtimes" -Recurse -Force
 	}
 }
 
@@ -106,6 +97,7 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	CleanUpFiles "osx-arm64" "linux-x64" "net8.0"
 	CleanUpFiles "osx-x64" "linux-x64" "net8.0"
 	#CleanUpFiles "portable" "win-x64" "net8.0" # don't clean up all files for portable ... leave as is
+	CleanUpFiles "win-x64\Service" "win-x64" "net8.0" $false
 	CleanUpFiles "win-x64" "win-x64" "net8.0"
 	CleanUpFiles "win-arm64" "win-x64" "net8.0"
 
@@ -114,6 +106,7 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	CleanUpFiles "osx-arm64" "linux-x64" "net9.0"
 	CleanUpFiles "osx-x64" "linux-x64" "net9.0"
 	#CleanUpFiles "portable" "win-x64" "net9.0" # don't clean up all files for portable ... leave as is
+	CleanUpFiles "win-x64\Service" "win-x64" "net9.0" $false
 	CleanUpFiles "win-x64" "win-x64" "net9.0"
 	CleanUpFiles "win-arm64" "win-x64" "net9.0"
 }
@@ -165,7 +158,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 			Copy-Item -Path "$sourcePath\*" -Destination $destVersionPath -Recurse -Force
 		}
 	}
-
+ 
 	# Compress the files - both net80 and net90 in the same zip file
 	Write-Host "** Compressing the files ... **"
 	7z a -mmt20 -mx5 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
