@@ -48,7 +48,7 @@ jobs:
       - name: Build and push
         if: github.event_name != 'pull_request'
         run: |
-          docker build --no-cache --platform windows/amd64 --pull -f Dockerfile.nanoserver `
+          docker build -f Dockerfile.nanoserver `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[0] }} `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[1] }} `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[2] }} .

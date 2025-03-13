@@ -1,20 +1,15 @@
 ARG TAG=ltsc2022
-FROM mcr.microsoft.com/dotnet/sdk:9.0-nanoserver-$TAG AS build
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 
-WORKDIR /s
+WORKDIR /source
 
 # Copy files
 COPY . .
-WORKDIR /s/main/GarnetServer
-
-# Enable long paths
-USER Administrator
-RUN reg add HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
+WORKDIR /source/main/GarnetServer
 
 # Restore, build, and publish
-RUN dotnet nuget locals all --clear
-RUN dotnet restore --disable-parallel
-RUN dotnet build --no-restore -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+RUN dotnet restore
+RUN dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false && \
 RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Final stage/image
