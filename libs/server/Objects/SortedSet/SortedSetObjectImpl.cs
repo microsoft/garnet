@@ -847,9 +847,9 @@ namespace Garnet.server
             ObjectOutputHeader outputHeader = default;
             try
             {
-                var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-                if (!Dictionary.TryGetValue(member, out var score))
+                if (!TryGetScore(member, out var score))
                 {
                     while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -859,7 +859,7 @@ namespace Garnet.server
                     var rank = 0;
                     foreach (var item in sortedSet)
                     {
-                        if (item.Item2.SequenceEqual(member))
+                        if (member.SequenceEqual(item.Element))
                             break;
                         rank++;
                     }
