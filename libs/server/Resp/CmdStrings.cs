@@ -444,5 +444,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_bad_arg_rshift => "bad argument to rshift"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_rol => "bad argument to rol"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_ror => "bad argument to ror"u8;
+        public static ReadOnlySpan<byte> LUA_unexpected_json_value_kind => "Unexpected json value kind"u8;
+        public static ReadOnlySpan<byte> LUA_cannot_serialise_to_json => "Cannot serialise Lua type to JSON"u8;
+        public static ReadOnlySpan<byte> LUA_unexpected_error => "Unexpected Lua error"u8;
+        public static ReadOnlySpan<byte> LUA_cannot_serialise_excessive_nesting => "Cannot serialise, excessive nesting (1001)"u8;
+        public static ReadOnlySpan<byte> LUA_unable_to_format_number => "Unable to format number"u8;
+        public static ReadOnlySpan<byte> LUA_found_too_many_nested => "Found too many nested data structures (1001)"u8;
+        public static ReadOnlySpan<byte> LUA_expected_value_but_found_invalid => "Expected value but found invalid token."u8;
+        public static ReadOnlySpan<byte> LUA_missing_bytes_in_input => "Missing bytes in input."u8;
     }
 }

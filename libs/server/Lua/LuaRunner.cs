@@ -249,13 +249,30 @@ namespace Garnet.server
             internal int BadArgRol { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_ror"/>
             internal int BadArgRor { get; }
-
+            /// <see cref="CmdStrings.LUA_unexpected_json_value_kind"/>
+            internal int UnexpectedJsonValueKind { get; }
+            /// <see cref="CmdStrings.LUA_cannot_serialise_to_json"/>
+            internal int CannotSerialiseToJson { get; }
+            /// <see cref="CmdStrings.LUA_unexpected_error"/>
+            internal int UnexpectedError { get; }
+            /// <see cref="CmdStrings.LUA_cannot_serialise_excessive_nesting"/>
+            internal int CannotSerializeNesting { get; }
+            /// <see cref="CmdStrings.LUA_unable_to_format_number"/>
+            internal int UnableToFormatNumber { get; }
+            /// <see cref="CmdStrings.LUA_found_too_many_nested"/>
+            internal int FoundTooManyNested { get; }
+            /// <see cref="CmdStrings.LUA_expected_value_but_found_invalid"/>
+            internal int ExpectedValueButFound { get; }
+            /// <see cref="CmdStrings.LUA_missing_bytes_in_input"/>
+            internal int MissingBytesInInput { get; }
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
                 // Commonly used strings, register them once so we don't have to copy them over each time we need them
                 //
-                // As a side benefit, we don't have to worry about reserving memory for them either during normal operation
+                // As an additional benefit, we don't have to worry about reserving memory for them either during normal operation
+                //
+                // This makes OOM probes unnecessary in many cases
                 Ok = ConstantStringToRegistry(ref state, CmdStrings.LUA_OK);
                 OkLower = ConstantStringToRegistry(ref state, CmdStrings.LUA_ok);
                 Err = ConstantStringToRegistry(ref state, CmdStrings.LUA_err);
@@ -305,6 +322,14 @@ namespace Garnet.server
                 BadArgRShift = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_rshift);
                 BadArgRol = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_rol);
                 BadArgRor = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_ror);
+                UnexpectedJsonValueKind = ConstantStringToRegistry(ref state, CmdStrings.LUA_unexpected_json_value_kind);
+                CannotSerialiseToJson = ConstantStringToRegistry(ref state, CmdStrings.LUA_cannot_serialise_to_json);
+                UnexpectedError = ConstantStringToRegistry(ref state, CmdStrings.LUA_unexpected_error);
+                CannotSerializeNesting = ConstantStringToRegistry(ref state, CmdStrings.LUA_cannot_serialise_excessive_nesting);
+                UnableToFormatNumber = ConstantStringToRegistry(ref state, CmdStrings.LUA_unable_to_format_number);
+                FoundTooManyNested = ConstantStringToRegistry(ref state, CmdStrings.LUA_found_too_many_nested);
+                ExpectedValueButFound = ConstantStringToRegistry(ref state, CmdStrings.LUA_expected_value_but_found_invalid);
+                MissingBytesInInput = ConstantStringToRegistry(ref state, CmdStrings.LUA_missing_bytes_in_input);
             }
 
             /// <summary>
@@ -1013,7 +1038,9 @@ end
 
             if (respPtr != respEnd)
             {
-                return LuaWrappedError(1, "RESP3 Response not fully consumed, this should never happen"u8);
+                logger?.LogError("RESP3 Response not fully consumed, this should never happen");
+
+                return LuaWrappedError(1, constStrs.UnexpectedError);
             }
 
             return ret;
@@ -1389,7 +1416,8 @@ end
                     goto default;
 
                 default:
-                    return LuaWrappedError(1, "Unexpected response, this should never happen"u8);
+                    logger?.LogError("Unexpected response, this should never happen");
+                    return LuaWrappedError(1, constStrs.UnexpectedError);
             }
         }
 
@@ -1570,7 +1598,7 @@ end
             }
         }
 
-        
+
 
         /// <summary>
         /// Calls <see cref="RunCommon"/> after setting up appropriate state for a transaction.

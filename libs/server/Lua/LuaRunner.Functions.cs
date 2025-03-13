@@ -763,13 +763,15 @@ namespace Garnet.server
             var luaArgCount = state.StackTop;
             if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
             {
-                return LuaWrappedError(1, "bitop was not indicated, should never happen"u8);
+                logger?.LogError("bitop was not indicated, should never happen");
+                return LuaWrappedError(1, constStrs.UnexpectedError);
             }
 
             var bitop = (int)state.CheckNumber(1);
             if (bitop is < BNot or > Ror)
             {
-                return LuaWrappedError(1, "invalid bitop was passed, should never happen"u8);
+                logger?.LogError("invalid bitop was passed, should never happen");
+                return LuaWrappedError(1, constStrs.UnexpectedError);
             }
 
             // Handle bnot specially
@@ -896,7 +898,7 @@ namespace Garnet.server
                 if (depth > 1000)
                 {
                     // Match Redis max decoding depth
-                    return self.LuaWrappedError(1, "Cannot serialise, excessive nesting (1001)"u8);
+                    return self.LuaWrappedError(1, self.constStrs.CannotSerializeNesting);
                 }
 
                 var argType = self.state.Type(self.state.StackTop);
@@ -914,17 +916,14 @@ namespace Garnet.server
                     case LuaType.Table:
                         return EncodeTable(self, depth);
                     case LuaType.Function:
-                        return self.LuaWrappedError(1, "Cannot serialise Function to JSON"u8);
                     case LuaType.LightUserData:
-                        return self.LuaWrappedError(1, "Cannot serialise LightUserData to JSON"u8);
                     case LuaType.None:
-                        return self.LuaWrappedError(1, "Cannot serialise None to JSON"u8);
                     case LuaType.Thread:
-                        return self.LuaWrappedError(1, "Cannot serialise Thread to JSON"u8);
                     case LuaType.UserData:
-                        return self.LuaWrappedError(1, "Cannot serialise UserData to JSON"u8);
                     default:
-                        return self.LuaWrappedError(1, "Cannot serialise Unknown to JSON"u8);
+                        self.logger?.LogError("Cannot serialize {luaType} to JSON", argType);
+
+                        return self.LuaWrappedError(1, self.constStrs.CannotSerialiseToJson);
                 }
             }
 
@@ -969,7 +968,7 @@ namespace Garnet.server
 
                 if (!number.TryFormat(space, out var written, "G", CultureInfo.InvariantCulture))
                 {
-                    return self.LuaWrappedError(1, "Unable to format number"u8);
+                    return self.LuaWrappedError(1, self.constStrs.UnableToFormatNumber);
                 }
 
                 var into = self.scratchBufferManager.ViewRemainingArgSlice(written).Span;
@@ -1232,11 +1231,11 @@ namespace Garnet.server
                 if (e.Message.Contains("maximum configured depth of 1000"))
                 {
                     // Maximum depth exceeded, munge to a compatible Redis error
-                    return LuaWrappedError(1, "Found too many nested data structures (1001)"u8);
+                    return LuaWrappedError(1, constStrs.FoundTooManyNested);
                 }
 
                 // Invalid token is implied (and matches Redis error replies)
-                return LuaWrappedError(1, "Expected value but found invalid token."u8);
+                return LuaWrappedError(1, constStrs.ExpectedValueButFound);
             }
 
             // Convert the JsonNode into a Lua value on the stack
@@ -1256,7 +1255,8 @@ namespace Garnet.server
                 }
                 else
                 {
-                    return self.LuaWrappedError(1, "Unexpected json node type"u8);
+                    self.logger?.LogError("Unexpected json node type: {typeName}", node.GetType().Name);
+                    return self.LuaWrappedError(1, self.constStrs.UnexpectedJsonValueKind);
                 }
             }
 
@@ -1281,13 +1281,11 @@ namespace Garnet.server
                         self.state.PushBuffer(buf);
                         break;
                     case JsonValueKind.Undefined:
-                        return self.LuaWrappedError(1, "Unexpected json value kind: Undefined"u8);
                     case JsonValueKind.Object:
-                        return self.LuaWrappedError(1, "Unexpected json value kind: Object"u8);
                     case JsonValueKind.Array:
-                        return self.LuaWrappedError(1, "Unexpected json value kind: Array"u8);
                     default:
-                        return self.LuaWrappedError(1, "Unexpected json value kind: Unknown"u8);
+                        self.logger?.LogError("Unexpected json value kind: {kind}", value.GetValueKind());
+                        return self.LuaWrappedError(1, self.constStrs.UnexpectedJsonValueKind);
                 }
 
                 return 1;
@@ -1824,7 +1822,7 @@ namespace Garnet.server
                     logger?.LogError(e, "During cmsgpack.unpack");
 
                     // Best effort at matching Redis behavior
-                    return LuaWrappedError(0, "Missing bytes in input."u8);
+                    return LuaWrappedError(0, constStrs.MissingBytesInInput);
                 }
             }
 
@@ -2652,7 +2650,7 @@ namespace Garnet.server
 
                 logger?.LogError(e, "During Lua script execution");
 
-                return LuaWrappedError(1, "Unexpected Lua error"u8);
+                return LuaWrappedError(1, constStrs.UnexpectedError);
             }
         }
 
