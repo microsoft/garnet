@@ -135,7 +135,7 @@ namespace Garnet.server
 
                     if (!EvaluateObjectExpireInPlace(ref logRecord, optionType, expiryTicks, ref output))
                         return false;
-                    break;
+                    return true;    // The options may or may not produce a result that matches up with what sizeInfo has, so return rather than drop down to AssertOptionals
                 case GarnetObjectType.Persist:
                     if (logRecord.Info.HasExpiration)
                     {

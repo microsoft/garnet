@@ -145,6 +145,13 @@ namespace Garnet.test
                 _ = srcLogRecord.ValueObject.CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
                 return true;
             }
+
+            public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input)
+                => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref IGarnetObject input)
+                => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, IGarnetObject value, ref IGarnetObject input)
+                => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 
         private void CreateStore()

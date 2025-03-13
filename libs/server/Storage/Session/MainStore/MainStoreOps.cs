@@ -734,11 +734,11 @@ namespace Garnet.server
 
                         if (canSetAndDelete)
                         {
-                            // valObj already has expiration time, so no need to write expiration logic here
+                            // valObj already has expiration time, so no need to write expiration logic here. TODO: No longer true; this is now a LogRecord attribute and must be SETEX'd
                             SET(newKeySlice.SpanByte, valObj, ref objectContext);
 
                             // Delete the old key
-                            DELETE(newKeySlice.SpanByte, StoreType.Object, ref context, ref objectContext);
+                            DELETE(oldKeySlice.SpanByte, StoreType.Object, ref context, ref objectContext);
 
                             result = 1;
                         }
