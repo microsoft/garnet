@@ -130,6 +130,8 @@ namespace Garnet.server
         private static void InvokeMultiKeyBitwise<TBinaryOperator>(byte* dstPtr, int dstLength, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minLength)
             where TBinaryOperator : struct, IBinaryOperator
         {
+            var dstEndPtr = dstPtr + dstLength;
+
             long remainingLength = minLength;
             long batchRemainder = minLength;
             byte* dstBatchEndPtr;
@@ -190,7 +192,6 @@ namespace Garnet.server
             }
 
             // Handle the remaining tails
-            var dstEndPtr = dstPtr + remainingLength;
             while (dstPtr < dstEndPtr)
             {
                 byte d00 = 0;

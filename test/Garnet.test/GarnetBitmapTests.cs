@@ -1019,7 +1019,9 @@ namespace Garnet.test
                     {
                         Bitwise.And => static (a, b) => (byte)(a & b),
                         Bitwise.Or => static (a, b) => (byte)(a | b),
-                        Bitwise.Xor => static (a, b) => (byte)(a ^ b)
+                        Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+
+                        _ => throw new NotSupportedException()
                     };
 
                     byte[] dataX = CopyBitmap(dataA);
@@ -1137,7 +1139,9 @@ namespace Garnet.test
                     {
                         Bitwise.And => static (a, b) => (byte)(a & b),
                         Bitwise.Or => static (a, b) => (byte)(a | b),
-                        Bitwise.Xor => static (a, b) => (byte)(a ^ b)
+                        Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+
+                        _ => throw new NotSupportedException()
                     };
 
                     byte[] expectedX = CopyBitmap(dataA);
@@ -1149,7 +1153,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(expectedX.Length, size);
                     byte[] dataX = db.StringGet(x);
 
-                    ClassicAssert.AreEqual(expectedX.Length, expectedX.Length);
+                    ClassicAssert.AreEqual(expectedX.Length, dataX.Length);
                     ClassicAssert.AreEqual(expectedX, dataX);
                 }
             }
