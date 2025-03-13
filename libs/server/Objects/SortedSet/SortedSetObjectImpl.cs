@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -127,21 +128,23 @@ namespace Garnet.server
                     parsedOptions = true;
                     currTokenIdx++;
 
-                    // Member
-                    var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    var member = memberSpan.ToArray();
+                    // Copy the member
+                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan.ToArray();
+                    
+                    // Avoid multiple hash calculations
+                    ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, member, out var exists);
 
                     // Add new member
-                    if (!Dictionary.TryGetValue(member, out var scoreStored))
+                    if (!exists)
                     {
                         // Don't add new member if XX flag is set
                         if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
 
-                        Dictionary.Add(member, score);
+                        scoreRef = score;
                         if (sortedSet.Add((score, member)))
                             addedOrChanged++;
 
-                        this.UpdateSize(memberSpan);
+                        this.UpdateSize(member);
                     }
                     // Update existing member
                     else
@@ -149,23 +152,26 @@ namespace Garnet.server
                         // Update new score if INCR flag is set
                         if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                         {
-                            score += scoreStored;
+                            score += scoreRef;
                             incrResult = score;
                         }
 
                         // No need for update
-                        if (score == scoreStored)
+                        if (score == scoreRef)
                             continue;
 
                         // Don't update existing member if NX flag is set
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
                         if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
-                            ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
-                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score)) continue;
+                            ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreRef > score) ||
+                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreRef < score)) continue;
 
-                        Dictionary[member] = score;
-                        var success = sortedSet.Remove((scoreStored, member));
+                        // Remove old sorted set entry
+                        var success = sortedSet.Remove((scoreRef, member));
                         Debug.Assert(success);
+
+                        // Update the score and insert new sorted set entry
+                        scoreRef = score;
                         success = sortedSet.Add((score, member));
                         Debug.Assert(success);
 
