@@ -253,12 +253,11 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    // read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                    if (Dictionary.TryGetValue(member, out var scoreMember1))
+                    if (TryGetScore(member, out var score))
                     {
-                        var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
+                        var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)score);
 
                         // write array of 2 values
                         while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
