@@ -224,7 +224,7 @@ namespace Garnet.server
 
                     const int StackallocThreshold = 256;
 
-                    var indexCount = Math.Abs(count);
+                    var indexCount = Math.Abs(countParameter);
 
                     var indices = indexCount <= StackallocThreshold ?
                         stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
