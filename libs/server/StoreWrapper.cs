@@ -847,9 +847,9 @@ namespace Garnet.server
             }
             else
             {
-                tryIncremental &= store.CanTakeIncrementalCheckpoint(checkpointType, out checkpointResult.token);
+                tryIncremental = tryIncremental && store.CanTakeIncrementalCheckpoint(checkpointType, out checkpointResult.token);
                 if (objectStore != null)
-                    tryIncremental &= objectStore.CanTakeIncrementalCheckpoint(checkpointType, out var guid2) & checkpointResult.token == guid2;
+                    tryIncremental = tryIncremental && objectStore.CanTakeIncrementalCheckpoint(checkpointType, out var guid2) && checkpointResult.token == guid2;
 
                 if (tryIncremental)
                 {
