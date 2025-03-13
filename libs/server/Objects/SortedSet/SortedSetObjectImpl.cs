@@ -210,16 +210,11 @@ namespace Garnet.server
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
-                var valueArray = value.ToArray();
 
-                if (!Dictionary.TryGetValue(valueArray, out var key))
+                if (!Remove(value))
                     continue;
 
                 _output->result1++;
-                Dictionary.Remove(valueArray);
-                sortedSet.Remove((key, valueArray));
-
-                this.UpdateSize(value, false);
             }
         }
 
