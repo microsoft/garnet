@@ -985,7 +985,7 @@ namespace Garnet.server
         /// <param name="errorCode">errorCode</param>
         /// <param name="limit">offset and count values</param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByLex(
+        private List<(double Score, byte[] Element)> GetElementsInRangeByLex(
             ReadOnlySpan<byte> minParamByteArray,
             ReadOnlySpan<byte> maxParamByteArray,
             bool doReverse,
@@ -1062,26 +1062,26 @@ namespace Garnet.server
         /// <param name="withScore"></param>
         /// <param name="doReverse"></param>
         /// <param name="validLimit"></param>
-        /// <param name="rem"></param>
+        /// <param name="remove"></param>
         /// <param name="limit"></param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
+        private List<(double Score, byte[] Element)> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool remove, (int, int) limit = default)
         {
             if (doReverse)
             {
                 (minValue, maxValue) = (maxValue, minValue);
             }
 
-            List<(double, byte[])> scoredElements = new();
-            if (sortedSet.Max.Item1 < minValue)
+            List<(double Score, byte[] Element)> scoredElements = new();
+            if (sortedSet.Max.Score < minValue)
             {
                 return scoredElements;
             }
 
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
-                if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
-                if (minExclusive && item.Item1 == minValue) continue;
+                if (item.Score > maxValue || (maxExclusive && item.Score == maxValue)) break;
+                if (minExclusive && item.Score == minValue) continue;
                 scoredElements.Add(item);
             }
             if (doReverse) scoredElements.Reverse();
@@ -1092,17 +1092,12 @@ namespace Garnet.server
                                  .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)];
             }
 
-            if (rem)
+            if (remove)
             {
+                // Copy to avoid invalid operation exception when trying to mutate list while enumerating it
                 foreach (var item in scoredElements.ToList())
                 {
-                    if (Dictionary.TryGetValue(item.Item2, out var _key))
-                    {
-                        Dictionary.Remove(item.Item2);
-                        sortedSet.Remove((_key, item.Item2));
-
-                        this.UpdateSize(item.Item2, false);
-                    }
+                    Remove(item.Element, item.Score);
                 }
             }
 
