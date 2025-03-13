@@ -31,7 +31,7 @@ namespace Garnet.server
         /// <summary>
         /// Small struct to store options for GEOSEARCH command
         /// </summary>
-        private struct GeoSearchOptions
+        private ref struct GeoSearchOptions
         {
             public bool FromMember { get; set; }
             public bool FromLonLat { get; set; }
@@ -299,7 +299,7 @@ namespace Garnet.server
             try
             {
                 var opts = new GeoSearchOptions();
-                byte[] fromMember = null;
+                ReadOnlySpan<byte> fromMember = default;
                 var byBoxUnits = "M"u8;
                 double width = 0, height = 0;
                 var countValue = 0;
@@ -323,7 +323,7 @@ namespace Garnet.server
                             break;
                         }
 
-                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
                         opts.FromMember = true;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
@@ -441,7 +441,7 @@ namespace Garnet.server
 
                 // Get the results
                 // FROMMEMBER
-                if (opts.FromMember && Dictionary.TryGetValue(fromMember, out var centerPointScore))
+                if (opts.FromMember && TryGetScore(fromMember, out var centerPointScore))
                 {
                     var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
 
@@ -456,7 +456,7 @@ namespace Garnet.server
                         var responseData = new List<GeoSearchData>();
                         foreach (var point in sortedSet)
                         {
-                            var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Item1);
+                            var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
                             double distance = 0;
                             if (opts.ByBox)
                             {
@@ -467,8 +467,8 @@ namespace Garnet.server
                                     {
                                         Member = point.Item2,
                                         Distance = distance,
-                                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Item1),
-                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Item1)
+                                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
+                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
                                     });
 
                                     if (opts.WithCount && responseData.Count == countValue)
