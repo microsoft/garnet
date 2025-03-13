@@ -7,6 +7,9 @@ WORKDIR /source
 COPY . .
 WORKDIR /source/main/GarnetServer
 
+# Enable long paths
+RUN reg add HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
+
 # Restore, build, and publish
 RUN dotnet restore && \
     dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false && \
