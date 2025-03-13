@@ -45,6 +45,11 @@ jobs:
             username: ${{ github.actor }}
             password: ${{ secrets.GITHUB_TOKEN }}
       
+      - name: Enable long paths
+        run: |
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -Type DWord
+        shell: pwsh
+
       - name: Build and push
         if: github.event_name != 'pull_request'
         run: |
