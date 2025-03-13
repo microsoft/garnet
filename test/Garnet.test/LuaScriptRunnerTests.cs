@@ -511,6 +511,12 @@ namespace Garnet.test
         [Test]
         public void RedisLogDisabled()
         {
+            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
+            // Once the issue is resolved the #if can be removed permanently.
+#if NET9_0_OR_GREATER
+            Assert.Ignore($"Ignoring test when running in .NET9.");
+#endif
+
             // Just because it's hard to test in LuaScriptTests, doing this here
             using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable, []), "redis.log(redis.LOG_WARNING, 'foo')");
 
