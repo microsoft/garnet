@@ -160,11 +160,12 @@ namespace Garnet.server
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
                     // Read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                    if (Dictionary.TryGetValue(member, out var value52Int))
+                    if (TryGetScore(member, out var score))
                     {
-                        var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
+                        // The GeoHash is stored as 52-bit integer inside the floating-point score
+                        var geoHash = server.GeoHash.GetGeoHashCode((long)score);
                         while (!RespWriteUtils.TryWriteAsciiBulkString(geoHash, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
