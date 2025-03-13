@@ -196,7 +196,7 @@ namespace Garnet.cluster
             }
             else
             {
-                // We enqueue a single checkpoint start marker, since we have unified checkpointing
+                // We enqueue a single checkpoint end marker, since we have unified checkpointing
                 if (isMainStore)
                     storeWrapper.EnqueueCommit(AofEntryType.CheckpointEndCommit, newVersion);
             }
