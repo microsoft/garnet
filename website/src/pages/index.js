@@ -33,7 +33,7 @@ export default function Home() {
   return (
     <Layout
       title={`Hello from ${siteConfig.title}`}
-          description="Garnet is a high-performance remote cache-store from Microsoft Research, that works with existing Redis clients.">
+      description="Garnet is a high-performance remote cache-store from Microsoft Research, that works with existing Redis clients.">
       <HomepageHeader />
       <main>
         <HomepageFeatures />
