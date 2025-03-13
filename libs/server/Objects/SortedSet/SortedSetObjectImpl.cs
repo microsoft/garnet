@@ -678,15 +678,10 @@ namespace Garnet.server
                 // Calculate number of elements
                 var elementCount = stop - start + 1;
 
-                // Using to list to avoid modified enumerator exception
+                // Copy the sorted set to avoid modified enumerator exception
                 foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
                 {
-                    if (Dictionary.Remove(item.Item2, out var key))
-                    {
-                        sortedSet.Remove((key, item.Item2));
-
-                        this.UpdateSize(item.Item2, false);
-                    }
+                    Remove(item.Element, item.Score);
                 }
 
                 // Write the number of elements
