@@ -293,9 +293,9 @@ namespace Garnet.server
 
                 for (var i = 0; i < count; i++)
                 {
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                    if (!Dictionary.TryGetValue(member, out var score))
+                    if (!TryGetScore(member, out var score))
                     {
                         while (!RespWriteUtils.TryWriteNull(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
