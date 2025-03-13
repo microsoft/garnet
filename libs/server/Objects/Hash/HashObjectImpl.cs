@@ -222,14 +222,20 @@ namespace Garnet.server
                     if (countParameter > 0 && countParameter > count)
                         countParameter = count;
 
-                    var absCount = Math.Abs(countParameter);
-                    var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
+                    const int StackallocThreshold = 256;
+
+                    var indexCount = Math.Abs(count);
+
+                    var indices = indexCount <= StackallocThreshold ?
+                        stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+                    RandomUtils.PickRandomIndices(count, indices, seed, countParameter > 0);
 
                     // Write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(withValues ? absCount * 2 : absCount, ref curr, end))
+                    while (!RespWriteUtils.TryWriteArrayLength(withValues ? indexCount * 2 : indexCount, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    foreach (var index in indexes)
+                    foreach (var index in indices)
                     {
                         var pair = ElementAt(index);
                         while (!RespWriteUtils.TryWriteBulkString(pair.Key, ref curr, end))

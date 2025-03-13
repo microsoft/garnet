@@ -769,9 +769,16 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                var indexes = RandomUtils.PickKRandomIndexes(Dictionary.Count, Math.Abs(count), seed, count > 0);
+                const int StackallocThreshold = 256;
 
-                foreach (var item in indexes)
+                var indexCount = Math.Abs(count);
+
+                var indices = indexCount <= StackallocThreshold ?
+                    stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+                RandomUtils.PickRandomIndices(Dictionary.Count, indices, seed, count > 0);
+
+                foreach (var item in indices)
                 {
                     var (element, score) = Dictionary.ElementAt(item);
 
