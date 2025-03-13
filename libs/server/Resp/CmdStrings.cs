@@ -122,6 +122,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
         public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
         public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
+        public static ReadOnlySpan<byte> FROMMEMBER => "FROMMEMBER"u8;
         public static ReadOnlySpan<byte> STORE => "STORE"u8;
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
         public static ReadOnlySpan<byte> WITHCOORD => "WITHCOORD"u8;
