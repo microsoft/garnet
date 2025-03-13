@@ -14,7 +14,7 @@ RUN reg add HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem /v Lo
 # Restore, build, and publish
 RUN dotnet nuget locals all --clear
 RUN dotnet restore
-RUN dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+RUN dotnet build --no-restore -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Final stage/image
