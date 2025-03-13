@@ -2,7 +2,9 @@ ARG TAG=ltsc2022
 FROM mcr.microsoft.com/dotnet/sdk:9.0-nanoserver-$TAG AS build
 
 WORKDIR /s
-COPY /source/main/GarnetServer /s/main/GarnetServer
+
+# Copy files
+COPY . .
 WORKDIR /s/main/GarnetServer
 
 # Enable long paths
