@@ -9,7 +9,7 @@ WORKDIR /source/main/GarnetServer
 
 # Restore, build, and publish
 RUN dotnet restore
-RUN dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false && \
+RUN dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Final stage/image
