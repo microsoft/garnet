@@ -46,4 +46,8 @@
 		<None Include="..\..\README.md" Pack="true" PackagePath="/"/>
   </ItemGroup>
 
+	<PropertyGroup>
+		<NoWarn>$(NoWarn);NU5118</NoWarn>
+	</PropertyGroup>
+
 </Project>
