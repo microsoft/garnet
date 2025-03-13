@@ -53,6 +53,10 @@ namespace Garnet.cluster
             set { replicationOffset = value; }
         }
 
+        /// <summary>
+        /// Replication offset corresponding to the checkpoint start marker. We will truncate only to this point after taking a checkpoint (the checkpoint
+        /// is taken only when we encounter a checkpoint end marker).
+        /// </summary>
         public long ReplicationCheckpointStartOffset;
 
         /// <summary>
