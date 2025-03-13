@@ -33,7 +33,7 @@ export default function Home() {
   return (
     <Layout
       title={`Hello from ${siteConfig.title}`}
-          description="Garnet is a new remote cache-store from Microsoft Research. <head />">
+          description="Garnet is a new remote cache-store from Microsoft Research">
       <HomepageHeader />
       <main>
         <HomepageFeatures />
