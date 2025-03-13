@@ -139,18 +139,24 @@ namespace Garnet.server
         {
             if (isRunning)
             {
-                keyEntries.UnlockAllKeys();
-
-                // Release context
-                if (transactionStoreType == StoreType.Main || transactionStoreType == StoreType.All)
-                    lockableContext.EndLockable();
-                if (transactionStoreType == StoreType.Object || transactionStoreType == StoreType.All)
+                try
                 {
-                    if (objectStoreBasicContext.IsNull)
-                        throw new Exception("Trying to perform object store transaction with object store disabled");
-                    objectStoreLockableContext.EndLockable();
+                    keyEntries.UnlockAllKeys();
+
+                    // Release context
+                    if (transactionStoreType == StoreType.Main || transactionStoreType == StoreType.All)
+                        lockableContext.EndLockable();
+                    if (transactionStoreType == StoreType.Object || transactionStoreType == StoreType.All)
+                    {
+                        if (objectStoreBasicContext.IsNull)
+                            throw new Exception("Trying to perform object store transaction with object store disabled");
+                        objectStoreLockableContext.EndLockable();
+                    }
                 }
-                stateMachineDriver.EndTransaction(txnVersion);
+                finally
+                {
+                    stateMachineDriver.EndTransaction(txnVersion);
+                }
             }
             this.txnVersion = 0;
             this.txnStartHead = 0;
