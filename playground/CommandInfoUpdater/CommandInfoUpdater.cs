@@ -276,7 +276,7 @@ namespace CommandInfoUpdater
                 if (existingCommandsInfo.ContainsKey(command.Command))
                 {
                     updatedSubCommands = existingCommandsInfo[command.Command].SubCommands == null
-                        ? new List<RespCommandsInfo>()
+                        ? []
                         : [.. existingCommandsInfo[command.Command].SubCommands];
 
                     // Add sub-commands with updated queried command info

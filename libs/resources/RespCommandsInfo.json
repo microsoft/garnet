@@ -24,17 +24,6 @@
         ]
       },
       {
-        "Command": "ACL_GETUSER",
-        "Name": "ACL|GETUSER",
-        "Arity": 3,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Admin, Dangerous, Slow",
-        "Tips": [
-          "request_policy:all_nodes",
-          "response_policy:all_succeeded"
-        ]
-      },
-      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Arity": 2,
@@ -83,6 +72,13 @@
         "Arity": 2,
         "Flags": "Loading, NoScript, Stale",
         "AclCategories": "Slow"
+      },
+      {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Arity": 3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Dangerous, Slow"
       }
     ]
   },
@@ -624,7 +620,7 @@
         "Command": "CLUSTER_BANLIST",
         "Name": "CLUSTER|BANLIST",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -742,7 +738,7 @@
       {
         "Command": "CLUSTER_HELP",
         "Name": "CLUSTER|HELP",
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Slow, Garnet"
       },
@@ -790,7 +786,7 @@
         "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -805,7 +801,7 @@
         "Command": "CLUSTER_MYPARENTID",
         "Name": "CLUSTER|MYPARENTID",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Garnet"
       },
@@ -916,7 +912,7 @@
         "Command": "CLUSTER_SLOTSTATE",
         "Name": "CLUSTER|SLOTSTATE",
         "IsInternal": true,
-        "Arity": 1,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -951,6 +947,14 @@
         "Name": "CLUSTER|SYNC",
         "IsInternal": true,
         "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "IsInternal": true,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       }
@@ -2579,6 +2583,7 @@
       {
         "Command": "LATENCY_HELP",
         "Name": "LATENCY|HELP",
+        "Arity": 2,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Slow, Garnet"
       },

@@ -140,7 +140,25 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Dispose()
         {
-            socket.Dispose();
+            try
+            {
+                if (socket.Connected)
+                {
+                    // Gracefully shutdown the socket connection
+                    socket.Shutdown(SocketShutdown.Both);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error shutting down socket");
+            }
+            finally
+            {
+                // Always close the socket to release the resources
+                socket.Close();
+                // Dispose of the socket to free up unmanaged resources
+                socket.Dispose();
+            }
         }
 
         void Dispose(SocketAsyncEventArgs e)

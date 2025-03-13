@@ -123,6 +123,12 @@ namespace Garnet.server
         void SafeTruncateAOF(StoreType storeType, bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
 
         /// <summary>
+        /// Safe truncate AOF until address
+        /// </summary>
+        /// <param name="truncateUntil"></param>
+        void SafeTruncateAOF(long truncateUntil);
+
+        /// <summary>
         /// Start cluster operations
         /// </summary>
         void Start();

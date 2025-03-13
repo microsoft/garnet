@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Net;
 using System.Net.Security;
-using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;

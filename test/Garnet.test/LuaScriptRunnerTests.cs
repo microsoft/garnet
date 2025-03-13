@@ -7,11 +7,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Lua;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -507,6 +506,69 @@ namespace Garnet.test
             [Conditional("DEBUG")]
             static void DebugClassicAssertAreEqual(object expected, object actual)
             => ClassicAssert.AreEqual(expected, actual);
+        }
+
+        [Test]
+        public void RedisLogDisabled()
+        {
+            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
+            // Once the issue is resolved the #if can be removed permanently.
+#if NET9_0_OR_GREATER
+            Assert.Ignore($"Ignoring test when running in .NET9.");
+#endif
+
+            // Just because it's hard to test in LuaScriptTests, doing this here
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable), "redis.log(redis.LOG_WARNING, 'foo')");
+
+            runner.CompileForRunner();
+
+            var exc = ClassicAssert.Throws<GarnetException>(() => runner.RunForRunner());
+            ClassicAssert.AreEqual("ERR redis.log(...) disabled in Garnet config", exc.Message);
+        }
+
+        [Test]
+        public void RedisLogSilent()
+        {
+            // Just because it's hard to test in LuaScriptTests, doing this here
+            using var logger = new FakeLogger();
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent), "redis.log(redis.LOG_WARNING, 'foo')", logger: logger);
+
+            runner.CompileForRunner();
+            _ = runner.RunForRunner();
+
+            ClassicAssert.IsFalse(logger.Logs.Any(static x => x.Contains("redis.log")));
+        }
+
+        private sealed class FakeLogger : ILogger, IDisposable
+        {
+            private readonly List<string> logs = new();
+
+            public IEnumerable<string> Logs
+            {
+                get
+                {
+                    lock (logs)
+                    {
+                        return logs.ToArray();
+                    }
+                }
+            }
+
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull
+            => this;
+
+            public bool IsEnabled(LogLevel logLevel)
+            => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+            {
+                lock (logs)
+                {
+                    logs.Add($"{logLevel}: {formatter(state, exception)}");
+                }
+            }
+
+            public void Dispose() { }
         }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -79,14 +78,6 @@ namespace Tsavorite.core
                 logger?.LogError(e, "Exception in StreamingSnapshotScanPhase1");
                 throw;
             }
-            finally
-            {
-                // We started this task before entering PREP_STREAMING_SNAPSHOT_CHECKPOINT, so we
-                // need to wait until the state machine is in PREP_STREAMING_SNAPSHOT_CHECKPOINT
-                while (systemState.Phase != Phase.PREP_STREAMING_SNAPSHOT_CHECKPOINT)
-                    Thread.Yield();
-                GlobalStateMachineStep(systemState);
-            }
         }
 
         class ScanPhase2Functions : IScanIteratorFunctions<TKey, TValue>
@@ -144,17 +135,6 @@ namespace Tsavorite.core
             {
                 logger?.LogError(e, "Exception in StreamingSnapshotScanPhase2");
                 throw;
-            }
-            finally
-            {
-                // Release the semaphore to allow the checkpoint waiting task to proceed
-                _hybridLogCheckpoint.flushedSemaphore.Release();
-
-                // We started this task before entering WAIT_FLUSH, so we
-                // need to wait until the state machine is in WAIT_FLUSH
-                while (systemState.Phase != Phase.WAIT_FLUSH)
-                    Thread.Yield();
-                GlobalStateMachineStep(systemState);
             }
         }
     }

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.Intrinsics.X86;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -259,25 +260,60 @@ namespace Garnet.test
 
         [Test, Order(6)]
         [Category("BITCOUNT")]
-        public void BitmapSimpleBitCountTest()
+        [TestCase(0, TestName = "BitmapSimpleBitCountTest(Hardware accelerated)")]
+        [TestCase(1, TestName = "BitmapSimpleBitCountTest(Avx2 disabled)")]
+        [TestCase(2, TestName = "BitmapSimpleBitCountTest(Software fallback)")]
+        public void BitmapSimpleBitCountTest(int acceleration)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var configOptions = TestUtils.GetConfig();
 
-            int maxBitmapLen = 1 << 12;
-            int iter = 1024;
-            long expectedCount = 0;
-            string key = "SimpleBitCountTest";
-
-            for (int i = 0; i < iter; i++)
+            if (acceleration == 0)
             {
-                long offset = r.Next(1, maxBitmapLen);
-                bool set = !db.StringSetBit(key, offset, true);
-                expectedCount += set ? 1 : 0;
+                SimpleBitCountTest();
+            }
+            else
+            {
+                Dictionary<string, string> env = [];
+
+                if (acceleration == 1)
+                {
+                    if (!Avx2.IsSupported && Ssse3.IsSupported)
+                        Assert.Ignore("Already tested by main path");
+
+                    env.Add("DOTNET_EnableAVX2", "0");
+                }
+                else
+                {
+                    if (!Avx2.IsSupported && !Ssse3.IsSupported)
+                        Assert.Ignore("Already tested by main path");
+
+                    env.Add("DOTNET_EnableHWIntrinsic", "0");
+                }
+
+                using var p = new GarnetServerTestProcess(out configOptions, env);
+
+                SimpleBitCountTest();
             }
 
-            long count = db.StringBitCount(key);
-            ClassicAssert.AreEqual(expectedCount, count);
+            void SimpleBitCountTest()
+            {
+                using var redis = ConnectionMultiplexer.Connect(configOptions);
+                var db = redis.GetDatabase(0);
+                var maxBitmapLen = 1 << 12;
+                var iter = 1024;
+                var expectedCount = 0;
+                var key = "SimpleBitCountTest";
+
+                for (var i = 0; i < iter; i++)
+                {
+                    var offset = r.Next(1, maxBitmapLen);
+                    var set = !db.StringSetBit(key, offset, true);
+                    expectedCount += set ? 1 : 0;
+                }
+
+                var count = db.StringBitCount(key);
+                ClassicAssert.AreEqual(expectedCount, count);
+            }
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
