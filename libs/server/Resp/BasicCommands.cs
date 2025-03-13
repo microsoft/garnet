@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -292,6 +293,8 @@ namespace Garnet.server
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
+            PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref parseState.GetArgSliceByRef(0));
 
             return true;
         }

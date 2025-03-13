@@ -16,7 +16,7 @@ namespace Garnet.server.KeyspaceNotifications
         Keyspace = 1 << 0,    // K
 
         /// <summary>Keyevent events, published with __keyevent@&lt;db&gt;__ prefix.</summary>
-        KeyEvent = 1 << 1,    // E
+        Keyevent = 1 << 1,    // E
 
         /// <summary>Generic commands (non-type specific) like DEL, EXPIRE, RENAME, etc.</summary>
         Generic = 1 << 2,     // g
