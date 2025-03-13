@@ -70,7 +70,7 @@ namespace Garnet.common
             const int StackallocThreshold = 256;
 
             var random = new Random(seed);
-            var shuffledIndices = n <= StackallocThreshold ? 
+            var shuffledIndices = n <= StackallocThreshold ?
                 stackalloc int[StackallocThreshold].Slice(0, n) : new int[n];
 
             for (var i = 0; i < shuffledIndices.Length; i++)

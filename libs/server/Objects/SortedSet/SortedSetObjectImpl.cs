@@ -130,7 +130,7 @@ namespace Garnet.server
 
                     // Copy the member
                     var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan.ToArray();
-                    
+
                     // Avoid multiple hash calculations
                     ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, member, out var exists);
 
@@ -1028,7 +1028,7 @@ namespace Garnet.server
 
                     if (remove)
                         Remove(item.Element, item.Score);
-                    
+
                     elementsInLex.Add(item);
                 }
 
