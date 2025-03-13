@@ -235,12 +235,12 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             ObjectOutputHeader outputHeader = default;
             try
             {
-                if (!Dictionary.TryGetValue(member, out var score))
+                if (!TryGetScore(member, out var score))
                 {
                     while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
