@@ -265,6 +265,14 @@ namespace Garnet.server
             internal int ExpectedValueButFound { get; }
             /// <see cref="CmdStrings.LUA_missing_bytes_in_input"/>
             internal int MissingBytesInInput { get; }
+            /// <see cref="CmdStrings.LUA_unexpected_msgpack_sigil"/>
+            internal int UnexpectedMsgPackSigil { get; }
+            /// <see cref="CmdStrings.LUA_msgpack_string_too_long"/>
+            internal int MsgPackStringTooLong { get; }
+            /// <see cref="CmdStrings.LUA_msgpack_array_too_long"/>
+            internal int MsgPackArrayTooLong { get; }
+            /// <see cref="CmdStrings.LUA_msgpack_map_too_long"/>
+            internal int MsgPackMapTooLong { get; }
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
@@ -330,6 +338,10 @@ namespace Garnet.server
                 FoundTooManyNested = ConstantStringToRegistry(ref state, CmdStrings.LUA_found_too_many_nested);
                 ExpectedValueButFound = ConstantStringToRegistry(ref state, CmdStrings.LUA_expected_value_but_found_invalid);
                 MissingBytesInInput = ConstantStringToRegistry(ref state, CmdStrings.LUA_missing_bytes_in_input);
+                UnexpectedMsgPackSigil = ConstantStringToRegistry(ref state, CmdStrings.LUA_unexpected_msgpack_sigil);
+                MsgPackStringTooLong = ConstantStringToRegistry(ref state, CmdStrings.LUA_msgpack_string_too_long);
+                MsgPackArrayTooLong = ConstantStringToRegistry(ref state, CmdStrings.LUA_msgpack_array_too_long);
+                MsgPackMapTooLong = ConstantStringToRegistry(ref state, CmdStrings.LUA_msgpack_map_too_long);
             }
 
             /// <summary>

@@ -452,5 +452,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_found_too_many_nested => "Found too many nested data structures (1001)"u8;
         public static ReadOnlySpan<byte> LUA_expected_value_but_found_invalid => "Expected value but found invalid token."u8;
         public static ReadOnlySpan<byte> LUA_missing_bytes_in_input => "Missing bytes in input."u8;
+        public static ReadOnlySpan<byte> LUA_unexpected_msgpack_sigil => "Unexpected MsgPack sigil"u8;
+        public static ReadOnlySpan<byte> LUA_msgpack_string_too_long => "MsgPack string is too long"u8;
+        public static ReadOnlySpan<byte> LUA_msgpack_array_too_long => "MsgPack array is too long"u8;
+        public static ReadOnlySpan<byte> LUA_msgpack_map_too_long => "MsgPack map is too long"u8;
     }
 }

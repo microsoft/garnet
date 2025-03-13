@@ -1814,7 +1814,10 @@ namespace Garnet.server
 
                 try
                 {
-                    Decode(ref data, ref state);
+                    if (!TryDecode(this, ref data, out var constStrErrId))
+                    {
+                        return LuaWrappedError(0, constStrErrId);
+                    }
                     decodedCount++;
                 }
                 catch (Exception e)
@@ -1835,365 +1838,470 @@ namespace Garnet.server
             return decodedCount + 2;
 
             // Decode a msg pack
-            static void Decode(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecode(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 var sigil = data[0];
                 data = data[1..];
 
                 switch (sigil)
                 {
-                    case 0xC0: DecodeNull(ref data, ref state); return;
-                    case 0xC2: DecodeBoolean(false, ref data, ref state); return;
-                    case 0xC3: DecodeBoolean(true, ref data, ref state); return;
+                    case 0xC0: return TryDecodeNull(self, ref data, out constStrErrId);
+                    case 0xC2: return TryDecodeBoolean(self, false, ref data, out constStrErrId);
+                    case 0xC3: return TryDecodeBoolean(self, true, ref data, out constStrErrId);
                     // 7-bit positive integers handled below
                     // 5-bit negative integers handled below
-                    case 0xCC: DecodeUInt8(ref data, ref state); return;
-                    case 0xCD: DecodeUInt16(ref data, ref state); return;
-                    case 0xCE: DecodeUInt32(ref data, ref state); return;
-                    case 0xCF: DecodeUInt64(ref data, ref state); return;
-                    case 0xD0: DecodeInt8(ref data, ref state); return;
-                    case 0xD1: DecodeInt16(ref data, ref state); return;
-                    case 0xD2: DecodeInt32(ref data, ref state); return;
-                    case 0xD3: DecodeInt64(ref data, ref state); return;
-                    case 0xCA: DecodeSingle(ref data, ref state); return;
-                    case 0xCB: DecodeDouble(ref data, ref state); return;
+                    case 0xCC: return TryDecodeUInt8(self, ref data, out constStrErrId);
+                    case 0xCD: return TryDecodeUInt16(self, ref data, out constStrErrId);
+                    case 0xCE: return TryDecodeUInt32(self, ref data, out constStrErrId);
+                    case 0xCF: return TryDecodeUInt64(self, ref data, out constStrErrId);
+                    case 0xD0: return TryDecodeInt8(self, ref data, out constStrErrId);
+                    case 0xD1: return TryDecodeInt16(self, ref data, out constStrErrId);
+                    case 0xD2: return TryDecodeInt32(self, ref data, out constStrErrId);
+                    case 0xD3: return TryDecodeInt64(self, ref data, out constStrErrId);
+                    case 0xCA: return TryDecodeSingle(self, ref data, out constStrErrId);
+                    case 0xCB: return TryDecodeDouble(self, ref data, out constStrErrId);
                     // <= 31 byte strings handled below
-                    case 0xD9: DecodeSmallString(ref data, ref state); return;
-                    case 0xDA: DecodeMidString(ref data, ref state); return;
-                    case 0xDB: DecodeLargeString(ref data, ref state); return;
+                    case 0xD9: return TryDecodeSmallString(self, ref data, out constStrErrId);
+                    case 0xDA: return TryDecodeMidString(self, ref data, out constStrErrId);
+                    case 0xDB: return TryDecodeLargeString(self, ref data, out constStrErrId);
                     // We treat bins as strings
                     case 0xC4: goto case 0xD9;
                     case 0xC5: goto case 0xDA;
                     case 0xC6: goto case 0xDB;
                     // <= 15 element arrays are handled below
-                    case 0xDC: DecodeMidArray(ref data, ref state); return;
-                    case 0xDD: DecodeLargeArray(ref data, ref state); return;
+                    case 0xDC: return TryDecodeMidArray(self, ref data, out constStrErrId);
+                    case 0xDD: return TryDecodeLargeArray(self, ref data, out constStrErrId);
                     // <= 15 pair maps are handled below
-                    case 0xDE: DecodeMidMap(ref data, ref state); return;
-                    case 0xDF: DecodeLargeMap(ref data, ref state); return;
+                    case 0xDE: return TryDecodeMidMap(self, ref data, out constStrErrId);
+                    case 0xDF: return TryDecodeLargeMap(self, ref data, out constStrErrId);
 
                     default:
                         if ((sigil & 0b1000_0000) == 0)
                         {
-                            DecodeTinyUInt(sigil, ref state);
-                            return;
+                            return TryDecodeTinyUInt(self, sigil, out constStrErrId);
                         }
                         else if ((sigil & 0b1110_0000) == 0b1110_0000)
                         {
-                            DecodeTinyInt(sigil, ref state);
-                            return;
+                            return TryDecodeTinyInt(self, sigil, out constStrErrId);
                         }
                         else if ((sigil & 0b1110_0000) == 0b1010_0000)
                         {
-                            DecodeTinyString(sigil, ref data, ref state);
-                            return;
+                            return TryDecodeTinyString(self, sigil, ref data, out constStrErrId);
                         }
                         else if ((sigil & 0b1111_0000) == 0b1001_0000)
                         {
-                            DecodeSmallArray(sigil, ref data, ref state);
-                            return;
+                            return TryDecodeSmallArray(self, sigil, ref data, out constStrErrId);
                         }
                         else if ((sigil & 0b1111_0000) == 0b1000_0000)
                         {
-                            DecodeSmallMap(sigil, ref data, ref state);
-                            return;
+                            return TryDecodeSmallMap(self, sigil, ref data, out constStrErrId);
                         }
 
-                        _ = state.RaiseError($"Unexpected MsgPack sigil {sigil}/x{sigil:X2}/b{sigil:B8}");
-                        return;
+                        self.logger?.LogError("Unexpected MsgPack sigil {sigil}", sigil);
+
+                        constStrErrId = self.constStrs.UnexpectedMsgPackSigil;
+                        return false;
                 }
             }
 
             // Decode a null push it to the stack
-            static void DecodeNull(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeNull(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNil();
+                self.state.PushNil();
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a boolean and push it to the stack
-            static void DecodeBoolean(bool b, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeBoolean(LuaRunner self, bool b, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushBoolean(b);
+                self.state.PushBoolean(b);
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a byte, moving past it in data and pushing it to the stack
-            static void DecodeUInt8(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeUInt8(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(data[0]);
+                self.state.PushNumber(data[0]);
                 data = data[1..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a positive 7-bit value, pushing it to the stack
-            static void DecodeTinyUInt(byte sigil, ref LuaStateWrapper state)
+            static bool TryDecodeTinyUInt(LuaRunner self, byte sigil, out int constStrErrId)
             {
-                state.PushNumber(sigil);
+                self.state.PushNumber(sigil);
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a ushort, moving past it in data and pushing it to the stack
-            static void DecodeUInt16(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeUInt16(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadUInt16BigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadUInt16BigEndian(data));
                 data = data[2..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a uint, moving past it in data and pushing it to the stack
-            static void DecodeUInt32(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeUInt32(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadUInt32BigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadUInt32BigEndian(data));
                 data = data[4..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a ulong, moving past it in data and pushing it to the stack
-            static void DecodeUInt64(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeUInt64(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadUInt64BigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadUInt64BigEndian(data));
                 data = data[8..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a negative 5-bit value, pushing it to the stack
-            static void DecodeTinyInt(byte sigil, ref LuaStateWrapper state)
+            static bool TryDecodeTinyInt(LuaRunner self, byte sigil, out int constStrErrId)
             {
                 var signExtended = (int)(0xFFFF_FF00 | sigil);
-                state.PushNumber(signExtended);
+                self.state.PushNumber(signExtended);
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a sbyte, moving past it in data and pushing it to the stack
-            static void DecodeInt8(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeInt8(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber((sbyte)data[0]);
+                self.state.PushNumber((sbyte)data[0]);
                 data = data[1..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a short, moving past it in data and pushing it to the stack
-            static void DecodeInt16(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeInt16(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadInt16BigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadInt16BigEndian(data));
                 data = data[2..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a int, moving past it in data and pushing it to the stack
-            static void DecodeInt32(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeInt32(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadInt32BigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadInt32BigEndian(data));
                 data = data[4..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a long, moving past it in data and pushing it to the stack
-            static void DecodeInt64(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeInt64(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadInt64BigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadInt64BigEndian(data));
                 data = data[8..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a float, moving past it in data and pushing it to the stack
-            static void DecodeSingle(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeSingle(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadSingleBigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadSingleBigEndian(data));
                 data = data[4..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a double, moving past it in data and pushing it to the stack
-            static void DecodeDouble(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeDouble(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                state.PushNumber(BinaryPrimitives.ReadDoubleBigEndian(data));
+                self.state.PushNumber(BinaryPrimitives.ReadDoubleBigEndian(data));
                 data = data[8..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a string size <= 31, moving past it in data and pushing it to the stack
-            static void DecodeTinyString(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeTinyString(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 var len = sigil & 0b0001_1111;
                 var str = data[..len];
 
-                state.PushBuffer(str);
+                self.state.PushBuffer(str);
                 data = data[len..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a string size <= 255, moving past it in data and pushing it to the stack
-            static void DecodeSmallString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeSmallString(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 var len = data[0];
                 data = data[1..];
 
                 var str = data[..len];
 
-                state.PushBuffer(str);
+                self.state.PushBuffer(str);
 
                 data = data[str.Length..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a string size <= 65,535, moving past it in data and pushing it to the stack
-            static void DecodeMidString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeMidString(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
 
                 var str = data[..(int)len];
 
-                state.PushBuffer(str);
+                self.state.PushBuffer(str);
 
                 data = data[str.Length..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a string size <= 4,294,967,295, moving past it in data and pushing it to the stack
-            static void DecodeLargeString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeLargeString(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 var len = BinaryPrimitives.ReadUInt32BigEndian(data);
                 data = data[4..];
 
                 if ((int)len < 0)
                 {
-                    _ = state.RaiseError($"String length is too long: {len}");
-                    return;
+                    self.logger?.LogError("String length is too long: {len}", len);
+
+                    constStrErrId = self.constStrs.MsgPackStringTooLong;
+                    return false;
                 }
 
                 var str = data[..(int)len];
 
-                state.PushBuffer(str);
+                self.state.PushBuffer(str);
 
                 data = data[str.Length..];
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode an array with <= 15 items, moving past it in data and pushing it to the stack
-            static void DecodeSmallArray(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeSmallArray(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 // Reserve extra space for the temporary item
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
                 var len = sigil & 0b0000_1111;
 
-                state.CreateTable(len, 0);
-                var arrayIndex = state.StackTop;
+                self.state.CreateTable(len, 0);
+                var arrayIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the element onto the stack
-                    Decode(ref data, ref state);
-                    state.RawSetInteger(arrayIndex, i);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
+
+                    self.state.RawSetInteger(arrayIndex, i);
                 }
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode an array with <= 65,535 items, moving past it in data and pushing it to the stack
-            static void DecodeMidArray(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeMidArray(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 // Reserve extra space for the temporary item
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
 
-                state.CreateTable(len, 0);
-                var arrayIndex = state.StackTop;
+                self.state.CreateTable(len, 0);
+                var arrayIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the element onto the stack
-                    Decode(ref data, ref state);
-                    state.RawSetInteger(arrayIndex, i);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
+
+                    self.state.RawSetInteger(arrayIndex, i);
                 }
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode an array with <= 4,294,967,295 items, moving past it in data and pushing it to the stack
-            static void DecodeLargeArray(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeLargeArray(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 // Reserve extra space for the temporary item
-                state.ForceMinimumStackCapacity(1);
+                self.state.ForceMinimumStackCapacity(1);
 
                 var len = BinaryPrimitives.ReadUInt32BigEndian(data);
                 data = data[4..];
 
                 if ((int)len < 0)
                 {
-                    _ = state.RaiseError($"Array length is too long: {len}");
-                    return;
+                    self.logger?.LogError("Array length is too long: {len}", len);
+
+                    constStrErrId = self.constStrs.MsgPackArrayTooLong;
+                    return false;
                 }
 
-                state.CreateTable((int)len, 0);
-                var arrayIndex = state.StackTop;
+                self.state.CreateTable((int)len, 0);
+                var arrayIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the element onto the stack
-                    Decode(ref data, ref state);
-                    state.RawSetInteger(arrayIndex, i);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
+
+                    self.state.RawSetInteger(arrayIndex, i);
                 }
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode an map with <= 15 key-value pairs, moving past it in data and pushing it to the stack
-            static void DecodeSmallMap(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeSmallMap(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 // Reserve extra space for the temporary key & value
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
                 var len = sigil & 0b0000_1111;
 
-                state.CreateTable(0, len);
-                var mapIndex = state.StackTop;
+                self.state.CreateTable(0, len);
+                var mapIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    Decode(ref data, ref state);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
 
                     // Push the value onto the stack
-                    Decode(ref data, ref state);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
 
-                    state.RawSet(mapIndex);
+                    self.state.RawSet(mapIndex);
                 }
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a map with <= 65,535 key-value pairs, moving past it in data and pushing it to the stack
-            static void DecodeMidMap(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeMidMap(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 // Reserve extra space for the temporary key & value
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
 
-                state.CreateTable(0, len);
-                var mapIndex = state.StackTop;
+                self.state.CreateTable(0, len);
+                var mapIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    Decode(ref data, ref state);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
 
                     // Push the value onto the stack
-                    Decode(ref data, ref state);
+                    if (!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
 
-                    state.RawSet(mapIndex);
+                    self.state.RawSet(mapIndex);
                 }
+
+                constStrErrId = -1;
+                return true;
             }
 
             // Decode a map with <= 4,294,967,295 key-value pairs, moving past it in data and pushing it to the stack
-            static void DecodeLargeMap(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            static bool TryDecodeLargeMap(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
                 // Reserve extra space for the temporary key & value
-                state.ForceMinimumStackCapacity(2);
+                self.state.ForceMinimumStackCapacity(2);
 
                 var len = BinaryPrimitives.ReadUInt32BigEndian(data);
                 data = data[4..];
 
                 if ((int)len < 0)
                 {
-                    _ = state.RaiseError($"Map length is too long: {len}");
-                    return;
+                    self.logger?.LogError("Map length is too long: {len}", len);
+
+                    constStrErrId = self.constStrs.MsgPackMapTooLong;
+                    return false;
                 }
 
-                state.CreateTable(0, (int)len);
-                var mapIndex = state.StackTop;
+                self.state.CreateTable(0, (int)len);
+                var mapIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    Decode(ref data, ref state);
+                    if(!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
 
                     // Push the value onto the stack
-                    Decode(ref data, ref state);
+                    if(!TryDecode(self, ref data, out constStrErrId))
+                    {
+                        return false;
+                    }
 
-                    state.RawSet(mapIndex);
+                    self.state.RawSet(mapIndex);
                 }
+
+                constStrErrId = -1;
+                return true;
             }
         }
 
