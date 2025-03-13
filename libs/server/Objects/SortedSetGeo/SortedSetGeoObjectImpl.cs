@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -98,26 +99,31 @@ namespace Garnet.server
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
                     if (score != -1)
                     {
+                        // Copy the member
                         var memberByteArray = member.ToArray();
-                        if (!Dictionary.TryGetValue(memberByteArray, out var scoreStored))
-                        {
-                            if (nx)
-                            {
-                                Dictionary.Add(memberByteArray, score);
-                                sortedSet.Add((score, memberByteArray));
-                                elementsAdded++;
 
-                                this.UpdateSize(member);
-                                elementsChanged++;
-                            }
-                        }
-                        else if (!nx && scoreStored != score)
+                        // Avoid multiple hash calculations
+                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, memberByteArray, out var exists);
+
+                        if (!exists && nx)
                         {
-                            Dictionary[memberByteArray] = score;
-                            var success = sortedSet.Remove((scoreStored, memberByteArray));
-                            Debug.Assert(success);
-                            success = sortedSet.Add((score, memberByteArray));
-                            Debug.Assert(success);
+                            scoreRef = score;
+                            sortedSet.Add((score, memberByteArray));
+                            elementsAdded++;
+
+                            this.UpdateSize(member);
+                            elementsChanged++;
+                        }
+                        else if (!nx && scoreRef != score)
+                        {
+                            // Remove old sorted set entry
+                            var removed = sortedSet.Remove((scoreRef, memberByteArray));
+                            Debug.Assert(removed);
+
+                            // Update the score and insert new sorted set entry
+                            scoreRef = score;
+                            removed = sortedSet.Add((score, memberByteArray));
+                            Debug.Assert(removed);
                             elementsChanged++;
                         }
                     }
