@@ -349,7 +349,7 @@ namespace Garnet.server
             ///
             /// So instead we stash them in the Registry and load them by index
             /// </summary>
-            private int ConstantStringToRegistry(ref LuaStateWrapper state, ReadOnlySpan<byte> str)
+            private static int ConstantStringToRegistry(ref LuaStateWrapper state, ReadOnlySpan<byte> str)
             {
                 state.PushBuffer(str);
                 return state.Ref();
