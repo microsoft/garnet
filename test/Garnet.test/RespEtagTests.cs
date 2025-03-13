@@ -208,6 +208,17 @@ namespace Garnet.test
             // confirm expiration retained -> TTL should exist
             ttl = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(ttl.HasValue);
+
+
+            // Scenario: smaller length update (IPU) of a key with existing etag should increment the ETAG and retain the expiration
+            res = db.Execute("SET", key, "oneofusoneofus", "EX", 10000);
+            // when no etag then count 0 as it's existing etag
+            updatedEtagRes = long.Parse(db.Execute("SETIFMATCH", key, "i", 0)[0].ToString());
+            ClassicAssert.AreEqual(1, updatedEtagRes);
+
+            // confirm expiration retained -> TTL should exist
+            ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(ttl.HasValue);
         }
 
         #endregion
