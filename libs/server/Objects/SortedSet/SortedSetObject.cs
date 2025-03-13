@@ -139,7 +139,7 @@ namespace Garnet.server
         private readonly SortedSet sortedSet;
 
 #if NET9_0_OR_GREATER
-        private readonly SortedSet.AlternateLookup<SortedSetComparer.AlternateEntry> setLookup;
+        private readonly SortedSet.AlternateLookup<SortedSetComparer.AlternateEntry> sortedSetLookup;
         private readonly Dictionary<byte[], double>.AlternateLookup<ReadOnlySpan<byte>> dictionaryLookup;
 #endif
 
@@ -157,7 +157,7 @@ namespace Garnet.server
             sortedSet = new(SortedSetComparer.Instance);
             Dictionary = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
 #if NET9_0_OR_GREATER
-            setLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
+            sortedSetLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
             dictionaryLookup = Dictionary.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
         }
@@ -171,7 +171,7 @@ namespace Garnet.server
             sortedSet = new(SortedSetComparer.Instance);
             Dictionary = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
 #if NET9_0_OR_GREATER
-            setLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
+            sortedSetLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
             dictionaryLookup = Dictionary.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
 
@@ -187,13 +187,13 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SortedSetObject(SortedSet sortedSet, Dictionary<byte[], double> sortedSetDict, long expiration, long size)
+        private SortedSetObject(SortedSet sortedSet, Dictionary<byte[], double> sortedSetDict, long expiration, long size)
             : base(expiration, size)
         {
             this.sortedSet = sortedSet;
             this.Dictionary = sortedSetDict;
 #if NET9_0_OR_GREATER
-            setLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
+            sortedSetLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
             dictionaryLookup = Dictionary.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
         }
@@ -247,10 +247,10 @@ namespace Garnet.server
             if (!dictionaryLookup.TryGetValue(element, out var score))
                 return false;
             dictionaryLookup.Remove(element);
-            var removed = setLookup.Remove(new(score, element));
+            var removed = sortedSetLookup.Remove(new(score, element));
 #else
             var itemArray = element.ToArray();
-            if (Dictionary.Remove(itemArray, out var score))
+            if (!Dictionary.Remove(itemArray, out var score))
                 return false;
             var removed = sortedSet.Remove((score, itemArray));
 #endif
@@ -268,16 +268,16 @@ namespace Garnet.server
         /// </remarks>
         /// <param name="element">The element to remove.</param>
         /// <param name="score">The score associated with <paramref name="element"/> to remove.</param>
-        /// <returns><see langword="true"/> if the <paramref name="element"/> with  is successfully found and removed; otherwise, <see langword="false"/>.</returns>
+        /// <returns><see langword="true"/> if the <paramref name="element"/> with its associated <paramref name="score"/> is successfully found and removed; otherwise, <see langword="false"/>.</returns>
         public bool Remove(ReadOnlySpan<byte> element, double score)
         {
 #if NET9_0_OR_GREATER
             if (!dictionaryLookup.Remove(element))
                 return false;
-            var removed = setLookup.Remove(new(score, element));
+            var removed = sortedSetLookup.Remove(new(score, element));
 #else
             var itemArray = element.ToArray();
-            if (Dictionary.Remove(itemArray))
+            if (!Dictionary.Remove(itemArray))
                 return false;
             var removed = sortedSet.Remove((score, itemArray));
 #endif

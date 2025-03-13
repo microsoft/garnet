@@ -117,13 +117,13 @@ namespace Garnet.server
                         else if (!nx && scoreRef != score)
                         {
                             // Remove old sorted set entry
-                            var removed = sortedSet.Remove((scoreRef, memberByteArray));
-                            Debug.Assert(removed);
+                            var success = sortedSet.Remove((scoreRef, memberByteArray));
+                            Debug.Assert(success);
 
                             // Update the score and insert new sorted set entry
                             scoreRef = score;
-                            removed = sortedSet.Add((score, memberByteArray));
-                            Debug.Assert(removed);
+                            success = sortedSet.Add((score, memberByteArray));
+                            Debug.Assert(success);
                             elementsChanged++;
                         }
                     }

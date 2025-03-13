@@ -2638,6 +2638,40 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
+
+        [Test]
+        [TestCase(10)]
+        [TestCase(50)]
+        [TestCase(100)]
+        public void CanDoZRemMultipleMembers(int bytesSent)
+        {
+            //ZREM key member
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand("ZADD myzset 0 aaaa 0 b 0 c 0 d 0 e");
+            lightClientRequest.SendCommand("ZADD myzset 0 foo 0 zap 0 zip 0 ALPHA 0 alpha");
+
+            response = lightClientRequest.SendCommandChunks("ZREM myzset b c d e", bytesSent);
+            var expectedResponse = ":4\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommandChunks("ZREM myzset aaaa ALPHA", bytesSent);
+            expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommandChunks("ZREM myzset foo zap zip alpha", bytesSent);
+            expectedResponse = ":4\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommandChunks("ZREM myzset aaaa", bytesSent);
+            expectedResponse = ":0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
         [Test]
         [TestCase(10)]
         [TestCase(50)]
