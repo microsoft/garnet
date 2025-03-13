@@ -104,7 +104,12 @@ namespace Garnet.server
                 RespCommand.GEOHASH => SortedSetObjectKeys(SortedSetOperation.GEOHASH, inputCount),
                 RespCommand.GEODIST => SortedSetObjectKeys(SortedSetOperation.GEODIST, inputCount),
                 RespCommand.GEOPOS => SortedSetObjectKeys(SortedSetOperation.GEOPOS, inputCount),
-                RespCommand.GEOSEARCH => SortedSetObjectKeys(SortedSetOperation.GEOSEARCH, inputCount),
+                RespCommand.GEORADIUS => GeoCommands(RespCommand.GEORADIUS, inputCount),
+                RespCommand.GEORADIUS_RO => GeoCommands(RespCommand.GEORADIUS_RO, inputCount),
+                RespCommand.GEORADIUSBYMEMBER => GeoCommands(RespCommand.GEORADIUSBYMEMBER, inputCount),
+                RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, inputCount),
+                RespCommand.GEOSEARCH => GeoCommands(RespCommand.GEOSEARCH, inputCount),
+                RespCommand.GEOSEARCHSTORE => GeoCommands(RespCommand.GEOSEARCHSTORE, inputCount),
                 RespCommand.ZREVRANGE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
                 RespCommand.ZREVRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
@@ -197,9 +202,71 @@ namespace Garnet.server
             };
         }
 
-        private int SortedSetObjectKeys(SortedSetOperation command, int inputCount)
+        private int GeoCommands(RespCommand command, int inputCount)
         {
+            var idx = 0;
+            ArgSlice key;
 
+            if (command == RespCommand.GEOSEARCHSTORE)
+            {
+                key = respSession.parseState.GetArgSliceByRef(0);
+                SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                SaveKeyArgSlice(key);
+                idx = 1;
+            }
+
+            key = respSession.parseState.GetArgSliceByRef(++idx);
+            SaveKeyEntryToLock(key, true, LockType.Shared);
+            SaveKeyArgSlice(key);
+
+            if (command == RespCommand.GEORADIUS_RO)
+                return 1;
+
+            if (command == RespCommand.GEORADIUSBYMEMBER_RO || command == RespCommand.GEORADIUSBYMEMBER)
+            {
+                key = respSession.parseState.GetArgSliceByRef(++idx);
+                SaveKeyEntryToLock(key, true, LockType.Shared);
+                SaveKeyArgSlice(key);
+                if (command == RespCommand.GEORADIUSBYMEMBER_RO)
+                    return 2;
+            }
+
+            if (command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUSBYMEMBER)
+            {
+                for (var i = idx; i < inputCount - 1; ++i)
+                {
+                    var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                    if (span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
+                        span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                    {
+                        key = respSession.parseState.GetArgSliceByRef(i + 1);
+                        SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                        SaveKeyArgSlice(key);
+                        break;
+                    }
+                }
+
+                return (command == RespCommand.GEORADIUS) ? 1 : 2;
+            }
+
+            // GEOSEARCH, GEOSEARCHSTORE
+            for (var i = idx; i < inputCount - 1; ++i)
+            {
+                if (respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FROMMEMBER))
+                {
+                    key = respSession.parseState.GetArgSliceByRef(i + 1);
+                    SaveKeyEntryToLock(key, true, LockType.Shared);
+                    SaveKeyArgSlice(key);
+                    break;
+                }
+            }
+
+            return idx + 1;
+        }
+
+        private int SortedSetObjectKeys(SortedSetOperation command, int inputCount, int sortedSetType = 0)
+        {
             return command switch
             {
                 SortedSetOperation.ZADD => SingleKey(1, true, LockType.Exclusive),

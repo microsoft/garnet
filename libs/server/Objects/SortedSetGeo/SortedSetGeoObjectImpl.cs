@@ -436,7 +436,7 @@ namespace Garnet.server
 
                     if (!byRadiusCmd)
                     {
-                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
+                        if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FROMMEMBER))
                         {
                             if (opts.origin != GeoOriginType.Undefined)
                             {
