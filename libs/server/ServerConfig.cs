@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -194,9 +195,11 @@ namespace Garnet.server
                         else errorMsg += " TLS is disabled.";
                     }
                 }
-                if (notifiyKeyspaceEventsArguments != null)
+
+                // TODO: Parse argument string into enum flags and remove second if statement
+                if (notifiyKeyspaceEventsArguments != null && notifiyKeyspaceEventsArguments.Equals("KEA"))
                 {
-                    storeWrapper.serverOptions.NotifiyKeyspaceEventsArguments = notifiyKeyspaceEventsArguments;
+                    storeWrapper.serverOptions.AllowedKeyspaceNotifications = KeyspaceNotificationType.All | KeyspaceNotificationType.Keyspace | KeyspaceNotificationType.Keyevent;
                 }
             }
 

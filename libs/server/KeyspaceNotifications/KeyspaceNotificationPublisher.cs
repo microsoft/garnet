@@ -30,12 +30,12 @@ namespace Garnet.server
 
         public void PublishKeyevent(ref ArgSlice argSlice)
         {
-            Publish(ArgSlice.FromPinnedSpan(KeyspaceNotificationStrings.KeyspacePrefix), argSlice);
+            subscribeBroker.Publish(ArgSlice.FromPinnedSpan(KeyspaceNotificationStrings.KeyspacePrefix), argSlice);
         }
 
         public void PublishKeyspace(ref ArgSlice argSlice)
         {
-            Publish(ArgSlice.FromPinnedSpan(KeyspaceNotificationStrings.KeyeventPrefix), argSlice);
+            subscribeBroker.Publish(ArgSlice.FromPinnedSpan(KeyspaceNotificationStrings.KeyeventPrefix), argSlice);
         }
     }
 }
