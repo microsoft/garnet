@@ -60,6 +60,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TxnExecuteTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var tran = db.CreateTransaction();
+            string value1 = "abcdefg1";
+            string value2 = "abcdefg2";
+
+            tran.ExecuteAsync("SET", ["mykey1", value1]);
+            tran.ExecuteAsync("SET", ["mykey2", value2]);
+            bool committed = tran.Execute();
+
+            string string1 = db.StringGet("mykey1");
+            string string2 = db.StringGet("mykey2");
+
+            ClassicAssert.AreEqual(string1, value1);
+            ClassicAssert.AreEqual(string2, value2);
+        }
+
+        [Test]
         public void TxnGetTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
