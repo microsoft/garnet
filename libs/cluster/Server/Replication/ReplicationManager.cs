@@ -64,6 +64,11 @@ namespace Garnet.cluster
         public string PrimaryReplId => currentReplicationConfig.primary_replid;
         public string PrimaryReplId2 => currentReplicationConfig.primary_replid2;
 
+        /// <summary>
+        /// Recovery status
+        /// </summary>
+        public RecoveryStatus recoverStatus;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReplicationLogCheckpointManager GetCkptManager(StoreType storeType)
         {
@@ -112,7 +117,7 @@ namespace Garnet.cluster
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery())
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery(RecoveryStatus.InitializeRecover))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -165,22 +170,24 @@ namespace Garnet.cluster
         /// <summary>
         /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
         /// </summary>
-        public bool StartRecovery()
+        public bool StartRecovery(RecoveryStatus recoverStatus)
         {
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
             {
-                logger?.LogError("Error could not acquire checkpoint lock");
+                logger?.LogError("Error could not acquire checkpoint lock [{recoverStatus}]", recoverStatus);
                 return false;
             }
 
             if (!recoverLock.TryWriteLock())
             {
-                logger?.LogError("Error could not acquire recover lock");
+                logger?.LogError("Error could not acquire recover lock [{recoverStatus}]", recoverStatus);
                 // If failed to acquire recoverLock re-enable checkpoint taking
                 clusterProvider.storeWrapper.ResumeCheckpoints();
                 return false;
             }
 
+            this.recoverStatus = recoverStatus;
+            logger?.LogTrace("Success recover lock [{recoverStatus}]", recoverStatus);
             return true;
         }
 
@@ -189,6 +196,8 @@ namespace Garnet.cluster
         /// </summary>
         public void SuspendRecovery()
         {
+            logger?.LogTrace("Release recover lock [{recoverStatus}]", recoverStatus);
+            recoverStatus = RecoveryStatus.NoRecovery;
             recoverLock.WriteUnlock();
             clusterProvider.storeWrapper.ResumeCheckpoints();
         }
