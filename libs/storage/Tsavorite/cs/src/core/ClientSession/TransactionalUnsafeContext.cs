@@ -48,8 +48,8 @@ namespace Tsavorite.core
         public void BeginTransaction() => clientSession.AcquireTransactional(sessionFunctions);
 
         /// <inheritdoc/>
-        public void EndTransaction() => clientSession.ReleaseTransactional();
-        #endregion Begin/EndTransaction
+        public void EndTransaction() => clientSession.ReleaseTransactional(sessionFunctions);
+        #endregion Begin/EndTransactional
 
         #region Key Locking
 
@@ -72,7 +72,7 @@ namespace Tsavorite.core
         public void Lock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for TransactionalUnsafeContext.Lock()");
             while (true)
             {
@@ -120,8 +120,8 @@ namespace Tsavorite.core
         public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
-            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for TransactionalUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for TransactionalUnsafeContext.TryLock()");
 
             return TransactionalContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoTransactionalTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
         }
@@ -145,8 +145,8 @@ namespace Tsavorite.core
         public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, TimeSpan timeout, CancellationToken cancellationToken)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
-            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for TransactionalUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for TransactionalUnsafeContext.TryPromoteLock()");
 
             return TransactionalContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
         }
@@ -158,7 +158,7 @@ namespace Tsavorite.core
         public void Unlock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for TransactionalUnsafeContext.Unlock()");
 
             TransactionalContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualUnlock(clientSession, keys, start, start + count - 1);

@@ -184,8 +184,8 @@ namespace Garnet.server
                 .Where(ci => !ci.Value.IsInternal)
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
             ExternalRespSubCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpExternalSubCommandsInfo);
-            AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, AllRespCommandsInfo.Keys.ToArray());
-            ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, ExternalRespCommandsInfo.Keys.ToArray());
+            AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. AllRespCommandsInfo.Keys]);
+            ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. ExternalRespCommandsInfo.Keys]);
             FlattenedRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpFlattenedRespCommandsInfo);
 
             AclCommandInfo =

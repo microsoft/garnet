@@ -171,10 +171,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void InitialUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void InitialUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int key = NumRecs;
 
             functions.cancelLocation = CancelLocation.NeedInitialUpdate;
@@ -191,10 +191,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void CopyUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void CopyUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int key = NumRecs / 2;
 
             void do_it()
@@ -224,10 +224,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void InPlaceUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void InPlaceUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int key = NumRecs / 2;
 
             // Note: ExpirationTests tests the combination of CancelOperation and DeleteRecord
@@ -240,10 +240,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SingleWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SingleWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int key = NumRecs + 1;
 
             functions.cancelLocation = CancelLocation.SingleWriter;
@@ -255,10 +255,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ConcurrentWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ConcurrentWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int key = NumRecs / 2;
 
             functions.cancelLocation = CancelLocation.ConcurrentWriter;

@@ -40,14 +40,12 @@ namespace Tsavorite.core
         internal ulong sharedLockCount;
         internal ulong exclusiveLockCount;
 
-        bool isAcquiredTransactional;
-
         ScanCursorState<TKey, TValue> scanCursorState;
 
         internal void AcquireTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
             where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsNotAcquiredTransactional();
+            CheckIsNotAcquiredTransactional(sessionFunctions);
 
             while (true)
             {
@@ -60,40 +58,44 @@ namespace Tsavorite.core
                 }
 
                 store.IncrementNumTransactionalSessions();
-                isAcquiredTransactional = true;
+                sessionFunctions.Ctx.isAcquiredTransactional = true;
 
                 if (!IsInPreparePhase())
                     break;
-                InternalReleaseTransactional();
+                InternalReleaseTransactional(sessionFunctions);
                 _ = Thread.Yield();
             }
         }
 
-        internal void ReleaseTransactional()
+        internal void ReleaseTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsAcquiredTransactional();
+            CheckIsAcquiredTransactional(sessionFunctions);
             if (TotalLockCount > 0)
-                throw new TsavoriteException($"ReleaseTransactional called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseTransactional();
+                throw new TsavoriteException($"EndTransactional called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
+            InternalReleaseTransactional(sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseTransactional()
+        private void InternalReleaseTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            isAcquiredTransactional = false;
+            sessionFunctions.Ctx.isAcquiredTransactional = false;
             store.DecrementNumLockingSessions();
         }
 
-        internal void CheckIsAcquiredTransactional()
+        internal void CheckIsAcquiredTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (!isAcquiredTransactional)
-                throw new TsavoriteException("Transactional method call when AcquireTransactional has not been called");
+            if (!sessionFunctions.Ctx.isAcquiredTransactional)
+                throw new TsavoriteException("Transactional method call when BeginTransactional has not been called");
         }
 
-        void CheckIsNotAcquiredTransactional()
+        void CheckIsNotAcquiredTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            if (isAcquiredTransactional)
-                throw new TsavoriteException("AcquireTransactional cannot be called twice (call ReleaseTransactional first)");
+            if (sessionFunctions.Ctx.isAcquiredTransactional)
+                throw new TsavoriteException("BeginTransactional cannot be called twice (call EndTransactional first)");
         }
 
         internal ClientSession(
@@ -133,7 +135,9 @@ namespace Tsavorite.core
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
-            store.DisposeClientSession(ID, ctx.phase);
+
+            if (store.RevivificationManager.IsEnabled)
+                MergeRevivificationStatsTo(ref store.RevivificationManager.stats, reset: true);
         }
 
         /// <summary>
@@ -388,7 +392,7 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+            if (!ctx.pendingReads.IsEmpty)
                 throw new TsavoriteException("Make sure all async operations issued on this session are awaited and completed first");
 
             // Complete all pending sync operations on session
@@ -536,11 +540,6 @@ namespace Tsavorite.core
             store.epoch.Suspend();
         }
 
-        void IClientSession.AtomicSwitch(long version)
-        {
-            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, version);
-        }
-
         /// <inheritdoc/>
         public void MergeRevivificationStatsTo(ref RevivificationStats to, bool reset) => ctx.MergeRevivificationStatsTo(ref to, reset);
 
@@ -552,7 +551,8 @@ namespace Tsavorite.core
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return store.SystemState.Phase == Phase.PREPARE || store.SystemState.Phase == Phase.PREPARE_GROW;
+            var storeState = store.stateMachineDriver.SystemState;
+            return storeState.Phase == Phase.PREPARE || storeState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations

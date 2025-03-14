@@ -335,6 +335,7 @@ namespace Garnet.server
         CLUSTER_FAILOVER,
         CLUSTER_FAILREPLICATIONOFFSET,
         CLUSTER_FAILSTOPWRITES,
+        CLUSTER_FLUSHALL,
         CLUSTER_FORGET,
         CLUSTER_GETKEYSINSLOT,
         CLUSTER_GOSSIP,
@@ -2106,6 +2107,10 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_FAILSTOPWRITES;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
+                {
+                    return RespCommand.CLUSTER_FLUSHALL;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
                 {
                     return RespCommand.CLUSTER_SETCONFIGEPOCH;
@@ -2507,12 +2512,43 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Try to parse a command out of a provided buffer.
+        /// 
+        /// Useful for when we have a command to validate somewhere, but aren't actually running it.
+        /// </summary>
+        internal RespCommand ParseRespCommandBuffer(ReadOnlySpan<byte> buffer)
+        {
+            var oldRecvBufferPtr = recvBufferPtr;
+            var oldReadHead = readHead;
+            var oldBytesRead = bytesRead;
+
+            try
+            {
+                recvBufferPtr = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(buffer));
+                readHead = 0;
+                bytesRead = buffer.Length;
+
+                var parsed = ParseCommand(writeErrorOnFailure: false, out var res);
+                Debug.Assert(res, "Should never pass an incomplete buffer");
+
+                return parsed;
+            }
+            finally
+            {
+                recvBufferPtr = oldRecvBufferPtr;
+                readHead = oldReadHead;
+                bytesRead = oldBytesRead;
+            }
+        }
+
+        /// <summary>
         /// Parses the command from the given input buffer.
         /// </summary>
+        /// <param name="writeErrorOnFailure">If true, when a parsing error occurs an error response will written.</param>
         /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(out bool success)
+        private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
         {
             RespCommand cmd = RespCommand.INVALID;
 
@@ -2527,7 +2563,7 @@ namespace Garnet.server
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
-                cmd = ArrayParseCommand(ref count, ref success);
+                cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
                 if (!success) return cmd;
             }
 
@@ -2570,7 +2606,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ArrayParseCommand(ref int count, ref bool success)
+        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success)
         {
             RespCommand cmd = RespCommand.INVALID;
             ReadOnlySpan<byte> specificErrorMessage = default;
@@ -2614,7 +2650,7 @@ namespace Garnet.server
             }
 
             // Parsing for command name was successful, but the command is unknown
-            if (success && cmd == RespCommand.INVALID)
+            if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
             {
                 if (!specificErrorMessage.IsEmpty)
                 {

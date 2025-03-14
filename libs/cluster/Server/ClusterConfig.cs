@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Net;
+using System.Text;
 
 namespace Garnet.cluster
 {
@@ -489,14 +490,14 @@ namespace Garnet.cluster
         /// <returns>Formatted string.</returns>
         public string GetClusterInfo(ClusterProvider clusterProvider)
         {
-            var nodes = "";
+            var nodesStringBuilder = new StringBuilder();
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 var info = default(ConnectionInfo);
                 _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[i].Nodeid, out info);
-                nodes += GetNodeInfo(i, info);
+                GetNodeInfo(i, info, nodesStringBuilder);
             }
-            return nodes;
+            return nodesStringBuilder.ToString();
         }
 
         /// <summary>
@@ -516,24 +517,33 @@ namespace Garnet.cluster
             //<config-epoch>
             //<link-state>
             //<slot> <slot> ... <slot>
-
-            return $"{workers[workerId].Nodeid} " +
-                $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
-                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
-                $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
-                $"{info.ping} " +
-                $"{info.pong} " +
-                $"{workers[workerId].ConfigEpoch} " +
-                $"{(info.connected || workerId == 1 ? "connected" : "disconnected")}" +
-                $"{GetSlotRange(workerId)}" +
-                $"{GetSpecialStates(workerId)}\n";
+            var nodeInfoStringBuilder = new StringBuilder();
+            GetNodeInfo(workerId, info, nodeInfoStringBuilder);
+            return nodeInfoStringBuilder.ToString();
         }
 
-        private string GetSpecialStates(ushort workerId)
+        private void GetNodeInfo(ushort workerId, ConnectionInfo info, StringBuilder nodeInfoStringBuilder)
+        {
+            _ = nodeInfoStringBuilder
+                .Append(workers[workerId].Nodeid).Append(' ')
+                .Append(workers[workerId].Address).Append(':').Append(workers[workerId].Port)
+                .Append('@').Append(workers[workerId].Port + 10000).Append(',').Append(workers[workerId].hostname).Append(' ')
+                .Append(workerId == 1 ? "myself," : "")
+                .Append(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave").Append(' ')
+                .Append(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : '-').Append(' ')
+                .Append(info.ping).Append(' ')
+                .Append(info.pong).Append(' ')
+                .Append(workers[workerId].ConfigEpoch).Append(' ')
+                .Append(info.connected || workerId == 1 ? "connected" : "disconnected");
+            AppendSlotRange(nodeInfoStringBuilder, workerId);
+            AppendSpecialStates(nodeInfoStringBuilder, workerId);
+            _ = nodeInfoStringBuilder.Append('\n');
+        }
+
+        private void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
         {
             // Only print special states for local node
-            if (workerId != 1) return "";
-            var specialStates = "";
+            if (workerId != 1) return;
             for (var slot = 0; slot < slotMap.Length; slot++)
             {
                 var _workerId = slotMap[slot]._workerId;
@@ -545,14 +555,14 @@ namespace Garnet.cluster
                 var _nodeId = workers[_workerId].Nodeid;
                 if (_nodeId == null) continue;
 
-                specialStates += _state switch
+                stringBuilder.Append(_state switch
                 {
                     SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
                     SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
                     _ => ""
-                };
+                });
             }
-            return specialStates;
+            return;
         }
 
         /// <summary>
@@ -721,9 +731,8 @@ namespace Garnet.cluster
             return completeSlotInfo;
         }
 
-        private string GetSlotRange(ushort workerId)
+        private void AppendSlotRange(StringBuilder stringBuilder, uint workerId)
         {
-            string result = "";
             ushort start = ushort.MaxValue, end = 0;
             for (ushort i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
@@ -736,8 +745,8 @@ namespace Garnet.cluster
                 {
                     if (start != ushort.MaxValue)
                     {
-                        if (end == start) result += $" {start}";
-                        else result += $" {start}-{end}";
+                        if (end == start) stringBuilder.Append($" {start}");
+                        else stringBuilder.Append($" {start}-{end}");
                         start = ushort.MaxValue;
                         end = 0;
                     }
@@ -745,10 +754,9 @@ namespace Garnet.cluster
             }
             if (start != ushort.MaxValue)
             {
-                if (end == start) result += $" {start}";
-                else result += $" {start}-{end}";
+                if (end == start) stringBuilder.Append($" {start}");
+                else stringBuilder.Append($" {start}-{end}");
             }
-            return result;
         }
 
         /// <summary>

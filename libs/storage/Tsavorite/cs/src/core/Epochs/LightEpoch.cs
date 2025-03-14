@@ -275,48 +275,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Mechanism for threads to mark some activity as completed until
-        /// some version by this thread
-        /// </summary>
-        /// <param name="markerIdx">ID of activity</param>
-        /// <param name="version">Version</param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Mark(int markerIdx, long version)
-        {
-            Debug.Assert(markerIdx < 6);
-            (*(tableAligned + Metadata.threadEntryIndex)).markers[markerIdx] = version;
-        }
-
-        /// <summary>
-        /// Check if all active threads have completed the some
-        /// activity until given version.
-        /// </summary>
-        /// <param name="markerIdx">ID of activity</param>
-        /// <param name="version">Version</param>
-        /// <returns>Whether complete</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CheckIsComplete(int markerIdx, long version)
-        {
-            Debug.Assert(markerIdx < 6);
-
-            // check if all threads have reported complete
-            for (int index = 1; index <= kTableSize; ++index)
-            {
-                long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                long fc_version = (*(tableAligned + index)).markers[markerIdx];
-                if (0 != entry_epoch)
-                {
-                    if ((fc_version != version) && (entry_epoch < long.MaxValue))
-                    {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-
-        /// <summary>
         /// Looks at all threads and return the latest safe epoch
         /// </summary>
         /// <returns>Safe epoch</returns>
@@ -519,10 +477,14 @@ namespace Tsavorite.core
             public int reentrant;
 
             [FieldOffset(16)]
-            public fixed long markers[6];
+            public fixed long padding[6]; // Padding to end of cache line
 
             public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
         }
+
+        /// <summary>
+        /// Pair of epoch and action to be executed
+        /// </summary>
         struct EpochActionPair
         {
             public long epoch;

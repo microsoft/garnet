@@ -246,8 +246,18 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    var respVersion = input.arg1;
+
+                    if (respVersion == 3)
+                    {
+                        while (!RespWriteUtils.TryWriteDoubleNumeric(score, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
                 }
                 outputHeader.result1 = 1;
             }
@@ -1024,10 +1034,9 @@ namespace Garnet.server
 
                 if (validLimit)
                 {
-                    elementsInLex = elementsInLex
+                    elementsInLex = [.. elementsInLex
                                         .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)
-                                        .ToList();
+                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
@@ -1076,10 +1085,9 @@ namespace Garnet.server
             if (doReverse) scoredElements.Reverse();
             if (validLimit)
             {
-                scoredElements = scoredElements
+                scoredElements = [.. scoredElements
                                  .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)
-                                 .ToList();
+                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)];
             }
 
             if (rem)
