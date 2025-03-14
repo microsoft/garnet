@@ -908,9 +908,9 @@ namespace Garnet.test
 
             // Get three random members
             response = lightClientRequest.SendCommand("SRANDMEMBER myset 3", 3);
-            var strResponse = Encoding.ASCII.GetString(response);
-            ClassicAssert.AreEqual('*', strResponse[0]);
+            TestUtils.AssertEqualUpToExpectedLength("*", response);
 
+            var strResponse = Encoding.ASCII.GetString(response);
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
