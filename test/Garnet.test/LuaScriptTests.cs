@@ -98,13 +98,6 @@ namespace Garnet.test
         private string aclFile;
         private GarnetServer server;
 
-        /// <summary>
-        /// Temporarily disable errors raised from Lua until longjmp work is completed.
-        /// 
-        /// TODO: Delete all of this
-        /// </summary>
-        private static bool CanTestLuaErrors { get; } = OperatingSystem.IsWindows() && Environment.Version.Major <= 8;
-
         public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
             this.allocMode = allocMode;
@@ -512,13 +505,6 @@ namespace Garnet.test
         [Test]
         public void RedisPCall()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -534,13 +520,6 @@ namespace Garnet.test
         [Test]
         public void RedisSha1Hex()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -568,13 +547,6 @@ namespace Garnet.test
         [Test]
         public void RedisLog()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -662,20 +634,17 @@ namespace Garnet.test
             using var denyRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "deny"));
             var denyDB = denyRedis.GetDatabase(0);
 
-            if (CanTestLuaErrors)
-            {
-                var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
-                ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
+            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
+            ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
 
-                var invalidCmdArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
-                ClassicAssert.IsTrue(invalidCmdArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
+            var invalidCmdArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
+            ClassicAssert.IsTrue(invalidCmdArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
 
-                var invalidCmd = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
-                ClassicAssert.IsTrue(invalidCmd.Message.StartsWith("ERR Invalid command passed to redis.acl_check_cmd()"));
+            var invalidCmd = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
+            ClassicAssert.IsTrue(invalidCmd.Message.StartsWith("ERR Invalid command passed to redis.acl_check_cmd()"));
 
-                var invalidArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
-                ClassicAssert.IsTrue(invalidArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            var invalidArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
+            ClassicAssert.IsTrue(invalidArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
 
             var canRun = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('GET')");
             ClassicAssert.IsTrue(canRun);
@@ -714,17 +683,14 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            if (CanTestLuaErrors)
-            {
-                var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
-                ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
+            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
+            ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
 
-                var tooManyArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
-                ClassicAssert.IsTrue(tooManyArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
+            var tooManyArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
+            ClassicAssert.IsTrue(tooManyArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
 
-                var badArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
-                ClassicAssert.IsTrue(badArg.Message.StartsWith("ERR RESP version must be 2 or 3."));
-            }
+            var badArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
+            ClassicAssert.IsTrue(badArg.Message.StartsWith("ERR RESP version must be 2 or 3."));
 
             var resp2 = db.ScriptEvaluate("redis.setresp(2)");
             ClassicAssert.IsTrue(resp2.IsNull);
@@ -732,11 +698,8 @@ namespace Garnet.test
             var resp3 = db.ScriptEvaluate("redis.setresp(3)");
             ClassicAssert.IsTrue(resp3.IsNull);
 
-            if (CanTestLuaErrors)
-            {
-                var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
-                ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
-            }
+            var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
+            ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
         }
 
         [Test]
@@ -955,7 +918,7 @@ return redis.status_reply("OK")
             }
         }
 
-        private void DoErroneousRedisCall(IDatabase db, string[] args, string expectedError)
+        private static void DoErroneousRedisCall(IDatabase db, string[] args, string expectedError)
         {
             var exc = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return redis.call({string.Join(',', args)})"));
             ClassicAssert.IsNotNull(exc);
@@ -965,13 +928,6 @@ return redis.status_reply("OK")
         [Test]
         public void RedisCallErrors()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             // Testing that our error replies for redis.call match Redis behavior
             //
             // TODO: exact matching of the hash and line number would also be nice, but that is trickier
@@ -1218,13 +1174,6 @@ return redis.status_reply("OK")
                 return;
             }
 
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             const string ScriptOOMText = @"
 local foo = 'abcdefghijklmnopqrstuvwxyz'
 if @Ctrl == 'OOM' then
@@ -1331,12 +1280,9 @@ return retArray";
                 }
             }
 
-            if (CanTestLuaErrors)
-            {
-                // Finally, check that nil is an illegal argument
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
-                ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            // Finally, check that nil is an illegal argument
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
+            ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
         }
 
         [Test]
@@ -1668,13 +1614,6 @@ return retArray";
         [Test]
         public void NoScriptCommandsForbidden()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             ClassicAssert.True(RespCommandsInfo.TryGetRespCommandsInfo(out var allCommands, externalOnly: true));
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1690,13 +1629,6 @@ return retArray";
         [Test]
         public void IntentionalTimeout()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             const string TimeoutScript = @"
 local count = 0
 
@@ -1832,16 +1764,13 @@ return count";
 
             // tobit
             {
-                if (CanTestLuaErrors)
-                {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit()"));
-                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tobit"));
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tobit"));
 
-                    // Extra arguments are legal, but ignored
+                // Extra arguments are legal, but ignored
 
-                    var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit({})"));
-                    ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("tobit"));
-                }
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("tobit"));
 
                 // Rules are suprisingly subtle, so test a bunch of tricky values
                 (string Value, string Expected)[] expectedValues = [
@@ -1877,19 +1806,16 @@ return count";
 
             // tohex
             {
-                if (CanTestLuaErrors)
-                {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex()"));
-                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tohex"));
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tohex"));
 
-                    // Extra arguments are legal, but ignored
+                // Extra arguments are legal, but ignored
 
-                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex({})"));
-                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains("tohex"));
+                var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex({})"));
+                ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains("tohex"));
 
-                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex(1, {})"));
-                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains("tohex"));
-                }
+                var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex(1, {})"));
+                ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains("tohex"));
 
                 // Make sure casing is handled correctly
                 for (var h = 0; h < 16; h++)
@@ -1930,16 +1856,13 @@ return count";
 
             // bswap
             {
-                if (CanTestLuaErrors)
-                {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap()"));
-                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bswap"));
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bswap"));
 
-                    // Extra arguments are legal, but ignored
+                // Extra arguments are legal, but ignored
 
-                    var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap({})"));
-                    ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bswap"));
-                }
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bswap"));
 
                 // Just brute force a bunch of trial values
                 foreach (var a in new[] { 0, 1, 2, 4 })
@@ -1963,16 +1886,13 @@ return count";
 
             // bnot
             {
-                if (CanTestLuaErrors)
-                {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot()"));
-                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bnot"));
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bnot"));
 
-                    // Extra arguments are legal, but ignored
+                // Extra arguments are legal, but ignored
 
-                    var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot({})"));
-                    ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bnot"));
-                }
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bnot"));
 
                 foreach (var input in new int[] { 0, 1, 2, 4, 8, 32, 64, 128, 256, 0x70F0_F0F0, 0x6BCD_EF01, int.MinValue, int.MaxValue, -1 })
                 {
@@ -1993,20 +1913,17 @@ return count";
 
                 foreach (var op in ops)
                 {
-                    if (CanTestLuaErrors)
-                    {
-                        var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
-                        ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
+                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
 
-                        var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
-                        ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
+                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
 
-                        var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
-                        ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
+                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
 
-                        var badType3Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, 2, {{}})"));
-                        ClassicAssert.True(badType3Exc.Message.Contains("bad argument") && badType3Exc.Message.Contains(op.Name));
-                    }
+                    var badType3Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, 2, {{}})"));
+                    ClassicAssert.True(badType3Exc.Message.Contains("bad argument") && badType3Exc.Message.Contains(op.Name));
 
                     // Gin up some unusual values and test them in different combinations
                     var nextArg = 0x0102_0304;
@@ -2044,17 +1961,14 @@ return count";
 
                 foreach (var op in ops)
                 {
-                    if (CanTestLuaErrors)
-                    {
-                        var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
-                        ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
+                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
 
-                        var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
-                        ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
+                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
 
-                        var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
-                        ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
-                    }
+                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
 
                     // Extra args are allowed, but ignored
 
@@ -2079,18 +1993,14 @@ return count";
 
             // Encoding
             {
-                // TODO: Once refactored to avoid longjmp issues, restore on Linux
-                if (CanTestLuaErrors)
-                {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode()"));
-                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("encode"));
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("encode"));
 
-                    var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode(1, 2)"));
-                    ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("encode"));
+                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode(1, 2)"));
+                ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("encode"));
 
-                    var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode((function() end))"));
-                    ClassicAssert.True(badTypeExc.Message.Contains("Cannot serialise"));
-                }
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode((function() end))"));
+                ClassicAssert.True(badTypeExc.Message.Contains("Cannot serialise"));
 
                 var nilResp = (string)db.ScriptEvaluate("return cjson.encode(nil)");
                 ClassicAssert.AreEqual("null", nilResp);
@@ -2163,13 +2073,10 @@ end
 return cjson.encode(nested)");
                 ClassicAssert.AreEqual(new string('[', 1000) + 1 + new string(']', 1000), deeplyNestedButLegal);
 
-                // TODO: Once refactored to avoid longjmp issues, restore on Linux
-                if (CanTestLuaErrors)
-                {
-                    var deeplyNestedExc =
-                    ClassicAssert.Throws<RedisServerException>(
-                        () => db.ScriptEvaluate(
-    @"local nested = 1
+                var deeplyNestedExc =
+                ClassicAssert.Throws<RedisServerException>(
+                    () => db.ScriptEvaluate(
+@"local nested = 1
     for x = 1, 1001 do
         local newNested = {}
         newNested[1] = nested;
@@ -2177,27 +2084,22 @@ return cjson.encode(nested)");
     end
 
     return cjson.encode(nested)"));
-                    ClassicAssert.True(deeplyNestedExc.Message.Contains("Cannot serialise, excessive nesting (1001)"));
-                }
+                ClassicAssert.True(deeplyNestedExc.Message.Contains("Cannot serialise, excessive nesting (1001)"));
             }
 
             // Decoding
             {
-                // TODO: Once refactored to avoid longjmp issues, restore on Linux
-                if (CanTestLuaErrors)
-                {
-                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode()"));
-                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("decode"));
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("decode"));
 
-                    var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode(1, 2)"));
-                    ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("decode"));
+                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode(1, 2)"));
+                ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("decode"));
 
-                    var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode({})"));
-                    ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("decode"));
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("decode"));
 
-                    var badFormatExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
-                    ClassicAssert.True(badFormatExc.Message.Contains("Expected value but found invalid token"));
-                }
+                var badFormatExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
+                ClassicAssert.True(badFormatExc.Message.Contains("Expected value but found invalid token"));
 
                 var numberDecode = (string)db.ScriptEvaluate("return cjson.decode(123)");
                 ClassicAssert.AreEqual("123", numberDecode);
@@ -2242,11 +2144,8 @@ return cjson.encode(nested)");
                 }
                 ClassicAssert.AreEqual(0, deeplyNestedButLegalCur.Length);
 
-                if (CanTestLuaErrors)
-                {
-                    var deeplyNestedExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cjson.decode('{new string('[', 1001)}{new string(']', 1001)}')"));
-                    ClassicAssert.True(deeplyNestedExc.Message.Contains("Found too many nested data structures"));
-                }
+                var deeplyNestedExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cjson.decode('{new string('[', 1001)}{new string(']', 1001)}')"));
+                ClassicAssert.True(deeplyNestedExc.Message.Contains("Found too many nested data structures"));
             }
         }
 
@@ -2256,12 +2155,8 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // TODO: Once refactored to avoid longjmp issues, restore on Linux
-            if (CanTestLuaErrors)
-            {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.pack()"));
-                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("pack"));
-            }
+            var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.pack()"));
+            ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("pack"));
 
             // Multiple args are legal, and concat
 
@@ -2454,18 +2349,14 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // TODO: Once refactored to avoid longjmp issues, restore on Linux
-            if (CanTestLuaErrors)
-            {
-                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack()"));
-                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("unpack"));
+            var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack()"));
+            ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("unpack"));
 
-                // Multiple arguments are allowed, but ignored
+            // Multiple arguments are allowed, but ignored
 
-                // Table ends before it should
-                var badDataExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack('\\220\\0\\96')"));
-                ClassicAssert.True(badDataExc.Message.Contains("Missing bytes in input"));
-            }
+            // Table ends before it should
+            var badDataExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack('\\220\\0\\96')"));
+            ClassicAssert.True(badDataExc.Message.Contains("Missing bytes in input"));
 
             var nullResp = (string)db.ScriptEvaluate($"return type(cmsgpack.unpack({ToLuaString(0xC0)}))");
             ClassicAssert.AreEqual("nil", nullResp);
