@@ -10,6 +10,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -90,6 +91,12 @@ namespace Garnet.test
                 }
                 return false;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
+        {
+            ClassicAssert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response, 0, expectedResponse.Length));
         }
 
         /// <summary>

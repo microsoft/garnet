@@ -259,6 +259,8 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
                     replicationInfo.Add(new("replication_offset_lag", replicationOffsetLag.ToString()));
                     replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
+                    replicationInfo.Add(new("recover_status", replicationManager.recoverStatus.ToString()));
+                    replicationInfo.Add(new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus()));
                 }
                 else
                 {
