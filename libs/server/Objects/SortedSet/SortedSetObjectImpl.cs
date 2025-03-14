@@ -22,7 +22,7 @@ namespace Garnet.server
         /// <summary>
         /// Small struct to store options for ZRange command
         /// </summary>
-        private struct ZRangeOptions
+        private ref struct ZRangeOptions
         {
             public bool ByScore { get; set; }
             public bool ByLex { get; set; }
