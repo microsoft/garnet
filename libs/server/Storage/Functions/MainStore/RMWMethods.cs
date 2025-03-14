@@ -441,7 +441,10 @@ namespace Garnet.server
                     long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.ETag + 1) : (etagFromClient + 1);
                     if (!logRecord.TrySetETag(newEtag))
                         return false;
-                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+
+                    // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
+                    // due to srcRecordInfo having expiration set; here, that srcRecordInfo is us, so we should do nothing if input.arg1 == 0.
+                    if (sizeInfo.FieldInfo.HasExpiration && input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
                         return false;
 
                     // Write Etag and Val back to Client as an array of the format [etag, nil]
@@ -964,7 +967,7 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetETag(newEtag))
                         return false;
 
-                    if (!(input.arg1 == 0 ? dstLogRecord.RemoveExpiration() : dstLogRecord.TrySetExpiration(input.arg1)))
+                    if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1 != 0 ? input.arg1 : srcLogRecord.Expiration))
                         return false;
 
                     // Write Etag and Val back to Client as an array of the format [etag, nil]

@@ -1,15 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using NUnit.Framework.Legacy;
 using Tsavorite.core;
-
-#if LOGRECORD_TODO
 
 namespace Tsavorite.test.recovery.objects
 {

@@ -113,11 +113,6 @@ namespace Tsavorite.core
         public int ThrottleCheckpointFlushDelayMs = -1;
 
         /// <summary>
-        /// Whether we use a barrier to ensure that threads are not in two different checkpoint versions at the same time
-        /// </summary>
-        public bool CheckpointVersionSwitchBarrier = false;
-
-        /// <summary>
         /// Settings for recycling deleted records on the log.
         /// </summary>
         public RevivificationSettings RevivificationSettings;
@@ -249,8 +244,7 @@ namespace Tsavorite.core
                 CheckpointDir = CheckpointDir,
                 CheckpointManager = CheckpointManager,
                 RemoveOutdated = RemoveOutdatedCheckpoints,
-                ThrottleCheckpointFlushDelayMs = ThrottleCheckpointFlushDelayMs,
-                CheckpointVersionSwitchBarrier = CheckpointVersionSwitchBarrier
+                ThrottleCheckpointFlushDelayMs = ThrottleCheckpointFlushDelayMs
             };
         }
     }

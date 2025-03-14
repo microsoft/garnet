@@ -36,10 +36,6 @@ namespace Tsavorite.core
         ///     <term>RETRY_LATER</term>
         ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later</term>
         ///     </item>
-        ///     <item>
-        ///     <term>CPR_SHIFT_DETECTED</term>
-        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
-        ///     </item>
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -82,12 +78,11 @@ namespace Tsavorite.core
                     var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
-                        case LatchDestination.Retry:
-                            goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                             goto CreateNewRecord;
+
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
                             break;
@@ -247,13 +242,6 @@ namespace Tsavorite.core
 
             switch (phase)
             {
-                case Phase.PREPARE: // Thread is in V
-                    if (!IsEntryVersionNew(ref stackCtx.hei.entry))
-                        break; // Normal Processing; thread is in V, record is in V
-
-                    status = OperationStatus.CPR_SHIFT_DETECTED;
-                    return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on V+1 record when thread is in V)
-
                 case Phase.IN_PROGRESS: // Thread is in V+1
                 case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
@@ -261,7 +249,7 @@ namespace Tsavorite.core
                         break;      // Normal Processing; V+1 thread encountered a record in V+1
                     return LatchDestination.CreateNewRecord;    // Upsert never goes pending; always force creation of a (V+1) record
 
-                default:
+                default: // Thread is in V
                     break;
             }
             return LatchDestination.NormalProcessing;

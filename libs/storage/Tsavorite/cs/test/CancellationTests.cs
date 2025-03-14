@@ -180,10 +180,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void InitialUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void InitialUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs, valueNum = keyNum * NumRecs * 10;
             SpanByte key = SpanByteFrom(ref keyNum);
 
@@ -202,10 +202,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void CopyUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void CopyUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
             SpanByte key = SpanByteFrom(ref keyNum);
 
@@ -236,10 +236,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void InPlaceUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void InPlaceUpdaterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
             SpanByte key = SpanByteFrom(ref keyNum);
 
@@ -253,10 +253,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SingleWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void SingleWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs + 1, valueNum = keyNum * NumRecs * 10;
             SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum);
 
@@ -269,10 +269,10 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ConcurrentWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+        public void ConcurrentWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
             SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum);
 

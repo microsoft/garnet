@@ -37,7 +37,7 @@ namespace Tsavorite.core
         public void BeginTransaction() => clientSession.AcquireTransactional(sessionFunctions);
 
         /// <inheritdoc/>
-        public void EndTransaction() => clientSession.ReleaseTransactional();
+        public void EndTransaction() => clientSession.ReleaseTransactional(sessionFunctions);
 
         #endregion Begin/EndTransaction
 
@@ -236,7 +236,7 @@ namespace Tsavorite.core
         public void Lock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
             bool lockAquired = false;
             while (!lockAquired)
@@ -287,8 +287,8 @@ namespace Tsavorite.core
         public bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryLock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -320,8 +320,8 @@ namespace Tsavorite.core
         public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, TimeSpan timeout, CancellationToken cancellationToken)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryPromoteLock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -341,7 +341,7 @@ namespace Tsavorite.core
         public void Unlock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
             where TTransactionalKey : ITransactionalKey
         {
-            clientSession.CheckIsAcquiredTransactional();
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Unlock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);

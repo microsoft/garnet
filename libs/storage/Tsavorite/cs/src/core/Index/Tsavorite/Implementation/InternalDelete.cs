@@ -33,10 +33,6 @@ namespace Tsavorite.core
         ///     <term>RETRY_LATER</term>
         ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later</term>
         ///     </item>
-        ///     <item>
-        ///     <term>CPR_SHIFT_DETECTED</term>
-        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
-        ///     </item>
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -87,9 +83,9 @@ namespace Tsavorite.core
                     var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
-                        case LatchDestination.Retry:
-                            goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
+                            if (stackCtx.recSrc.HasMainLogSrc)
+                                srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                             goto CreateNewRecord;
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
@@ -172,7 +168,7 @@ namespace Tsavorite.core
                     // Could not delete in place for some reason - create new record.
                     goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
+                else if (stackCtx.recSrc.HasMainLogSrc)
                 {
                     // If we already have a deleted record, there's nothing to do.
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();

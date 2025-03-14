@@ -154,6 +154,7 @@ namespace Garnet.server
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input)
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
+            // TODO: Consider merging this with NeedCopyUpdate to avoid calling IPU if there isn't enough room
             var fieldInfo = new RecordFieldInfo()
             {
                 KeyDataSize = srcLogRecord.Key.Length,
@@ -257,7 +258,7 @@ namespace Garnet.server
                     case RespCommand.SETIFMATCH:
                         fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
                         fieldInfo.HasETag = true;
-                        fieldInfo.HasExpiration = input.arg1 != 0;
+                        fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
                         return fieldInfo;
 
                     case RespCommand.EXPIRE:
@@ -350,6 +351,7 @@ namespace Garnet.server
 
         public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref RawStringInput input)
         {
+            // TODO: Consider making this a CanUpdateInPlace to avoid calling ConcurrentWriter if there isn't enough room
             var fieldInfo = new RecordFieldInfo()
             {
                 KeyDataSize = key.Length,

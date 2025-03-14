@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
-
-#if LOGRECORD_TODO
 
 namespace Tsavorite.test
 {

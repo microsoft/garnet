@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,8 +11,6 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
-
-#if LOGRECORD_TODO
 
 namespace Tsavorite.test
 {

@@ -1,10 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
+using System;
 
 namespace Tsavorite.core
 {
@@ -13,22 +10,30 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class SnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TValue, TStoreFunctions, TAllocator>
+    internal sealed class SnapshotCheckpointSMTask<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TValue, TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions<TValue>
         where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
+        public SnapshotCheckpointSMTask(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, Guid guid)
+            : base(store, guid)
+        {
+        }
+
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
+        public override void GlobalBeforeEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
             switch (next.Phase)
             {
                 case Phase.PREPARE:
                     store._lastSnapshotCheckpoint.Dispose();
-                    base.GlobalBeforeEnteringState(next, store);
+                    store._hybridLogCheckpointToken = guid;
+                    store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.useSnapshotFile = 1;
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
+
                 case Phase.WAIT_FLUSH:
-                    base.GlobalBeforeEnteringState(next, store);
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
 
@@ -63,55 +68,22 @@ namespace Tsavorite.core
                         store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out store._hybridLogCheckpoint.flushedSemaphore,
                         store.ThrottleCheckpointFlushDelayMs);
+                    if (store._hybridLogCheckpoint.flushedSemaphore != null)
+                        stateMachineDriver.AddToWaitingList(store._hybridLogCheckpoint.flushedSemaphore);
                     break;
+
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
                     store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
-                    base.GlobalBeforeEnteringState(next, store);
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();
                     break;
+
                 default:
-                    base.GlobalBeforeEnteringState(next, store);
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
             }
-        }
-
-        /// <inheritdoc />
-        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-            SystemState current,
-            SystemState prev, TsavoriteKV<TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
-            List<ValueTask> valueTasks,
-            CancellationToken token = default)
-        {
-            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
-
-            if (current.Phase != Phase.WAIT_FLUSH) return;
-
-            if (ctx is null || !ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush])
-            {
-                var s = store._hybridLogCheckpoint.flushedSemaphore;
-
-                var notify = s != null && s.CurrentCount > 0;
-                notify = notify || !store.SameCycle(ctx, current) || s == null;
-
-                if (valueTasks != null && !notify)
-                {
-                    Debug.Assert(s != null);
-                    valueTasks.Add(new ValueTask(s.WaitAsync(token).ContinueWith(t => s.Release())));
-                }
-
-                if (!notify) return;
-
-                if (ctx is not null)
-                    ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
-            }
-
-            store.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
-                store.GlobalStateMachineStep(current);
         }
     }
 }

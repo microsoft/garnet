@@ -1,10 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.Threading;
 using Tsavorite.core;
-
-#if LOGRECORD_TODO
 
 namespace Tsavorite.test.recovery.objects
 {

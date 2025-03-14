@@ -7,7 +7,7 @@ namespace Tsavorite.core
     /// Provides thread management and all callbacks. A wrapper for IFunctions and additional methods called by TsavoriteImpl; the wrapped
     /// IFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
     /// </summary>
-    internal interface ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> : ISessionEpochControl, IVariableLengthInput<TValue, TInput>
+    internal interface ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> : IVariableLengthInput<TValue, TInput>
         where TStoreFunctions : IStoreFunctions<TValue>
         where TAllocator : IAllocator<TValue, TStoreFunctions>
     {
@@ -69,6 +69,11 @@ namespace Tsavorite.core
         void UnlockEphemeralExclusive(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx);
         void UnlockEphemeralShared(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx);
         #endregion 
+
+        #region Epoch control
+        void UnsafeResumeThread();
+        void UnsafeSuspendThread();
+        #endregion
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 

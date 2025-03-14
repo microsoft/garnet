@@ -62,7 +62,7 @@ namespace Tsavorite.test.statemachine
 
         private void SecondSession()
         {
-            s2 = store.NewSession<I, O, C, F>(f, null);
+            s2 = store.NewSession<I, O, C, F>(f);
             uc2 = s2.UnsafeContext;
             uc2.BeginUnsafe();
 
@@ -139,7 +139,7 @@ namespace Tsavorite.test.statemachine
 
         private void LUCThread()
         {
-            session = store.NewSession<I, O, C, F>(f, null);
+            session = store.NewSession<I, O, C, F>(f);
             _ = ev.Set();
 
             while (true)

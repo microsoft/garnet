@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.ComponentModel;
-using Garnet.server.Auth.Settings;
 
 namespace Garnet
 {

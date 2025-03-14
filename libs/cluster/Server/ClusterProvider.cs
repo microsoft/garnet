@@ -175,15 +175,22 @@ namespace Garnet.cluster
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
             replicationManager.AddCheckpointEntry(entry, storeType, full);
 
+            // Truncate AOF
+            SafeTruncateAOF(CheckpointCoveredAofAddress);
+        }
+
+        /// <inheritdoc />
+        public void SafeTruncateAOF(long truncateUntil)
+        {
             if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
-                _ = replicationManager.SafeTruncateAof(CheckpointCoveredAofAddress);
+                _ = replicationManager.SafeTruncateAof(truncateUntil);
             else
             {
                 if (serverOptions.FastAofTruncate)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
+                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
                 else
                 {
-                    storeWrapper.appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
+                    storeWrapper.appendOnlyFile?.TruncateUntil(truncateUntil);
                     if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Commit();
                 }
             }

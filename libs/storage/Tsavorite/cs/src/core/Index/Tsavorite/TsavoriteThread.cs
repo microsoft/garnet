@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -18,36 +17,27 @@ namespace Tsavorite.core
         {
             epoch.ProtectAndDrain();
 
-            // We check if we are in normal mode
-            var newPhaseInfo = SystemState.Copy(ref systemState);
-            if (sessionFunctions.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && sessionFunctions.Ctx.version == newPhaseInfo.Version)
+            // Fast path: check if we are in unchanged REST phase
+            if (sessionFunctions.Ctx.SessionState.Phase == Phase.REST && SystemState.Equal(sessionFunctions.Ctx.SessionState, stateMachineDriver.SystemState))
                 return;
 
             while (true)
             {
-                ThreadStateMachineStep(sessionFunctions.Ctx, sessionFunctions, default);
+                // Grab current system state into session state under epoch protection
+                sessionFunctions.Ctx.SessionState = stateMachineDriver.SystemState;
 
-                // In prepare phases, after draining out ongoing multi-key ops, we may spin and get threads to
-                // reach the next version before proceeding
-
-                // If CheckpointVersionSwitchBarrier is set, then:
-                //   If system is in PREPARE phase AND all multi-key ops have drained (NumActiveLockingSessions == 0):
-                //      Then (PREPARE, v) threads will SPIN during Refresh until they are in (IN_PROGRESS, v+1).
+                //   If a session is in PREPARE/PREPARE_GROW phase AND is not currently in a transaction
+                //      Then the session will SPIN during Refresh until it is in (IN_PROGRESS, v+1).
                 //
-                //   That way no thread can work in the PREPARE phase while any thread works in IN_PROGRESS phase.
-                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) if all threads
-                //   have reached PREPARE and all multi-key ops have drained (see VersionChangeTask.OnThreadState).
-                if (CheckpointVersionSwitchBarrier &&
-                    sessionFunctions.Ctx.phase == Phase.PREPARE &&
-                    hlogBase.NumActiveTransactionalSessions == 0)
-                {
-                    epoch.ProtectAndDrain();
-                    _ = Thread.Yield();
-                    continue;
-                }
-
-                if (sessionFunctions.Ctx.phase == Phase.PREPARE_GROW &&
-                    hlogBase.NumActiveTransactionalSessions == 0)
+                //   That way no session can work in the PREPARE/PREPARE_GROW phase while any session works in IN_PROGRESS phase.
+                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) only if all sessions
+                //   have reached PREPARE/PREPARE_GROW and all transactions have concluded (i.e., NumActiveLockingSessions == 0).
+                //   See HybridLogCheckpointSMTask and IndexResizeSMTask for state machine progress condition.
+                //
+                //   Also, ClientSession.AcquireTransactional() ensures that no new transactions are started in
+                //   the PREPARE/PREPARE_GROW phase.
+                if ((sessionFunctions.Ctx.phase == Phase.PREPARE || sessionFunctions.Ctx.phase == Phase.PREPARE_GROW)
+                    && !sessionFunctions.Ctx.isAcquiredTransactional)
                 {
                     epoch.ProtectAndDrain();
                     _ = Thread.Yield();
@@ -55,34 +45,6 @@ namespace Tsavorite.core
                 }
                 break;
             }
-        }
-
-        internal static void InitContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, int sessionID, string sessionName)
-        {
-            ctx.phase = Phase.REST;
-            // The system version starts at 1. Because we do not know what the current state machine state is,
-            // we need to play it safe and initialize context behind the system state. Otherwise the session may
-            // never "catch up" with the rest of the system when stepping through the state machine as it is ahead.
-            ctx.version = 1;
-            ctx.markers = new bool[8];
-            ctx.sessionID = sessionID;
-            ctx.sessionName = sessionName;
-
-            if (ctx.readyResponses is null)
-            {
-                ctx.readyResponses = new AsyncQueue<AsyncIOContext<TValue>>();
-                ctx.ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
-                ctx.pendingReads = new AsyncCountDown();
-            }
-        }
-
-        internal static void CopyContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> src, TsavoriteExecutionContext<TInput, TOutput, TContext> dst)
-        {
-            dst.phase = src.phase;
-            dst.version = src.version;
-            dst.threadStateMachine = src.threadStateMachine;
-            dst.markers = src.markers;
-            dst.sessionName = src.sessionName;
         }
 
         internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false,
@@ -103,7 +65,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool InRestPhase() => systemState.Phase == Phase.REST;
+        internal bool InRestPhase() => stateMachineDriver.SystemState.Phase == Phase.REST;
 
         #region Complete Pending Requests
         internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,

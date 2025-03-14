@@ -4,6 +4,7 @@
 #if LOGRECORD_TODO
 
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -40,8 +41,7 @@ namespace Tsavorite.test.statemachine
                 MutableFraction = 0.1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 13,
-                CheckpointDir = checkpointDir,
-                CheckpointVersionSwitchBarrier = true
+                CheckpointDir = checkpointDir
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -100,13 +100,13 @@ namespace Tsavorite.test.statemachine
             s1.Dispose();
         }
 
-        void Prepare(out SimpleFunctions f,
-            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s1,
-            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
-            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s2,
+        void Prepare(out SMSimpleFunctions f,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> s1,
+            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator> s2,
             long toVersion = -1)
         {
-            f = new SimpleFunctions();
+            f = new SMSimpleFunctions();
 
             // We should be in REST, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
@@ -121,7 +121,7 @@ namespace Tsavorite.test.statemachine
 
             NumClicks value;
 
-            s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
+            s1 = store.NewSession<NumClicks, NumClicks, Empty, SMSimpleFunctions>(f);
             var bc1 = s1.BasicContext;
 
             for (int key = 0; key < NumOps; key++)
@@ -138,15 +138,28 @@ namespace Tsavorite.test.statemachine
             uc1.BeginUnsafe();
 
             // Start session s2 on another thread for testing
-            s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
+            s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SMSimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
+            // Wait for PREPARE phase
+            while (!SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState))
+                Thread.Yield();
+
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+        }
+    }
+
+    public class SMSimpleFunctions : SimpleSessionFunctions<AdId, NumClicks, Empty>
+    {
+        public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        {
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.adId, output.numClicks);
         }
     }
 }

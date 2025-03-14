@@ -52,6 +52,12 @@ namespace Tsavorite.core
             return completed1 && completed2;
         }
 
+        internal void AddIndexCheckpointWaitingList(StateMachineDriver stateMachineDriver)
+        {
+            stateMachineDriver.AddToWaitingList(mainIndexCheckpointSemaphore);
+            stateMachineDriver.AddToWaitingList(overflowBucketsAllocator.GetCheckpointSemaphore());
+        }
+
         internal async ValueTask IsIndexFuzzyCheckpointCompletedAsync(CancellationToken token = default)
         {
             // Get tasks first to ensure we have captured the semaphore instances synchronously
@@ -72,6 +78,7 @@ namespace Tsavorite.core
         {
             long totalSize = state[version].size * sizeof(HashBucket);
             numBytesWritten = (ulong)totalSize;
+            mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
 
             if (throttleCheckpointFlushDelayMs >= 0)
                 Task.Run(FlushRunner);
@@ -94,7 +101,7 @@ namespace Tsavorite.core
 
                 uint chunkSize = (uint)(totalSize / numChunks);
                 mainIndexCheckpointCallbackCount = numChunks;
-                mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
+
                 if (throttleCheckpointFlushDelayMs >= 0)
                     throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
                 HashBucket* start = state[version].tableAligned;

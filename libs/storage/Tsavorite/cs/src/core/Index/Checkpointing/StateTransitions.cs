@@ -29,10 +29,10 @@ namespace Tsavorite.core
         /// <summary>In-progress phase, entering (v+1) version</summary>
         IN_PROGRESS,
 
-        /// <summary>Wait for an index checkpoint to finish</summary>
+        /// <summary>Wait for an index checkpoint flush to finish</summary>
         WAIT_INDEX_CHECKPOINT,
 
-        /// <summary>Wait for data flush to complete</summary>
+        /// <summary>Wait for hybrid log flush to complete</summary>
         WAIT_FLUSH,
 
         /// <summary>After flush has completed, write metadata to persistent storage and issue user callbacks</summary>
@@ -40,15 +40,6 @@ namespace Tsavorite.core
 
         /// <summary>The default phase; no state-machine operation is operating</summary>
         REST,
-
-        /// <summary>Prepare for an index checkpoint</summary>
-        PREP_INDEX_CHECKPOINT,
-
-        /// <summary>Wait for an index-only checkpoint to complete</summary>
-        WAIT_INDEX_ONLY_CHECKPOINT,
-
-        /// <summary>Wait for pre-scan (until ReadOnlyAddress) to complete for streaming snapshot</summary>
-        PREP_STREAMING_SNAPSHOT_CHECKPOINT,
 
         /// <summary>Prepare for a checkpoint, still in (v) version</summary>
         PREPARE,
@@ -58,9 +49,6 @@ namespace Tsavorite.core
 
         /// <summary>Index resizing is in progress</summary>
         IN_PROGRESS_GROW,
-
-        /// <summary>Internal intermediate state of state machine</summary>
-        INTERMEDIATE = 16,
     };
 
     /// <summary>
@@ -143,22 +131,6 @@ namespace Tsavorite.core
             info.Phase = status;
             info.Version = version;
             return info;
-        }
-
-        /// <summary>
-        /// Create a copy of the passed <see cref="SystemState"/> that is marked with the <see cref="Phase.INTERMEDIATE"/> phase
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static SystemState MakeIntermediate(SystemState state)
-            => Make(state.Phase | Phase.INTERMEDIATE, state.Version);
-
-        /// <summary>
-        /// Create a copy of the passed <see cref="SystemState"/> that is not marked with the <see cref="Phase.INTERMEDIATE"/> phase
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void RemoveIntermediate(ref SystemState state)
-        {
-            state.Phase &= ~Phase.INTERMEDIATE;
         }
 
         /// <summary>

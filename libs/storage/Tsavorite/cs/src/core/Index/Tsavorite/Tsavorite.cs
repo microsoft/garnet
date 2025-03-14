@@ -29,6 +29,7 @@ namespace Tsavorite.core
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
         internal readonly int sectorSize;
+        internal readonly StateMachineDriver stateMachineDriver;
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -65,12 +66,10 @@ namespace Tsavorite.core
 
         int maxSessionID;
 
-        internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<TValue, TStoreFunctions, TAllocator> LockTable;
 
         internal void IncrementNumTransactionalSessions()
         {
-            _hybridLogCheckpoint.info.transactionsActive = true;
             Interlocked.Increment(ref hlogBase.NumActiveTransactionalSessions);
         }
         internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveTransactionalSessions);
@@ -98,7 +97,6 @@ namespace Tsavorite.core
 
             var checkpointSettings = kvSettings.GetCheckpointSettings() ?? new CheckpointSettings();
 
-            CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
 
             if (checkpointSettings.CheckpointDir != null && checkpointSettings.CheckpointManager != null)
@@ -158,7 +156,7 @@ namespace Tsavorite.core
             LockTable = new OverflowBucketLockTable<TValue, TStoreFunctions, TAllocator>(this);
             RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);
 
-            systemState = SystemState.Make(Phase.REST, 1);
+            stateMachineDriver = new(epoch, SystemState.Make(Phase.REST, 1), kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
 
             if (kvSettings.TryRecoverLatest)
             {
@@ -191,31 +189,20 @@ namespace Tsavorite.core
         /// </returns>
         public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions = null)
         {
-            token = default;
-            bool result;
-            if (checkpointType == CheckpointType.FoldOver)
-            {
-                var backend = new FoldOverCheckpointTask<TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new FullCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.Snapshot)
-            {
-                var backend = new SnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new FullCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.StreamingSnapshot)
+            IStateMachine stateMachine;
+
+            if (checkpointType == CheckpointType.StreamingSnapshot)
             {
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>(targetVersion));
+                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
             }
             else
-                throw new TsavoriteException("Unsupported full checkpoint type");
-
-            if (result)
-                token = _hybridLogCheckpointToken;
-            return result;
+            {
+                stateMachine = Checkpoint.Full(this, checkpointType, targetVersion, out token);
+            }
+            return stateMachineDriver.Register(stateMachine);
         }
 
         /// <summary>
@@ -255,9 +242,8 @@ namespace Tsavorite.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token)
         {
-            var result = StartStateMachine(new IndexSnapshotStateMachine<TValue, TStoreFunctions, TAllocator>());
-            token = _indexCheckpointToken;
-            return result;
+            var stateMachine = Checkpoint.IndexOnly(this, -1, out token);
+            return stateMachineDriver.Register(stateMachine);
         }
 
         /// <summary>
@@ -297,35 +283,33 @@ namespace Tsavorite.core
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions = null)
         {
-            token = default;
-            bool result;
-            if (checkpointType == CheckpointType.FoldOver)
-            {
-                var backend = new FoldOverCheckpointTask<TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new HybridLogCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.Snapshot)
-            {
-                ISynchronizationTask<TValue, TStoreFunctions, TAllocator> backend;
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress) // TODO: && !hlog.HasObjectLog)
-                    backend = new IncrementalSnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator>();
-                else
-                    backend = new SnapshotCheckpointTask<TValue, TStoreFunctions, TAllocator>();
-                result = StartStateMachine(new HybridLogCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
-            }
-            else if (checkpointType == CheckpointType.StreamingSnapshot)
+            IStateMachine stateMachine;
+
+            if (checkpointType == CheckpointType.StreamingSnapshot)
             {
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                result = StartStateMachine(new StreamingSnapshotCheckpointStateMachine<TValue, TStoreFunctions, TAllocator>(targetVersion));
+                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
             }
             else
-                throw new TsavoriteException("Unsupported hybrid log checkpoint type");
-
-            if (result)
-                token = _hybridLogCheckpointToken;
-            return result;
+            {
+                token = _lastSnapshotCheckpoint.info.guid;
+                var incremental = tryIncremental
+                    && checkpointType == CheckpointType.Snapshot
+                    && token != default
+                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
+                    ; // TODO remove && !hlog.HasObjectLog;
+                if (incremental)
+                {
+                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, targetVersion, token);
+                }
+                else
+                {
+                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, targetVersion, out token);
+                }
+            }
+            return stateMachineDriver.Register(stateMachine);
         }
 
         /// <summary>
@@ -442,44 +426,17 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
-
-            while (true)
+            try
             {
-                var systemState = this.systemState;
-                if (systemState.Phase == Phase.REST || systemState.Phase == Phase.PREPARE_GROW ||
-                    systemState.Phase == Phase.IN_PROGRESS_GROW)
-                    return;
-
-                List<ValueTask> valueTasks = new();
-
-                try
-                {
-                    epoch.Resume();
-                    ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, valueTasks, token);
-                }
-                catch (Exception)
-                {
-                    _indexCheckpoint.Reset();
-                    _hybridLogCheckpoint.Dispose();
-                    throw;
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
-
-                if (valueTasks.Count == 0)
-                {
-                    // Note: The state machine will not advance as long as there are active locking sessions.
-                    continue; // we need to re-check loop, so we return only when we are at REST
-                }
-
-                foreach (var task in valueTasks)
-                {
-                    if (!task.IsCompleted)
-                        await task.ConfigureAwait(false);
-                }
+                await stateMachineDriver.CompleteAsync(token);
             }
+            catch
+            {
+                _indexCheckpoint.Reset();
+                _hybridLogCheckpoint.Dispose();
+                throw;
+            }
+            return;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -615,37 +572,15 @@ namespace Tsavorite.core
         /// <summary>
         /// Grow the hash index by a factor of two. Caller should take a full checkpoint after growth, for persistence.
         /// </summary>
-        /// <returns>Whether the grow completed</returns>
-        public bool GrowIndex()
+        /// <returns>Whether the grow completed successfully</returns>
+        public async Task<bool> GrowIndexAsync()
         {
             if (epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
-            if (!StartStateMachine(new IndexResizeStateMachine<TValue, TStoreFunctions, TAllocator>()))
-                return false;
-
-            epoch.Resume();
-
-            try
-            {
-                while (true)
-                {
-                    var _systemState = SystemState.Copy(ref systemState);
-                    if (_systemState.Phase == Phase.PREPARE_GROW)
-                        ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, default);
-                    else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
-                        SplitBuckets(0);
-                    else if (_systemState.Phase == Phase.REST)
-                        break;
-                    epoch.ProtectAndDrain();
-                    _ = Thread.Yield();
-                }
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
-            return true;
+            var indexResizeTask = new IndexResizeSMTask<TValue, TStoreFunctions, TAllocator>(this);
+            var indexResizeSM = new IndexResizeSM(-1, indexResizeTask);
+            return await stateMachineDriver.RunAsync(indexResizeSM);
         }
 
         /// <summary>

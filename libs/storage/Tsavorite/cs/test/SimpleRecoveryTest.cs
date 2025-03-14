@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.IO;
 using System.Linq;
@@ -11,8 +13,6 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using static Tsavorite.test.TestUtils;
-
-#if LOGRECORD_TODO
 
 namespace Tsavorite.test.recovery.sumstore
 {

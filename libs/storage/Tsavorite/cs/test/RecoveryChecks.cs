@@ -736,7 +736,8 @@ namespace Tsavorite.test.recovery
                 _ = bc1.CompletePending(true);
             }
 
-            _ = store1.GrowIndex();
+            var result = await store1.GrowIndexAsync();
+            ClassicAssert.IsTrue(result);
 
             for (long key = 0; key < 1000; key++)
             {

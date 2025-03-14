@@ -485,7 +485,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Category(TransactionalUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
         public void InMemorySimpleLockTxnTest([Values] ResultLockTarget resultLockTarget,
-                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+                                              [Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase,
                                               [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -570,7 +570,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 long dummyInOut = 0;
                 status = useRMW
                     ? luContext.RMW(SpanByteFrom(ref resultKey), ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
@@ -624,7 +624,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Test]
         [Category(TransactionalUnsafeContextTestCategory)]
         [Category(SmokeTestCategory)]
-        public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase,
+        public void InMemoryLongLockTest([Values] ResultLockTarget resultLockTarget, [Values] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase,
                                          [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             Populate();
@@ -717,8 +717,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
-                resultValue = (read24Output + read51Output) * valueMult2;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 status = useRMW
                     ? luContext.RMW(SpanByteFrom(ref resultKey), ref resultValue) // value is 'input' for RMW
                     : luContext.Upsert(SpanByteFrom(ref resultKey), SpanByteFrom(ref resultValue));
@@ -758,7 +757,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         [Category(SmokeTestCategory)]
 #pragma warning disable IDE0060 // Remove unused parameter: readCopyDestination is used by Setup
         public void InMemoryDeleteTest([Values] ResultLockTarget resultLockTarget, [Values] ReadCopyDestination readCopyDestination,
-                                       [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
+                                       [Values(FlushMode.NoFlush, FlushMode.ReadOnly)] FlushMode flushMode, [Values(Phase.REST, Phase.PREPARE)] Phase phase)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
             // Phase.INTERMEDIATE is to test the non-Phase.REST blocks
@@ -788,7 +787,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
                 status = luContext.Delete(resultKey);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
