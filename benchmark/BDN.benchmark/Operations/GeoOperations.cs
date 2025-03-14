@@ -33,8 +33,8 @@ namespace BDN.benchmark.Operations
             SetupOperation(ref geoSearchStore, GEOSEARCHSTORE);
 
             // Pre-populate data
-            SlowConsumeMessage("*8\r\n$6\r\nGEOADD\r\n$5\r\nmykey\r\n$8\r\n13.361389\r\n$8\r\n38.115556\r\n$7\r\nPalermo\r\n"u8);
-            SlowConsumeMessage("*8\r\n$6\r\nGEOADD\r\n$5\r\nmykey\r\n$8\r\n15.087269\r\n$8\r\n37.502669\r\n$7\r\nCatania\r\n"u8);
+            SlowConsumeMessage("*5\r\n$6\r\nGEOADD\r\n$5\r\nmykey\r\n$9\r\n13.361389\r\n$9\r\n38.115556\r\n$7\r\nPalermo\r\n"u8);
+            SlowConsumeMessage("*5\r\n$6\r\nGEOADD\r\n$5\r\nmykey\r\n$9\r\n15.087269\r\n$9\r\n37.502669\r\n$7\r\nCatania\r\n"u8);
         }
 
         [Benchmark]
