@@ -69,9 +69,9 @@ namespace Garnet.server
         public HashObject(BinaryReader reader)
             : base(reader, MemoryUtils.DictionaryOverhead)
         {
-            hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
-
             int count = reader.ReadInt32();
+
+            hash = new Dictionary<byte[], byte[]>(count, ByteArrayComparer.Instance);
             for (int i = 0; i < count; i++)
             {
                 var keyLength = reader.ReadInt32();
