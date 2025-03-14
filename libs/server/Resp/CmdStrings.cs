@@ -457,5 +457,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_msgpack_array_too_long => "MsgPack array is too long"u8;
         public static ReadOnlySpan<byte> LUA_msgpack_map_too_long => "MsgPack map is too long"u8;
         public static ReadOnlySpan<byte> LUA_insufficient_lua_stack_space => "Insufficient Lua stack space"u8;
+        public static ReadOnlySpan<byte> LUA_parameter_reset_failed_memory => "Resetting parameters to Lua script failed: Memory"u8;
+        public static ReadOnlySpan<byte> LUA_parameter_reset_failed_syntax => "Resetting parameters to Lua script failed: Syntax"u8;
+        public static ReadOnlySpan<byte> LUA_parameter_reset_failed_runtime => "Resetting parameters to Lua script failed: Runtime"u8;
+        public static ReadOnlySpan<byte> LUA_parameter_reset_failed_other => "Resetting parameters to Lua script failed: Other"u8;
     }
 }

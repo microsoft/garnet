@@ -86,8 +86,16 @@ namespace Garnet.server
             preambleKeyAndArgvCount--;
             if (!TryResetParameters(nKeys, preambleKeyAndArgvCount - nKeys, out var failingStatus))
             {
-                // TODO: Consider status
-                return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                var constStrId =
+                    failingStatus switch
+                    {
+                        LuaStatus.ErrSyntax => constStrs.ParameterResetFailedSyntax,
+                        LuaStatus.ErrMem => constStrs.ParameterResetFailedMemory,
+                        LuaStatus.ErrRun => constStrs.ParameterResetFailedRuntime,
+                        LuaStatus.ErrErr or LuaStatus.Yield or LuaStatus.OK or _ => constStrs.ParameterResetFailedOther,
+                    };
+
+                return LuaWrappedError(0, constStrId);
             }
 
             if (nKeys > 0)
