@@ -1946,10 +1946,11 @@ end
         /// Convert value on top of stack (if any) into a RESP# reply
         /// and write it out to <paramref name="resp" />.
         /// </summary>
-        private void WriteResponse<TResponse>(ref TResponse resp)
+        private unsafe void WriteResponse<TResponse>(ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
-            // TODO: this needs to be reworked to handle pre-reserved stack space appropriately
+            // Copy the response object before a trial serialization
+            const int TopLevelNeededStackSpace = 1;
 
             // Need space for the lookup keys ("ok", "err", etc.) and their values
             const int KeyNeededStackSpace = 1;
@@ -1966,29 +1967,86 @@ end
             // 1 for the pending value
             const int TableNeededStackSize = 1;
 
-            if (!state.TryEnsureMinimumStackCapacity(10))
-            {
-                throw new Exception("eehhhh");
-            }
+            // This is a bit tricky since we don't know in advance how deep
+            // the stack could get during serialization.
+            //
+            // Typically we'll have plenty of space, so we don't want to do a
+            // double pass unless we have to.
+            //
+            // So what we do is serialize the response, dynamically expanding the
+            // stack.  IF we have to send, we remember that and DON'T but instead
+            // keep going to see if we'll run out of stack space.
+            //
+            // At the end, if we didn't fill the buffer (that is, we never SendAndReset)
+            // and didn't run out of stack space - we just return.  If we ran out of stack space,
+            // we reset resp.BufferCur and write an error out.  If we filled the buffer but
+            // didn't run out of stack space, we serialize AGAIN this time know we'll succeed
+            // so we can sent as we go like normal.
+            //
+            // Ideally we do everything in a single pass like usual.
 
             if (state.StackTop == 0)
             {
                 if (resp.RespProtocolVersion == 3)
                 {
-                    WriteResp3Null(this, pop: false, ref resp);
+                    _ = TryWriteResp3Null(this, canSend: true, pop: false, ref resp, out var sendErr);
+                    Debug.Assert(sendErr == -1, "Sending a top level null should always suceed since no stack space is needed");
                 }
                 else
                 {
-                    WriteResp2Null(this, pop: false, ref resp);
+                    _ = TryWriteResp2Null(this, canSend: true, pop: false, ref resp, out var sendErr);
+                    Debug.Assert(sendErr == -1, "Sending a top level null should always suceed since no stack space is needed");
                 }
 
                 return;
             }
 
-            WriteSingleItem(this, ref resp);
+            var oldCur = resp.BufferCur;
 
-            // Write out a single RESP item and pop it off the stack
-            static void WriteSingleItem(LuaRunner runner, ref TResponse resp)
+            var stackRes = state.TryEnsureMinimumStackCapacity(TopLevelNeededStackSpace);
+            Debug.Assert(stackRes, "Caller should have ensured we're < LUA_MINSTACK");
+
+            // Copy the value in case we need a second pass
+            // 
+            // Note that this is just copying a reference in the case it's a table, string, etc.
+            state.PushValue(1);
+
+            var wholeResponseFitInBuffer = TryWriteSingleItem(this, canSend: false, ref resp, out var err);
+            if (wholeResponseFitInBuffer)
+            {
+                // Success in a single pass, we're done
+
+                // Remove the extra value copy we pushed
+                state.Pop(1);
+                return;
+            }
+
+            // Either an error occurred, or we need a second pass
+            // Regardless we need to roll BufferCur back
+
+            resp.BufferCur = oldCur;
+
+            if (err != -1)
+            {
+                // An error was encountered, so write it out
+
+                state.ClearStack();
+                state.PushConstantString(err);
+                _ = state.CheckBuffer(1, out var errBuff);
+
+                while (!RespWriteUtils.TryWriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                return;
+            }
+
+            // Second pass is required, but now we KNOW it will succeed
+            var secondPassRes = TryWriteSingleItem(this, canSend: true, ref resp, out var secondPassErr);
+            Debug.Assert(!secondPassRes, "Should have required a send in this path");
+            Debug.Assert(secondPassErr == -1, "No error should be possible on the second pass");
+
+            // Write out a single RESP item and pop it off the stack, returning true if all fit in the current send buffer
+            static bool TryWriteSingleItem(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 var curTop = runner.state.StackTop;
                 var retType = runner.state.Type(curTop);
@@ -1996,26 +2054,33 @@ end
 
                 if (isNullish)
                 {
+                    var fitInBuffer = true;
+
                     if (resp.RespProtocolVersion == 3)
                     {
-                        WriteResp3Null(runner, pop: true, ref resp);
+                        if (!TryWriteResp3Null(runner, canSend, pop: true, ref resp, out errConstStrIndex))
+                        {
+                            fitInBuffer = false;
+                            Debug.Assert(errConstStrIndex == -1, "Nulls require no stack space, so should never fail");
+                        }
                     }
                     else
                     {
-                        WriteResp2Null(runner, pop: true, ref resp);
+                        if (!TryWriteResp2Null(runner, canSend, pop: true, ref resp, out errConstStrIndex))
+                        {
+                            fitInBuffer = false;
+                        }
                     }
 
-                    return;
+                    return fitInBuffer;
                 }
                 else if (retType == LuaType.Number)
                 {
-                    WriteNumber(runner, ref resp);
-                    return;
+                    return TryWriteNumber(runner, canSend, ref resp, out errConstStrIndex);
                 }
                 else if (retType == LuaType.String)
                 {
-                    WriteString(runner, ref resp);
-                    return;
+                    return TryWriteString(runner, canSend, ref resp, out errConstStrIndex);
                 }
                 else if (retType == LuaType.Boolean)
                 {
@@ -2026,31 +2091,27 @@ end
                         runner.state.Pop(1);
                         runner.state.PushInteger(toPush);
 
-                        WriteNumber(runner, ref resp);
-                        return;
+                        return TryWriteNumber(runner, canSend, ref resp, out errConstStrIndex);
                     }
                     else if (runner.respServerSession?.respProtocolVersion == 2 && resp.RespProtocolVersion == 3)
                     {
-                        // Likewise, this is how Redis actuallys behaves
+                        // Likewise, this is how Redis actually behaves
                         if (runner.state.ToBoolean(curTop))
                         {
                             runner.state.Pop(1);
                             runner.state.PushInteger(1);
 
-                            WriteNumber(runner, ref resp);
-                            return;
+                            return TryWriteNumber(runner, canSend, ref resp, out errConstStrIndex);
                         }
                         else
                         {
-                            WriteResp3Null(runner, pop: true, ref resp);
-                            return;
+                            return TryWriteResp3Null(runner, canSend, pop: true, ref resp, out errConstStrIndex);
                         }
                     }
                     else if (runner.respServerSession?.respProtocolVersion == 3)
                     {
                         // RESP3 has a proper boolean type
-                        WriteResp3Boolean(runner, ref resp);
-                        return;
+                        return TryWriteResp3Boolean(runner, canSend, ref resp, out errConstStrIndex);
                     }
                     else
                     {
@@ -2063,13 +2124,11 @@ end
                             runner.state.Pop(1);
                             runner.state.PushInteger(1);
 
-                            WriteNumber(runner, ref resp);
-                            return;
+                            return TryWriteNumber(runner, canSend, ref resp, out errConstStrIndex);
                         }
                         else
                         {
-                            WriteResp2Null(runner, pop: true, ref resp);
-                            return;
+                            return TryWriteResp2Null(runner, canSend, pop: true, ref resp, out errConstStrIndex);
                         }
                     }
                 }
@@ -2084,21 +2143,39 @@ end
                     var doubleType = runner.state.RawGet(null, curTop);
                     if (doubleType == LuaType.Number)
                     {
+                        var fitInBuffer = true;
+
                         if (resp.RespProtocolVersion == 3)
                         {
-                            WriteDouble(runner, ref resp);
+                            if (!TryWriteDouble(runner, canSend, ref resp, out errConstStrIndex))
+                            {
+                                fitInBuffer = false;
+                                if (errConstStrIndex != -1)
+                                {
+                                    // Fail the whole serialization
+                                    return false;
+                                }
+                            }
                         }
                         else
                         {
                             // Force double to string for RESP2
                             _ = runner.state.CheckBuffer(curTop + 1, out _);
-                            WriteString(runner, ref resp);
+                            if (!TryWriteString(runner, canSend, ref resp, out errConstStrIndex))
+                            {
+                                fitInBuffer = false;
+                                if (errConstStrIndex != -1)
+                                {
+                                    // Fail the whole serialization
+                                    return false;
+                                }
+                            }
                         }
 
                         // Remove table from stack
                         runner.state.Pop(1);
 
-                        return;
+                        return fitInBuffer;
                     }
 
                     // Remove whatever we read from the table under the "double" key
@@ -2108,19 +2185,37 @@ end
                     var mapType = runner.state.RawGet(null, curTop);
                     if (mapType == LuaType.Table)
                     {
+                        var fitInBuffer = true;
+
                         if (resp.RespProtocolVersion == 3)
                         {
-                            WriteMap(runner, ref resp);
+                            if (!TryWriteMap(runner, canSend, ref resp, out errConstStrIndex))
+                            {
+                                fitInBuffer = false;
+                                if (errConstStrIndex != -1)
+                                {
+                                    // Fail the whole serialization
+                                    return false;
+                                }
+                            }
                         }
                         else
                         {
-                            WriteMapToArray(runner, ref resp);
+                            if (!TryWriteMapToArray(runner, canSend, ref resp, out errConstStrIndex))
+                            {
+                                fitInBuffer = false;
+                                if (errConstStrIndex != -1)
+                                {
+                                    // Fail the whole serialization
+                                    return false;
+                                }
+                            }
                         }
 
                         // remove table from stack
                         runner.state.Pop(1);
 
-                        return;
+                        return fitInBuffer;
                     }
 
                     // Remove whatever we read from the table under the "map" key
@@ -2130,19 +2225,37 @@ end
                     var setType = runner.state.RawGet(null, curTop);
                     if (setType == LuaType.Table)
                     {
+                        var fitInBuffer = false;
+
                         if (resp.RespProtocolVersion == 3)
                         {
-                            WriteSet(runner, ref resp);
+                            if (!TryWriteSet(runner, canSend, ref resp, out errConstStrIndex))
+                            {
+                                fitInBuffer = false;
+                                if (errConstStrIndex != -1)
+                                {
+                                    // Fail the whole serialization
+                                    return false;
+                                }
+                            }
                         }
                         else
                         {
-                            WriteSetToArray(runner, ref resp);
+                            if (!TryWriteSetToArray(runner, canSend, ref resp, out errConstStrIndex))
+                            {
+                                fitInBuffer = false;
+                                if (errConstStrIndex != -1)
+                                {
+                                    // Fail the whole serialization
+                                    return false;
+                                }
+                            }
                         }
 
                         // remove table from stack
                         runner.state.Pop(1);
 
-                        return;
+                        return fitInBuffer;
                     }
 
                     // Remove whatever we read from the table under the "set" key
@@ -2153,12 +2266,21 @@ end
                     var okType = runner.state.RawGet(null, curTop);
                     if (okType == LuaType.String)
                     {
-                        WriteString(runner, ref resp);
+                        var fitInBuffer = true;
+                        if (!TryWriteString(runner, canSend, ref resp, out errConstStrIndex))
+                        {
+                            fitInBuffer = false;
+                            if (errConstStrIndex != -1)
+                            {
+                                // Fail the whole serialization
+                                return false;
+                            }
+                        }
 
                         // Remove table from stack
                         runner.state.Pop(1);
 
-                        return;
+                        return fitInBuffer;
                     }
 
                     // Remove whatever we read from the table under the "ok" key
@@ -2170,49 +2292,94 @@ end
                     var errType = runner.state.RawGet(null, curTop);
                     if (errType == LuaType.String)
                     {
-                        WriteError(runner, ref resp);
+                        var fitInBuffer = false;
+
+                        if (!TryWriteError(runner, canSend, ref resp, out errConstStrIndex))
+                        {
+                            fitInBuffer = false;
+                            if (errConstStrIndex != -1)
+                            {
+                                // Fail the whole serialization
+                                return false;
+                            }
+                        }
 
                         // Remove table from stack
                         runner.state.Pop(1);
 
-                        return;
+                        return fitInBuffer;
                     }
 
                     // Remove whatever we read from the table under the "err" key
                     runner.state.Pop(1);
 
                     // Map this table to an array
-                    WriteTableToArray(runner, ref resp);
-                    return;
+                    return TryWriteTableToArray(runner, canSend, ref resp, out errConstStrIndex);
                 }
+
+                Debug.Fail($"All types should have been handled, found {retType}");
+                errConstStrIndex = -1;
+                return true;
             }
 
-            // Write out $-1\r\n (the RESP2 null) and (optionally) pop the null value off the stack
-            static unsafe void WriteResp2Null(LuaRunner runner, bool pop, ref TResponse resp)
+            // Write out $-1\r\n (the RESP2 null) and (optionally) pop the null value off the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteResp2Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
             {
+                var fitInBuffer = true;
+
                 while (!RespWriteUtils.TryWriteNull(ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 if (pop)
                 {
                     runner.state.Pop(1);
                 }
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Write out _\r\n (the RESP3 null) and (optionally) pop the null value off the stack
-            static unsafe void WriteResp3Null(LuaRunner runner, bool pop, ref TResponse resp)
+            // Write out _\r\n (the RESP3 null) and (optionally) pop the null value off the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteResp3Null(LuaRunner runner, bool canSend, bool pop, ref TResponse resp, out int errConstStrIndex)
             {
+                var fitInBuffer = true;
+
                 while (!RespWriteUtils.TryWriteResp3Null(ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 if (pop)
                 {
                     runner.state.Pop(1);
                 }
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Writes the number on the top of the stack, removes it from the stack
-            static unsafe void WriteNumber(LuaRunner runner, ref TResponse resp)
+            // Writes the number on the top of the stack, removes it from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteNumber(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Number, "Number was not on top of stack");
 
@@ -2221,21 +2388,50 @@ end
                 // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
                 var num = (long)runner.state.CheckNumber(runner.state.StackTop);
 
+                var fitInBuffer = true;
+
                 while (!RespWriteUtils.TryWriteInt64(num, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Writes the string on the top of the stack, removes it from the stack
-            static unsafe void WriteString(LuaRunner runner, ref TResponse resp)
+            // Writes the string on the top of the stack, removes it from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteString(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var buf);
+
+                var fitInBuffer = true;
 
                 // Strings can be veeeerrrrry large, so we can't use the short helpers
                 // Thus we write the full string directly
                 while (!RespWriteUtils.TryWriteBulkStringLength(buf, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 // Repeat while we have bytes left to write
                 while (!buf.IsEmpty)
@@ -2251,7 +2447,16 @@ end
                     // Flush if we filled the buffer
                     if (destSpace == copyLen)
                     {
-                        resp.SendAndReset();
+                        fitInBuffer = false;
+
+                        if (canSend)
+                        {
+                            resp.SendAndReset();
+                        }
+                        else
+                        {
+                            break;
+                        }
                     }
 
                     // Move past the data we wrote out
@@ -2260,50 +2465,111 @@ end
 
                 // End the string
                 while (!RespWriteUtils.TryWriteNewLine(ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Writes the boolean on the top of the stack, removes it from the stack
-            static unsafe void WriteResp3Boolean(LuaRunner runner, ref TResponse resp)
+            // Writes the boolean on the top of the stack, removes it from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteResp3Boolean(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Boolean, "Boolean was not on top of stack");
+
+                var fitInBuffer = true;
 
                 // In RESP3 there is a dedicated boolean type
                 if (runner.state.ToBoolean(runner.state.StackTop))
                 {
                     while (!RespWriteUtils.TryWriteTrue(ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
+                    {
+                        fitInBuffer = false;
+
+                        if (canSend)
+                        {
+                            resp.SendAndReset();
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
                 else
                 {
                     while (!RespWriteUtils.TryWriteFalse(ref resp.BufferCur, resp.BufferEnd))
-                        resp.SendAndReset();
+                    {
+                        fitInBuffer = false;
+
+                        if (canSend)
+                        {
+                            resp.SendAndReset();
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
 
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Writes the number on the top of the stack as a double, removes it from the stack
-            static unsafe void WriteDouble(LuaRunner runner, ref TResponse resp)
+            // Writes the number on the top of the stack as a double, removes it from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteDouble(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Number, "Number was not on top of stack");
 
+                var fitInBuffer = true;
+
                 var num = runner.state.CheckNumber(runner.state.StackTop);
+
                 while (!RespWriteUtils.TryWriteDoubleNumeric(num, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Write a table on the top of the stack as a map, removes it from the stack
-            static unsafe void WriteMap(LuaRunner runner, ref TResponse resp)
+            // Write a table on the top of the stack as a map, removes it from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteMap(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                var stackRes = runner.state.TryEnsureMinimumStackCapacity(MapNeededStackSpace);
-                Debug.Assert(stackRes, "Space should have already been reserved");
+                if (!runner.state.TryEnsureMinimumStackCapacity(MapNeededStackSpace))
+                {
+                    errConstStrIndex = runner.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var mapSize = 0;
 
@@ -2321,9 +2587,22 @@ end
                     runner.state.Pop(1);
                 }
 
+                var fitInBuffer = true;
+
                 // Write the map header
                 while (!RespWriteUtils.TryWriteMapLength(mapSize, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (fitInBuffer)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 // Write the values out by traversing the table again
                 runner.state.PushNil();
@@ -2333,25 +2612,49 @@ end
                     runner.state.PushValue(tableIx + 1);
 
                     // Write (and remove) key out
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
 
                     // Write (and remove) value out
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
 
                     // Now we have the original key value on the stack
                 }
 
                 // Remove the table
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Convert a table to an array, where each key-value pair is converted to 2 entries
-            static unsafe void WriteMapToArray(LuaRunner runner, ref TResponse resp)
+            // Convert a table to an array, where each key-value pair is converted to 2 entries, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteMapToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                var stackRes = runner.state.TryEnsureMinimumStackCapacity(ArrayNeededStackSize);
-                Debug.Assert(stackRes, "Space should have already been reserved");
+                if (!runner.state.TryEnsureMinimumStackCapacity(ArrayNeededStackSize))
+                {
+                    errConstStrIndex = runner.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var mapSize = 0;
 
@@ -2371,9 +2674,22 @@ end
 
                 var arraySize = mapSize * 2;
 
+                var fitInBuffer = true;
+
                 // Write the array header
                 while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 // Write the values out by traversing the table again
                 runner.state.PushNil();
@@ -2383,25 +2699,46 @@ end
                     runner.state.PushValue(tableIx + 1);
 
                     // Write (and remove) key out
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
 
                     // Write (and remove) value out
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
 
                     // Now we have the original key value on the stack
                 }
 
                 // Remove the table
                 runner.state.Pop(1);
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Write a table on the top of the stack as a set, removes it from the stack
-            static unsafe void WriteSet(LuaRunner runner, ref TResponse resp)
+            // Write a table on the top of the stack as a set, removes it from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteSet(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                var stackRes = runner.state.TryEnsureMinimumStackCapacity(SetNeededStackSize);
-                Debug.Assert(stackRes, "Space should have already been reserved");
+                if (!runner.state.TryEnsureMinimumStackCapacity(SetNeededStackSize))
+                {
+                    errConstStrIndex = runner.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var setSize = 0;
 
@@ -2419,9 +2756,22 @@ end
                     runner.state.Pop(1);
                 }
 
+                var fitInBuffer = true;
+
                 // Write the set header
                 while (!RespWriteUtils.TryWriteSetLength(setSize, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 // Write the values out by traversing the table again
                 runner.state.PushNil();
@@ -2434,23 +2784,37 @@ end
                     runner.state.PushValue(tableIx + 1);
 
                     // Write (and remove) key copy out
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
 
                     // Now we have the original key value on the stack
                 }
 
                 // Remove the table
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
             // Write a table on the top of the stack as an array that contains only the keys of the
-            // table, then remove the table from the stack
-            static unsafe void WriteSetToArray(LuaRunner runner, ref TResponse resp)
+            // table, then remove the table from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteSetToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                var stackRes = runner.state.TryEnsureMinimumStackCapacity(SetNeededStackSize);
-                Debug.Assert(stackRes, "Space should have already been reserved");
+                if (!runner.state.TryEnsureMinimumStackCapacity(SetNeededStackSize))
+                {
+                    errConstStrIndex = runner.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var setSize = 0;
 
@@ -2470,9 +2834,22 @@ end
 
                 var arraySize = setSize;
 
+                var fitInBuffer = true;
+
                 // Write the array header
                 while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 // Write the values out by traversing the table again
                 runner.state.PushNil();
@@ -2485,34 +2862,64 @@ end
                     runner.state.PushValue(tableIx + 1);
 
                     // Write (and remove) key copy out
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
 
                     // Now we have the original key value on the stack
                 }
 
                 // Remove the table
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Writes the string on the top of the stack out as an error, removes the string from the stack
-            static unsafe void WriteError(LuaRunner runner, ref TResponse resp)
+            // Writes the string on the top of the stack out as an error, removes the string from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteError(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var errBuff);
 
+                var fitInBuffer = true;
+
                 while (!RespWriteUtils.TryWriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
 
-            // Writes the table on the top of the stack out as an array, removed table from the stack
-            static unsafe void WriteTableToArray(LuaRunner runner, ref TResponse resp)
+            // Writes the table on the top of the stack out as an array, removed table from the stack, returning true if all fit in the current send buffer
+            static unsafe bool TryWriteTableToArray(LuaRunner runner, bool canSend, ref TResponse resp, out int errConstStrIndex)
             {
                 // Redis does not respect metatables, so RAW access is ok here
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                var stackRes = runner.state.TryEnsureMinimumStackCapacity(TableNeededStackSize);
-                Debug.Assert(stackRes, "Space should have already been reserved");
+                if (!runner.state.TryEnsureMinimumStackCapacity(TableNeededStackSize))
+                {
+                    errConstStrIndex = runner.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 // Lua # operator - this MAY stop at nils, but isn't guaranteed to
                 // See: https://www.lua.org/manual/5.3/manual.html#3.4.7
@@ -2531,8 +2938,21 @@ end
                     }
                 }
 
+                var fitInBuffer = true;
+
                 while (!RespWriteUtils.TryWriteArrayLength(trueLen, ref resp.BufferCur, resp.BufferEnd))
-                    resp.SendAndReset();
+                {
+                    fitInBuffer = false;
+
+                    if (canSend)
+                    {
+                        resp.SendAndReset();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
 
                 for (var i = 1; i <= trueLen; i++)
                 {
@@ -2540,11 +2960,22 @@ end
                     _ = runner.state.RawGetInteger(null, runner.state.StackTop, i);
 
                     // Write the item out, removing it from teh stack
-                    WriteSingleItem(runner, ref resp);
+                    if (!TryWriteSingleItem(runner, canSend, ref resp, out errConstStrIndex))
+                    {
+                        fitInBuffer = false;
+                        if (errConstStrIndex != -1)
+                        {
+                            // Fail the whole serialization
+                            return false;
+                        }
+                    }
                 }
 
                 // Remove the table
                 runner.state.Pop(1);
+
+                errConstStrIndex = -1;
+                return fitInBuffer;
             }
         }
 
