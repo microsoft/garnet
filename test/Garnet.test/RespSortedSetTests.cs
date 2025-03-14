@@ -2970,7 +2970,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
 
-            //zdiff withscores
+            // zdiffstore
             var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
             var expectedResponse = ":0\r\n";
             var actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
@@ -2981,6 +2981,19 @@ namespace Garnet.test
 
             zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
             expectedResponse = "1\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+
+            // Check that the sets have correct cardinality
+            zdiffResult = lightClientRequest.SendCommandChunks("ZCARD desKey", bytesSent);
+            expectedResponse = "1\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+
+            zdiffResult = lightClientRequest.SendCommandChunks("ZCARD dadi", bytesSent);
+            expectedResponse = "6\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+
+            zdiffResult = lightClientRequest.SendCommandChunks("ZCARD seconddadi", bytesSent);
+            expectedResponse = "4\r\n";
             actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
         }
 
@@ -3005,6 +3018,19 @@ namespace Garnet.test
             expectedResponse = "*4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
             actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+
+            // Check that the sets have correct cardinality
+            zdiffResult = lightClientRequest.SendCommandChunks("ZCARD zset1", bytesSent);
+            expectedResponse = "6\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+
+            zdiffResult = lightClientRequest.SendCommandChunks("ZCARD zset2", bytesSent);
+            expectedResponse = "4\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+
+            zdiffResult = lightClientRequest.SendCommandChunks("ZCARD zset3", bytesSent);
+            expectedResponse = "4\r\n";
+            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
         }
 
         [Test]
