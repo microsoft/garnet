@@ -6,7 +6,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Numerics;
 
 #nullable enable
@@ -46,10 +45,9 @@ namespace Garnet.common.Collections
     }
 
     [DebuggerDisplay("Count = {Count}")]
-    public partial class SortedSet<T> : ISet<T>, ICollection<T>, IReadOnlyCollection<T>, IReadOnlySet<T>
+    public partial class SortedSet<T> : ICollection<T>
     {
         private Node? root;
-        private IComparer<T> comparer = default!;
         private int count;
         private int version;
 
@@ -57,97 +55,12 @@ namespace Garnet.common.Collections
 
         public SortedSet()
         {
-            comparer = Comparer<T>.Default;
+            Comparer = Comparer<T>.Default;
         }
 
         public SortedSet(IComparer<T>? comparer)
         {
-            this.comparer = comparer ?? Comparer<T>.Default;
-        }
-
-        public SortedSet(IEnumerable<T> collection) : this(collection, Comparer<T>.Default) { }
-
-        public SortedSet(IEnumerable<T> collection, IComparer<T>? comparer)
-            : this(comparer)
-        {
-            ArgumentNullException.ThrowIfNull(collection);
-
-            // These are explicit type checks in the mold of HashSet. It would have worked better with
-            // something like an ISorted<T> interface. (We could make this work for SortedList.Keys, etc.)
-            if (collection is SortedSet<T> sortedSet &&
-                sortedSet is not TreeSubSet && HasEqualComparer(sortedSet))
-            {
-                if (sortedSet.Count > 0)
-                {
-                    Debug.Assert(sortedSet.root != null);
-                    this.count = sortedSet.count;
-                    root = sortedSet.root.DeepClone(this.count);
-                }
-                return;
-            }
-
-            T[] elements = collection.ToArray();
-            int count = elements.Length;
-            if (count > 0)
-            {
-                // If `comparer` is null, sets it to Comparer<T>.Default. We checked for this condition in the IComparer<T> constructor.
-                // Array.Sort handles null comparers, but we need this later when we use `comparer.Compare` directly.
-                comparer = this.comparer;
-                Array.Sort(elements, 0, count, comparer);
-
-                // Overwrite duplicates while shifting the distinct elements towards
-                // the front of the array.
-                int index = 1;
-                for (int i = 1; i < count; i++)
-                {
-                    if (comparer.Compare(elements[i], elements[i - 1]) != 0)
-                    {
-                        elements[index++] = elements[i];
-                    }
-                }
-
-                count = index;
-                root = ConstructRootFromSortedArray(elements, 0, count - 1, null);
-                this.count = count;
-            }
-        }
-
-
-        private void AddAllElements(IEnumerable<T> collection)
-        {
-            foreach (T item in collection)
-            {
-                if (!Contains(item))
-                {
-                    Add(item);
-                }
-            }
-        }
-
-        private void RemoveAllElements(IEnumerable<T> collection)
-        {
-            T? min = Min;
-            T? max = Max;
-            foreach (T item in collection)
-            {
-                if (!(comparer.Compare(item, min) < 0 || comparer.Compare(item, max) > 0) && Contains(item))
-                {
-                    Remove(item);
-                }
-            }
-        }
-
-        private bool ContainsAllElements(IEnumerable<T> collection)
-        {
-            foreach (T item in collection)
-            {
-                if (!Contains(item))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            Comparer = comparer ?? Comparer<T>.Default;
         }
 
         /// <summary>
@@ -169,7 +82,7 @@ namespace Garnet.common.Collections
             // See page 264 of "Introduction to algorithms" by Thomas H. Cormen
             // Note: It's not strictly necessary to provide the stack capacity, but we don't
             // want the stack to unnecessarily allocate arrays as it grows.
-            var stack = new Stack<Node>(2 * (int)Log2(Count + 1));
+            var stack = new Stack<Node>(2 * Log2(Count + 1));
             Node? current = root;
 
             while (current != null)
@@ -247,7 +160,7 @@ namespace Garnet.common.Collections
             }
         }
 
-        public IComparer<T> Comparer => comparer;
+        public IComparer<T> Comparer { get; } = default!;
 
         bool ICollection<T>.IsReadOnly => false;
 
@@ -255,7 +168,7 @@ namespace Garnet.common.Collections
         // Virtual function for TreeSubSet, which may need to update its count.
         internal virtual void VersionCheck(bool updateCount = false) { }
         // Virtual function for TreeSubSet, which may need the count variable of the parent set.
-        internal virtual int TotalCount() { return Count; }
+        internal virtual int TotalCount() => Count;
 
         // Virtual function for TreeSubSet, which may need to do range checks.
         internal virtual bool IsWithinRange(T item) => true;
@@ -288,7 +201,7 @@ namespace Garnet.common.Collections
             int order = 0;
             while (current != null)
             {
-                order = comparer.Compare(item, current.Item);
+                order = Comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     // We could have changed root node to red during the search process.
@@ -431,7 +344,7 @@ namespace Garnet.common.Collections
                 }
 
                 // We don't need to compare after we find the match.
-                int order = foundMatch ? -1 : comparer.Compare(item, current.Item);
+                int order = foundMatch ? -1 : Comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     // Save the matching node.
@@ -473,9 +386,7 @@ namespace Garnet.common.Collections
         public void CopyTo(T[] array, int index, int count)
         {
             ArgumentNullException.ThrowIfNull(array);
-
             ArgumentOutOfRangeException.ThrowIfNegative(index);
-
             ArgumentOutOfRangeException.ThrowIfNegative(count);
 
             if (count > array.Length - index)
@@ -600,7 +511,7 @@ namespace Garnet.common.Collections
             Node? current = root;
             while (current != null)
             {
-                int order = comparer.Compare(item, current.Item);
+                int order = Comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     return current;
@@ -632,7 +543,7 @@ namespace Garnet.common.Collections
             int count = 0;
             while (current != null)
             {
-                int order = comparer.Compare(item, current.Item);
+                int order = Comparer.Compare(item, current.Item);
                 if (order == 0)
                 {
                     return count;
@@ -652,13 +563,13 @@ namespace Garnet.common.Collections
             Node? current = root;
             while (current != null)
             {
-                if (lowerBoundActive && comparer.Compare(from, current.Item) > 0)
+                if (lowerBoundActive && Comparer.Compare(from, current.Item) > 0)
                 {
                     current = current.Right;
                 }
                 else
                 {
-                    if (upperBoundActive && comparer.Compare(to, current.Item) < 0)
+                    if (upperBoundActive && Comparer.Compare(to, current.Item) < 0)
                     {
                         current = current.Left;
                     }
@@ -673,138 +584,6 @@ namespace Garnet.common.Collections
         }
 
         internal void UpdateVersion() => ++version;
-
-        /// <summary>
-        /// Decides whether two sets have equal contents, using a fallback comparer if the sets do not have equivalent equality comparers.
-        /// </summary>
-        /// <param name="set1">The first set.</param>
-        /// <param name="set2">The second set.</param>
-        /// <param name="comparer">The fallback comparer to use if the sets do not have equal comparers.</param>
-        /// <returns><c>true</c> if the sets have equal contents; otherwise, <c>false</c>.</returns>
-        internal static bool SortedSetEquals(SortedSet<T>? set1, SortedSet<T>? set2, IComparer<T> comparer)
-        {
-            if (set1 == null)
-            {
-                return set2 == null;
-            }
-
-            if (set2 == null)
-            {
-                Debug.Assert(set1 != null);
-                return false;
-            }
-
-            if (set1.HasEqualComparer(set2))
-            {
-                return set1.Count == set2.Count && set1.SetEquals(set2);
-            }
-
-            bool found;
-            foreach (T item1 in set1)
-            {
-                found = false;
-                foreach (T item2 in set2)
-                {
-                    if (comparer.Compare(item1, item2) == 0)
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Determines whether two <see cref="SortedSet{T}"/> instances have the same comparer.
-        /// </summary>
-        /// <param name="other">The other <see cref="SortedSet{T}"/>.</param>
-        /// <returns>A value indicating whether both sets have the same comparer.</returns>
-        private bool HasEqualComparer(SortedSet<T> other)
-        {
-            // Commonly, both comparers will be the default comparer (and reference-equal). Avoid a virtual method call to Equals() in that case.
-            return Comparer == other.Comparer || Comparer.Equals(other.Comparer);
-        }
-
-
-        public void UnionWith(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            TreeSubSet? treeSubset = this as TreeSubSet;
-
-            if (treeSubset != null)
-                VersionCheck();
-
-            if (asSorted != null && treeSubset == null && Count == 0)
-            {
-                SortedSet<T> dummy = new SortedSet<T>(asSorted, comparer);
-                root = dummy.root;
-                count = dummy.count;
-                version++;
-                return;
-            }
-
-            // This actually hurts if N is much greater than M. The / 2 is arbitrary.
-            if (asSorted != null && treeSubset == null && HasEqualComparer(asSorted) && (asSorted.Count > this.Count / 2))
-            {
-                // First do a merge sort to an array.
-                T[] merged = new T[asSorted.Count + this.Count];
-                int c = 0;
-                Enumerator mine = this.GetEnumerator();
-                Enumerator theirs = asSorted.GetEnumerator();
-                bool mineEnded = !mine.MoveNext(), theirsEnded = !theirs.MoveNext();
-                while (!mineEnded && !theirsEnded)
-                {
-                    int comp = Comparer.Compare(mine.Current, theirs.Current);
-                    if (comp < 0)
-                    {
-                        merged[c++] = mine.Current;
-                        mineEnded = !mine.MoveNext();
-                    }
-                    else if (comp == 0)
-                    {
-                        merged[c++] = theirs.Current;
-                        mineEnded = !mine.MoveNext();
-                        theirsEnded = !theirs.MoveNext();
-                    }
-                    else
-                    {
-                        merged[c++] = theirs.Current;
-                        theirsEnded = !theirs.MoveNext();
-                    }
-                }
-
-                if (!mineEnded || !theirsEnded)
-                {
-                    Enumerator remaining = (mineEnded ? theirs : mine);
-                    do
-                    {
-                        merged[c++] = remaining.Current;
-                    }
-                    while (remaining.MoveNext());
-                }
-
-                // now merged has all c elements
-
-                // safe to gc the root, we  have all the elements
-                root = null;
-
-                root = ConstructRootFromSortedArray(merged, 0, c - 1, null);
-                count = c;
-                version++;
-            }
-            else
-            {
-                AddAllElements(other);
-            }
-        }
 
         private static Node? ConstructRootFromSortedArray(T[] arr, int startIndex, int endIndex, Node? redNode)
         {
@@ -872,485 +651,11 @@ namespace Garnet.common.Collections
             return root;
         }
 
-        public virtual void IntersectWith(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (Count == 0)
-                return;
-
-            if (other == this)
-                return;
-
-            // HashSet<T> optimizations can't be done until equality comparers and comparers are related
-
-            // Technically, this would work as well with an ISorted<T>
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            TreeSubSet? treeSubset = this as TreeSubSet;
-
-            if (treeSubset != null)
-                VersionCheck();
-
-            if (asSorted != null && treeSubset == null && HasEqualComparer(asSorted))
-            {
-                // First do a merge sort to an array.
-                T[] merged = new T[this.Count];
-                int c = 0;
-                Enumerator mine = this.GetEnumerator();
-                Enumerator theirs = asSorted.GetEnumerator();
-                bool mineEnded = !mine.MoveNext(), theirsEnded = !theirs.MoveNext();
-                T? max = Max;
-
-                while (!mineEnded && !theirsEnded && Comparer.Compare(theirs.Current, max) <= 0)
-                {
-                    int comp = Comparer.Compare(mine.Current, theirs.Current);
-                    if (comp < 0)
-                    {
-                        mineEnded = !mine.MoveNext();
-                    }
-                    else if (comp == 0)
-                    {
-                        merged[c++] = theirs.Current;
-                        mineEnded = !mine.MoveNext();
-                        theirsEnded = !theirs.MoveNext();
-                    }
-                    else
-                    {
-                        theirsEnded = !theirs.MoveNext();
-                    }
-                }
-
-                // now merged has all c elements
-
-                // safe to gc the root, we  have all the elements
-                root = null;
-
-                root = ConstructRootFromSortedArray(merged, 0, c - 1, null);
-                count = c;
-                version++;
-            }
-            else
-            {
-                IntersectWithEnumerable(other);
-            }
-        }
-
-        internal virtual void IntersectWithEnumerable(IEnumerable<T> other)
-        {
-            // TODO: Perhaps a more space-conservative way to do this
-            List<T> toSave = new List<T>(Count);
-            foreach (T item in other)
-            {
-                if (Contains(item))
-                {
-                    toSave.Add(item);
-                }
-            }
-
-            Clear();
-            foreach (T item in toSave)
-            {
-                Add(item);
-            }
-        }
-
-        public void ExceptWith(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (count == 0)
-                return;
-
-            if (other == this)
-            {
-                Clear();
-                return;
-            }
-
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                // Outside range, no point in doing anything
-                if (comparer.Compare(asSorted.Max, Min) >= 0 && comparer.Compare(asSorted.Min, Max) <= 0)
-                {
-                    T? min = Min;
-                    T? max = Max;
-                    foreach (T item in other)
-                    {
-                        if (comparer.Compare(item, min) < 0)
-                            continue;
-                        if (comparer.Compare(item, max) > 0)
-                            break;
-                        Remove(item);
-                    }
-                }
-            }
-            else
-            {
-                RemoveAllElements(other);
-            }
-        }
-
-        public void SymmetricExceptWith(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (Count == 0)
-            {
-                UnionWith(other);
-                return;
-            }
-
-            if (other == this)
-            {
-                Clear();
-                return;
-            }
-
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                SymmetricExceptWithSameComparer(asSorted);
-            }
-            else
-            {
-                T[] elements = other.ToArray();
-                Array.Sort(elements, 0, elements.Length, Comparer);
-                SymmetricExceptWithSameComparer(elements, elements.Length);
-            }
-        }
-
-        private void SymmetricExceptWithSameComparer(SortedSet<T> other)
-        {
-            Debug.Assert(other != null);
-            Debug.Assert(HasEqualComparer(other));
-
-            foreach (T item in other)
-            {
-                bool result = Contains(item) ? Remove(item) : Add(item);
-                Debug.Assert(result);
-            }
-        }
-
-        private void SymmetricExceptWithSameComparer(T[] other, int count)
-        {
-            Debug.Assert(other != null);
-            Debug.Assert(count >= 0 && count <= other.Length);
-
-            if (count == 0)
-            {
-                return;
-            }
-
-            T previous = other[0];
-            for (int i = 0; i < count; i++)
-            {
-                while (i < count && i != 0 && comparer.Compare(other[i], previous) == 0)
-                    i++;
-                if (i >= count)
-                    break;
-                T current = other[i];
-                bool result = Contains(current) ? Remove(current) : Add(current);
-                Debug.Assert(result);
-                previous = current;
-            }
-        }
-
-        public bool IsSubsetOf(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (Count == 0)
-            {
-                return true;
-            }
-
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                if (Count > asSorted.Count)
-                    return false;
-                return IsSubsetOfSortedSetWithSameComparer(asSorted);
-            }
-            else
-            {
-                // Worst case: I mark every element in my set and see if I've counted all of them. O(M log N).
-                ElementCount result = CheckUniqueAndUnfoundElements(other, false);
-                return result.UniqueCount == Count && result.UnfoundCount >= 0;
-            }
-        }
-
-        private bool IsSubsetOfSortedSetWithSameComparer(SortedSet<T> asSorted)
-        {
-            SortedSet<T> prunedOther = asSorted.GetViewBetween(Min, Max);
-            foreach (T item in this)
-            {
-                if (!prunedOther.Contains(item))
-                    return false;
-            }
-            return true;
-        }
-
-        public bool IsProperSubsetOf(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (other is ICollection c)
-            {
-                if (Count == 0)
-                    return c.Count > 0;
-            }
-
-            // another for sorted sets with the same comparer
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                if (Count >= asSorted.Count)
-                    return false;
-                return IsSubsetOfSortedSetWithSameComparer(asSorted);
-            }
-
-            // Worst case: I mark every element in my set and see if I've counted all of them. O(M log N).
-            ElementCount result = CheckUniqueAndUnfoundElements(other, false);
-            return result.UniqueCount == Count && result.UnfoundCount > 0;
-        }
-
-        public bool IsSupersetOf(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (other is ICollection c && c.Count == 0)
-                return true;
-
-            // do it one way for HashSets
-            // another for sorted sets with the same comparer
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                if (Count < asSorted.Count)
-                    return false;
-                SortedSet<T> pruned = GetViewBetween(asSorted.Min, asSorted.Max);
-                foreach (T item in asSorted)
-                {
-                    if (!pruned.Contains(item))
-                        return false;
-                }
-                return true;
-            }
-
-            // and a third for everything else
-            return ContainsAllElements(other);
-        }
-
-        public bool IsProperSupersetOf(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (Count == 0)
-                return false;
-
-            if (other is ICollection c && c.Count == 0)
-                return true;
-
-            // another way for sorted sets
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                if (asSorted.Count >= Count)
-                    return false;
-                SortedSet<T> pruned = GetViewBetween(asSorted.Min, asSorted.Max);
-                foreach (T item in asSorted)
-                {
-                    if (!pruned.Contains(item))
-                        return false;
-                }
-                return true;
-            }
-
-            // Worst case: I mark every element in my set and see if I've counted all of them. O(M log N).
-            // slight optimization, put it into a HashSet and then check can do it in O(N+M)
-            // but slower in better cases + wastes space
-            ElementCount result = CheckUniqueAndUnfoundElements(other, true);
-            return result.UniqueCount < Count && result.UnfoundCount == 0;
-        }
-
-        public bool SetEquals(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted))
-            {
-                Enumerator mine = GetEnumerator();
-                Enumerator theirs = asSorted.GetEnumerator();
-                bool mineEnded = !mine.MoveNext();
-                bool theirsEnded = !theirs.MoveNext();
-                while (!mineEnded && !theirsEnded)
-                {
-                    if (Comparer.Compare(mine.Current, theirs.Current) != 0)
-                    {
-                        return false;
-                    }
-                    mineEnded = !mine.MoveNext();
-                    theirsEnded = !theirs.MoveNext();
-                }
-                return mineEnded && theirsEnded;
-            }
-
-            // Worst case: I mark every element in my set and see if I've counted all of them. O(size of the other collection).
-            ElementCount result = CheckUniqueAndUnfoundElements(other, true);
-            return result.UniqueCount == Count && result.UnfoundCount == 0;
-        }
-
-        public bool Overlaps(IEnumerable<T> other)
-        {
-            ArgumentNullException.ThrowIfNull(other);
-
-            if (Count == 0)
-                return false;
-
-            if (other is ICollection<T> c && c.Count == 0)
-                return false;
-
-            SortedSet<T>? asSorted = other as SortedSet<T>;
-            if (asSorted != null && HasEqualComparer(asSorted) && (comparer.Compare(Min, asSorted.Max) > 0 || comparer.Compare(Max, asSorted.Min) < 0))
-            {
-                return false;
-            }
-
-            foreach (T item in other)
-            {
-                if (Contains(item))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// This works similar to HashSet's CheckUniqueAndUnfound (description below), except that the bit
-        /// array maps differently than in the HashSet. We can only use this for the bulk boolean checks.
-        ///
-        /// Determines counts that can be used to determine equality, subset, and superset. This
-        /// is only used when other is an IEnumerable and not a HashSet. If other is a HashSet
-        /// these properties can be checked faster without use of marking because we can assume
-        /// other has no duplicates.
-        ///
-        /// The following count checks are performed by callers:
-        /// 1. Equals: checks if UnfoundCount = 0 and uniqueFoundCount = Count; i.e. everything
-        /// in other is in this and everything in this is in other
-        /// 2. Subset: checks if UnfoundCount >= 0 and uniqueFoundCount = Count; i.e. other may
-        /// have elements not in this and everything in this is in other
-        /// 3. Proper subset: checks if UnfoundCount > 0 and uniqueFoundCount = Count; i.e
-        /// other must have at least one element not in this and everything in this is in other
-        /// 4. Proper superset: checks if unfound count = 0 and uniqueFoundCount strictly less
-        /// than Count; i.e. everything in other was in this and this had at least one element
-        /// not contained in other.
-        ///
-        /// An earlier implementation used delegates to perform these checks rather than returning
-        /// an ElementCount struct; however this was changed due to the perf overhead of delegates.
-        /// </summary>
-        private ElementCount CheckUniqueAndUnfoundElements(IEnumerable<T> other, bool returnIfUnfound)
-        {
-            ElementCount result;
-
-            // need special case in case this has no elements.
-            if (Count == 0)
-            {
-                int numElementsInOther = 0;
-                foreach (T item in other)
-                {
-                    numElementsInOther++;
-                    // break right away, all we want to know is whether other has 0 or 1 elements
-                    break;
-                }
-                result.UniqueCount = 0;
-                result.UnfoundCount = numElementsInOther;
-                return result;
-            }
-
-            int originalLastIndex = Count;
-            int intArrayLength = BitHelper.ToIntArrayLength(originalLastIndex);
-
-            Span<int> span = stackalloc int[StackAllocThreshold];
-            BitHelper bitHelper = (uint)intArrayLength <= StackAllocThreshold ?
-                new BitHelper(span.Slice(0, intArrayLength), clear: true) :
-                new BitHelper(new int[intArrayLength], clear: false);
-
-            // count of items in other not found in this
-            int UnfoundCount = 0;
-            // count of unique items in other found in this
-            int uniqueFoundCount = 0;
-
-            foreach (T item in other)
-            {
-                int index = InternalIndexOf(item);
-                if (index >= 0)
-                {
-                    if (!bitHelper.IsMarked(index))
-                    {
-                        // item hasn't been seen yet
-                        bitHelper.MarkBit(index);
-                        uniqueFoundCount++;
-                    }
-                }
-                else
-                {
-                    UnfoundCount++;
-                    if (returnIfUnfound)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            result.UniqueCount = uniqueFoundCount;
-            result.UnfoundCount = UnfoundCount;
-            return result;
-        }
-
-        public int RemoveWhere(Predicate<T> match)
-        {
-            ArgumentNullException.ThrowIfNull(match);
-
-            List<T> matches = new List<T>(this.Count);
-
-            BreadthFirstTreeWalk(n =>
-            {
-                if (match(n.Item))
-                {
-                    matches.Add(n.Item);
-                }
-                return true;
-            });
-
-            // Enumerate the results of the breadth-first walk in reverse in an attempt to lower cost.
-            int actuallyRemoved = 0;
-            for (int i = matches.Count - 1; i >= 0; i--)
-            {
-                if (Remove(matches[i]))
-                {
-                    actuallyRemoved++;
-                }
-            }
-
-            return actuallyRemoved;
-        }
-
-        public T? Min => MinInternal;
-
-        internal virtual T? MinInternal
+        public virtual T? Min
         {
             get
             {
-                if (root == null)
-                {
-                    return default;
-                }
+                if (root == null) return default;
 
                 Node current = root;
                 while (current.Left != null)
@@ -1362,16 +667,11 @@ namespace Garnet.common.Collections
             }
         }
 
-        public T? Max => MaxInternal;
-
-        internal virtual T? MaxInternal
+        public virtual T? Max
         {
             get
             {
-                if (root == null)
-                {
-                    return default;
-                }
+                if (root == null) return default;
 
                 Node current = root;
                 while (current.Right != null)
@@ -1401,16 +701,11 @@ namespace Garnet.common.Collections
             return new TreeSubSet(this, lowerValue, upperValue, true, true);
         }
 
-#if DEBUG
         /// <summary>
         /// debug status to be checked whenever any operation is called
         /// </summary>
         /// <returns></returns>
-        internal virtual bool versionUpToDate()
-        {
-            return true;
-        }
-#endif
+        internal virtual bool versionUpToDate() => true;
 
         internal sealed class Node
         {
@@ -1448,9 +743,8 @@ namespace Garnet.common.Collections
 
             public Node DeepClone(int count)
             {
-#if DEBUG
                 Debug.Assert(count == GetCount());
-#endif
+
                 Node newRoot = ShallowClone();
 
                 var pendingNodes = new Stack<(Node source, Node target)>(2 * Log2(count) + 2);
@@ -1484,9 +778,7 @@ namespace Garnet.common.Collections
             public TreeRotation GetRotation(Node current, Node sibling)
             {
                 Debug.Assert(IsNonNullRed(sibling.Left) || IsNonNullRed(sibling.Right));
-#if DEBUG
                 Debug.Assert(HasChildren(current, sibling));
-#endif
 
                 bool currentIsLeftChild = Left == current;
                 return IsNonNullRed(sibling.Left) ?
@@ -1621,9 +913,7 @@ namespace Garnet.common.Collections
             /// <param name="newChild">The node to replace <paramref name="child"/> with.</param>
             public void ReplaceChild(Node child, Node newChild)
             {
-#if DEBUG
                 Debug.Assert(HasChild(child));
-#endif
 
                 if (Left == child)
                 {
@@ -1635,7 +925,6 @@ namespace Garnet.common.Collections
                 }
             }
 
-#if DEBUG
             private int GetCount() => 1 + (Left?.GetCount() ?? 0) + (Right?.GetCount() ?? 0);
 
             private bool HasChild(Node child) => child == Left || child == Right;
@@ -1647,7 +936,6 @@ namespace Garnet.common.Collections
                 return (Left == child1 && Right == child2)
                     || (Left == child2 && Right == child1);
             }
-#endif
         }
 
         public struct Enumerator : IEnumerator<T>
@@ -1672,7 +960,7 @@ namespace Garnet.common.Collections
                 _version = set.version;
 
                 // 2 log(n + 1) is the maximum height.
-                _stack = new Stack<Node>(2 * (int)Log2(set.TotalCount() + 1));
+                _stack = new Stack<Node>(2 * Log2(set.TotalCount() + 1));
                 _current = null;
                 _reverse = reverse;
 
@@ -1686,8 +974,9 @@ namespace Garnet.common.Collections
                 Node? next, other;
                 while (node != null)
                 {
-                    next = (_reverse ? node.Right : node.Left);
-                    other = (_reverse ? node.Left : node.Right);
+                    (next, other) = _reverse ?
+                        (node.Right, node.Left) : (node.Left, node.Right);
+
                     if (_tree.IsWithinRange(node.Item))
                     {
                         _stack.Push(node);
@@ -1725,8 +1014,9 @@ namespace Garnet.common.Collections
                 Node? next, other;
                 while (node != null)
                 {
-                    next = (_reverse ? node.Right : node.Left);
-                    other = (_reverse ? node.Left : node.Right);
+                    (next, other) = _reverse ?
+                        (node.Right, node.Left) : (node.Left, node.Right);
+
                     if (_tree.IsWithinRange(node.Item))
                     {
                         _stack.Push(node);
@@ -1746,7 +1036,7 @@ namespace Garnet.common.Collections
 
             public void Dispose() { }
 
-            public T Current
+            public readonly T Current
             {
                 get
                 {
@@ -1754,7 +1044,7 @@ namespace Garnet.common.Collections
                     {
                         return _current.Item;
                     }
-                    return default(T)!; // Should only happen when accessing Current is undefined behavior
+                    return default!; // Should only happen when accessing Current is undefined behavior
                 }
             }
 
@@ -1771,7 +1061,7 @@ namespace Garnet.common.Collections
                 }
             }
 
-            internal bool NotStartedOrEnded => _current == null;
+            internal readonly bool NotStartedOrEnded => _current == null;
 
             internal void Reset()
             {
@@ -1785,12 +1075,6 @@ namespace Garnet.common.Collections
             }
 
             void IEnumerator.Reset() => Reset();
-        }
-
-        internal struct ElementCount
-        {
-            internal int UniqueCount;
-            internal int UnfoundCount;
         }
 
         /// <summary>

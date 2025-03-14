@@ -59,7 +59,7 @@ namespace Garnet.common.Collections
             internal static bool IsCompatibleItem(SortedSet<T> set)
             {
                 Debug.Assert(set is not null);
-                return set.comparer is IAlternateComparer<TAlternate, T>;
+                return set.Comparer is IAlternateComparer<TAlternate, T>;
             }
 
             /// <summary>Gets the set's alternate comparer. The set must have already been verified as compatible.</summary>
@@ -67,7 +67,7 @@ namespace Garnet.common.Collections
             internal static IAlternateComparer<TAlternate, T> GetAlternateComparer(SortedSet<T> set)
             {
                 Debug.Assert(IsCompatibleItem(set));
-                return Unsafe.As<IAlternateComparer<TAlternate, T>>(set.comparer);
+                return Unsafe.As<IAlternateComparer<TAlternate, T>>(set.Comparer);
             }
             
             /// <summary>Adds the specified element to a set.</summary>

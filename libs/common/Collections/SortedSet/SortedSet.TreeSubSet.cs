@@ -31,9 +31,7 @@ namespace Garnet.common.Collections
             private readonly bool _lBoundActive, _uBoundActive;
             // used to see if the count is out of date
 
-#if DEBUG
             internal override bool versionUpToDate() => version == _underlying.version;
-#endif
 
             public TreeSubSet(SortedSet<T> underlying, T? min, T? max, bool lowerBoundActive, bool upperBoundActive)
                 : base(underlying.Comparer)
@@ -58,9 +56,7 @@ namespace Garnet.common.Collections
 
                 bool ret = _underlying.Add(item);
                 VersionCheck();
-#if DEBUG
                 Debug.Assert(this.versionUpToDate() && root == _underlying.FindRange(_min, _max));
-#endif
 
                 return ret;
             }
@@ -68,9 +64,7 @@ namespace Garnet.common.Collections
             public override bool Contains(T item)
             {
                 VersionCheck();
-#if DEBUG
                 Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
-#endif
                 return base.Contains(item);
             }
 
@@ -83,9 +77,7 @@ namespace Garnet.common.Collections
 
                 bool ret = _underlying.Remove(item);
                 VersionCheck();
-#if DEBUG
                 Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
-#endif
                 return ret;
             }
 
@@ -121,7 +113,7 @@ namespace Garnet.common.Collections
                 return comp >= 0;
             }
 
-            internal override T MinInternal
+            public override T Min
             {
                 get
                 {
@@ -152,7 +144,7 @@ namespace Garnet.common.Collections
                 }
             }
 
-            internal override T MaxInternal
+            public override T Max
             {
                 get
                 {
@@ -193,7 +185,7 @@ namespace Garnet.common.Collections
 
                 // The maximum height of a red-black tree is 2*lg(n+1).
                 // See page 264 of "Introduction to algorithms" by Thomas H. Cormen
-                Stack<Node> stack = new Stack<Node>(2 * (int)SortedSet<T>.Log2(count + 1)); // this is not exactly right if count is out of date, but the stack can grow
+                Stack<Node> stack = new Stack<Node>(2 * Log2(count + 1)); // this is not exactly right if count is out of date, but the stack can grow
                 Node? current = root;
                 while (current != null)
                 {
@@ -281,9 +273,7 @@ namespace Garnet.common.Collections
                 }
 
                 VersionCheck();
-#if DEBUG
                 Debug.Assert(this.versionUpToDate() && root == _underlying.FindRange(_min, _max));
-#endif
                 return base.FindNode(item);
             }
 
@@ -298,9 +288,7 @@ namespace Garnet.common.Collections
                     if (Comparer.Compare(item, i) == 0)
                         return count;
                 }
-#if DEBUG
                 Debug.Assert(this.versionUpToDate() && root == _underlying.FindRange(_min, _max));
-#endif
                 return -1;
             }
 
@@ -351,14 +339,6 @@ namespace Garnet.common.Collections
                 }
                 return (TreeSubSet)_underlying.GetViewBetween(lowerValue, upperValue);
             }
-
-#if DEBUG
-            internal override void IntersectWithEnumerable(IEnumerable<T> other)
-            {
-                base.IntersectWithEnumerable(other);
-                Debug.Assert(versionUpToDate() && root == _underlying.FindRange(_min, _max));
-            }
-#endif
         }
     }
 }
