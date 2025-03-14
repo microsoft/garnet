@@ -1872,27 +1872,29 @@ namespace Garnet.test
         public void CheckSortedSetRangeStoreLC(string key, string destinationKey, string[] elements, double[] scores, string[] expectedElements, double[] expectedScores, int start = 0, int stop = -1)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
+            byte[] response;
+            string expectedResponse;
 
             // Setup initial sorted set if elements exist
             if (elements.Length > 0)
             {
                 var addCommand = $"ZADD {key} " + string.Join(" ", elements.Zip(scores, (e, s) => $"{s} {e}"));
-                var response = lightClientRequest.SendCommand(addCommand);
-                var expectedResponse = $":{elements.Length}\r\n";
+                response = lightClientRequest.SendCommand(addCommand);
+                expectedResponse = $":{elements.Length}\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
 
             // Execute ZRANGESTORE
             var rangeStoreCommand = $"ZRANGESTORE {destinationKey} {key} {start} {stop}";
-            var response2 = lightClientRequest.SendCommand(rangeStoreCommand);
-            var expectedResponse2 = $":{expectedElements.Length}\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse2, response2);
+            response = lightClientRequest.SendCommand(rangeStoreCommand);
+            expectedResponse = $":{expectedElements.Length}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify stored result using ZRANGE
             if (expectedElements.Length > 0)
             {
                 var verifyCommand = $"ZRANGE {destinationKey} 0 -1 WITHSCORES";
-                var response3 = lightClientRequest.SendCommand(verifyCommand, expectedElements.Length * 2 + 1);
+                response = lightClientRequest.SendCommand(verifyCommand, expectedElements.Length * 2 + 1);
                 var expectedItems = new List<string>
                 {
                     $"*{expectedElements.Length * 2}"
@@ -1905,15 +1907,15 @@ namespace Garnet.test
                     expectedItems.Add($"${expectedScores[i].ToString().Length}");
                     expectedItems.Add(expectedScores[i].ToString());
                 }
-                var expectedResponse3 = string.Join("\r\n", expectedItems) + "\r\n";
-                TestUtils.AssertEqualUpToExpectedLength(expectedResponse3, response3);
+                expectedResponse = string.Join("\r\n", expectedItems) + "\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
             else
             {
                 var verifyCommand = $"ZRANGE {destinationKey} 0 -1";
-                var response3 = lightClientRequest.SendCommand(verifyCommand);
-                var expectedResponse3 = "*0\r\n";
-                TestUtils.AssertEqualUpToExpectedLength(expectedResponse3, response3);
+                response = lightClientRequest.SendCommand(verifyCommand);
+                expectedResponse = "*0\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
         }
 
@@ -2114,6 +2116,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board 0 -1 REV", 7);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -2707,7 +2710,6 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
-
         [Test]
         public async Task CanUseZRandMemberWithSE()
         {
@@ -2803,13 +2805,13 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD seconddadi 1 uno 2 due 3 tre 4 quattro");
 
             //zdiff withscores
-            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi WITHSCORES", bytesSent, 5);
+            var response = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi WITHSCORES", bytesSent, 5);
             var expectedResponse = "*4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi", bytesSent, 3);
+            response = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi", bytesSent, 3);
             expectedResponse = "*2\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -2821,16 +2823,16 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
 
             //zdiff withscores
-            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
+            var response = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
             var expectedResponse = ":0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             lightClientRequest.SendCommand("ZADD dadi 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
             lightClientRequest.SendCommand("ZADD seconddadi 1 uno 2 due 3 tre 4 quattro");
 
-            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
+            response = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
             expectedResponse = ":2\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -2844,14 +2846,14 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD zset2 1 uno 2 due 3 tre 4 quattro");
             lightClientRequest.SendCommand("ZADD zset3 300 Jean 500 Leia 350 Grant 700 Rue");
 
-            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3", bytesSent, 3);
+            var response = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3", bytesSent, 3);
             var expectedResponse = "*2\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Zdiff withscores
-            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3 WITHSCORES", bytesSent, 5);
+            response = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3 WITHSCORES", bytesSent, 5);
             expectedResponse = "*4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -2859,13 +2861,13 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
-            var zdiffResult = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1");
+            var response = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1");
             var expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            zdiffResult = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1notfound");
+            response = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1notfound");
             expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, zdiffResult);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3059,9 +3061,8 @@ namespace Garnet.test
         {
             var lightClientRequest = TestUtils.CreateRequest();
             var key = "MySSKey";
-            byte[] response;
 
-            response = lightClientRequest.SendCommand($"ZADD {key} 1 a 2 b 3 c");
+            var response = lightClientRequest.SendCommand($"ZADD {key} 1 a 2 b 3 c");
             var expectedResponse = ":3\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
@@ -3211,9 +3212,9 @@ namespace Garnet.test
         private static void UpdateSortedSetKey(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res = lightClientRequest.SendCommand($"ZADD {keyName} 4 d");
-            string expectedResponse = ":1\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, res);
+            var response = lightClientRequest.SendCommand($"ZADD {keyName} 4 d");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";

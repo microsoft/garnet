@@ -1270,10 +1270,10 @@ namespace Garnet.test
             //this operation should affect only if key already exists and holds a list.
             lightClientRequest.SendCommand("LPUSHX mylist value-two");
             lightClientRequest.SendCommand("RPUSHX mylist value-one");
-            var len = lightClientRequest.SendCommand("LLEN mylist");
+            response = lightClientRequest.SendCommand("LLEN mylist");
 
             var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, len);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]

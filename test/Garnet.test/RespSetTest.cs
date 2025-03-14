@@ -956,8 +956,8 @@ namespace Garnet.test
 
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("SPOP myset");
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-            var item = Encoding.ASCII.GetString(response).Substring(4, Int32.Parse(strLen));
+            var strLen = Encoding.ASCII.GetString(response, 1, 1);
+            var item = Encoding.ASCII.GetString(response, 4, int.Parse(strLen));
             ClassicAssert.IsTrue(myset.Contains(item));
 
             response = lightClientRequest.SendCommand("SCARD myset");
@@ -972,29 +972,29 @@ namespace Garnet.test
 
             var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("SPOP myset 3", 3);
-            var strResponse = Encoding.ASCII.GetString(response);
-            ClassicAssert.AreEqual('*', strResponse[0]);
+            TestUtils.AssertEqualUpToExpectedLength("*", response);
 
+            var strResponse = Encoding.ASCII.GetString(response);
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
-            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            var strArrLen = Encoding.ASCII.GetString(response, 1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out var arrLen));
             ClassicAssert.AreEqual(3, arrLen);
 
-            var secondResponse = lightClientRequest.SendCommands("SCARD myset", "PING", 1, 1);
+            response = lightClientRequest.SendCommands("SCARD myset", "PING", 1, 1);
             var expectedResponse = ":2\r\n+PONG\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, secondResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Test for popping set until empty
             response = lightClientRequest.SendCommand("SPOP myset 2", 2);
-            strResponse = Encoding.ASCII.GetString(response);
-            ClassicAssert.AreEqual('*', strResponse[0]);
+            TestUtils.AssertEqualUpToExpectedLength("*", response);
 
+            strResponse = Encoding.ASCII.GetString(response);
             arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
-            strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            strArrLen = Encoding.ASCII.GetString(response, 1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out arrLen));
             ClassicAssert.AreEqual(2, arrLen);
         }
@@ -1007,10 +1007,9 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
 
             var response = lightClientRequest.SendCommand("SPOP myset 10", 5);
+            TestUtils.AssertEqualUpToExpectedLength("*", response);
 
             var strResponse = Encoding.ASCII.GetString(response);
-            ClassicAssert.AreEqual('*', strResponse[0]);
-
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
@@ -1019,13 +1018,13 @@ namespace Garnet.test
             ClassicAssert.IsTrue(arrLen == 5);
 
             var lightClientRequest2 = TestUtils.CreateRequest();
-            var response2 = lightClientRequest2.SendCommand("SADD myset one");
+            response = lightClientRequest2.SendCommand("SADD myset one");
             var expectedResponse = ":1\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response2);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response2 = lightClientRequest2.SendCommand("SCARD myset");
+            response = lightClientRequest2.SendCommand("SCARD myset");
             expectedResponse = ":1\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response2);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1136,25 +1135,23 @@ namespace Garnet.test
         public void MultiWithNonExistingSet()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
 
-            string expectedResponse = "+OK\r\n";
-
-            res = lightClientRequest.SendCommand("MULTI");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, res);
+            var response = lightClientRequest.SendCommand("MULTI");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //create set
-            res = lightClientRequest.SendCommand("SADD MySet ItemOne");
+            response = lightClientRequest.SendCommand("SADD MySet ItemOne");
             expectedResponse = "+QUEUED\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, res);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("EXEC", 2);
+            response = lightClientRequest.SendCommand("EXEC", 2);
             expectedResponse = "*1\r\n:1\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, res);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("SMEMBERS MySet", 2);
+            response = lightClientRequest.SendCommand("SMEMBERS MySet", 2);
             expectedResponse = "*1\r\n$7\r\nItemOne\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, res);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1201,9 +1198,9 @@ namespace Garnet.test
             var expectedResponse = ":5\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            response = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*5\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1267,22 +1264,22 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
             lightClientRequest.SendCommand("SADD key a");
 
-            var SINTERSTOREResponse = lightClientRequest.SendCommand("SINTERSTORE key key1 key2 key3");
-            var expectedSINTERSTOREResponse = ":0\r\n";
-            ClassicAssert.AreEqual(expectedSINTERSTOREResponse, SINTERSTOREResponse.AsSpan().Slice(0, expectedSINTERSTOREResponse.Length).ToArray());
+            var response = lightClientRequest.SendCommand("SINTERSTORE key key1 key2 key3");
+            var expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
-            var expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            response = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
         public void IntersectAndStoreWithNoSetsReturnErrWrongNumArgs()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            var SINTERSTOREResponse = lightClientRequest.SendCommand("SINTERSTORE key");
-            var expectedSINTERSTOREResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTERSTORE")}\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedSINTERSTOREResponse, SINTERSTOREResponse);
+            var response = lightClientRequest.SendCommand("SINTERSTORE key");
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTERSTORE")}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1296,9 +1293,9 @@ namespace Garnet.test
             var expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            response = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*1\r\n$1\r\nc\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1314,9 +1311,9 @@ namespace Garnet.test
             var expectedResponse = ":2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand($"SMEMBERS {key}");
+            response = lightClientRequest.SendCommand($"SMEMBERS {key}");
             expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1399,9 +1396,9 @@ namespace Garnet.test
             var expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            response = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1412,9 +1409,9 @@ namespace Garnet.test
             var expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            response = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1425,9 +1422,9 @@ namespace Garnet.test
             var expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            response = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, membersResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]

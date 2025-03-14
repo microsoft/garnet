@@ -1332,7 +1332,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // multiple get
-            var result = lightClientRequest.SendCommand("HMGET myhash field1 field2", 3);
+            response = lightClientRequest.SendCommand("HMGET myhash field1 field2", 3);
             expectedResponse = "*2\r\n$11\r\nfield1value\r\n$11\r\nfield2value\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
@@ -1378,7 +1378,7 @@ namespace Garnet.test
 
             // only update one field
             lightClientRequest.SendCommand("HSET myhash field1 field1valueupdated");
-            var result = lightClientRequest.SendCommand("HGET myhash field1");
+            response = lightClientRequest.SendCommand("HGET myhash field1");
             expectedResponse = "$18\r\nfield1valueupdated\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
@@ -1395,7 +1395,7 @@ namespace Garnet.test
             expectedResponse = ":408\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var result = lightClientRequest.SendCommand("HDEL myhash field1");
+            response = lightClientRequest.SendCommand("HDEL myhash field1");
             expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
@@ -1404,7 +1404,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //HDEL with nonexisting key
-            result = lightClientRequest.SendCommand("HDEL foo bar");
+            response = lightClientRequest.SendCommand("HDEL foo bar");
             expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
@@ -1419,7 +1419,7 @@ namespace Garnet.test
 
             //get all keys
             expectedResponse = "*8\r\n$6\r\nfield1\r\n$11\r\nfield1value\r\n$6\r\nfield2\r\n$11\r\nfield2value\r\n$6\r\nfield3\r\n$11\r\nfield3value\r\n$6\r\nfield4\r\n$11\r\nfield4value\r\n";
-            var result = lightClientRequest.SendCommand("HGETALL myhash", 9);
+            response = lightClientRequest.SendCommand("HGETALL myhash", 9);
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -1619,12 +1619,11 @@ namespace Garnet.test
         public async Task CanFailWhenUseMultiWatchTest()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] response;
 
-            string key = "myhash";
+            var key = "myhash";
 
-            response = lightClientRequest.SendCommand($"HSET {key} field1 1");
-            string expectedResponse = ":1\r\n";
+            var response = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            var expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"WATCH {key}");
@@ -1677,8 +1676,8 @@ namespace Garnet.test
         private static void UpdateHashMap(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            byte[] response = lightClientRequest.SendCommand($"HSET {keyName} field3 3");
-            string expectedResponse = ":1\r\n";
+            var response = lightClientRequest.SendCommand($"HSET {keyName} field3 3");
+            var expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
