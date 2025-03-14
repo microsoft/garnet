@@ -286,32 +286,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all Calls into Lua.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Call(int args, int rets)
-        {
-            // We have to copy this off, as once we PCall curStackTop could be modified
-            var oldStackTop = StackTop;
-
-            NativeMethods.Call(state, args, rets);
-
-            if (rets < 0)
-            {
-                StackTop = NativeMethods.GetTop(state);
-                AssertLuaStackExpected();
-            }
-            else
-            {
-                var newPosition = oldStackTop - (args + 1) + rets;
-                var update = newPosition - StackTop;
-                UpdateStackTop(update);
-            }
-        }
-
-        /// <summary>
         /// This should be used for all RawSetIntegers into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.

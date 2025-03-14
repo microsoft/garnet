@@ -109,13 +109,6 @@ namespace Garnet.server
         private static partial int lua_pcallk(lua_State luaState, int nargs, int nresults, int msgh, nint ctx, nint k);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_callk
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-        private static partial int lua_callk(lua_State luaState, int nargs, int nresults, nint ctx, nint k);
-
-        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_rawseti
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -533,14 +526,6 @@ namespace Garnet.server
         /// </summary>
         internal static LuaStatus PCall(lua_State luaState, int nargs, int nrets)
         => (LuaStatus)lua_pcallk(luaState, nargs, nrets, 0, 0, 0);
-
-        /// <summary>
-        /// Perform a call with the given number of arguments, expecting the given number of returns.
-        /// </summary>
-        internal static void Call(lua_State luaState, int nargs, int nrets)
-        {
-            _ = lua_callk(luaState, nargs, nrets, 0, 0);
-        }
 
         /// <summary>
         /// Equivalent of t[i] = v, where t is the table at the given index and v is the value on the top of the stack.

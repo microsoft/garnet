@@ -1576,9 +1576,19 @@ end
                 {
                     state.PushCFunction(&LuaRunnerTrampolines.RunPreambleForSession);
                     var callRes = state.PCall(0, 0);
-                    if (callRes != LuaStatus.OK)
+                    if (callRes != LuaStatus.OK || state.StackTop != 0)
                     {
-                        while (!RespWriteUtils.TryWriteError("Internal Lua Error"u8, ref outerSession.dcurr, outerSession.dend))
+                        ReadOnlySpan<byte> err;
+                        if (state.StackTop >= 1 && state.Type(1) == LuaType.String)
+                        {
+                            state.KnownStringToBuffer(1, out err);
+                        }
+                        else
+                        {
+                            err = "Internal Lua Error"u8;
+                        }
+
+                        while (!RespWriteUtils.TryWriteError(err, ref outerSession.dcurr, outerSession.dend))
                             outerSession.SendAndReset();
 
                         return;
@@ -1630,7 +1640,23 @@ end
                     preambleArgv = argv;
 
                     state.PushCFunction(&LuaRunnerTrampolines.RunPreambleForRunner);
-                    state.Call(0, 0);
+                    var preambleRes = state.PCall(0, 0);
+                    if (preambleRes != LuaStatus.OK || state.StackTop != 0)
+                    {
+                        string errMsg;
+                        if (state.StackTop >= 1 && state.Type(1) == LuaType.String)
+                        {
+                            // We control the definition of LoaderBlock, so we know this is a string
+                            state.KnownStringToBuffer(1, out var preambleErrSpan);
+                            errMsg = Encoding.UTF8.GetString(preambleErrSpan);
+                        }
+                        else
+                        {
+                            errMsg = "No error provided";
+                        }
+
+                        throw new GarnetException($"Could not run function preamble: {errMsg}");
+                    }
                 }
                 finally
                 {
@@ -1776,7 +1802,7 @@ end
         /// <summary>
         /// Remove extra keys and args from KEYS and ARGV globals.
         /// </summary>
-        internal void ResetParameters(int nKeys, int nArgs)
+        internal bool TryResetParameters(int nKeys, int nArgs, out LuaStatus failingStatus)
         {
             // Space for key count, value count, and function
             const int NeededStackSize = 3;
@@ -1791,11 +1817,19 @@ end
                 state.PushInteger(nKeys + 1);
                 state.PushInteger(nArgs + 1);
 
-                state.Call(2, 0);
+                var callRes = state.PCall(2, 0);
+                if (callRes != LuaStatus.OK)
+                {
+                    failingStatus = callRes;
+                    return false;
+                }
             }
 
             keyLength = nKeys;
             argvLength = nArgs;
+
+            failingStatus = LuaStatus.OK;
+            return true;
         }
 
         /// <summary>
@@ -1809,7 +1843,11 @@ end
             var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
             Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
 
-            ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
+            if (!TryResetParameters(keys?.Length ?? 0, argv?.Length ?? 0, out var failingStatus))
+            {
+                // TODO: Consider status
+                return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+            }
 
             if (keys != null)
             {

@@ -84,10 +84,22 @@ namespace Garnet.server
             var offset = 1;
             var nKeys = preambleNKeys = parseState.GetInt(offset++);
             preambleKeyAndArgvCount--;
-            ResetParameters(nKeys, preambleKeyAndArgvCount - nKeys);
+            if (!TryResetParameters(nKeys, preambleKeyAndArgvCount - nKeys, out var failingStatus))
+            {
+                // TODO: Consider status
+                return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+            }
 
             if (nKeys > 0)
             {
+                // One for KEYS, one for the key being written;
+                const int NeededStackSpace = 2;
+
+                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                }
+
                 // Get KEYS on the stack
                 _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, keysTableRegistryIndex);
 
@@ -117,6 +129,14 @@ namespace Garnet.server
 
             if (preambleKeyAndArgvCount > 0)
             {
+                // One for ARGV, one for the arg being written
+                const int NeededStackSpace = 2;
+
+                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                }
+
                 // Get ARGV on the stack
                 _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, argvTableRegistryIndex);
 
@@ -175,7 +195,12 @@ namespace Garnet.server
         {
             state.CallFromLuaEntered(luaStatePtr);
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, requestTimeoutRegsitryIndex);
-            state.Call(0, 0);
+            var res = state.PCall(0, 0);
+            if (res != LuaStatus.OK)
+            {
+                // We can't do anything else here, raising an error some other will will crash the process
+                logger?.LogCritical("Request timeout failed with {res}", res);
+            }
         }
 
         /// <summary>
@@ -2790,13 +2815,14 @@ namespace Garnet.server
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
             state.PushBuffer(source.Span);
-            state.Call(1, 2);
 
-            // Now the stack will have two things on it:
+            var callRes = state.PCall(1, 2);
+
+            // On success the stack will have two things on it:
             //  1. The error (nil if not error)
             //  2. The function (nil if error)
 
-            if (state.Type(1) == LuaType.Nil)
+            if (callRes == LuaStatus.OK && state.StackTop == 2 && state.Type(1) == LuaType.Nil)
             {
                 // No error, success!
 
@@ -2806,10 +2832,18 @@ namespace Garnet.server
             }
             else
             {
-                // We control the definition of load_sandboxed, so we know this will be a string
-                state.KnownStringToBuffer(1, out var errorBuf);
+                string errStr;
+                if (state.StackTop >= 1 && state.Type(1) == LuaType.String)
+                {
+                    // We control the definition of load_sandboxed, so we know this will be the error
+                    state.KnownStringToBuffer(1, out var errorBuf);
+                    errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
+                }
+                else
+                {
+                    errStr = "Compilation error, cause unknown";
+                }
 
-                var errStr = $"Compilation error: {Encoding.UTF8.GetString(errorBuf)}";
                 while (!RespWriteUtils.TryWriteError(errStr, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
             }
