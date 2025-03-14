@@ -16,7 +16,7 @@ namespace Garnet.common.Collections
         where T : allows ref struct
     {
         /// <summary>
-        /// Creates a T that is considered by <see cref="System.Collections.Generic.IComparer{T}.Compare(T, T)"/>
+        /// Creates a T that is considered by <see cref="System.Collections.Generic.IComparer{T}.Compare(T, T)"/> to be equal to the specified alternate.
         /// </summary>
         /// <param name="alternate">The instance of type <typeparamref name="TAlternate"/> for which an equal <typeparamref name="T"/> is required.</param>
         /// <returns>A <typeparamref name="T"/> considered equal to the specified alternate.</returns>
