@@ -169,19 +169,21 @@ namespace Garnet.server
             : base(reader, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
             sortedSet = new(SortedSetComparer.Instance);
-            Dictionary = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
-            sortedSetLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
-            dictionaryLookup = Dictionary.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
 
             int count = reader.ReadInt32();
+            Dictionary = new Dictionary<byte[], double>(count, ByteArrayComparer.Instance);
+
             for (int i = 0; i < count; i++)
             {
                 var item = reader.ReadBytes(reader.ReadInt32());
                 var score = reader.ReadDouble();
                 Add(item, score);
             }
+
+#if NET9_0_OR_GREATER
+            sortedSetLookup = sortedSet.GetAlternateLookup<SortedSetComparer.AlternateEntry>();
+            dictionaryLookup = Dictionary.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
         }
 
         /// <summary>
