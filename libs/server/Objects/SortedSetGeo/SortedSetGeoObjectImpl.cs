@@ -32,12 +32,12 @@ namespace Garnet.server
         /// <summary>
         /// Type of GeoSearch
         /// </summary>
-        internal enum GeoSearchType
+        internal enum GeoSearchType : byte
         {
             /// <summary>
             /// No defined order.
             /// </summary>
-            Undefined,
+            Undefined = 0,
 
             /// <summary>
             /// Search inside circular area
@@ -47,18 +47,18 @@ namespace Garnet.server
             /// <summary>
             /// Search inside an axis-aligned rectangle
             /// </summary>
-            ByBox,
+            ByBox
         }
 
         /// <summary>
         /// The direction in which to sequence elements.
         /// </summary>
-        internal enum GeoOrder
+        internal enum GeoOrder : byte
         {
             /// <summary>
             /// No defined order.
             /// </summary>
-            None,
+            None = 0,
 
             /// <summary>
             /// Order from low values to high values.
@@ -68,15 +68,15 @@ namespace Garnet.server
             /// <summary>
             /// Order from high values to low values.
             /// </summary>
-            Descending,
+            Descending
         }
 
-        internal enum GeoOriginType
+        internal enum GeoOriginType : byte
         {
             /// <summary>
             /// Not defined.
             /// </summary>
-            Undefined,
+            Undefined = 0,
 
             /// <summary>
             /// From explicit lon lat coordinates.
@@ -692,7 +692,7 @@ namespace Garnet.server
                         }
                         else /* byRadius == true */
                         {
-                            if (!server.GeoHash.GetDistanceWhenInCircle(
+                            if (!server.GeoHash.IsPointWithinRadius(
                                  server.GeoHash.ConvertValueToMeters(opts.radius, opts.unit),
                                  opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
                             {

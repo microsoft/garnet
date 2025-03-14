@@ -264,12 +264,18 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Find if a point is in the circle.
+        /// Find if a point is within radius of the given center point.
+        /// <paramref name="radius">Radius</paramref>
+        /// <paramref name="latCenterPoint">Center point latitude</paramref>
+        /// <paramref name="lonCenterPoint">Center point longitude</paramref>
+        /// <paramref name="lat">Point latitude</paramref>
+        /// <paramref name="lon">Point longitude</paramref>
+        /// <paramref name="distance">Distance</paramref>
         /// </summary>
-        public static bool GetDistanceWhenInCircle(double radius, double latCenterPoint, double lonCenterPoint, double lat2, double lon2, ref double distance)
+        public static bool IsPointWithinRadius(double radius, double latCenterPoint, double lonCenterPoint, double lat, double lon, ref double distance)
         {
-            distance = Distance(latCenterPoint, lonCenterPoint, lat2, lon2);
-            if (distance > radius)
+            distance = Distance(latCenterPoint, lonCenterPoint, lat, lon);
+            if (distance >= radius)
             {
                 return false;
             }

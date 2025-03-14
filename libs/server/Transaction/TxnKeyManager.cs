@@ -215,7 +215,7 @@ namespace Garnet.server
                 idx = 1;
             }
 
-            key = respSession.parseState.GetArgSliceByRef(++idx);
+            key = respSession.parseState.GetArgSliceByRef(idx++);
             SaveKeyEntryToLock(key, true, LockType.Shared);
             SaveKeyArgSlice(key);
 
@@ -224,9 +224,9 @@ namespace Garnet.server
 
             if (command == RespCommand.GEORADIUSBYMEMBER_RO || command == RespCommand.GEORADIUSBYMEMBER)
             {
-                key = respSession.parseState.GetArgSliceByRef(++idx);
-                SaveKeyEntryToLock(key, true, LockType.Shared);
-                SaveKeyArgSlice(key);
+                var member = respSession.parseState.GetArgSliceByRef(++idx);
+                SaveKeyEntryToLock(member, true, LockType.Shared);
+                SaveKeyArgSlice(member);
                 if (command == RespCommand.GEORADIUSBYMEMBER_RO)
                     return 2;
             }
@@ -247,7 +247,7 @@ namespace Garnet.server
                     }
                 }
 
-                return (command == RespCommand.GEORADIUS) ? 1 : 2;
+                return 1;
             }
 
             // GEOSEARCH, GEOSEARCHSTORE
@@ -255,9 +255,9 @@ namespace Garnet.server
             {
                 if (respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FROMMEMBER))
                 {
-                    key = respSession.parseState.GetArgSliceByRef(i + 1);
-                    SaveKeyEntryToLock(key, true, LockType.Shared);
-                    SaveKeyArgSlice(key);
+                    var member = respSession.parseState.GetArgSliceByRef(i + 1);
+                    SaveKeyEntryToLock(member, true, LockType.Shared);
+                    SaveKeyArgSlice(member);
                     break;
                 }
             }
