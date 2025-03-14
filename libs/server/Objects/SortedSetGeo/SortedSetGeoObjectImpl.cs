@@ -98,36 +98,16 @@ namespace Garnet.server
                     var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
-                    if (score != -1)
+                    if (score == -1) continue;
+
+                    // Copy the member
+                    var memberByteArray = member.ToArray();
+
+                    // Don't add new member if XX flag is set
+                    if (onlyUpdate)
                     {
-                        // Copy the member
-                        var memberByteArray = member.ToArray();
-
-                        // Avoid multiple hash calculations by acquiring ref to the dictionary value
-                        ref var scoreRef = ref Unsafe.NullRef<double>();
-                        bool exists;
-
-                        // Don't add new member if XX flag is set
-                        if (onlyUpdate)
-                        {
-                            scoreRef = ref CollectionsMarshal.GetValueRefOrNullRef(Dictionary, memberByteArray);
-                            exists = !Unsafe.IsNullRef(ref scoreRef);
-                        }
-                        else
-                        {
-                            scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, memberByteArray, out exists);
-                        }
-
-                        if (!exists && !onlyUpdate)
-                        {
-                            scoreRef = score;
-                            sortedSet.Add((score, memberByteArray));
-                            elementsAdded++;
-
-                            this.UpdateSize(member);
-                            elementsChanged++;
-                        }
-                        else if (exists && scoreRef != score)
+                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrNullRef(Dictionary, memberByteArray);
+                        if (!Unsafe.IsNullRef(ref scoreRef) && scoreRef != score)
                         {
                             // Remove old sorted set entry
                             var success = sortedSet.Remove((scoreRef, memberByteArray));
@@ -137,6 +117,21 @@ namespace Garnet.server
                             scoreRef = score;
                             success = sortedSet.Add((score, memberByteArray));
                             Debug.Assert(success);
+                            elementsChanged++;
+                        }
+                    }
+                    else
+                    {
+                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, memberByteArray, out var exists);
+
+                        // NX: Don't update already existing elements. Always add new elements.
+                        if (!exists)
+                        {
+                            scoreRef = score;
+                            sortedSet.Add((score, memberByteArray));
+                            elementsAdded++;
+
+                            this.UpdateSize(member);
                             elementsChanged++;
                         }
                     }
