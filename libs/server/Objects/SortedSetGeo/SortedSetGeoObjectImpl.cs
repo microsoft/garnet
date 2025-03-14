@@ -127,7 +127,7 @@ namespace Garnet.server
                             this.UpdateSize(member);
                             elementsChanged++;
                         }
-                        else if (onlyUpdate && scoreRef != score)
+                        else if (exists && scoreRef != score)
                         {
                             // Remove old sorted set entry
                             var success = sortedSet.Remove((scoreRef, memberByteArray));
