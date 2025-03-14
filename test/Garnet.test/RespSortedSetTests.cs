@@ -2870,15 +2870,15 @@ namespace Garnet.test
 
             // Check that the sets have correct cardinality
             response = lightClientRequest.SendCommandChunks("ZCARD desKey", bytesSent);
-            expectedResponse = "1\r\n";
+            expectedResponse = ":2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD dadi", bytesSent);
-            expectedResponse = "6\r\n";
+            expectedResponse = ":6\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD seconddadi", bytesSent);
-            expectedResponse = "4\r\n";
+            expectedResponse = ":4\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -2904,15 +2904,15 @@ namespace Garnet.test
 
             // Check that the sets have correct cardinality
             response = lightClientRequest.SendCommandChunks("ZCARD zset1", bytesSent);
-            expectedResponse = "6\r\n";
+            expectedResponse = ":6\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD zset2", bytesSent);
-            expectedResponse = "4\r\n";
+            expectedResponse = ":4\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD zset3", bytesSent);
-            expectedResponse = "4\r\n";
+            expectedResponse = ":4\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
