@@ -273,6 +273,8 @@ namespace Garnet.server
             internal int MsgPackArrayTooLong { get; }
             /// <see cref="CmdStrings.LUA_msgpack_map_too_long"/>
             internal int MsgPackMapTooLong { get; }
+            /// <see cref="CmdStrings.LUA_insufficient_lua_stack_space"/>
+            internal int InsufficientLuaStackSpace { get; }
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
@@ -342,6 +344,7 @@ namespace Garnet.server
                 MsgPackStringTooLong = ConstantStringToRegistry(ref state, CmdStrings.LUA_msgpack_string_too_long);
                 MsgPackArrayTooLong = ConstantStringToRegistry(ref state, CmdStrings.LUA_msgpack_array_too_long);
                 MsgPackMapTooLong = ConstantStringToRegistry(ref state, CmdStrings.LUA_msgpack_map_too_long);
+                InsufficientLuaStackSpace = ConstantStringToRegistry(ref state, CmdStrings.LUA_insufficient_lua_stack_space);
             }
 
             /// <summary>
@@ -1015,7 +1018,10 @@ end
             Debug.Assert(nonErrorReturns <= LuaStateWrapper.LUA_MINSTACK - 1, "Cannot safely return this many returns in an error path");
 
             state.ClearStack();
-            state.ForceMinimumStackCapacity(nonErrorReturns + 1);
+
+            var stackRes = state.TryEnsureMinimumStackCapacity(nonErrorReturns + 1);
+            Debug.Assert(stackRes, "Bounds check above should mean this never fails");
+
             for (var i = 0; i < nonErrorReturns; i++)
             {
                 state.PushNil();
@@ -1038,7 +1044,10 @@ end
             Debug.Assert(nonErrorReturns <= LuaStateWrapper.LUA_MINSTACK - 1, "Cannot safely return this many returns in an error path");
 
             state.ClearStack();
-            state.ForceMinimumStackCapacity(nonErrorReturns + 1);
+
+            var stackRes = state.TryEnsureMinimumStackCapacity(nonErrorReturns + 1);
+            Debug.Assert(stackRes, "Should never fail, as nonErrorReturns+1 <= LUA_MINSTACK");
+
             for (var i = 0; i < nonErrorReturns; i++)
             {
                 state.PushNil();
@@ -1082,7 +1091,14 @@ end
                     respPtr++;
                     if (RespReadUtils.TryReadAsSpan(out var resultSpan, ref respPtr, respEnd))
                     {
-                        state.ForceMinimumStackCapacity(3);
+                        // Space for table, 'ok', and value
+                        const int NeededStackSize = 3;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         // Construct a table = { 'ok': value }
                         state.CreateTable(0, 1);
@@ -1098,7 +1114,14 @@ end
                 case ':':
                     if (RespReadUtils.TryReadInt64(out var number, ref respPtr, respEnd))
                     {
-                        state.ForceMinimumStackCapacity(1);
+                        // Space for integer
+                        const int NeededStackSize = 1;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         state.PushInteger(number);
                         return 1;
@@ -1126,7 +1149,14 @@ end
 
                     if (remainingLength >= 5 && new ReadOnlySpan<byte>(respPtr + 1, 4).SequenceEqual("-1\r\n"u8))
                     {
-                        state.ForceMinimumStackCapacity(1);
+                        // Space for boolean
+                        const int NeededStackSize = 1;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         // Bulk null strings are mapped to FALSE
                         // See: https://redis.io/docs/latest/develop/interact/programmability/lua-api/#lua-to-resp2-type-conversion
@@ -1138,7 +1168,14 @@ end
                     }
                     else if (RespReadUtils.TryReadSpanWithLengthHeader(out var bulkSpan, ref respPtr, respEnd))
                     {
-                        state.ForceMinimumStackCapacity(1);
+                        // Space for string
+                        const int NeededStackSize = 3;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         state.PushBuffer(bulkSpan);
 
@@ -1152,15 +1189,27 @@ end
                     {
                         if (arrayItemCount == -1)
                         {
-                            // Null multi-bulk -> maps to false
-                            state.ForceMinimumStackCapacity(1);
+                            // Space for boolean
+                            const int NeededStackSize = 3;
+
+                            if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                            }
 
                             state.PushBoolean(false);
                         }
                         else
                         {
-                            // Create the new table
-                            state.ForceMinimumStackCapacity(1);
+                            // Space for table
+                            const int NeededStackSize = 1;
+
+                            if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                            }
 
                             state.CreateTable(arrayItemCount, 0);
 
@@ -1187,7 +1236,14 @@ end
 
                     if (RespReadUtils.TryReadSignedMapLength(out var mapPairCount, ref respPtr, respEnd) && mapPairCount >= 0)
                     {
-                        state.ForceMinimumStackCapacity(3);
+                        // Space for table, 'map', and sub-table
+                        const int NeededStackSize = 3;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         // Response is a two level table, where { map = { ... } }
                         state.CreateTable(1, 0);
@@ -1226,7 +1282,15 @@ end
                         {
                             respPtr += 3;
 
-                            state.ForceMinimumStackCapacity(1);
+                            // Space for nil
+                            const int NeededStackSize = 1;
+
+                            if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                            }
+
                             state.PushNil();
 
                             return 1;
@@ -1243,7 +1307,14 @@ end
 
                     if (RespReadUtils.TryReadSignedSetLength(out var setItemCount, ref respPtr, respEnd) && setItemCount >= 0)
                     {
-                        state.ForceMinimumStackCapacity(4);
+                        // Space for table, 'set', sub-table, key, boolean
+                        const int NeededStackSize = 5;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         // Response is a two level table, where { set = { ... } }
                         state.CreateTable(1, 0);
@@ -1278,7 +1349,14 @@ end
 
                     if ((respEnd - respPtr) >= 4)
                     {
-                        state.ForceMinimumStackCapacity(1);
+                        // Space for boolean
+                        const int NeededStackSize = 1;
+
+                        if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                        }
 
                         var asInt = *(int*)respPtr;
                         respPtr += 4;
@@ -1345,7 +1423,14 @@ end
                                 goto default;
                             }
 
-                            state.ForceMinimumStackCapacity(3);
+                            // Space for table, 'double', and number
+                            const int NeededStackSize = 3;
+
+                            if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                            }
 
                             // Create table like { double = <parsed> }
                             state.CreateTable(1, 0);
@@ -1382,7 +1467,14 @@ end
 
                                 respPtr += bigNumSpan.Length;
 
-                                state.ForceMinimumStackCapacity(3);
+                                // Space for table, 'big_number', and string
+                                const int NeededStackSize = 3;
+
+                                if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                                {
+                                    respPtr = respEnd;
+                                    return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                                }
 
                                 // Create table like { big_number = <bigNumBuf> }
                                 state.CreateTable(1, 0);
@@ -1422,7 +1514,16 @@ end
                             respPtr += 2;
 
                             // create table like { format = <format>, string = {data} }
-                            state.ForceMinimumStackCapacity(3);
+
+                            // Space for table, 'format'|'string', and string
+                            const int NeededStackSize = 3;
+
+                            if (!state.TryEnsureMinimumStackCapacity(NeededStackSize))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                            }
+
                             state.CreateTable(2, 0);
 
                             state.PushConstantString(constStrs.Format);
@@ -1451,9 +1552,11 @@ end
         /// </summary>
         public unsafe void RunForSession(int count, RespServerSession outerSession)
         {
-            const int NeededStackSize = 2;
+            // Space for function
+            const int NeededStackSize = 1;
 
-            state.ForceMinimumStackCapacity(NeededStackSize);
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
+            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
 
             preambleOuterSession = outerSession;
             preambleKeyAndArgvCount = count;
@@ -1503,9 +1606,11 @@ end
         /// </summary>
         public unsafe object RunForRunner(string[] keys = null, string[] argv = null)
         {
-            const int NeededStackSize = 2;
+            // Space for function
+            const int NeededStackSize = 1;
 
-            state.ForceMinimumStackCapacity(NeededStackSize);
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
+            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
 
             try
             {
@@ -1666,9 +1771,11 @@ end
         /// </summary>
         internal void ResetParameters(int nKeys, int nArgs)
         {
+            // Space for key count, value count, and function
             const int NeededStackSize = 3;
 
-            state.ForceMinimumStackCapacity(NeededStackSize);
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
+            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
 
             if (keyLength > nKeys || argvLength > nArgs)
             {
@@ -1689,9 +1796,11 @@ end
         /// </summary>
         private int LoadParametersForRunner(string[] keys, string[] argv)
         {
+            // Space for table and value
             const int NeededStackSize = 2;
 
-            state.ForceMinimumStackCapacity(NeededStackSize);
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
+            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
 
             ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
 
@@ -1751,12 +1860,14 @@ end
         private unsafe void RunCommon<TResponse>(ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
-            const int NeededStackSize = 2;
+            // Space for function
+            const int NeededStackSize = 1;
+
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
+            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
 
             try
             {
-                state.ForceMinimumStackCapacity(NeededStackSize);
-
                 // Every invocation starts in RESP2
                 if (respServerSession != null)
                 {
@@ -1838,6 +1949,28 @@ end
         private void WriteResponse<TResponse>(ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
+            // TODO: this needs to be reworked to handle pre-reserved stack space appropriately
+
+            // Need space for the lookup keys ("ok", "err", etc.) and their values
+            const int KeyNeededStackSpace = 1;
+
+            // 2 for the returned key and value from Next, 1 for the temp copy of the returned key
+            const int MapNeededStackSpace = 3;
+
+            // 2 for the returned key and value from Next, 1 for the temp copy of the returned key
+            const int ArrayNeededStackSize = 3;
+
+            // 2 for the returned key and value from Next
+            const int SetNeededStackSize = 2;
+
+            // 1 for the pending value
+            const int TableNeededStackSize = 1;
+
+            if (!state.TryEnsureMinimumStackCapacity(10))
+            {
+                throw new Exception("eehhhh");
+            }
+
             if (state.StackTop == 0)
             {
                 if (resp.RespProtocolVersion == 3)
@@ -1854,6 +1987,7 @@ end
 
             WriteSingleItem(this, ref resp);
 
+            // Write out a single RESP item and pop it off the stack
             static void WriteSingleItem(LuaRunner runner, ref TResponse resp)
             {
                 var curTop = runner.state.StackTop;
@@ -1943,8 +2077,8 @@ end
                 {
                     // Redis does not respect metatables, so RAW access is ok here
 
-                    // Need space for the lookup keys ("ok", "err", etc.) and their values
-                    runner.state.ForceMinimumStackCapacity(1);
+                    var stackRes = runner.state.TryEnsureMinimumStackCapacity(KeyNeededStackSpace);
+                    Debug.Assert(stackRes, "Space should have already been reserved");
 
                     runner.state.PushConstantString(runner.constStrs.Double);
                     var doubleType = runner.state.RawGet(null, curTop);
@@ -2048,7 +2182,7 @@ end
                     runner.state.Pop(1);
 
                     // Map this table to an array
-                    WriteArray(runner, ref resp);
+                    WriteTableToArray(runner, ref resp);
                     return;
                 }
             }
@@ -2166,12 +2300,10 @@ end
             // Write a table on the top of the stack as a map, removes it from the stack
             static unsafe void WriteMap(LuaRunner runner, ref TResponse resp)
             {
-                // 2 for the returned key and value from Next, 1 for the temp copy of the returned key
-                const int AdditonalNeededStackSize = 3;
-
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+                var stackRes = runner.state.TryEnsureMinimumStackCapacity(MapNeededStackSpace);
+                Debug.Assert(stackRes, "Space should have already been reserved");
 
                 var mapSize = 0;
 
@@ -2216,12 +2348,10 @@ end
             // Convert a table to an array, where each key-value pair is converted to 2 entries
             static unsafe void WriteMapToArray(LuaRunner runner, ref TResponse resp)
             {
-                // 2 for the returned key and value from Next, 1 for the temp copy of the returned key
-                const int AdditonalNeededStackSize = 3;
-
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+                var stackRes = runner.state.TryEnsureMinimumStackCapacity(ArrayNeededStackSize);
+                Debug.Assert(stackRes, "Space should have already been reserved");
 
                 var mapSize = 0;
 
@@ -2268,12 +2398,10 @@ end
             // Write a table on the top of the stack as a set, removes it from the stack
             static unsafe void WriteSet(LuaRunner runner, ref TResponse resp)
             {
-                // 2 for the returned key and value from Next
-                const int AdditonalNeededStackSize = 2;
-
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+                var stackRes = runner.state.TryEnsureMinimumStackCapacity(SetNeededStackSize);
+                Debug.Assert(stackRes, "Space should have already been reserved");
 
                 var setSize = 0;
 
@@ -2319,12 +2447,10 @@ end
             // table, then remove the table from the stack
             static unsafe void WriteSetToArray(LuaRunner runner, ref TResponse resp)
             {
-                // 2 for the returned key and value from Next
-                const int AdditonalNeededStackSize = 2;
-
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+                var stackRes = runner.state.TryEnsureMinimumStackCapacity(SetNeededStackSize);
+                Debug.Assert(stackRes, "Space should have already been reserved");
 
                 var setSize = 0;
 
@@ -2380,16 +2506,13 @@ end
             }
 
             // Writes the table on the top of the stack out as an array, removed table from the stack
-            static unsafe void WriteArray(LuaRunner runner, ref TResponse resp)
+            static unsafe void WriteTableToArray(LuaRunner runner, ref TResponse resp)
             {
                 // Redis does not respect metatables, so RAW access is ok here
-
-                // 1 for the pending value
-                const int AdditonalNeededStackSize = 1;
-
                 Debug.Assert(runner.state.Type(runner.state.StackTop) == LuaType.Table, "Table was not on top of stack");
 
-                runner.state.ForceMinimumStackCapacity(AdditonalNeededStackSize);
+                var stackRes = runner.state.TryEnsureMinimumStackCapacity(TableNeededStackSize);
+                Debug.Assert(stackRes, "Space should have already been reserved");
 
                 // Lua # operator - this MAY stop at nils, but isn't guaranteed to
                 // See: https://www.lua.org/manual/5.3/manual.html#3.4.7

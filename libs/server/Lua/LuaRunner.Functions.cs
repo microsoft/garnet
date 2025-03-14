@@ -149,7 +149,8 @@ namespace Garnet.server
 
             state.CallFromLuaEntered(luaStatePtr);
 
-            state.ForceMinimumStackCapacity(NeededStackSpace);
+            var ensureRes = state.TryEnsureMinimumStackCapacity(NeededStackSpace);
+            Debug.Assert(ensureRes, "LUA_MIN_STACK is large enough this should never fail");
 
             state.PushNil();
             return 1;
@@ -196,7 +197,11 @@ namespace Garnet.server
             state.Pop(1);
 
             // We're going to return count items, + 1 for the passed table
-            state.ForceMinimumStackCapacity(count + 1);
+            if(!state.TryEnsureMinimumStackCapacity(count + 1))
+            {
+                // TODO: how to signal this?
+                throw new Exception("Uhhhh");
+            }
 
             for (var ix = 1; ix <= count; ix++)
             {
@@ -380,6 +385,9 @@ namespace Garnet.server
             const long DBL_MANT_MASK = 0x000FFFFFFFFFFFFFL;
             const long DBL_EXP_CLR_MASK = DBL_SGN_MASK | DBL_MANT_MASK;
 
+            // 1 for number [-0.5, 0.5] and 1 for exponent >= 0
+            const int NeededStackSpace = 2;
+
             state.CallFromLuaEntered(luaStatePtr);
 
             var luaArgCount = state.StackTop;
@@ -414,8 +422,12 @@ namespace Garnet.server
                 number = BitConverter.Int64BitsToDouble((bits & DBL_EXP_CLR_MASK) | 0x3FE0000000000000L);
             }
 
-            state.ForceMinimumStackCapacity(2);
             state.Pop(1);
+
+            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+            {
+                return LuaWrappedError(2, constStrs.InsufficientLuaStackSpace);
+            }
 
             var numberAsFloat = (float)number;
 
@@ -561,13 +573,19 @@ namespace Garnet.server
         {
             state.CallFromLuaEntered(luaStatePtr);
 
+            // 1 for key, 1 for value
+            const int NeededStackSpace = 2;
+
             var luaArgCount = state.StackTop;
             if (luaArgCount != 1 || state.Type(1) != LuaType.Table)
             {
                 return LuaWrappedError(1, constStrs.BadArgMaxn);
             }
 
-            state.ForceMinimumStackCapacity(2);
+            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+            {
+                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+            }
 
             double res = 0;
 
@@ -598,6 +616,9 @@ namespace Garnet.server
         {
             state.CallFromLuaEntered(luaStatePtr);
 
+            // 1 for either the compiled chunk, or the error message
+            const int NeededStackSpace = 1;
+
             var luaArgCount = state.StackTop;
             if (
                 (luaArgCount == 1 && state.Type(1) != LuaType.String) ||
@@ -620,7 +641,10 @@ namespace Garnet.server
                 return LuaWrappedError(2, constStrs.BadArgLoadStringNullByte);
             }
 
-            state.ForceMinimumStackCapacity(1);
+            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+            {
+                return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+            }
 
             var res = state.LoadString(buff);
             if (res != LuaStatus.OK)
@@ -1031,8 +1055,14 @@ namespace Garnet.server
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
+                // 1 for key, 1 for value
+                const int NeededStackSpace = 2;
+
                 // Space for key & value
-                self.state.ForceMinimumStackCapacity(2);
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
+                }
 
                 var tableIndex = self.state.StackTop;
 
@@ -1082,8 +1112,14 @@ namespace Garnet.server
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
+                // 1 for value
+                const int NeededStackSpace = 1;
+
                 // Space for value
-                self.state.ForceMinimumStackCapacity(1);
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
+                }
 
                 var tableIndex = self.state.StackTop;
 
@@ -1121,7 +1157,12 @@ namespace Garnet.server
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
 
                 // Space for key and value and a copy of key
-                self.state.ForceMinimumStackCapacity(3);
+                const int NeededStackSpace = 3;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
+                }
 
                 var tableIndex = self.state.StackTop;
 
@@ -1265,8 +1306,13 @@ namespace Garnet.server
             // Convert the JsonValue int to a Lua string, nil, or number on the stack
             static int DecodeValue(LuaRunner self, JsonValue value)
             {
-                // Reserve space for the value
-                self.state.ForceMinimumStackCapacity(1);
+                // Space for the value
+                const int NeededStackSpace = 1;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
+                }
 
                 switch (value.GetValueKind())
                 {
@@ -1296,8 +1342,13 @@ namespace Garnet.server
             // Convert the JsonArray into a Lua table on the stack
             static int DecodeArray(LuaRunner self, JsonArray arr)
             {
-                // Reserve space for the table
-                self.state.ForceMinimumStackCapacity(1);
+                // Space for the table
+                const int NeededStackSpace = 1;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
+                }
 
                 self.state.CreateTable(arr.Count, 0);
 
@@ -1325,8 +1376,13 @@ namespace Garnet.server
             // Convert the JsonObject into a Lua table on the stack
             static int DecodeObject(LuaRunner self, JsonObject obj)
             {
-                // Reserve space for table and key
-                self.state.ForceMinimumStackCapacity(2);
+                // Space for table and key
+                const int NeededStackSpace = 2;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
+                }
 
                 self.state.CreateTable(0, obj.Count);
 
@@ -1377,7 +1433,10 @@ namespace Garnet.server
             {
                 // Because each encode removes the encoded value
                 // we always encode the argument at position 1
-                Encode(this, 1, 0);
+                if (!TryEncode(this, 1, 0, out var errIndex))
+                {
+                    return LuaWrappedError(1, errIndex);
+                }
             }
 
             // After all encoding, stack should be empty
@@ -1389,14 +1448,14 @@ namespace Garnet.server
             return 1;
 
             // Encode a single item at the top of the stack, and remove it
-            static void Encode(LuaRunner self, int stackIndex, int depth)
+            static bool TryEncode(LuaRunner self, int stackIndex, int depth, out int constStrRegisteryIndex)
             {
                 var type = self.state.Type(stackIndex);
                 switch (type)
                 {
-                    case LuaType.Boolean: EncodeBool(self, stackIndex); break;
-                    case LuaType.Number: EncodeNumber(self, stackIndex); break;
-                    case LuaType.String: EncodeBytes(self, stackIndex); break;
+                    case LuaType.Boolean: return TryEncodeBool(self, stackIndex, out constStrRegisteryIndex);
+                    case LuaType.Number: return TryEncodeNumber(self, stackIndex, out constStrRegisteryIndex);
+                    case LuaType.String: return TryEncodeBytes(self, stackIndex, out constStrRegisteryIndex);
                     case LuaType.Table:
                         if (depth == 16)
                         {
@@ -1408,11 +1467,11 @@ namespace Garnet.server
 
                             self.state.Remove(stackIndex);
 
-                            return;
+                            constStrRegisteryIndex = -1;
+                            return true;
                         }
 
-                        EncodeTable(self, stackIndex, depth);
-                        break;
+                        return TryEncodeTable(self, stackIndex, depth, out constStrRegisteryIndex);
 
                     // Everything else maps to null, NOT an error
                     case LuaType.Function:
@@ -1421,12 +1480,12 @@ namespace Garnet.server
                     case LuaType.None:
                     case LuaType.Thread:
                     case LuaType.UserData:
-                    default: EncodeNull(self, stackIndex); break;
+                    default: return TryEncodeNull(self, stackIndex, out constStrRegisteryIndex);
                 }
             }
 
             // Encode a null-ish value at stackIndex, and remove it
-            static void EncodeNull(LuaRunner self, int stackIndex)
+            static bool TryEncodeNull(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
 
@@ -1434,10 +1493,13 @@ namespace Garnet.server
                 self.scratchBufferManager.MoveOffset(1);
 
                 self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
             }
 
             // Encode a boolean at stackIndex, and remove it
-            static void EncodeBool(LuaRunner self, int stackIndex)
+            static bool TryEncodeBool(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Boolean, "Expected boolean");
 
@@ -1447,30 +1509,35 @@ namespace Garnet.server
                 self.scratchBufferManager.MoveOffset(1);
 
                 self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
             }
 
             // Encode a number at stackIndex, and remove it
-            static void EncodeNumber(LuaRunner self, int stackIndex)
+            static bool TryEncodeNumber(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
                 var numRaw = self.state.CheckNumber(stackIndex);
                 var isInt = numRaw == (long)numRaw;
 
+                bool ret;
                 if (isInt)
                 {
-                    EncodeInteger(self, (long)numRaw);
+                    ret = TryEncodeInteger(self, (long)numRaw, out constStrRegisteryIndex);
                 }
                 else
                 {
-                    EncodeFloatingPoint(self, numRaw);
+                    ret = TryEncodeFloatingPoint(self, numRaw, out constStrRegisteryIndex);
                 }
 
                 self.state.Remove(stackIndex);
+                return ret;
             }
 
             // Encode an integer
-            static void EncodeInteger(LuaRunner self, long value)
+            static bool TryEncodeInteger(LuaRunner self, long value, out int constStrRegisteryIndex)
             {
                 // positive 7-bit fixint
                 if ((byte)(value & 0b0111_1111) == value)
@@ -1478,7 +1545,8 @@ namespace Garnet.server
                     self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
                     self.scratchBufferManager.MoveOffset(1);
 
-                    return;
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // negative 5-bit fixint
@@ -1486,7 +1554,9 @@ namespace Garnet.server
                 {
                     self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
                     self.scratchBufferManager.MoveOffset(1);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 8-bit int
@@ -1497,7 +1567,9 @@ namespace Garnet.server
                     into[0] = 0xD0;
                     into[1] = (byte)value;
                     self.scratchBufferManager.MoveOffset(2);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 8-bit uint
@@ -1508,7 +1580,9 @@ namespace Garnet.server
                     into[0] = 0xCC;
                     into[1] = (byte)value;
                     self.scratchBufferManager.MoveOffset(2);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 16-bit int
@@ -1519,7 +1593,9 @@ namespace Garnet.server
                     into[0] = 0xD1;
                     BinaryPrimitives.WriteInt16BigEndian(into[1..], (short)value);
                     self.scratchBufferManager.MoveOffset(3);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 16-bit uint
@@ -1530,7 +1606,9 @@ namespace Garnet.server
                     into[0] = 0xCD;
                     BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)value);
                     self.scratchBufferManager.MoveOffset(3);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 32-bit int
@@ -1541,7 +1619,9 @@ namespace Garnet.server
                     into[0] = 0xD2;
                     BinaryPrimitives.WriteInt32BigEndian(into[1..], (int)value);
                     self.scratchBufferManager.MoveOffset(5);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 32-bit uint
@@ -1552,7 +1632,9 @@ namespace Garnet.server
                     into[0] = 0xCE;
                     BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)value);
                     self.scratchBufferManager.MoveOffset(5);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 64-bit uint
@@ -1563,7 +1645,9 @@ namespace Garnet.server
                     into[0] = 0xCF;
                     BinaryPrimitives.WriteUInt64BigEndian(into[1..], (ulong)value);
                     self.scratchBufferManager.MoveOffset(9);
-                    return;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
 
                 // 64-bit int
@@ -1573,11 +1657,14 @@ namespace Garnet.server
                     into[0] = 0xD3;
                     BinaryPrimitives.WriteInt64BigEndian(into[1..], value);
                     self.scratchBufferManager.MoveOffset(9);
+
+                    constStrRegisteryIndex = -1;
+                    return true;
                 }
             }
 
             // Encode a floating point value
-            static void EncodeFloatingPoint(LuaRunner self, double value)
+            static bool TryEncodeFloatingPoint(LuaRunner self, double value, out int constStrRegisteryIndex)
             {
                 // While Redis has code that attempts to pack doubles into floats
                 // it doesn't appear to do anything, so we just always write a double
@@ -1587,10 +1674,13 @@ namespace Garnet.server
                 into[0] = 0xCB;
                 BinaryPrimitives.WriteDoubleBigEndian(into[1..], value);
                 self.scratchBufferManager.MoveOffset(9);
+
+                constStrRegisteryIndex = -1;
+                return true;
             }
 
             // Encodes a string as at stackIndex, and remove it
-            static void EncodeBytes(LuaRunner self, int stackIndex)
+            static bool TryEncodeBytes(LuaRunner self, int stackIndex, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
 
@@ -1633,15 +1723,24 @@ namespace Garnet.server
                 }
 
                 self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
             }
 
             // Encode a table at stackIndex, and remove it
-            static void EncodeTable(LuaRunner self, int stackIndex, int depth)
+            static bool TryEncodeTable(LuaRunner self, int stackIndex, int depth, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
 
                 // Space for key and value
-                self.state.ForceMinimumStackCapacity(2);
+                const int NeededStackSpace = 2;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrRegisteryIndex = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var tableIndex = stackIndex;
 
@@ -1677,22 +1776,28 @@ namespace Garnet.server
 
                 if (isArray && count == max)
                 {
-                    EncodeArray(self, stackIndex, depth, count);
+                    return TryEncodeArray(self, stackIndex, depth, count, out constStrRegisteryIndex);
                 }
                 else
                 {
-                    EncodeMap(self, stackIndex, depth, count);
+                    return TryEncodeMap(self, stackIndex, depth, count, out constStrRegisteryIndex);
                 }
             }
 
             // Encode a table at stackIndex into an array, and remove it
-            static void EncodeArray(LuaRunner self, int stackIndex, int depth, int count)
+            static bool TryEncodeArray(LuaRunner self, int stackIndex, int depth, int count, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
                 Debug.Assert(count >= 0, "Array should have positive length");
 
-                // Reserve space for value
-                self.state.ForceMinimumStackCapacity(1);
+                // Space for value
+                const int NeededStackSpace = 1;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrRegisteryIndex = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var tableIndex = stackIndex;
                 var valueIndex = tableIndex + 1;
@@ -1725,20 +1830,32 @@ namespace Garnet.server
                 for (var ix = 1; ix <= count; ix++)
                 {
                     _ = self.state.RawGetInteger(null, tableIndex, ix);
-                    Encode(self, valueIndex, depth + 1);
+                    if (!TryEncode(self, valueIndex, depth + 1, out constStrRegisteryIndex))
+                    {
+                        return false;
+                    }
                 }
 
                 self.state.Remove(tableIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
             }
 
             // Encode a table at stackIndex into a map, and remove it
-            static void EncodeMap(LuaRunner self, int stackIndex, int depth, int count)
+            static bool TryEncodeMap(LuaRunner self, int stackIndex, int depth, int count, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
                 Debug.Assert(count >= 0, "Map should have positive length");
 
-                // Reserve space for key, value, and copy of key
-                self.state.ForceMinimumStackCapacity(2);
+                // Space for key, value, and copy of key
+                const int NeededStackSpace = 3;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrRegisteryIndex = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var tableIndex = stackIndex;
                 var keyIndex = self.state.StackTop + 1;
@@ -1777,13 +1894,22 @@ namespace Garnet.server
                     self.state.PushValue(keyIndex);
 
                     // Write the key
-                    Encode(self, keyCopyIndex, depth + 1);
+                    if (!TryEncode(self, keyCopyIndex, depth + 1, out constStrRegisteryIndex))
+                    {
+                        return false;
+                    }
 
                     // Write the value
-                    Encode(self, valueIndex, depth + 1);
+                    if (!TryEncode(self, valueIndex, depth + 1, out constStrRegisteryIndex))
+                    {
+                        return false;
+                    }
                 }
 
                 self.state.Remove(tableIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
             }
         }
 
@@ -1803,7 +1929,15 @@ namespace Garnet.server
             }
 
             // 1 for error slot and 1 for count
-            state.ForceMinimumStackCapacity(2);
+            const int NeededStackSpace = 2;
+
+            // 1 for each unpacked result
+            const int AdditionalStackSpace = 1;
+
+            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+            {
+                return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+            }
 
             _ = state.CheckBuffer(1, out var data);
 
@@ -1812,7 +1946,10 @@ namespace Garnet.server
             while (!data.IsEmpty)
             {
                 // Reserve space for the result
-                state.ForceMinimumStackCapacity(1);
+                if (!state.TryEnsureMinimumStackCapacity(AdditionalStackSpace))
+                {
+                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                }
 
                 try
                 {
@@ -2115,8 +2252,14 @@ namespace Garnet.server
             // Decode an array with <= 15 items, moving past it in data and pushing it to the stack
             static bool TryDecodeSmallArray(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                // Reserve extra space for the temporary item
-                self.state.ForceMinimumStackCapacity(1);
+                // Space for the temporary item
+                const int NeededStackSpace = 1;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrErrId = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var len = sigil & 0b0000_1111;
 
@@ -2141,8 +2284,14 @@ namespace Garnet.server
             // Decode an array with <= 65,535 items, moving past it in data and pushing it to the stack
             static bool TryDecodeMidArray(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                // Reserve extra space for the temporary item
-                self.state.ForceMinimumStackCapacity(1);
+                // Space for the temporary item
+                const int NeededStackSpace = 1;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrErrId = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
@@ -2168,8 +2317,14 @@ namespace Garnet.server
             // Decode an array with <= 4,294,967,295 items, moving past it in data and pushing it to the stack
             static bool TryDecodeLargeArray(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                // Reserve extra space for the temporary item
-                self.state.ForceMinimumStackCapacity(1);
+                // Space for the temporary item
+                const int NeededStackSpace = 1;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrErrId = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var len = BinaryPrimitives.ReadUInt32BigEndian(data);
                 data = data[4..];
@@ -2203,8 +2358,15 @@ namespace Garnet.server
             // Decode an map with <= 15 key-value pairs, moving past it in data and pushing it to the stack
             static bool TryDecodeSmallMap(LuaRunner self, byte sigil, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                // Reserve extra space for the temporary key & value
-                self.state.ForceMinimumStackCapacity(2);
+                // Reserve extra space for the 
+                // Space for the temporary key & value
+                const int NeededStackSpace = 2;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrErrId = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var len = sigil & 0b0000_1111;
 
@@ -2235,8 +2397,15 @@ namespace Garnet.server
             // Decode a map with <= 65,535 key-value pairs, moving past it in data and pushing it to the stack
             static bool TryDecodeMidMap(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                // Reserve extra space for the temporary key & value
-                self.state.ForceMinimumStackCapacity(2);
+                // Reserve extra space for the 
+                // Space for the temporary key & value
+                const int NeededStackSpace = 2;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrErrId = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
@@ -2268,8 +2437,15 @@ namespace Garnet.server
             // Decode a map with <= 4,294,967,295 key-value pairs, moving past it in data and pushing it to the stack
             static bool TryDecodeLargeMap(LuaRunner self, ref ReadOnlySpan<byte> data, out int constStrErrId)
             {
-                // Reserve extra space for the temporary key & value
-                self.state.ForceMinimumStackCapacity(2);
+                // Reserve extra space for the 
+                // Space for the temporary key & value
+                const int NeededStackSpace = 2;
+
+                if (!self.state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    constStrErrId = self.constStrs.InsufficientLuaStackSpace;
+                    return false;
+                }
 
                 var len = BinaryPrimitives.ReadUInt32BigEndian(data);
                 data = data[4..];
@@ -2288,13 +2464,13 @@ namespace Garnet.server
                 for (var i = 1; i <= len; i++)
                 {
                     // Push the key onto the stack
-                    if(!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, out constStrErrId))
                     {
                         return false;
                     }
 
                     // Push the value onto the stack
-                    if(!TryDecode(self, ref data, out constStrErrId))
+                    if (!TryDecode(self, ref data, out constStrErrId))
                     {
                         return false;
                     }
@@ -2373,7 +2549,11 @@ namespace Garnet.server
                 // BITOP is _weird_
 
                 // Going to push AND, OR, etc. onto the stack, so reserve a slot
-                state.ForceMinimumStackCapacity(1);
+                const int NeededStackSpace = 1;
+                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                }
 
                 success = true;
                 foreach (var subCommand in RespCommand.BITOP.ExpandForACLs())
@@ -2426,7 +2606,11 @@ namespace Garnet.server
                 // with that parent command will always succeed if we return true here.
 
                 // Going to push the subcommand text onto the stack, so reserve some space
-                state.ForceMinimumStackCapacity(1);
+                const int NeededStackSpace = 1;
+                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                }
 
                 success = true;
 
@@ -2591,6 +2775,7 @@ namespace Garnet.server
         private unsafe int CompileCommon<TResponse>(nint luaState, ref TResponse resp)
             where TResponse : struct, IResponseAdapter
         {
+            // 1 for function, 1 for code string
             const int NeededStackSpace = 2;
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
@@ -2598,7 +2783,8 @@ namespace Garnet.server
             state.CallFromLuaEntered(luaState);
             state.ExpectLuaStackEmpty();
 
-            state.ForceMinimumStackCapacity(NeededStackSpace);
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSpace);
+            Debug.Assert(stackRes, "LUA_MIN_STACK should be high enough that this cannot happen");
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
             state.PushBuffer(source.Span);
@@ -2635,7 +2821,8 @@ namespace Garnet.server
         private unsafe int ProcessCommandFromScripting<TGarnetApi>(nint luaStatePtr, ref TGarnetApi api)
             where TGarnetApi : IGarnetApi
         {
-            const int AdditionalStackSpace = 1;
+            // 1 slot for the result (if any)
+            const int NeededStackSpace = 1;
 
             state.CallFromLuaEntered(luaStatePtr);
 
@@ -2648,7 +2835,10 @@ namespace Garnet.server
                     return LuaWrappedError(1, constStrs.PleaseSpecifyRedisCall);
                 }
 
-                state.ForceMinimumStackCapacity(AdditionalStackSpace);
+                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
+                {
+                    return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
+                }
 
                 if (!state.CheckBuffer(1, out var cmdSpan))
                 {

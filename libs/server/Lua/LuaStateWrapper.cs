@@ -119,27 +119,29 @@ namespace Garnet.server
         /// <summary>
         /// Ensure there's enough space on the Lua stack for <paramref name="additionalCapacity"/> more items.
         /// 
-        /// Throws if there is not.
+        /// Returns false if space cannot be obtained.
         /// 
         /// Maintains <see cref="StackTop"/> to avoid unnecessary p/invokes.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ForceMinimumStackCapacity(int additionalCapacity)
+        internal bool TryEnsureMinimumStackCapacity(int additionalCapacity)
         {
             var availableSpace = curStackSize - StackTop;
 
             if (availableSpace >= additionalCapacity)
             {
-                return;
+                return true;
             }
 
             var needed = additionalCapacity - availableSpace;
             if (!NativeMethods.CheckStack(state, needed))
             {
-                throw new GarnetException("Could not reserve additional capacity on the Lua stack");
+                return false;
             }
 
             curStackSize += additionalCapacity;
+
+            return true;
         }
 
         /// <summary>
