@@ -408,6 +408,13 @@ local error_wrapper_r2 = function(rawFunc, ...)
 end
 
 local unpackTrampolineRef = garnet_unpack_trampoline
+local error_wrapper_rvar_check = function(err, ...)
+    if err then
+        error(err, 0)
+    end
+
+    return ...
+end
 
 local error_wrapper_rvar = function(rawFunc, ...)
     -- variable numbers of returns require extra work
@@ -421,7 +428,7 @@ local error_wrapper_rvar = function(rawFunc, ...)
         error(err, 0)
     end
 
-    return unpackTrampolineRef(rets, count)
+    return error_wrapper_rvar_check(unpackTrampolineRef(rets, count))
 end
 
 -- cutdown os for sandboxing purposes
@@ -1983,7 +1990,7 @@ end
             // didn't run out of stack space, we serialize AGAIN this time know we'll succeed
             // so we can sent as we go like normal.
             //
-            // Ideally we do everything in a single pass like usual.
+            // Ideally we do everything in a single pass.
 
             if (state.StackTop == 0)
             {
@@ -2061,7 +2068,6 @@ end
                         if (!TryWriteResp3Null(runner, canSend, pop: true, ref resp, out errConstStrIndex))
                         {
                             fitInBuffer = false;
-                            Debug.Assert(errConstStrIndex == -1, "Nulls require no stack space, so should never fail");
                         }
                     }
                     else

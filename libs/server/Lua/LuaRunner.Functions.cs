@@ -196,12 +196,14 @@ namespace Garnet.server
             var count = (int)state.CheckNumber(2);
             state.Pop(1);
 
-            // We're going to return count items, + 1 for the passed table
-            if(!state.TryEnsureMinimumStackCapacity(count + 1))
+            // We're going to return count items, and need 1 slot for the error
+            if (!state.TryEnsureMinimumStackCapacity(count + 1))
             {
-                // TODO: how to signal this?
-                throw new Exception("Uhhhh");
+                return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
             }
+
+            // Error slot, which is empty after the stack check
+            state.PushNil();
 
             for (var ix = 1; ix <= count; ix++)
             {
@@ -209,7 +211,7 @@ namespace Garnet.server
                 _ = state.RawGetInteger(null, 1, ix + 2);
             }
 
-            return count;
+            return count + 1;
         }
 
         /// <summary>
