@@ -5,6 +5,8 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -30,7 +32,7 @@ namespace Garnet.server
         /// <summary>
         /// Small struct to store options for GEOSEARCH command
         /// </summary>
-        private struct GeoSearchOptions
+        private ref struct GeoSearchOptions
         {
             public bool FromMember { get; set; }
             public bool FromLonLat { get; set; }
@@ -55,8 +57,8 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             // By default, add new elements but do not update the ones already in the set
-            var nx = true;
-            var ch = false;
+            var onlyUpdate = false;
+            var returnElementsChanged = false;
 
             var count = input.parseState.Count;
             var currTokenIdx = 0;
@@ -68,14 +70,14 @@ namespace Garnet.server
                 var optsCount = count % 3;
                 if (optsCount > 0 && optsCount <= 2)
                 {
-                    // Is NX or XX, if not nx then use XX
+                    // Is NX or XX, if not XX then use NX
                     var byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
+                    onlyUpdate = byteOptions.EqualsUpperCaseSpanIgnoringCase("XX"u8);
                     if (optsCount == 2)
                     {
                         // Read CH option
                         byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                        ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
+                        returnElementsChanged = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
                     }
                 }
 
@@ -96,34 +98,46 @@ namespace Garnet.server
                     var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
-                    if (score != -1)
-                    {
-                        var memberByteArray = member.ToArray();
-                        if (!sortedSetDict.TryGetValue(memberByteArray, out var scoreStored))
-                        {
-                            if (nx)
-                            {
-                                sortedSetDict.Add(memberByteArray, score);
-                                sortedSet.Add((score, memberByteArray));
-                                elementsAdded++;
+                    if (score == -1) continue;
 
-                                this.UpdateSize(member);
-                                elementsChanged++;
-                            }
-                        }
-                        else if (!nx && scoreStored != score)
+                    // Copy the member
+                    var memberByteArray = member.ToArray();
+
+                    // Don't add new member if XX flag is set
+                    if (onlyUpdate)
+                    {
+                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrNullRef(Dictionary, memberByteArray);
+                        if (!Unsafe.IsNullRef(ref scoreRef) && scoreRef != score)
                         {
-                            sortedSetDict[memberByteArray] = score;
-                            var success = sortedSet.Remove((scoreStored, memberByteArray));
+                            // Remove old sorted set entry
+                            var success = sortedSet.Remove((scoreRef, memberByteArray));
                             Debug.Assert(success);
+
+                            // Update the score and insert new sorted set entry
+                            scoreRef = score;
                             success = sortedSet.Add((score, memberByteArray));
                             Debug.Assert(success);
                             elementsChanged++;
                         }
                     }
+                    else
+                    {
+                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, memberByteArray, out var exists);
+
+                        // NX: Don't update already existing elements. Always add new elements.
+                        if (!exists)
+                        {
+                            scoreRef = score;
+                            sortedSet.Add((score, memberByteArray));
+                            elementsAdded++;
+
+                            this.UpdateSize(member);
+                            elementsChanged++;
+                        }
+                    }
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(ch ? elementsChanged : elementsAdded, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(returnElementsChanged ? elementsChanged : elementsAdded, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
@@ -154,11 +168,12 @@ namespace Garnet.server
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
                     // Read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                    if (sortedSetDict.TryGetValue(member, out var value52Int))
+                    if (TryGetScore(member, out var score))
                     {
-                        var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
+                        // The GeoHash is stored as 52-bit integer inside the floating-point score
+                        var geoHash = server.GeoHash.GetGeoHashCode((long)score);
                         while (!RespWriteUtils.TryWriteAsciiBulkString(geoHash, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
@@ -191,23 +206,21 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                // Read 1st member
-                var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-
-                // Read 2nd member
-                var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+                var firstMember = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                var secondMember = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                 // Read units
                 var units = input.parseState.Count > 2
                     ? input.parseState.GetArgSliceByRef(2).ReadOnlySpan
                     : "M"u8;
 
-                if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
+                if (TryGetScore(firstMember, out var firstScore) &&
+                    TryGetScore(secondMember, out var secondScore))
                 {
-                    var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
-                    var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
+                    var firstCoordinate = server.GeoHash.GetCoordinatesFromLong((long)firstScore);
+                    var secondCoordinate = server.GeoHash.GetCoordinatesFromLong((long)secondScore);
 
-                    var distance = server.GeoHash.Distance(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
+                    var distance = server.GeoHash.Distance(firstCoordinate.Latitude, firstCoordinate.Longitude, secondCoordinate.Latitude, secondCoordinate.Longitude);
 
                     var distanceValue = (units.Length == 1 && AsciiUtils.ToUpper(units[0]) == (byte)'M') ?
                         distance : server.GeoHash.ConvertMetersToUnits(distance, units);
@@ -248,12 +261,11 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    // read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                    if (sortedSetDict.TryGetValue(member, out var scoreMember1))
+                    if (TryGetScore(member, out var score))
                     {
-                        var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
+                        var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)score);
 
                         // write array of 2 values
                         while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
@@ -295,7 +307,7 @@ namespace Garnet.server
             try
             {
                 var opts = new GeoSearchOptions();
-                byte[] fromMember = null;
+                ReadOnlySpan<byte> fromMember = default;
                 var byBoxUnits = "M"u8;
                 double width = 0, height = 0;
                 var countValue = 0;
@@ -319,7 +331,7 @@ namespace Garnet.server
                             break;
                         }
 
-                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
                         opts.FromMember = true;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
@@ -437,7 +449,7 @@ namespace Garnet.server
 
                 // Get the results
                 // FROMMEMBER
-                if (opts.FromMember && sortedSetDict.TryGetValue(fromMember, out var centerPointScore))
+                if (opts.FromMember && TryGetScore(fromMember, out var centerPointScore))
                 {
                     var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
 
@@ -452,7 +464,7 @@ namespace Garnet.server
                         var responseData = new List<GeoSearchData>();
                         foreach (var point in sortedSet)
                         {
-                            var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Item1);
+                            var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
                             double distance = 0;
                             if (opts.ByBox)
                             {
@@ -463,8 +475,8 @@ namespace Garnet.server
                                     {
                                         Member = point.Item2,
                                         Distance = distance,
-                                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Item1),
-                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Item1)
+                                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
+                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
                                     });
 
                                     if (opts.WithCount && responseData.Count == countValue)

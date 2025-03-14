@@ -242,21 +242,25 @@ namespace Garnet.server
 
             try
             {
-                Span<int> indexes = default;
-
                 if (count > 0)
                 {
                     // Return an array of distinct elements
                     var countParameter = count > set.Count ? set.Count : count;
 
                     // The order of fields in the reply is not truly random
-                    indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed);
+
+                    const int StackallocThreshold = 256;
+
+                    var indices = countParameter <= StackallocThreshold ?
+                        stackalloc int[StackallocThreshold].Slice(0, countParameter) : new int[countParameter];
+
+                    RandomUtils.PickRandomIndices(set.Count, indices, seed);
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    foreach (var index in indexes)
+                    foreach (var index in indices)
                     {
                         var element = set.ElementAt(index);
                         while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
@@ -286,17 +290,22 @@ namespace Garnet.server
                 else // count < 0
                 {
                     // Return an array with potentially duplicate elements
-                    var countParameter = Math.Abs(count);
+                    const int StackallocThreshold = 256;
 
-                    indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed, false);
+                    var indexCount = Math.Abs(count);
+
+                    var indices = indexCount <= StackallocThreshold ?
+                        stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+                    RandomUtils.PickRandomIndices(set.Count, indices, seed, false);
 
                     if (set.Count > 0)
                     {
                         // Write the size of the array reply
-                        while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
+                        while (!RespWriteUtils.TryWriteArrayLength(indices.Length, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        foreach (var index in indexes)
+                        foreach (var index in indices)
                         {
                             var element = set.ElementAt(index);
                             while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
