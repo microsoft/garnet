@@ -11,6 +11,9 @@ namespace Garnet.server
     /// Byte array equality comparer
     /// </summary>
     public sealed class ByteArrayComparer : IEqualityComparer<byte[]>
+#if NET9_0_OR_GREATER
+        , IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
+#endif
     {
         /// <summary>
         /// The default instance.
@@ -51,5 +54,20 @@ namespace Garnet.server
 
             return (long)BitOperations.RotateRight(magicno * hashState, 4);
         }
+
+        /// <inheritdoc/>
+        public bool Equals(ReadOnlySpan<byte> alternate, byte[] other) => alternate.SequenceEqual(other);
+
+        /// <inheritdozc/>
+        public unsafe int GetHashCode(ReadOnlySpan<byte> alternate)
+        {
+            fixed (byte* alternatePtr = alternate)
+            {
+                return (int)HashBytes(alternatePtr, alternate.Length);
+            }
+        }
+
+        /// <inheritdozc/>
+        public byte[] Create(ReadOnlySpan<byte> alternate) => alternate.ToArray();
     }
 }
