@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -1161,19 +1162,21 @@ namespace Garnet.server
                     foreach (var (key, score) in nextSortedSet.Dictionary)
                     {
                         var weightedScore = weights is null ? score : score * weights[i];
-                        if (pairs.TryGetValue(key, out var existingScore))
+                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(pairs, key, out var exists);
+
+                        if (exists)
                         {
-                            pairs[key] = aggregateType switch
+                            scoreRef = aggregateType switch
                             {
-                                SortedSetAggregateType.Sum => existingScore + weightedScore,
-                                SortedSetAggregateType.Min => Math.Min(existingScore, weightedScore),
-                                SortedSetAggregateType.Max => Math.Max(existingScore, weightedScore),
-                                _ => existingScore + weightedScore // Default to SUM
+                                SortedSetAggregateType.Sum => scoreRef + weightedScore,
+                                SortedSetAggregateType.Min => Math.Min(scoreRef, weightedScore),
+                                SortedSetAggregateType.Max => Math.Max(scoreRef, weightedScore),
+                                _ => scoreRef + weightedScore // Default to SUM
                             };
                         }
                         else
                         {
-                            pairs[key] = weightedScore;
+                            scoreRef = weightedScore;
                         }
                     }
                 }
