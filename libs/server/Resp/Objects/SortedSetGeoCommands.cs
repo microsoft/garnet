@@ -61,7 +61,7 @@ namespace Garnet.server
         /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi, bool @readonly = true)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
@@ -135,9 +135,6 @@ namespace Garnet.server
                 default:
                     throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
             }
-
-            if (@readonly)
-                opts &= ~SortedSetGeoOpts.Store;
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
@@ -227,20 +224,30 @@ namespace Garnet.server
                     {
                         return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEORADIUS));
                     }
+
+                    destIdx = GetDestIdx();
+                    if (destIdx == -1)
+                        return GeoCommands(RespCommand.GEORADIUS_RO, ref storageApi);
+
                     opt = SortedSetGeoOpts.Store | SortedSetGeoOpts.ByRadius;
                     sourceIdx = 0;
-                    destIdx = GetDestIdx();
                     break;
+
                 case RespCommand.GEORADIUSBYMEMBER:
                     // GERADIUSBYMEMBER src member 0 km
                     if (parseState.Count < 4)
                     {
                         return AbortWithWrongNumberOfArguments(nameof(RespCommand.GEORADIUSBYMEMBER));
                     }
+
+                    destIdx = GetDestIdx();
+                    if (destIdx == -1)
+                        return GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, ref storageApi);
+
                     opt = SortedSetGeoOpts.Store | SortedSetGeoOpts.ByRadius | SortedSetGeoOpts.ByMember;
                     sourceIdx = 0;
-                    destIdx = GetDestIdx();
                     break;
+
                 case RespCommand.GEOSEARCHSTORE:
                 default:
                     // GEOSEARCHSTORE dst src FROMEMBER key BYRADIUS 0 m
@@ -253,9 +260,6 @@ namespace Garnet.server
                     sourceIdx = 1;
                     break;
             }
-
-            if (destIdx == -1)
-                return GeoCommands(cmd, ref storageApi, true);
 
             var destinationKey = parseState.GetArgSliceByRef(destIdx);
             var sourceKey = parseState.GetArgSliceByRef(sourceIdx);
