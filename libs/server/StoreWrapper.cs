@@ -302,7 +302,7 @@ namespace Garnet.server
                         // Choose the minimum common recover version for both stores
                         if (_storeVersion < _objectStoreVersion)
                             _objectStoreVersion = _storeVersion;
-                        else
+                        else if (objectStoreVersion > 0) // handle the case where object store was disabled at checkpointing time
                             _storeVersion = _objectStoreVersion;
 
                         // Recover to the minimum common recover version
