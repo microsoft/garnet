@@ -914,21 +914,22 @@ namespace Garnet.test
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
-            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            var strArrLen = strResponse.AsSpan().Slice(1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out var arrLen));
             ClassicAssert.AreEqual(3, arrLen);
 
             // Get 6 random members and verify that at least two elements are the same
             response = lightClientRequest.SendCommand("SRANDMEMBER myset -6", 6);
-            arrLenEndIdx = Encoding.ASCII.GetString(response).IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-            strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            var strReponse = Encoding.ASCII.GetString(response);
+            arrLenEndIdx = strReponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            strArrLen = strReponse.AsSpan().Slice(1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out arrLen));
 
             var members = new HashSet<string>();
             var repeatedMembers = false;
-            for (int i = 0; i < arrLen; i++)
+            for (var i = 0; i < arrLen; i++)
             {
-                var member = Encoding.ASCII.GetString(response).Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
+                var member = strReponse.Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
                 if (members.Contains(member))
                 {
                     repeatedMembers = true;
@@ -978,7 +979,7 @@ namespace Garnet.test
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
-            var strArrLen = Encoding.ASCII.GetString(response, 1, arrLenEndIdx - 1);
+            var strArrLen = strResponse.AsSpan().Slice(1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out var arrLen));
             ClassicAssert.AreEqual(3, arrLen);
 
@@ -994,7 +995,7 @@ namespace Garnet.test
             arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
-            strArrLen = Encoding.ASCII.GetString(response, 1, arrLenEndIdx - 1);
+            strArrLen = strResponse.AsSpan().Slice(1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out arrLen));
             ClassicAssert.AreEqual(2, arrLen);
         }
@@ -1013,7 +1014,7 @@ namespace Garnet.test
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(arrLenEndIdx > 1);
 
-            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            var strArrLen = strResponse.AsSpan().Slice(1, arrLenEndIdx - 1);
             ClassicAssert.IsTrue(int.TryParse(strArrLen, out var arrLen));
             ClassicAssert.IsTrue(arrLen == 5);
 
@@ -1051,17 +1052,15 @@ namespace Garnet.test
 
             // Successful move
             var response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"myDestinationSet\" \"oneS\"");
-            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
-            ClassicAssert.AreEqual(expectedSuccessfulResponse, strResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedSuccessfulResponse, response);
 
+            // Source set contains member
             response = lightClientRequest.SendCommand("SISMEMBER \"mySourceSet\" \"oneS\"");
-            var mySourceSetContainsMember = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            TestUtils.AssertEqualUpToExpectedLength(expectedFailureResponse, response);
 
+            // Destination set contains member
             response = lightClientRequest.SendCommand("SISMEMBER \"myDestinationSet\" \"oneS\"");
-            var myDestinationSetContainsMember = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
-
-            ClassicAssert.AreEqual(expectedFailureResponse, mySourceSetContainsMember);
-            ClassicAssert.AreEqual(expectedSuccessfulResponse, myDestinationSetContainsMember);
+            TestUtils.AssertEqualUpToExpectedLength(expectedSuccessfulResponse, response);
 
             // Source set doesn't exist
             response = lightClientRequest.SendCommand("SMOVE \"someRandomSet\" \"mySourceSet\" \"twoS\"");

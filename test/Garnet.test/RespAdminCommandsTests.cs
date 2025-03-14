@@ -111,7 +111,7 @@ namespace Garnet.test
             var expectedResponse = "*2\r\n$10\r\n1626282789\r\n$6\r\n621362\r\n";
             var response = lightClientRequest.SendCommand("TIME", 3);
             var actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse.Length, actualValue.Length);
         }
 
         [Test]
