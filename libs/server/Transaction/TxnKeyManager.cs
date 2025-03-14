@@ -205,23 +205,26 @@ namespace Garnet.server
         private int GeoCommands(RespCommand command, int inputCount)
         {
             var idx = 0;
-            ArgSlice key;
 
+            // GEOSEARCHSTORE dest key....
+            // While all other commands here start with GEOsomething key...
             if (command == RespCommand.GEOSEARCHSTORE)
             {
-                key = respSession.parseState.GetArgSliceByRef(0);
-                SaveKeyEntryToLock(key, true, LockType.Exclusive);
-                SaveKeyArgSlice(key);
+                var destinationKey = respSession.parseState.GetArgSliceByRef(0);
+                SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                SaveKeyArgSlice(destinationKey);
                 idx = 1;
             }
 
-            key = respSession.parseState.GetArgSliceByRef(idx++);
+            // Either this is GEOSEARCHSTORE, and index 1 is sourcekey, or some other command and index 0 is sourcekey.
+            var key = respSession.parseState.GetArgSliceByRef(idx++);
             SaveKeyEntryToLock(key, true, LockType.Shared);
             SaveKeyArgSlice(key);
 
             if (command == RespCommand.GEORADIUS_RO)
                 return 1;
 
+            // Member commands have COMMAND key member syntax.
             if (command == RespCommand.GEORADIUSBYMEMBER_RO || command == RespCommand.GEORADIUSBYMEMBER)
             {
                 var member = respSession.parseState.GetArgSliceByRef(++idx);
@@ -233,6 +236,7 @@ namespace Garnet.server
 
             if (command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUSBYMEMBER)
             {
+                // These commands may or may not store a result
                 for (var i = idx; i < inputCount - 1; ++i)
                 {
                     var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -240,9 +244,9 @@ namespace Garnet.server
                     if (span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
                         span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
                     {
-                        key = respSession.parseState.GetArgSliceByRef(i + 1);
-                        SaveKeyEntryToLock(key, true, LockType.Exclusive);
-                        SaveKeyArgSlice(key);
+                        var destinationKey = respSession.parseState.GetArgSliceByRef(i + 1);
+                        SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                        SaveKeyArgSlice(destinationKey);
                         break;
                     }
                 }
@@ -251,6 +255,7 @@ namespace Garnet.server
             }
 
             // GEOSEARCH, GEOSEARCHSTORE
+            // We'd like to check if there's a member and if so lock it for reading.
             for (var i = idx; i < inputCount - 1; ++i)
             {
                 if (respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FROMMEMBER))
