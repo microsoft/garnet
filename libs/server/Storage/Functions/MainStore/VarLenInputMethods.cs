@@ -154,7 +154,6 @@ namespace Garnet.server
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input)
             where TSourceLogRecord : ISourceLogRecord<SpanByte>
         {
-            // TODO: Consider merging this with NeedCopyUpdate to avoid calling IPU if there isn't enough room
             var fieldInfo = new RecordFieldInfo()
             {
                 KeyDataSize = srcLogRecord.Key.Length,
@@ -178,6 +177,7 @@ namespace Garnet.server
                                                      // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
                         if (IsValidNumber(value, out _))
                         {
+                            // TODO Consider adding a way to cache curr for the IPU call
                             var curr = NumUtils.ReadInt64(value.AsSpan());
                             var next = curr + incrByValue;
 
@@ -351,7 +351,6 @@ namespace Garnet.server
 
         public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref RawStringInput input)
         {
-            // TODO: Consider making this a CanUpdateInPlace to avoid calling ConcurrentWriter if there isn't enough room
             var fieldInfo = new RecordFieldInfo()
             {
                 KeyDataSize = key.Length,
