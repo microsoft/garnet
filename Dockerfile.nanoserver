@@ -1,11 +1,13 @@
 ARG TAG=ltsc2022
-FROM mcr.microsoft.com/dotnet/sdk:9.0-windowsservercore-$TAG AS build
+FROM mcr.microsoft.com/dotnet/sdk:9.0-nanoserver-$TAG AS build
 
-WORKDIR /source
+ENV NUGET_PACKAGES=/src/pkg
+
+WORKDIR /src
 
 # Copy files
 COPY . .
-WORKDIR /source/main/GarnetServer
+WORKDIR /src/main/GarnetServer
 
 # Restore, build, and publish
 RUN dotnet restore
