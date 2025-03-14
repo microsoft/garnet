@@ -272,7 +272,7 @@ namespace Garnet.server
         /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
-            long storeVersion = -1, objectStoreVersion = -1;
+            long storeVersion = 0, objectStoreVersion = 0;
             try
             {
                 if (replicaRecover)
@@ -292,8 +292,29 @@ namespace Garnet.server
                 }
                 else
                 {
-                    storeVersion = store.Recover();
-                    if (objectStore != null) objectStoreVersion = objectStore.Recover();
+                    if (objectStore != null)
+                    {
+                        // Get store recover version
+                        var _storeVersion = store.GetRecoverVersion();
+                        // Get object store recover version
+                        var _objectStoreVersion = objectStore.GetRecoverVersion();
+
+                        // Choose the minimum common recover version for both stores
+                        if (_storeVersion < _objectStoreVersion)
+                            _objectStoreVersion = _storeVersion;
+                        else
+                            _storeVersion = _objectStoreVersion;
+
+                        // Recover to the minimum common recover version
+                        storeVersion = store.Recover(recoverTo: _storeVersion);
+                        objectStoreVersion = objectStore.Recover(recoverTo: _objectStoreVersion);
+                        logger?.LogInformation("Recovered store to version {storeVersion} and object store to version {objectStoreVersion}", storeVersion, objectStoreVersion);
+                    }
+                    else
+                    {
+                        storeVersion = store.Recover();
+                        logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
+                    }
                 }
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
@@ -310,6 +331,7 @@ namespace Garnet.server
                     throw;
             }
 
+            // After recovery, we check if store versions match
             if (objectStore != null && storeVersion != objectStoreVersion)
             {
                 logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);

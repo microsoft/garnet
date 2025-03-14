@@ -345,6 +345,9 @@ namespace Tsavorite.core
         /// <returns>Version we actually recovered to</returns>
         public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1)
         {
+            // Do not recover
+            if (recoverTo == 0)
+                return 0;
             FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
             return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo);
         }
@@ -363,7 +366,8 @@ namespace Tsavorite.core
             }
             catch
             {
-                return -1;
+                // Do not recover
+                return 0;
             }
         }
 
@@ -378,6 +382,9 @@ namespace Tsavorite.core
         public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
             CancellationToken cancellationToken = default)
         {
+            // Do not recover
+            if (recoverTo == 0)
+                return ValueTask.FromResult(0L);
             FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
             return InternalRecoverAsync(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
         }
