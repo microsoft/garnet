@@ -66,6 +66,10 @@ namespace Tsavorite.core
                     store.WriteHybridLogIncrementalMetaInfo(store._hybridLogCheckpoint.deltaLog);
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;
                     store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();
+                    break;
+
+                case Phase.REST:
+                    store.CleanupLogIncrementalCheckpoint();
                     store._hybridLogCheckpoint.Dispose();
                     break;
             }

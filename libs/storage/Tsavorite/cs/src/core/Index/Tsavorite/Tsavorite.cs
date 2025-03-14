@@ -350,6 +350,24 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get the version we would recover to if we were to request recovery the specified version
+        /// </summary>
+        /// <param name="recoverTo">Specified version</param>
+        /// <returns></returns>
+        public long GetRecoverVersion(long recoverTo = -1)
+        {
+            try
+            {
+                FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
+                return recoveredHlcInfo.info.version;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        /// <summary>
         /// Asynchronously recover from the latest valid checkpoint (blocking operation)
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>

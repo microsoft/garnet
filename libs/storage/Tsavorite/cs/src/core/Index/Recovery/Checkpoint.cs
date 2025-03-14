@@ -56,6 +56,11 @@ namespace Tsavorite.core
                 metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
             }
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
+        }
+
+        internal void CleanupLogCheckpoint()
+        {
+            checkpointManager.CleanupLogCheckpoint(_hybridLogCheckpointToken);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
         }
 
@@ -68,12 +73,21 @@ namespace Tsavorite.core
                 metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
             }
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
-            Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
+        }
+
+        internal void CleanupLogIncrementalCheckpoint()
+        {
+            checkpointManager.CleanupLogIncrementalCheckpoint(_hybridLogCheckpointToken);
         }
 
         internal void WriteIndexMetaInfo()
         {
             checkpointManager.CommitIndexCheckpoint(_indexCheckpointToken, _indexCheckpoint.info.ToByteArray());
+        }
+
+        internal void CleanupIndexCheckpoint()
+        {
+            checkpointManager.CleanupIndexCheckpoint(_indexCheckpointToken);
         }
 
         internal void InitializeIndexCheckpoint(Guid indexToken)

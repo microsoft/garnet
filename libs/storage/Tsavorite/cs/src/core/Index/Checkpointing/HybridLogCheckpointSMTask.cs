@@ -64,6 +64,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.REST:
+                    store.CleanupLogCheckpoint();
                     store._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     store.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });

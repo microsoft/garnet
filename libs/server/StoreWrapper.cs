@@ -309,6 +309,13 @@ namespace Garnet.server
                 if (serverOptions.FailOnRecoveryError)
                     throw;
             }
+
+            if (objectStore != null && storeVersion != objectStoreVersion)
+            {
+                logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                if (serverOptions.FailOnRecoveryError)
+                    throw new GarnetException("Main store and object store checkpoint versions do not match");
+            }
         }
 
         /// <summary>
