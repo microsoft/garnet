@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -131,15 +132,26 @@ namespace Garnet.server
                     // Copy the member
                     var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan.ToArray();
 
-                    // Avoid multiple hash calculations
-                    ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, member, out var exists);
+                    // Avoid multiple hash calculations by acquiring ref to the dictionary value
+                    ref var scoreRef = ref Unsafe.NullRef<double>();
+                    bool exists;
+
+                    // Don't add new member if XX flag is set
+                    var onlyUpdate = (options & SortedSetAddOption.XX) == SortedSetAddOption.XX;
+
+                    if (onlyUpdate)
+                    {
+                        scoreRef = ref CollectionsMarshal.GetValueRefOrNullRef(Dictionary, member);
+                        exists = !Unsafe.IsNullRef(ref scoreRef);
+                    }
+                    else
+                    {
+                        scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, member, out exists);
+                    }
 
                     // Add new member
-                    if (!exists)
+                    if (!onlyUpdate && !exists)
                     {
-                        // Don't add new member if XX flag is set
-                        if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
-
                         scoreRef = score;
                         if (sortedSet.Add((score, member)))
                             addedOrChanged++;
@@ -147,7 +159,7 @@ namespace Garnet.server
                         this.UpdateSize(member);
                     }
                     // Update existing member
-                    else
+                    else if (exists)
                     {
                         // Update new score if INCR flag is set
                         if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
@@ -415,7 +427,7 @@ namespace Garnet.server
                 }
 
                 // Write the new score
-                while (!RespWriteUtils.TryWriteDoubleBulkString(Dictionary[member], ref curr, end))
+                while (!RespWriteUtils.TryWriteDoubleBulkString(scoreRef, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally

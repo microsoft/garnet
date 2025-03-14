@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -56,8 +57,8 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             // By default, add new elements but do not update the ones already in the set
-            var nx = true;
-            var ch = false;
+            var onlyUpdate = false;
+            var returnElementsChanged = false;
 
             var count = input.parseState.Count;
             var currTokenIdx = 0;
@@ -69,14 +70,14 @@ namespace Garnet.server
                 var optsCount = count % 3;
                 if (optsCount > 0 && optsCount <= 2)
                 {
-                    // Is NX or XX, if not nx then use XX
+                    // Is NX or XX, if not XX then use NX
                     var byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
+                    onlyUpdate = byteOptions.EqualsUpperCaseSpanIgnoringCase("XX"u8);
                     if (optsCount == 2)
                     {
                         // Read CH option
                         byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                        ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
+                        returnElementsChanged = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
                     }
                 }
 
@@ -102,10 +103,22 @@ namespace Garnet.server
                         // Copy the member
                         var memberByteArray = member.ToArray();
 
-                        // Avoid multiple hash calculations
-                        ref var scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, memberByteArray, out var exists);
+                        // Avoid multiple hash calculations by acquiring ref to the dictionary value
+                        ref var scoreRef = ref Unsafe.NullRef<double>();
+                        bool exists;
 
-                        if (!exists && nx)
+                        // Don't add new member if XX flag is set
+                        if (onlyUpdate)
+                        {
+                            scoreRef = ref CollectionsMarshal.GetValueRefOrNullRef(Dictionary, memberByteArray);
+                            exists = !Unsafe.IsNullRef(ref scoreRef);
+                        }
+                        else
+                        {
+                            scoreRef = ref CollectionsMarshal.GetValueRefOrAddDefault(Dictionary, memberByteArray, out exists);
+                        }
+
+                        if (!exists && !onlyUpdate)
                         {
                             scoreRef = score;
                             sortedSet.Add((score, memberByteArray));
@@ -114,7 +127,7 @@ namespace Garnet.server
                             this.UpdateSize(member);
                             elementsChanged++;
                         }
-                        else if (!nx && scoreRef != score)
+                        else if (onlyUpdate && scoreRef != score)
                         {
                             // Remove old sorted set entry
                             var success = sortedSet.Remove((scoreRef, memberByteArray));
@@ -129,7 +142,7 @@ namespace Garnet.server
                     }
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(ch ? elementsChanged : elementsAdded, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32(returnElementsChanged ? elementsChanged : elementsAdded, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
