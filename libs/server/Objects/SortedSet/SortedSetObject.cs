@@ -246,42 +246,14 @@ namespace Garnet.server
         public bool Remove(ReadOnlySpan<byte> element)
         {
 #if NET9_0_OR_GREATER
-            if (!dictionaryLookup.TryGetValue(element, out var score))
-                return false;
-            dictionaryLookup.Remove(element);
-            var removed = sortedSetLookup.Remove(new(score, element));
-#else
-            var itemArray = element.ToArray();
-            if (!Dictionary.Remove(itemArray, out var score))
-                return false;
-            var removed = sortedSet.Remove((score, itemArray));
-#endif
-
-            UpdateSize(element, add: false);
-            return removed;
-        }
-
-        /// <summary>
-        /// Removes the entry associated with the specified <paramref name="element"/> and <paramref name="score"/>.
-        /// </summary>
-        /// <remarks>
-        /// On .NET 9, specifying <paramref name="score"/> allows this overload to remove one hash calculation.
-        /// On .NET 8, this method copies the <paramref name="element"/> to a new array in order to perform the removal.
-        /// </remarks>
-        /// <param name="element">The element to remove.</param>
-        /// <param name="score">The score associated with <paramref name="element"/> to remove.</param>
-        /// <returns><see langword="true"/> if the <paramref name="element"/> with its associated <paramref name="score"/> is successfully found and removed; otherwise, <see langword="false"/>.</returns>
-        public bool Remove(ReadOnlySpan<byte> element, double score)
-        {
-#if NET9_0_OR_GREATER
-            if (!dictionaryLookup.Remove(element))
+            if (!dictionaryLookup.Remove(element, out _, out var score))
                 return false;
             var removed = sortedSetLookup.Remove(new(score, element));
 #else
-            var itemArray = element.ToArray();
-            if (!Dictionary.Remove(itemArray))
+            var elementArray = element.ToArray();
+            if (!Dictionary.Remove(elementArray, out var score))
                 return false;
-            var removed = sortedSet.Remove((score, itemArray));
+            var removed = sortedSet.Remove((score, elementArray));
 #endif
 
             UpdateSize(element, add: false);

@@ -693,7 +693,7 @@ namespace Garnet.server
                 // Copy the sorted set to avoid modified enumerator exception
                 foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
                 {
-                    Remove(item.Element, item.Score);
+                    Remove(item.Element);
                 }
 
                 // Write the number of elements
@@ -1039,7 +1039,7 @@ namespace Garnet.server
                         break;
 
                     if (remove)
-                        Remove(item.Element, item.Score);
+                        Remove(item.Element);
 
                     elementsInLex.Add(item);
                 }
@@ -1109,7 +1109,7 @@ namespace Garnet.server
                 // Copy to avoid invalid operation exception when trying to mutate list while enumerating it
                 foreach (var item in scoredElements.ToList())
                 {
-                    Remove(item.Element, item.Score);
+                    Remove(item.Element);
                 }
             }
 
