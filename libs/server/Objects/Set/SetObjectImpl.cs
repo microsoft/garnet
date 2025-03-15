@@ -117,9 +117,12 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-                    var isMember = Set.Contains(member);
-
+                    var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+#if NET9_0_OR_GREATER
+                    var isMember = setLookup.Contains(member);
+#else
+                    var isMember = Set.Contains(member.ToArray());
+#endif
                     while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
