@@ -410,7 +410,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("New York", (string)actualValues[2].Element);
             Assert.That(actualValues[2].Score, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
 
-            _ = db.Execute("GEORADIUS", [key, lon, lat, 500, "KM", "COUNT", "3", "STOREDIST", destinationKey]);
+            _ = db.Execute("GEORADIUS", [key, lon, lat, 500, "KM", "COUNT", "300", "STOREDIST", destinationKey]);
             actualValues = db.SortedSetRangeByScoreWithScores(destinationKey);
             ClassicAssert.AreEqual(3, actualValues.Length);
             ClassicAssert.AreEqual("Washington", (string)actualValues[0].Element);
