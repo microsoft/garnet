@@ -76,30 +76,6 @@ namespace Garnet.server
         WithScores = 1 << 4
     }
 
-    /// <summary>
-    /// Options for specifying command type in sorted set geo operations.
-    /// </summary>
-    [Flags]
-    public enum SortedSetGeoOpts : byte
-    {
-        /// <summary>
-        /// No options specified.
-        /// </summary>
-        None = 0,
-        /// <summary>
-        /// Operation can store to database.
-        /// </summary>
-        Store = 1,
-        /// <summary>
-        /// Operate by radius.
-        /// </summary>
-        ByRadius = 1 << 1,
-        /// <summary>
-        /// Get lonlat from member.
-        /// </summary>
-        ByMember = 1 << 2
-    }
-
     [Flags]
     public enum SortedSetAddOption
     {
@@ -319,9 +295,6 @@ namespace Garnet.server
                         break;
                     case SortedSetOperation.GEOPOS:
                         GeoPosition(ref input, ref output.SpanByteAndMemory);
-                        break;
-                    case SortedSetOperation.GEOSEARCH:
-                        GeoSearch(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZRANGE:
                         SortedSetRange(ref input, ref output.SpanByteAndMemory);
