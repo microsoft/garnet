@@ -163,9 +163,9 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                if (Remove(key, out var hashValue))
+                if (Remove(key, out _))
                 {
                     _output->result1++;
                 }

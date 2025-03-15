@@ -459,6 +459,30 @@ namespace Garnet.server
             return result;
         }
 
+        /// <summary>
+        /// Checks whether the <paramref name="key"/> has expired.
+        /// </summary>
+        /// <remarks>
+        /// On .NET 8, this method copies the <paramref name="key"/> to a new array in order to perform the removal.
+        /// </remarks>
+        /// <param name="key">The key.</param>
+        /// <returns><see langword="true"/> if the <paramref name="key"/> is found and has expired; otherwise, <see langword="false"/>.</returns>
+        private bool Remove(ReadOnlySpan<byte> key, out byte[] value)
+        {
+            DeleteExpiredItems();
+
+#if NET9_0_OR_GREATER
+            var result = hashLookup.Remove(key, out _, out value);
+#else
+            var result = hash.Remove(key.ToArray(), out value);
+#endif
+            if (result)
+            {
+                UpdateSize(key, value, false);
+            }
+            return result;
+        }
+
         private int Count()
         {
             if (expirationTimes is null)
