@@ -6,7 +6,7 @@ namespace Garnet.server
 {
     internal sealed partial class RespServerSession : ServerSessionBase
     {
-        // TODO: use same parameter for key and keyevent; pass keyevent as ref; test performance
+        // TODO: use same parameter for key and keyevent; pass keyevent as ref; test performance; avoid concatSpans and remove concatenated Spans; check access modifiers
         internal void PublishKeyspaceNotification(KeyspaceNotificationType keyspaceNotificationType, ref ArgSlice key, ReadOnlySpan<byte> keyevent) 
         {
             if (!storeWrapper.serverOptions.AllowedKeyspaceNotifications.HasFlag(keyspaceNotificationType))
@@ -39,7 +39,6 @@ namespace Garnet.server
             // TODO: see above
             subscribeBroker.Publish(ArgSlice.FromPinnedSpan(channel), key);
         }
-
 
         private static ReadOnlySpan<byte> ConcatSpans(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second)
         {
