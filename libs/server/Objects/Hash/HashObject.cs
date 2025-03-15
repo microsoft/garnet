@@ -530,23 +530,6 @@ namespace Garnet.server
             UpdateSize(key, value);
         }
 
-        private void Set(byte[] key, byte[] value)
-        {
-            DeleteExpiredItems();
-            hash[key] = value;
-            // Skip overhead as existing item is getting replaced.
-            this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                         Utility.RoundUp(value.Length, IntPtr.Size);
-
-            // To persist the key, if it has an expiration
-            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
-            {
-                expirationTimes.Remove(key);
-                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
-                CleanupExpirationStructures();
-            }
-        }
-
         private void SetWithoutPersist(byte[] key, byte[] value)
         {
             DeleteExpiredItems();

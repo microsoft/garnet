@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -298,14 +299,34 @@ namespace Garnet.server
                 var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
 
-                if (!TryGetValue(key, out var hashValue))
+                // Avoid multiple hash calculations by acquiring ref to the dictionary value
+                ref var valueRef = ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+
+                if (!exists)
                 {
-                    Add(key, value);
+                    DeleteExpiredItems();
+
+                    valueRef = value;
+                    UpdateSize(key, value);
+
                     _output->result1++;
                 }
-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
+                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && valueRef != default)
                 {
-                    Set(key, value);
+                    DeleteExpiredItems();
+
+                    valueRef = value;
+
+                    // Skip overhead as existing item is getting replaced.
+                    Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+                            Utility.RoundUp(value.Length, IntPtr.Size);
+
+                    // To persist the key, if it has an expiration
+                    if (expirationTimes is not null && expirationTimes.Remove(key))
+                    {
+                        Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        CleanupExpirationStructures();
+                    }
                 }
             }
         }
