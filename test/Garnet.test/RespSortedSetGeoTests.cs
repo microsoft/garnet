@@ -410,7 +410,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("New York", (string)actualValues[2].Element);
             Assert.That(actualValues[2].Score, Is.EqualTo(327.676458633557).Within(1.0 / Math.Pow(10, 6)));
 
-            _ = db.Execute("GEORADIUS", [key, lon, lat, 500, "km", "COUNT", "3", "STOREDIST", destinationKey]);
+            _ = db.Execute("GEORADIUS", [key, lon, lat, 500, "KM", "COUNT", "3", "STOREDIST", destinationKey]);
             actualValues = db.SortedSetRangeByScoreWithScores(destinationKey);
             ClassicAssert.AreEqual(3, actualValues.Length);
             ClassicAssert.AreEqual("Washington", (string)actualValues[0].Element);
@@ -704,28 +704,47 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand("GEOADD Sicily NX 13.361389 38.115556 Palermo 15.087269 37.502669 Catania");
             var expectedResponse = ":2\r\n";
-            var actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 FROMMEMBER a BYRADIUS 0 km");
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMMEMBER a BYRADIUS 1");
+            expectedResponse = "-ERR wrong number of arguments for 'GEOSEARCH' command\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 FROMMEMBER a BYRADIUS 1 km");
             expectedResponse = "-ERR syntax error\r\n";
-            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMMEMBER a BYRADIUS -1 km");
+            expectedResponse = "-ERR value is out of range, must be positive.\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMMEMBER nx BYRADIUS 1 KM");
+            expectedResponse = "-ERR could not decode requested zset member\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 BYRADIUS 100 km BYBOX 400 400 km");
             expectedResponse = "-ERR syntax error\r\n";
-            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 BYBOX 400 400 km COUNT 0 ANY");
             expectedResponse = "-ERR value is out of range, must be positive.\r\n";
-            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEORADIUS Sicily 15 37 100 km WITHCOORD STORE a");
+            expectedResponse = "-ERR STORE option in GEORADIUS is not compatible with WITHDIST, WITHHASH and WITHCOORD options\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEORADIUSBYMEMBER Sicily member 100 km WITHHASH STOREDIST a");
+            expectedResponse = "-ERR STORE option in GEORADIUSBYMEMBER is not compatible with WITHDIST, WITHHASH and WITHCOORD options\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEORADIUS_RO Sicily 15 37 100 km STORE a");
+            expectedResponse = "-ERR syntax error\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYRADIUS 0 m");
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
         #endregion
     }
