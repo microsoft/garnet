@@ -19,7 +19,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Maps the ObjectId in the ObjectAllocator's Value field to the actual object in the object vector
+    /// Maps the ObjectId in the ObjectAllocator's Value field to the actual object in the object multi-level array
     /// </summary>
     public unsafe class ObjectIdMap<TValue>
     {

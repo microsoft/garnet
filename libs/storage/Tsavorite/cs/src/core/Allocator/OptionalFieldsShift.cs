@@ -5,6 +5,10 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    /// <summary>
+    /// Holds optional fields (ETag and Expiration, as well as managing Filler) during a record-resizing operation.
+    /// Ensures proper zeroinit handling and restoring these fields to their correct location (and updating FillerLength).
+    /// </summary>
     internal unsafe struct OptionalFieldsShift
     {
         internal long ETag;

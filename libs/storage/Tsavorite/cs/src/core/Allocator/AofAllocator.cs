@@ -10,7 +10,7 @@ namespace Tsavorite.core
     using AofStoreFunctions = StoreFunctions<AofValue, SpanByteComparer, DefaultRecordDisposer<AofValue>>;
 
     /// <summary>
-    /// Struct wrapper (for inlining) around the fixed-length Blittable allocator.
+    /// Struct wrapper (for inlining) around the AofAllocator used by TsavoriteAof.
     /// </summary>
     public struct AofAllocator : IAllocator<AofValue, AofStoreFunctions>
     {

@@ -11,6 +11,7 @@ namespace Tsavorite.core
     // This is unused; just allows things to build. TsavoriteAof does not do key comparisons or value operations; it is just a memory allocator.
     using AofStoreFunctions = StoreFunctions<AofValue, SpanByteComparer, DefaultRecordDisposer<AofValue>>;
 
+    /// <summary>Simple log allocator used by TsavoriteAof</summary>
     public sealed unsafe class AofAllocatorImpl : AllocatorBase<AofValue, AofStoreFunctions, AofAllocator>
     {
         // Circular buffer definition

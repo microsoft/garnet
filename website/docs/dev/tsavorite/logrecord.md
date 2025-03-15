@@ -98,7 +98,7 @@ The `ObjectIdMap` has a freeList which, like the `OversizePages` free list, is a
 
 ## ISourceLogRecord
 
-In this version of Tsavorite, the individual "ref key" and "ref value" parameters to `ISessionFunctions` methods have been replaced by a single `LogRecord` parameter. Not only does this consolidate those record attributes, it also encapsulate the "optional" record attributes of `ETag` and `Expiration`, as well as managing the `FillerLength` that allows records to shrink and re-expand in place. Previously the `ISessionFunctions` implementation had to manage the "extra" length; that is now automatically handled by the `LogRecord`. Similarly, `ETag` and `Expiration` previously were encoded into the Value `SpanByte` or a field of the object; these too are now managed by the `LogRecord` through simple calls.
+In this revision of Tsavorite, the individual "ref key" and "ref value" (as well as "ref recordInfo") parameters to `ISessionFunctions` methods have been replaced by a single `LogRecord` parameter. Not only does this consolidate those record attributes, it also encapsulate the "optional" record attributes of `ETag` and `Expiration`, as well as managing the `FillerLength` that allows records to shrink and re-expand in place. Previously the `ISessionFunctions` implementation had to manage the "extra" length; that is now automatically handled by the `LogRecord`. Similarly, `ETag` and `Expiration` previously were encoded into the Value `SpanByte` or a field of the object; these too are now managed by the `LogRecord` through simple calls.
 
 As part of this change, keys are now always `SpanByte`.
 

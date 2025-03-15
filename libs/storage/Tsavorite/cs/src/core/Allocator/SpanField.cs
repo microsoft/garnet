@@ -11,7 +11,8 @@ using static Tsavorite.core.OverflowAllocator;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Struct encoding a Span field (Key or Value) at a certain address. The layout is:
+    /// Struct encoding a Span field (Key or Value) at a certain address. Since (small) Objects can be represented as inline spans,
+    /// this applies to those forms as well as the inline component of the Object, which is the ObjectId. The layout is:
     /// <list type="bullet">
     ///     <item>Inline: [int Length][data bytes]</item>
     ///     <item>Overflow: [<see cref="IntPtr"/> Length][<see cref="IntPtr"/> to overflow allocation containing data bytes]</item>

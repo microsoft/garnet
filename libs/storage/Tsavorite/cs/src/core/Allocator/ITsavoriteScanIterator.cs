@@ -27,7 +27,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Scan buffering mode for in-memory records
+    /// Scan buffering mode for in-memory records, e.g. for copying and holding a record for Pull iterators
     /// </summary>
     public enum InMemoryScanBufferingMode
     {

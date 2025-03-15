@@ -10,9 +10,10 @@ namespace Tsavorite.core
 {
     struct MultiLevelPageArray
     {
-        // TODO: Do MLPA config numbers need to be customizable?
-        internal const int InitialBookSizeBits = 10;
-        internal const int ChapterSizeBits = 16;
+        // TODO: Make MLPA config numbers internally configuragle (e.g. smaller log pages need less overhead). Should be able to do this internally
+        //      and not expose another set of public config options.
+        internal const int InitialBookSizeBits = 4;
+        internal const int ChapterSizeBits = 12;
 
         internal const int InitialBookSize = 1 << InitialBookSizeBits;
         internal const int ChapterSize = 1 << ChapterSizeBits;
