@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -167,6 +168,7 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
                 _ = storageApi.SET(ref key, ref val);
+                PublishKeyspaceNotification(KeyspaceNotificationType.String, ref parseState.GetArgSliceByRef(c), CmdStrings.set);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -196,7 +198,7 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int keysDeleted = 0;
+            int keysDeleted = 0; 
             for (int c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
@@ -204,7 +206,10 @@ namespace Garnet.server
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)
+                {
                     keysDeleted++;
+                    PublishKeyspaceNotification(KeyspaceNotificationType.Generic, ref parseState.GetArgSliceByRef(c), CmdStrings.del);
+                }
             }
 
             while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))

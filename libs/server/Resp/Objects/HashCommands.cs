@@ -4,6 +4,7 @@
 using System;
 using System.Text;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -566,6 +567,17 @@ namespace Garnet.server
                     break;
                 default:
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    switch (op)
+                    {
+                        case HashOperation.HINCRBY:
+                            PublishKeyspaceNotification(KeyspaceNotificationType.Hash, ref parseState.GetArgSliceByRef(0), CmdStrings.hincrby);
+                            break;
+                        case HashOperation.HINCRBYFLOAT:
+                            PublishKeyspaceNotification(KeyspaceNotificationType.Hash, ref parseState.GetArgSliceByRef(0), CmdStrings.hincrbyfloat);
+                            break;
+                        default:
+                            break;
+                    }
                     break;
             }
             return true;
@@ -820,6 +832,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
+                    PublishKeyspaceNotification(KeyspaceNotificationType.Hash, ref parseState.GetArgSliceByRef(0), CmdStrings.hpersist);
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
             }
