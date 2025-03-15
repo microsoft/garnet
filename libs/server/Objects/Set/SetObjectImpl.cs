@@ -22,9 +22,13 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                if (Set.Add(member))
+#if NET9_0_OR_GREATER
+                if (setLookup.Add(member))
+#else
+                if (Set.Add(member.ToArray()))
+#endif
                 {
                     _output->result1++;
                     this.UpdateSize(member);

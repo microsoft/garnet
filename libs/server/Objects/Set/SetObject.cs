@@ -43,6 +43,10 @@ namespace Garnet.server
     {
         public HashSet<byte[]> Set { get; }
 
+#if NET9_0_OR_GREATER
+        private readonly HashSet<byte[]>.AlternateLookup<ReadOnlySpan<byte>> setLookup;
+#endif
+
         /// <summary>
         ///  Constructor
         /// </summary>
@@ -50,6 +54,10 @@ namespace Garnet.server
             : base(expiration, MemoryUtils.HashSetOverhead)
         {
             Set = new HashSet<byte[]>(ByteArrayComparer.Instance);
+
+#if NET9_0_OR_GREATER
+            setLookup = Set.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
         }
 
         /// <summary>
@@ -68,6 +76,10 @@ namespace Garnet.server
 
                 this.UpdateSize(item);
             }
+
+#if NET9_0_OR_GREATER
+            setLookup = Set.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
         }
 
         /// <summary>
@@ -76,7 +88,12 @@ namespace Garnet.server
         public SetObject(HashSet<byte[]> set, long expiration, long size)
             : base(expiration, size)
         {
-            this.Set = set;
+            Set = set;
+
+#if NET9_0_OR_GREATER
+            setLookup = Set.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
+
         }
 
         /// <inheritdoc />
