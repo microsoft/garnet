@@ -293,8 +293,10 @@ namespace Garnet.server
                 }
 
                 // Get the results
-                var len = opts.withCountAny ? opts.countValue : sortedSet.Count;
-                var responseData = new List<GeoSearchData>(len);
+                var responseData = new List<GeoSearchData>(
+                    opts.withCountAny && opts.countValue > 0 && opts.countValue < sortedSet.Count ? 
+                    opts.countValue :
+                    sortedSet.Count);
                 foreach (var point in sortedSet)
                 {
                     var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
@@ -371,7 +373,7 @@ namespace Garnet.server
                     }
 
                     // Write results 
-                    if (opts.countValue > 0)
+                    if (opts.countValue > 0 && opts.countValue < responseData.Count)
                     {
                         q = q.Take(opts.countValue);
                         while (!RespWriteUtils.TryWriteArrayLength(opts.countValue, ref curr, end))
