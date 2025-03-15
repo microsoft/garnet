@@ -23,11 +23,11 @@ namespace Garnet.common.Collections
         T Create(TAlternate alternate);
 
         /// <summary>
-        /// 
+        /// Compares two objects and returns a value indicating whether one is less than, equal to, or greater than the other.
         /// </summary>
+        /// <seealso cref="System.Collections.Generic.IComparer{T}.Compare(T, T)"/>
         /// <param name="alternate">The instance of type <typeparamref name="TAlternate"/> to compare.</param>
         /// <param name="other">The instance of type <typeparamref name="T"/> to compare.</param>
-        /// <returns></returns>
         int Compare(TAlternate alternate, T other);
     }
 }
