@@ -76,9 +76,13 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var key = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
+#if NET9_0_OR_GREATER
                     if (TryGetValue(key, out var hashValue))
+#else
+                    if (TryGetValue(key.ToArray(), out var hashValue))
+#endif
                     {
                         while (!RespWriteUtils.TryWriteBulkString(hashValue, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
