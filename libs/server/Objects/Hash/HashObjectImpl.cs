@@ -195,7 +195,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var field = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
             _output->result1 = ContainsKey(field) ? 1 : 0;
         }
 

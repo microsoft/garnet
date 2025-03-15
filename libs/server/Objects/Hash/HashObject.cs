@@ -502,15 +502,24 @@ namespace Garnet.server
             return hash.Count - expiredKeysCount;
         }
 
-        private bool ContainsKey(byte[] key)
+        /// <summary>
+        /// Checks whether the <paramref name="key"/> exists and if it does, that it has not expired.
+        /// </summary>
+        /// <remarks>
+        /// On .NET 8, this method copies the <paramref name="key"/> to a new array in order to perform the lookup.
+        /// </remarks>
+        /// <param name="key">The key.</param>
+        /// <returns><see langword="true"/> if the <paramref name="key"/> is found and has not expired; otherwise, <see langword="false"/>.</returns>
+        private bool ContainsKey(ReadOnlySpan<byte> key)
         {
-            var result = hash.ContainsKey(key);
-            if (result && IsExpired(key))
-            {
-                return false;
-            }
-
-            return result;
+#if NET9_0_OR_GREATER
+            var result = hashLookup.ContainsKey(key);
+            return result && !IsExpired(key);
+#else
+            var keyArray = key.ToArray();
+            var result = hash.ContainsKey(keyArray);
+            return result && !IsExpired(keyArray);
+#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
