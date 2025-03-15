@@ -24,7 +24,7 @@ namespace Garnet.server
             {
                 var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                if (set.Add(member))
+                if (Set.Add(member))
                 {
                     _output->result1++;
                     this.UpdateSize(member);
@@ -44,10 +44,10 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.TryWriteArrayLength(set.Count, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(Set.Count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                foreach (var item in set)
+                foreach (var item in Set)
                 {
                     while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -77,7 +77,7 @@ namespace Garnet.server
             try
             {
                 var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-                var isMember = set.Contains(member);
+                var isMember = Set.Contains(member);
 
                 while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -111,7 +111,7 @@ namespace Garnet.server
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
                     var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-                    var isMember = set.Contains(member);
+                    var isMember = Set.Contains(member);
 
                     while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -138,7 +138,7 @@ namespace Garnet.server
             {
                 var field = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                if (set.Remove(field))
+                if (Set.Remove(field))
                 {
                     _output->result1++;
                     this.UpdateSize(field, false);
@@ -150,7 +150,7 @@ namespace Garnet.server
         {
             // SCARD key
             var _output = (ObjectOutputHeader*)output;
-            _output->result1 = set.Count;
+            _output->result1 = Set.Count;
         }
 
         private void SetPop(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -173,7 +173,7 @@ namespace Garnet.server
                 if (count >= 1)
                 {
                     // POP this number of random fields
-                    var countParameter = count > set.Count ? set.Count : count;
+                    var countParameter = count > Set.Count ? Set.Count : count;
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
@@ -182,9 +182,9 @@ namespace Garnet.server
                     for (int i = 0; i < countParameter; i++)
                     {
                         // Generate a new index based on the elements left in the set
-                        var index = RandomNumberGenerator.GetInt32(0, set.Count);
-                        var item = set.ElementAt(index);
-                        set.Remove(item);
+                        var index = RandomNumberGenerator.GetInt32(0, Set.Count);
+                        var item = Set.ElementAt(index);
+                        Set.Remove(item);
                         this.UpdateSize(item, false);
                         while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -196,11 +196,11 @@ namespace Garnet.server
                 else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    if (set.Count > 0)
+                    if (Set.Count > 0)
                     {
-                        var index = RandomNumberGenerator.GetInt32(0, set.Count);
-                        var item = set.ElementAt(index);
-                        set.Remove(item);
+                        var index = RandomNumberGenerator.GetInt32(0, Set.Count);
+                        var item = Set.ElementAt(index);
+                        Set.Remove(item);
                         this.UpdateSize(item, false);
                         while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -247,10 +247,10 @@ namespace Garnet.server
                 if (count > 0)
                 {
                     // Return an array of distinct elements
-                    var countParameter = count > set.Count ? set.Count : count;
+                    var countParameter = count > Set.Count ? Set.Count : count;
 
                     // The order of fields in the reply is not truly random
-                    indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed);
+                    indexes = RandomUtils.PickKRandomIndexes(Set.Count, countParameter, seed);
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
@@ -258,7 +258,7 @@ namespace Garnet.server
 
                     foreach (var index in indexes)
                     {
-                        var element = set.ElementAt(index);
+                        var element = Set.ElementAt(index);
                         while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone++;
@@ -268,10 +268,10 @@ namespace Garnet.server
                 else if (count == int.MinValue) // no count parameter is present
                 {
                     // Return a single random element from the set
-                    if (set.Count > 0)
+                    if (Set.Count > 0)
                     {
-                        var index = RandomUtils.PickRandomIndex(set.Count, seed);
-                        var item = set.ElementAt(index);
+                        var index = RandomUtils.PickRandomIndex(Set.Count, seed);
+                        var item = Set.ElementAt(index);
                         while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
@@ -288,9 +288,9 @@ namespace Garnet.server
                     // Return an array with potentially duplicate elements
                     var countParameter = Math.Abs(count);
 
-                    indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed, false);
+                    indexes = RandomUtils.PickKRandomIndexes(Set.Count, countParameter, seed, false);
 
-                    if (set.Count > 0)
+                    if (Set.Count > 0)
                     {
                         // Write the size of the array reply
                         while (!RespWriteUtils.TryWriteArrayLength(countParameter, ref curr, end))
@@ -298,7 +298,7 @@ namespace Garnet.server
 
                         foreach (var index in indexes)
                         {
-                            var element = set.ElementAt(index);
+                            var element = Set.ElementAt(index);
                             while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone++;

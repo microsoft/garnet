@@ -41,7 +41,7 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class SetObject : GarnetObjectBase
     {
-        readonly HashSet<byte[]> set;
+        public HashSet<byte[]> Set { get; }
 
         /// <summary>
         ///  Constructor
@@ -49,7 +49,7 @@ namespace Garnet.server
         public SetObject(long expiration = 0)
             : base(expiration, MemoryUtils.HashSetOverhead)
         {
-            set = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            Set = new HashSet<byte[]>(ByteArrayComparer.Instance);
         }
 
         /// <summary>
@@ -58,13 +58,13 @@ namespace Garnet.server
         public SetObject(BinaryReader reader)
             : base(reader, MemoryUtils.HashSetOverhead)
         {
-            set = new HashSet<byte[]>(ByteArrayComparer.Instance);
-
             int count = reader.ReadInt32();
+
+            Set = new HashSet<byte[]>(count, ByteArrayComparer.Instance);
             for (int i = 0; i < count; i++)
             {
                 var item = reader.ReadBytes(reader.ReadInt32());
-                set.Add(item);
+                Set.Add(item);
 
                 this.UpdateSize(item);
             }
@@ -76,7 +76,7 @@ namespace Garnet.server
         public SetObject(HashSet<byte[]> set, long expiration, long size)
             : base(expiration, size)
         {
-            this.set = set;
+            this.Set = set;
         }
 
         /// <inheritdoc />
@@ -87,9 +87,9 @@ namespace Garnet.server
         {
             base.DoSerialize(writer);
 
-            int count = set.Count;
+            int count = Set.Count;
             writer.Write(count);
-            foreach (var item in set)
+            foreach (var item in Set)
             {
                 writer.Write(item.Length);
                 writer.Write(item);
@@ -102,7 +102,7 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
+        public override GarnetObjectBase Clone() => new SetObject(Set, Expiration, Size);
 
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
@@ -166,7 +166,7 @@ namespace Garnet.server
                 sizeChange = this.Size - prevSize;
             }
 
-            if (set.Count == 0)
+            if (Set.Count == 0)
                 output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
 
             return true;
@@ -185,14 +185,14 @@ namespace Garnet.server
             cursor = start;
             items = new List<byte[]>();
 
-            if (set.Count < start)
+            if (Set.Count < start)
             {
                 cursor = 0;
                 return;
             }
 
             int index = 0;
-            foreach (var item in set)
+            foreach (var item in Set)
             {
                 if (index < start)
                 {
@@ -222,10 +222,8 @@ namespace Garnet.server
             }
 
             // Indicates end of collection has been reached.
-            if (cursor == set.Count)
+            if (cursor == Set.Count)
                 cursor = 0;
         }
-
-        public HashSet<byte[]> Set => set;
     }
 }
