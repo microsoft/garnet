@@ -45,7 +45,7 @@ namespace Garnet
         internal GarnetProvider Provider;
 
         private readonly GarnetServerOptions opts;
-        private IGarnetServer server;
+        private IGarnetServer[] servers;
         private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
@@ -150,11 +150,11 @@ namespace Garnet
         /// </summary>
         /// <param name="opts">Server options</param>
         /// <param name="loggerFactory">Logger factory</param>
-        /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
+        /// <param name="servers">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
         /// <param name="cleanupDir">Whether to clean up data folders on dispose</param>
-        public GarnetServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, IGarnetServer server = null, bool cleanupDir = false)
+        public GarnetServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, IGarnetServer[] servers = null, bool cleanupDir = false)
         {
-            this.server = server;
+            this.servers = servers;
             this.opts = opts;
             this.loggerFactory = loggerFactory;
             this.cleanupDir = cleanupDir;
@@ -174,7 +174,7 @@ namespace Garnet
                 Console.WriteLine($"""
                     {red}    _________
                        /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
-                       '. \   / .'      {normal}Listening on: {opts.EndPoint}{red}
+                       '. \   / .'      {normal}Listening on: {opts.EndPoints[0]}{red}
                          '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
                            '.'
                     {normal}
@@ -184,7 +184,7 @@ namespace Garnet
             var clusterFactory = opts.EnableCluster ? new ClusterFactory() : null;
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
-            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoint);
+            logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoints[0]);
 
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
@@ -246,16 +246,22 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
-            if (opts.EndPoint is UnixDomainSocketEndPoint)
+            // Create Garnet TCP server if none was provided.
+            if (servers == null)
             {
-                // Delete existing unix socket file, if it exists.
-                File.Delete(opts.UnixSocketPath);
+                servers = new IGarnetServer[opts.EndPoints.Length];
+                for (var i = 0; i < servers.Length; i++)
+                {
+                    if (opts.EndPoints[i] is UnixDomainSocketEndPoint)
+                    {
+                        // Delete existing unix socket file, if it exists.
+                        File.Delete(opts.UnixSocketPath);
+                    }
+                    servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
+                }
             }
 
-            // Create Garnet TCP server if none was provided.
-            this.server ??= new GarnetServerTcp(opts.EndPoint, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, opts.NetworkConnectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission, logger);
-
-            storeWrapper = new StoreWrapper(version, RedisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
+            storeWrapper = new StoreWrapper(version, RedisProtocolVersion, servers, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, subscribeBroker, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
@@ -266,7 +272,8 @@ namespace Garnet
             Register = new RegisterApi(Provider);
             Store = new StoreApi(storeWrapper);
 
-            server.Register(WireFormat.ASCII, Provider);
+            for (var i = 0; i < servers.Length; i++)
+                servers[i].Register(WireFormat.ASCII, Provider);
 
             LoadModules(customCommandManager);
         }
@@ -379,7 +386,8 @@ namespace Garnet
         public void Start()
         {
             Provider.Recover();
-            server.Start();
+            for (var i = 0; i < servers.Length; i++)
+                servers[i].Start();
             Provider.Start();
             if (!opts.QuietMode)
                 Console.WriteLine("* Ready to accept connections");
@@ -414,7 +422,8 @@ namespace Garnet
         private void InternalDispose()
         {
             Provider?.Dispose();
-            server.Dispose();
+            for (var i = 0; i < servers.Length; i++)
+                servers[i]?.Dispose();
             subscribeBroker?.Dispose();
             store.Dispose();
             appendOnlyFile?.Dispose();

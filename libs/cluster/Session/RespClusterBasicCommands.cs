@@ -168,7 +168,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipAddress, port);
+            logger?.LogTrace("CLUSTER MEET");
             clusterProvider.clusterManager.RunMeetTask(ipAddress, port);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
