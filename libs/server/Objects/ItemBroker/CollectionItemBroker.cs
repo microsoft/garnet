@@ -399,11 +399,11 @@ namespace Garnet.server
         /// BZPOPMIN and BZPOPMAX share same implementation since Dictionary.First() and Last() 
         /// handle the ordering automatically based on sorted set scores
         /// </summary>
-        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
+        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, int count, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
         {
             result = default;
 
-            if (sortedSetObj.Dictionary.Count == 0) return false;
+            if (count == 0) return false;
 
             switch (command)
             {
@@ -416,7 +416,7 @@ namespace Garnet.server
                 case RespCommand.BZMPOP:
                     var lowScoresFirst = *(bool*)cmdArgs[0].ptr;
                     var popCount = *(int*)cmdArgs[1].ptr;
-                    popCount = Math.Min(popCount, sortedSetObj.Dictionary.Count);
+                    popCount = Math.Min(popCount, count);
 
                     var scores = new double[popCount];
                     var items = new byte[popCount][];
@@ -546,13 +546,13 @@ namespace Garnet.server
                                 return false;
                         }
                     case SortedSetObject setObj:
-                        currCount = setObj.Dictionary.Count;
+                        currCount = setObj.Count();
                         if (objectType != GarnetObjectType.SortedSet)
                             return false;
                         if (currCount == 0)
                             return false;
 
-                        return TryGetNextSetObjects(key, setObj, command, cmdArgs, out result);
+                        return TryGetNextSetObjects(key, setObj, currCount, command, cmdArgs, out result);
 
                     default:
                         return false;
