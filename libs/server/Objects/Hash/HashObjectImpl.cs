@@ -30,9 +30,13 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
+#if NET9_0_OR_GREATER
                 if (TryGetValue(key, out var hashValue))
+#else
+                if (TryGetValue(key.ToArray(), out var hashValue))
+#endif
                 {
                     while (!RespWriteUtils.TryWriteBulkString(hashValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -123,7 +127,7 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                var isExpirable = HasExpirableItems();
+                var isExpirable = HasExpirableItems;
 
                 foreach (var item in hash)
                 {
@@ -326,7 +330,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                var isExpirable = HasExpirableItems();
+                var isExpirable = HasExpirableItems;
 
                 foreach (var item in hash)
                 {

@@ -47,12 +47,23 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class HashObject : GarnetObjectBase
     {
-        readonly Dictionary<byte[], byte[]> hash;
-        Dictionary<byte[], long> expirationTimes;
-        PriorityQueue<byte[], long> expirationQueue;
+        private readonly Dictionary<byte[], byte[]> hash;
+        private Dictionary<byte[], long> expirationTimes;
+        private PriorityQueue<byte[], long> expirationQueue;
+
+#if NET9_0_OR_GREATER
+        private readonly Dictionary<byte[], byte[]>.AlternateLookup<ReadOnlySpan<byte>> hashLookup;
+        private Dictionary<byte[], long>.AlternateLookup<ReadOnlySpan<byte>> expirationLookup;
+#endif
 
         // Byte #31 is used to denote if key has expiration (1) or not (0) 
         private const int ExpirationBitMask = 1 << 31;
+
+        private bool HasExpirableItems
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => expirationTimes is not null;
+        }
 
         /// <summary>
         ///  Constructor
@@ -61,6 +72,10 @@ namespace Garnet.server
             : base(expiration, MemoryUtils.DictionaryOverhead)
         {
             hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
+
+#if NET9_0_OR_GREATER
+            hashLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
         }
 
         /// <summary>
@@ -100,6 +115,10 @@ namespace Garnet.server
 
                 this.UpdateSize(item, value);
             }
+
+#if NET9_0_OR_GREATER
+            hashLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
         }
 
         /// <summary>
@@ -269,6 +288,10 @@ namespace Garnet.server
             if (expirationTimes is null)
             {
                 expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+                expirationLookup = expirationTimes.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
+
                 expirationQueue = new PriorityQueue<byte[], long>();
                 this.Size += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
             }
@@ -292,6 +315,9 @@ namespace Garnet.server
                 this.Size -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
                 expirationTimes = null;
                 expirationQueue = null;
+#if NET9_0_OR_GREATER
+                expirationLookup = default;
+#endif
             }
         }
 
@@ -360,8 +386,17 @@ namespace Garnet.server
                 cursor = 0;
         }
 
+        /// <summary>
+        /// Checks whether the <paramref name="key"/> has expired.
+        /// </summary>
+        /// <param name="key">The element to remove.</param>
+        /// <returns><see langword="true"/> if the <paramref name="key"/> is found and has expired; otherwise, <see langword="false"/>.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
+#if NET9_0_OR_GREATER
+        private bool IsExpired(ReadOnlySpan<byte> key) => HasExpirableItems && expirationLookup.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
+#else
+        private bool IsExpired(byte[] key) => HasExpirableItems && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
+#endif
 
         private void DeleteExpiredItems()
         {
@@ -403,6 +438,18 @@ namespace Garnet.server
             return hash.TryGetValue(key, out value);
         }
 
+#if NET9_0_OR_GREATER
+        private bool TryGetValue(ReadOnlySpan<byte> key, out byte[] value)
+        {
+            value = default;
+            if (IsExpired(key))
+            {
+                return false;
+            }
+            return hashLookup.TryGetValue(key, out value);
+        }
+#endif
+
         private bool Remove(byte[] key, out byte[] value)
         {
             DeleteExpiredItems();
@@ -431,12 +478,6 @@ namespace Garnet.server
             }
 
             return hash.Count - expiredKeysCount;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool HasExpirableItems()
-        {
-            return expirationTimes is not null;
         }
 
         private bool ContainsKey(byte[] key)
@@ -564,7 +605,7 @@ namespace Garnet.server
 
         private KeyValuePair<byte[], byte[]> ElementAt(int index)
         {
-            if (HasExpirableItems())
+            if (HasExpirableItems)
             {
                 var currIndex = 0;
                 foreach (var item in hash)
