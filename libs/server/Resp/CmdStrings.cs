@@ -23,6 +23,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> get => "get"u8;
         public static ReadOnlySpan<byte> SET => "SET"u8;
         public static ReadOnlySpan<byte> set => "set"u8;
+        public static ReadOnlySpan<byte> GEORADIUS => "GEORADIUS"u8;
+        public static ReadOnlySpan<byte> GEORADIUS_RO => "GEORADIUS_RO"u8;
+        public static ReadOnlySpan<byte> GEORADIUSBYMEMBER => "GEORADIUSBYMEMBER"u8;
+        public static ReadOnlySpan<byte> GEORADIUSBYMEMBER_RO => "GEORADIUSBYMEMBER_RO"u8;
+
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
@@ -120,7 +125,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
         public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
         public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
+        public static ReadOnlySpan<byte> FROMMEMBER => "FROMMEMBER"u8;
+        public static ReadOnlySpan<byte> STORE => "STORE"u8;
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
+        public static ReadOnlySpan<byte> WITHCOORD => "WITHCOORD"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
         public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
@@ -260,8 +268,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
-
-
+        public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         /// <summary>
         /// Response string templates
         /// </summary>
@@ -283,6 +290,7 @@ namespace Garnet.server
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
+        public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
 
         /// <summary>
         /// Response errors while scripting
