@@ -13,6 +13,6 @@ namespace Garnet.server.KeyspaceNotifications
     {
         public static ReadOnlySpan<byte> KeyspacePrefix => "__keyspace@"u8;
         public static ReadOnlySpan<byte> KeyeventPrefix => "__keyevent@"u8;
-        public static ReadOnlySpan<byte> Suffix => "__:"u8;
+        public static ReadOnlySpan<byte> Suffix => "0__:"u8;
     }
 }

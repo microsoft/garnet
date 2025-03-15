@@ -1,41 +1,52 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 using Garnet.server.KeyspaceNotifications;
 
 namespace Garnet.server
 {
     internal sealed partial class RespServerSession : ServerSessionBase
     {
-        public void PublishKeyspaceNotification(KeyspaceNotificationType keyspaceNotificationType, ref ArgSlice argSlice) 
+        // TODO: use same parameter for key and keyevent; pass keyevent as ref; test performance
+        internal void PublishKeyspaceNotification(KeyspaceNotificationType keyspaceNotificationType, ref ArgSlice key, ReadOnlySpan<byte> keyevent) 
         {
             if (!storeWrapper.serverOptions.AllowedKeyspaceNotifications.HasFlag(keyspaceNotificationType))
             {
                 return;
             }
 
+            var channel = ConcatSpans(KeyspaceNotificationStrings.KeyspacePrefix, KeyspaceNotificationStrings.Suffix);
+
             if (storeWrapper.serverOptions.AllowedKeyspaceNotifications.HasFlag(KeyspaceNotificationType.Keyspace))
             {
-                PublishKeyspace(ref argSlice);
+                var keyspaceChannel = ConcatSpans(channel, key.ReadOnlySpan);
+                PublishKeyspace(ref keyspaceChannel, keyevent);
             }
 
             if (storeWrapper.serverOptions.AllowedKeyspaceNotifications.HasFlag(KeyspaceNotificationType.Keyevent))
             {
-                PublishKeyevent(ref argSlice);
-            }
+                var keyeventChannel = ConcatSpans(channel, keyevent);
+                PublishKeyevent(ref keyeventChannel, ref key);
+            } 
+        }
+        private void PublishKeyspace(ref ReadOnlySpan<byte> channel, ReadOnlySpan<byte> keyevent)
+        {
+            // TODO: find a better solution for the string concatenation and converting to ArgSlice
+            subscribeBroker.Publish(ArgSlice.FromPinnedSpan(channel), ArgSlice.FromPinnedSpan(keyevent));
         }
 
-        public void PublishKeyevent(ref ArgSlice argSlice)
+        private void PublishKeyevent(ref ReadOnlySpan<byte> channel, ref ArgSlice key)
         {
-            subscribeBroker.Publish(ArgSlice.FromPinnedSpan(KeyspaceNotificationStrings.KeyspacePrefix), argSlice);
+            // TODO: see above
+            subscribeBroker.Publish(ArgSlice.FromPinnedSpan(channel), key);
         }
 
-        public void PublishKeyspace(ref ArgSlice argSlice)
+
+        private static ReadOnlySpan<byte> ConcatSpans(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second)
         {
-            subscribeBroker.Publish(ArgSlice.FromPinnedSpan(KeyspaceNotificationStrings.KeyeventPrefix), argSlice);
+            byte[] combined = new byte[first.Length + second.Length];
+            first.CopyTo(combined);
+            second.CopyTo(combined.AsSpan(first.Length));
+            return combined;
         }
     }
 }

@@ -294,7 +294,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
-            PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref parseState.GetArgSliceByRef(0));
+            PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref parseState.GetArgSliceByRef(0), CmdStrings.set);
 
             return true;
         }
