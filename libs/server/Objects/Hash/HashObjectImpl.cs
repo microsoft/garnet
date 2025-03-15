@@ -182,8 +182,12 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+#if NET9_0_OR_GREATER
             _output->result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+#else
+            _output->result1 = TryGetValue(key.ToArray(), out var hashValue) ? hashValue.Length : 0;
+#endif
         }
 
         private void HashExists(ref ObjectInput input, byte* output)
