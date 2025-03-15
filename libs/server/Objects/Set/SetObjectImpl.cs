@@ -146,9 +146,13 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var field = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var field = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-                if (Set.Remove(field))
+#if NET9_0_OR_GREATER
+                if (setLookup.Remove(field))
+#else
+                if (Set.Remove(field.ToArray()))
+#endif
                 {
                     _output->result1++;
                     this.UpdateSize(field, false);
