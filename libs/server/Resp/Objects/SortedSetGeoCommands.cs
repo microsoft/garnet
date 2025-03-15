@@ -159,26 +159,6 @@ namespace Garnet.server
         private unsafe bool GeoSearchCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int GetDestIdx()
-            {
-                var idx = 1;
-                while (true)
-                {
-                    if (idx >= parseState.Count - 1)
-                        break;
-
-                    var argSpan = parseState.GetArgSliceByRef(idx++).ReadOnlySpan;
-
-                    if (argSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
-                        argSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
-                    {
-                        return idx;
-                    }
-                }
-
-                return -1;
-            }
-
             var paramsRequiredInCommand = 0;
             var byRadius = false;
             var byMember = false;
@@ -193,8 +173,6 @@ namespace Garnet.server
                 case RespCommand.GEORADIUS:
                     paramsRequiredInCommand = 5;
                     byRadius = true;
-                    destIdx = GetDestIdx();
-                    searchOpts.readOnly = destIdx == -1;
                     break;
                 case RespCommand.GEORADIUS_RO:
                     paramsRequiredInCommand = 5;
@@ -205,8 +183,6 @@ namespace Garnet.server
                     paramsRequiredInCommand = 4;
                     byMember = true;
                     byRadius = true;
-                    destIdx = GetDestIdx();
-                    searchOpts.readOnly = destIdx == -1;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     paramsRequiredInCommand = 4;
@@ -229,7 +205,7 @@ namespace Garnet.server
 
             if (parseState.Count < paramsRequiredInCommand)
             {
-                return AbortWithWrongNumberOfArguments(nameof(command));
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             // Get the key for the Sorted Set
@@ -245,6 +221,7 @@ namespace Garnet.server
             #region parse
             ReadOnlySpan<byte> errorMessage = default;
             var argNumError = false;
+            var storeDist = false;
             var currTokenIdx = 0;
 
             if (byRadius)
@@ -459,37 +436,37 @@ namespace Garnet.server
                 {
                     if (byRadius && tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
                     {
-                        if (byRadius)
-                            currTokenIdx++;
+                        destIdx = ++currTokenIdx;
                         continue;
                     }
+
                     if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
                     {
                         if (byRadius)
-                            currTokenIdx++;
-                        searchOpts.withDist = true;
+                        {
+                            destIdx = ++currTokenIdx;
+                        }
+                        storeDist = true;
                         continue;
                     }
                 }
-                else
+
+                if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHCOORD))
                 {
-                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHCOORD))
-                    {
-                        searchOpts.withCoord = true;
-                        continue;
-                    }
+                    searchOpts.withCoord = true;
+                    continue;
+                }
 
-                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHDIST))
-                    {
-                        searchOpts.withDist = true;
-                        continue;
-                    }
+                if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHDIST))
+                {
+                    searchOpts.withDist = true;
+                    continue;
+                }
 
-                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHHASH))
-                    {
-                        searchOpts.withHash = true;
-                        continue;
-                    }
+                if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHHASH))
+                {
+                    searchOpts.withHash = true;
+                    continue;
                 }
 
                 errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
@@ -504,7 +481,18 @@ namespace Garnet.server
             if (argNumError)
             {
                 errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                    nameof(RespCommand.GEOSEARCH)));
+                                                       command.ToString()));
+            }
+
+            if (destIdx != -1)
+            {
+                searchOpts.readOnly = false;
+                if ((searchOpts.withDist || searchOpts.withCoord || searchOpts.withHash))
+                {
+                    errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrStoreCommand,
+                                                           command.ToString()));
+                }
+                searchOpts.withDist = storeDist;
             }
 
             // Check if we encountered an error while checking the parse state

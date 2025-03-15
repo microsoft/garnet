@@ -279,159 +279,160 @@ namespace Garnet.server
 
             try
             {
-                // FROMLONLAT
-                bool hasLonLat = opts.origin == GeoOriginType.FromLonLat;
                 // FROMMEMBER
-                if (opts.origin == GeoOriginType.FromMember && sortedSetDict.TryGetValue(opts.fromMember, out var centerPointScore))
+                if (opts.origin == GeoOriginType.FromMember)
                 {
+                    if (!sortedSetDict.TryGetValue(opts.fromMember, out var centerPointScore))
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ZSET_MEMBER, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return;
+                    }
+
                     (opts.lat, opts.lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
-                    hasLonLat = true;
                 }
 
                 // Get the results
-                if (hasLonLat)
+                var len = opts.withCountAny ? opts.countValue : sortedSet.Count;
+                var responseData = new List<GeoSearchData>(len);
+                foreach (var point in sortedSet)
                 {
-                    var len = opts.withCountAny ? opts.countValue : sortedSet.Count;
-                    var responseData = new List<GeoSearchData>(len);
-                    foreach (var point in sortedSet)
+                    var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
+                    double distance = 0;
+
+                    if (opts.searchType == GeoSearchType.ByBox)
                     {
-                        var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
-                        double distance = 0;
-
-                        if (opts.searchType == GeoSearchType.ByBox)
+                        if (!server.GeoHash.GetDistanceWhenInRectangle(
+                                server.GeoHash.ConvertValueToMeters(opts.boxWidth, opts.unit),
+                                server.GeoHash.ConvertValueToMeters(opts.boxHeight, opts.unit),
+                                opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
                         {
-                            if (!server.GeoHash.GetDistanceWhenInRectangle(
-                                 server.GeoHash.ConvertValueToMeters(opts.boxWidth, opts.unit),
-                                 server.GeoHash.ConvertValueToMeters(opts.boxHeight, opts.unit),
-                                 opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
-                            {
-                                continue;
-                            }
+                            continue;
                         }
-                        else /* byRadius == true */
+                    }
+                    else /* byRadius == true */
+                    {
+                        if (!server.GeoHash.IsPointWithinRadius(
+                                server.GeoHash.ConvertValueToMeters(opts.radius, opts.unit),
+                                opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
                         {
-                            if (!server.GeoHash.IsPointWithinRadius(
-                                 server.GeoHash.ConvertValueToMeters(opts.radius, opts.unit),
-                                 opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
-                            {
-                                continue;
-                            }
+                            continue;
                         }
+                    }
 
-                        // The item is inside the shape
-                        responseData.Add(new GeoSearchData()
-                        {
-                            Member = point.Element,
-                            Distance = distance,
-                            GeoHash = (long)point.Score,
-                            GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
-                            Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
-                        });
+                    // The item is inside the shape
+                    responseData.Add(new GeoSearchData()
+                    {
+                        Member = point.Element,
+                        Distance = distance,
+                        GeoHash = (long)point.Score,
+                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
+                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
+                    });
 
-                        if (opts.withCountAny && (responseData.Count == opts.countValue))
+                    if (opts.withCountAny && (responseData.Count == opts.countValue))
+                        break;
+                }
+
+                if (responseData.Count == 0)
+                {
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    var innerArrayLength = 1;
+                    if (opts.withDist)
+                    {
+                        innerArrayLength++;
+                    }
+                    if (opts.withHash)
+                    {
+                        innerArrayLength++;
+                    }
+                    if (opts.withCoord)
+                    {
+                        innerArrayLength++;
+                    }
+
+                    var q = responseData.AsQueryable();
+                    switch (opts.sort)
+                    {
+                        case GeoOrder.Descending:
+                            q = q.OrderByDescending(i => i.Distance);
+                            break;
+                        case GeoOrder.Ascending:
+                            q = q.OrderBy(i => i.Distance);
+                            break;
+                        case GeoOrder.None:
+                            if (!opts.withCountAny && opts.countValue > 0)
+                                q = q.OrderBy(i => i.Distance);
                             break;
                     }
 
-                    if (responseData.Count == 0)
+                    // Write results 
+                    if (opts.countValue > 0)
                     {
-                        while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
+                        q = q.Take(opts.countValue);
+                        while (!RespWriteUtils.TryWriteArrayLength(opts.countValue, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        var innerArrayLength = 1;
+                        while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+
+                    foreach (var item in q)
+                    {
+                        if (innerArrayLength > 1)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(innerArrayLength, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+
+                        while (!RespWriteUtils.TryWriteBulkString(item.Member, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
                         if (opts.withDist)
                         {
-                            innerArrayLength++;
+                            var distanceValue = opts.searchType switch
+                            {
+                                GeoSearchType.ByBox => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
+
+                                // byRadius
+                                _ => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
+                            };
+
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
+
                         if (opts.withHash)
                         {
-                            innerArrayLength++;
+                            if (opts.readOnly)
+                            {
+                                while (!RespWriteUtils.TryWriteInt64(item.GeoHash, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteArrayItem(item.GeoHash, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
                         }
+
                         if (opts.withCoord)
                         {
-                            innerArrayLength++;
-                        }
-
-                        var q = responseData.AsQueryable();
-                        switch (opts.sort)
-                        {
-                            case GeoOrder.Descending:
-                                q = q.OrderByDescending(i => i.Distance);
-                                break;
-                            case GeoOrder.Ascending:
-                                q = q.OrderBy(i => i.Distance);
-                                break;
-                            case GeoOrder.None:
-                                if (!opts.withCountAny && opts.countValue > 0)
-                                    q = q.OrderBy(i => i.Distance);
-                                break;
-                        }
-
-                        // Write results 
-                        if (opts.countValue > 0)
-                        {
-                            q = q.Take(opts.countValue);
-                            while (!RespWriteUtils.TryWriteArrayLength(opts.countValue, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-
-                        foreach (var item in q)
-                        {
-                            if (innerArrayLength > 1)
-                            {
-                                while (!RespWriteUtils.TryWriteArrayLength(innerArrayLength, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-
-                            while (!RespWriteUtils.TryWriteBulkString(item.Member, ref curr, end))
+                            // Write array of 2 values
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            if (opts.withDist)
-                            {
-                                var distanceValue = opts.searchType switch
-                                {
-                                    GeoSearchType.ByBox => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                                    // byRadius
-                                    _ => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
-                                };
-
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-
-                            if (opts.withHash)
-                            {
-                                if (opts.readOnly)
-                                {
-                                    while (!RespWriteUtils.TryWriteInt64(item.GeoHash, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-                                else
-                                {
-                                    while (!RespWriteUtils.TryWriteArrayItem(item.GeoHash, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-                            }
-
-                            if (opts.withCoord)
-                            {
-                                // Write array of 2 values
-                                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                     }
                 }
