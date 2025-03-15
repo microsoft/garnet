@@ -294,7 +294,7 @@ namespace Garnet.server
 
                 // Get the results
                 var responseData = new List<GeoSearchData>(
-                    opts.withCountAny && opts.countValue > 0 && opts.countValue < sortedSet.Count ? 
+                    opts.withCountAny && opts.countValue > 0 && opts.countValue < sortedSet.Count ?
                     opts.countValue :
                     sortedSet.Count);
                 foreach (var point in sortedSet)
