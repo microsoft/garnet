@@ -583,22 +583,39 @@ namespace Garnet.server
             return ExpireResult.ExpireUpdated;
         }
 
-        private int Persist(byte[] key)
+        /// <summary>
+        /// Persist the <paramref name="key"/>.
+        /// </summary>
+        /// <remarks>
+        /// On .NET 8, this method copies the <paramref name="key"/> to a new array in order to perform the lookups.
+        /// </remarks>
+        /// <param name="key">The key.</param>
+        /// <returns><see langword="true"/> if the <paramref name="key"/> is found and has expired; otherwise, <see langword="false"/>.</returns>
+        private ExpireResult Persist(ReadOnlySpan<byte> key)
         {
+#if NET9_0_OR_GREATER
             if (!ContainsKey(key))
+#else
+            var keyArray = key.ToArray();
+            if (!ContainsKey(keyArray))
+#endif
             {
-                return -2;
+                return ExpireResult.KeyNotFound;
             }
 
-            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var currentExpiration))
+            if (HasExpirableItems &&
+#if NET9_0_OR_GREATER
+                expirationLookup.Remove(key))
+#else
+                expirationTimes.Remove(keyArray))
+#endif
             {
-                expirationTimes.Remove(key);
-                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                 CleanupExpirationStructures();
-                return 1;
+                return ExpireResult.ExpireUpdated;
             }
 
-            return -1;
+            return ExpireResult.NoExpiration;
         }
 
         private long GetExpiration(byte[] key)
@@ -613,7 +630,7 @@ namespace Garnet.server
                 return expiration;
             }
 
-            return -1;
+            return (long)ExpireResult.NoExpiration;
         }
 
         private KeyValuePair<byte[], byte[]> ElementAt(int index)
@@ -644,6 +661,7 @@ namespace Garnet.server
     enum ExpireResult : int
     {
         KeyNotFound = -2,
+        NoExpiration = -1,
         ExpireConditionNotMet = 0,
         ExpireUpdated = 1,
         KeyAlreadyExpired = 2,

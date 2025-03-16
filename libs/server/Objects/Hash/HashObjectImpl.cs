@@ -629,8 +629,8 @@ namespace Garnet.server
 
                 foreach (var item in input.parseState.Parameters)
                 {
-                    var result = Persist(item.ToArray());
-                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
+                    var result = Persist(item.ReadOnlySpan);
+                    while (!RespWriteUtils.TryWriteInt32((int)result, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
