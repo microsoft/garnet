@@ -237,10 +237,10 @@ namespace Garnet.server
                 {
                     if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
                         !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat) ||
-                        (searchOpts.lon <= GeoHash.LongitudeMin) ||
-                        (searchOpts.lat <= GeoHash.LatitudeMin) ||
-                        (searchOpts.lon >= GeoHash.LongitudeMax) ||
-                        (searchOpts.lat >= GeoHash.LatitudeMax)
+                        (searchOpts.lon < GeoHash.LongitudeMin) ||
+                        (searchOpts.lat < GeoHash.LatitudeMin) ||
+                        (searchOpts.lon > GeoHash.LongitudeMax) ||
+                        (searchOpts.lat > GeoHash.LatitudeMax)
                         )
                     {
                         errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
@@ -316,10 +316,10 @@ namespace Garnet.server
                         // Read coordinates
                         if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
                             !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat) ||
-                            (searchOpts.lon <= GeoHash.LongitudeMin) ||
-                            (searchOpts.lat <= GeoHash.LatitudeMin) ||
-                            (searchOpts.lon >= GeoHash.LongitudeMax) ||
-                            (searchOpts.lat >= GeoHash.LatitudeMax)
+                            (searchOpts.lon < GeoHash.LongitudeMin) ||
+                            (searchOpts.lat < GeoHash.LatitudeMin) ||
+                            (searchOpts.lon > GeoHash.LongitudeMax) ||
+                            (searchOpts.lat > GeoHash.LatitudeMax)
                            )
                         {
                             errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;

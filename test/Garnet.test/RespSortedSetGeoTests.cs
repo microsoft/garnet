@@ -753,6 +753,10 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYRADIUS 0 m");
             expectedResponse = "*0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 180 90 BYRADIUS 100 M COUNT 1 ANY");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
         #endregion
     }
