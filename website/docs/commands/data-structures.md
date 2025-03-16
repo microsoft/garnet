@@ -1634,7 +1634,7 @@ The radius is specified in one of the following units:
 
 The command optionally returns additional information using the following options:
 
-* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit as specified for the radius or height and width arguments.
+* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit specified as the radius argument of the command.
 * **WITHCOORD:** Also return the longitude and latitude of the matching items.
 * **WITHHASH:** Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
 
@@ -1685,7 +1685,7 @@ The radius is specified in one of the following units:
 
 The command optionally returns additional information using the following options:
 
-* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit as specified for the radius or height and width arguments.
+* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit specified as the radius argument of the command.
 * **WITHCOORD:** Also return the longitude and latitude of the matching items.
 * **WITHHASH:** Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
 

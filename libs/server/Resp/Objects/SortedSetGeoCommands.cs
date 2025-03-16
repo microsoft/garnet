@@ -235,9 +235,13 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var lon) ||
-                        !input.parseState.TryGetDouble(currTokenIdx++, out var lat) ||
-                        (Math.Abs(lon) > 180) || (Math.Abs(lat) > 90))
+                    if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
+                        !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat) ||
+                        (searchOpts.lon <= GeoHash.LongitudeMin) ||
+                        (searchOpts.lat <= GeoHash.LatitudeMin) ||
+                        (searchOpts.lon >= GeoHash.LongitudeMax) ||
+                        (searchOpts.lat >= GeoHash.LatitudeMax)
+                        )
                     {
                         errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
 
@@ -247,22 +251,24 @@ namespace Garnet.server
                     }
 
                     searchOpts.origin = GeoOriginType.FromLonLat;
-                    searchOpts.lon = lon;
-                    searchOpts.lat = lat;
                 }
 
                 // Radius
-                if (!input.parseState.TryGetDouble(currTokenIdx++, out var Radius) || (Radius < 0))
+                if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.radius))
                 {
-                    errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
 
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                if (searchOpts.radius < 0)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
                 searchOpts.searchType = GeoSearchType.ByRadius;
-                searchOpts.radius = Radius;
                 searchOpts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
             }
 
@@ -282,7 +288,7 @@ namespace Garnet.server
                             break;
                         }
 
-                        if (input.parseState.Count - currTokenIdx == 0)
+                        if (input.parseState.Count == currTokenIdx)
                         {
                             argNumError = true;
                             break;
@@ -308,17 +314,19 @@ namespace Garnet.server
                         }
 
                         // Read coordinates
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out var lon) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out var lat) ||
-                            (Math.Abs(lon) > 180) || (Math.Abs(lat) > 90))
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
+                            !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat) ||
+                            (searchOpts.lon <= GeoHash.LongitudeMin) ||
+                            (searchOpts.lat <= GeoHash.LatitudeMin) ||
+                            (searchOpts.lon >= GeoHash.LongitudeMax) ||
+                            (searchOpts.lat >= GeoHash.LatitudeMax)
+                           )
                         {
                             errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
                             break;
                         }
 
                         searchOpts.origin = GeoOriginType.FromLonLat;
-                        searchOpts.lon = lon;
-                        searchOpts.lat = lat;
                         continue;
                     }
 
@@ -436,6 +444,12 @@ namespace Garnet.server
                 {
                     if (byRadius && tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
                     {
+                        if (input.parseState.Count == currTokenIdx)
+                        {
+                            argNumError = true;
+                            break;
+                        }
+
                         destIdx = ++currTokenIdx;
                         continue;
                     }
@@ -444,8 +458,15 @@ namespace Garnet.server
                     {
                         if (byRadius)
                         {
+                            if (input.parseState.Count == currTokenIdx)
+                            {
+                                argNumError = true;
+                                break;
+                            }
+
                             destIdx = ++currTokenIdx;
                         }
+
                         storeDist = true;
                         continue;
                     }

@@ -16,12 +16,26 @@ namespace Garnet.server
     public static class GeoHash
     {
         // Constraints from WGS 84 / Pseudo-Mercator (EPSG:3857)
-        private const double LongitudeMin = -180.0;
-        private const double LongitudeMax = 180.0;
+
+        /// <summary>
+        /// Minimum allowed longitude.
+        /// </summary>
+        public const double LongitudeMin = -180.0;
+        /// <summary>
+        /// Maximum allowed longitude.
+        /// </summary>
+        public const double LongitudeMax = 180.0;
 
         // TODO: These are "wrong" in a sense that according to EPSG:3857 latitude should be from -85.05112878 to 85.05112878
-        private const double LatitudeMin = -90.0;
-        private const double LatitudeMax = 90.0;
+
+        /// <summary>
+        /// Minimum allowed latitude.
+        /// </summary>
+        public const double LatitudeMin = -90.0;
+        /// <summary>
+        /// Maximum allowed latitude.
+        /// </summary>
+        public const double LatitudeMax = 90.0;
 
         /// <summary>
         /// The number of bits used for the precision of the geohash.
