@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -502,25 +503,21 @@ namespace Garnet.server
             return hash.Count - expiredKeysCount;
         }
 
+#if NET9_0_OR_GREATER
         /// <summary>
         /// Checks whether the <paramref name="key"/> exists and if it does, that it has not expired.
         /// </summary>
-        /// <remarks>
-        /// On .NET 8, this method copies the <paramref name="key"/> to a new array in order to perform the lookup.
-        /// </remarks>
         /// <param name="key">The key.</param>
         /// <returns><see langword="true"/> if the <paramref name="key"/> is found and has not expired; otherwise, <see langword="false"/>.</returns>
-        private bool ContainsKey(ReadOnlySpan<byte> key)
-        {
-#if NET9_0_OR_GREATER
-            var result = hashLookup.ContainsKey(key);
-            return result && !IsExpired(key);
-#else
-            var keyArray = key.ToArray();
-            var result = hash.ContainsKey(keyArray);
-            return result && !IsExpired(keyArray);
+        private bool ContainsKey(ReadOnlySpan<byte> key) => hashLookup.ContainsKey(key) && !IsExpired(key);
 #endif
-        }
+
+        /// <summary>
+        /// Checks whether the <paramref name="key"/> exists and if it does, that it has not expired.
+        /// </summary>
+        /// <param name="key">The key.</param>
+        /// <returns><see langword="true"/> if the <paramref name="key"/> is found and has not expired; otherwise, <see langword="false"/>.</returns>
+        private bool ContainsKey(byte[] key) => hash.ContainsKey(key) && !IsExpired(key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Add(byte[] key, byte[] value)
@@ -539,49 +536,51 @@ namespace Garnet.server
                          Utility.RoundUp(value.Length, IntPtr.Size);
         }
 
-        private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
+        private ExpireResult SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
         {
             if (!ContainsKey(key))
             {
-                return (int)ExpireResult.KeyNotFound;
+                return ExpireResult.KeyNotFound;
             }
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
                 Remove(key, out _);
-                return (int)ExpireResult.KeyAlreadyExpired;
+                return ExpireResult.KeyAlreadyExpired;
             }
 
             InitializeExpirationStructures();
 
-            if (expirationTimes.TryGetValue(key, out var currentExpiration))
+            ref var expirationTimeRef = ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimes, key, out var exists);
+
+            if (exists)
             {
                 if ((expireOption & ExpireOption.NX) == ExpireOption.NX ||
-                    ((expireOption & ExpireOption.GT) == ExpireOption.GT && expiration <= currentExpiration) ||
-                    ((expireOption & ExpireOption.LT) == ExpireOption.LT && expiration >= currentExpiration))
+                    ((expireOption & ExpireOption.GT) == ExpireOption.GT && expiration <= expirationTimeRef) ||
+                    ((expireOption & ExpireOption.LT) == ExpireOption.LT && expiration >= expirationTimeRef))
                 {
-                    return (int)ExpireResult.ExpireConditionNotMet;
+                    return ExpireResult.ExpireConditionNotMet;
                 }
 
-                expirationTimes[key] = expiration;
+                expirationTimeRef = expiration;
                 expirationQueue.Enqueue(key, expiration);
                 // Size of dictionary entry already accounted for as the key already exists
-                this.Size += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
+                Size += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
             }
             else
             {
                 if ((expireOption & ExpireOption.XX) == ExpireOption.XX ||
                     (expireOption & ExpireOption.GT) == ExpireOption.GT)
                 {
-                    return (int)ExpireResult.ExpireConditionNotMet;
+                    return ExpireResult.ExpireConditionNotMet;
                 }
 
-                expirationTimes[key] = expiration;
+                expirationTimeRef = expiration;
                 expirationQueue.Enqueue(key, expiration);
                 UpdateExpirationSize(key);
             }
 
-            return (int)ExpireResult.ExpireUpdated;
+            return ExpireResult.ExpireUpdated;
         }
 
         private int Persist(byte[] key)
@@ -606,7 +605,7 @@ namespace Garnet.server
         {
             if (!ContainsKey(key))
             {
-                return -2;
+                return (long)ExpireResult.KeyNotFound;
             }
 
             if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration))
@@ -642,7 +641,7 @@ namespace Garnet.server
         }
     }
 
-    enum ExpireResult
+    enum ExpireResult : int
     {
         KeyNotFound = -2,
         ExpireConditionNotMet = 0,

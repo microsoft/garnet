@@ -197,7 +197,11 @@ namespace Garnet.server
             *_output = default;
 
             var field = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+#if NET9_0_OR_GREATER
             _output->result1 = ContainsKey(field) ? 1 : 0;
+#else
+            _output->result1 = ContainsKey(field.ToArray()) ? 1 : 0;
+#endif
         }
 
         private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -531,7 +535,7 @@ namespace Garnet.server
                 foreach (var item in input.parseState.Parameters.Slice(1))
                 {
                     var result = SetExpiration(item.ToArray(), expiration, expireOption);
-                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
+                    while (!RespWriteUtils.TryWriteInt32((int)result, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _output.result1++;
                 }
