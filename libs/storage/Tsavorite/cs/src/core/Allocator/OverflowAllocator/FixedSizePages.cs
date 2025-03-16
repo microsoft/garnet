@@ -14,6 +14,7 @@ namespace Tsavorite.core
         /// These are the pages and freelist bins for the fixed-size sub-allocator of <see cref="OverflowAllocator"/>; this sub-allocator is limited
         /// to MaxAllocSize blocks (allocated items). Larger than that uses <see cref="OversizePages"/>. It uses a simple pointer-advancing scheme to
         /// get blocks of the requested size, and the freelist is a set of bins of power-of-2 sizes from 64 bytes to <see cref="MaxExternalBlockSize"/>.
+        /// TODO: The power-of-2 is probably too much waste so consider a smaller limit with more granular bins.
         /// </summary>
         /// <remarks>
         /// Allocations are done in exactly the size of the bin. Pages are much larger than <see cref="MaxExternalBlockSize"/> and we advance a pointer
@@ -27,7 +28,7 @@ namespace Tsavorite.core
             internal const int MaxExternalBlockSize = MaxInternalBlockSize - BlockHeader.Size;
 
             /// <summary>Size of the largest free-list bin</summary>
-            internal const int MaxInternalBlockSize = 64 * 1024;
+            internal const int MaxInternalBlockSize = 16 * 1024;
 
             /// <summary>Size of the smallest free-list bin</summary>
             internal const int MinInternalBlockSize = 1 << MinPowerOf2;

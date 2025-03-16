@@ -787,7 +787,7 @@ namespace Tsavorite.core
         {
             if (!Info.ValueIsOverflow)
                 return false;
-            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, KeyAddress, overflowAllocator, isKey: false);
+            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, ValueAddress, overflowAllocator, isKey: false);
             return true;
         }
 

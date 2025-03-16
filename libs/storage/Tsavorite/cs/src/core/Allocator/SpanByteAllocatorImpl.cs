@@ -212,7 +212,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord<SpanByte> logRecord, DisposeReason disposeReason)
         {
-            _ = logRecord.FreeKeyOverflow();
+            if (disposeReason != DisposeReason.Deleted)
+                _ = logRecord.FreeKeyOverflow();
             _ = logRecord.FreeValueOverflow();
         }
 

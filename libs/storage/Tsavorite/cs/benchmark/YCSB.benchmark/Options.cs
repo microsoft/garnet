@@ -62,6 +62,10 @@ namespace Tsavorite.benchmark
                        "    # (one value): All bins have this number of records, else error")]
         public int RevivBinRecordCount { get; set; }
 
+        [Option("di", Required = false, Default = false,
+            HelpText = "Delete+insert; immediately reinsert the key after deleting it")]
+        public bool DeleteAndReinsert { get; set; }
+
         [Option("reviv-mutable%", Separator = ',', Required = false, Default = RevivificationSettings.DefaultRevivifiableFraction,
             HelpText = "Percentage of in-memory region that is eligible for revivification")]
         public double RevivifiableFraction { get; set; }

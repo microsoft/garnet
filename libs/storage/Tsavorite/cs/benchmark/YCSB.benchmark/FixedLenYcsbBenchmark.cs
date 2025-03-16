@@ -147,6 +147,7 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
+            var di = testLoader.Options.DeleteAndReinsert;
             using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
@@ -192,6 +193,8 @@ namespace Tsavorite.benchmark
                             continue;
                         }
                         _ = uContext.Delete(key, Empty.Default);
+                        if (di)
+                            uContext.Upsert(key, value, Empty.Default);
                         ++deletes_done;
                     }
                 }
@@ -234,6 +237,7 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
+            var di = testLoader.Options.DeleteAndReinsert;
             using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var bContext = session.BasicContext;
 
@@ -273,6 +277,8 @@ namespace Tsavorite.benchmark
                         continue;
                     }
                     _ = bContext.Delete(key, Empty.Default);
+                    if (di)
+                        bContext.Upsert(key, value, Empty.Default);
                     ++deletes_done;
                 }
             }

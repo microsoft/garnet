@@ -120,7 +120,10 @@ namespace Tsavorite.core
                                 // We are not doing revivification, so we just want to remove the record from the tag chain so we don't potentially do an IO later for key 
                                 // traceback. If we succeed, we need to SealAndInvalidate. It's fine if we don't succeed here; this is just tidying up the HashBucket. 
                                 if (stackCtx.hei.TryElide())
+                                {
                                     srcLogRecord.InfoRef.SealAndInvalidate();
+                                    DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
+                                }
                             }
                             else if (RevivificationManager.UseFreeRecordPool)
                             {
@@ -140,6 +143,7 @@ namespace Tsavorite.core
                                 {
                                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
                                     srcLogRecord.InfoRef.UnsealAndValidate();
+                                    DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                                 }
                                 else if (!isAdded && RevivificationManager.restoreDeletedRecordsIfBinIsFull)
                                 {
@@ -152,13 +156,19 @@ namespace Tsavorite.core
 
                                     if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
                                         srcLogRecord.InfoRef.UnsealAndValidate();
+                                    DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                                 }
                             }
+                            else
+                                DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                         }
+                        else
+                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
                     }
+
                     if (deleteInfo.Action == DeleteAction.CancelOperation)
                     {
                         status = OperationStatus.CANCELED;

@@ -477,11 +477,12 @@ namespace Tsavorite.core
                         // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
                         srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
 
+                        // If we're here we have MainLogSrc so AsLogRecord is quick.
+                        var inMemoryLogRecord = srcLogRecord.AsLogRecord();
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        { 
-                            var inMemoryLogRecord = srcLogRecord.AsLogRecord();
                             _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
-                        }
+                        else
+                            DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
                     }
                     else if (stackCtx.recSrc.HasMainLogSrc)
                         srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate

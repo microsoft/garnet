@@ -54,6 +54,16 @@ namespace Tsavorite.core
         RevivificationFreeList,
 
         /// <summary>
+        /// Deleted but remains in hash chain so Key is unchanged
+        /// </summary>
+        Deleted,
+
+        /// <summary>
+        /// Elided from hash chain but not put into Revivification free list
+        /// </summary>
+        Elided,
+
+        /// <summary>
         /// A page was evicted from the in-memory portion of the main log, or from the readcache.
         /// </summary>
         PageEviction
