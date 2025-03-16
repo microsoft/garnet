@@ -24,17 +24,6 @@
         ]
       },
       {
-        "Command": "ACL_GETUSER",
-        "Name": "ACL|GETUSER",
-        "Arity": 3,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Admin, Dangerous, Slow",
-        "Tips": [
-          "request_policy:all_nodes",
-          "response_policy:all_succeeded"
-        ]
-      },
-      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Arity": 2,
@@ -83,6 +72,13 @@
         "Arity": 2,
         "Flags": "Loading, NoScript, Stale",
         "AclCategories": "Slow"
+      },
+      {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Arity": 3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Dangerous, Slow"
       }
     ]
   },
@@ -951,6 +947,14 @@
         "Name": "CLUSTER|SYNC",
         "IsInternal": true,
         "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "IsInternal": true,
+        "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       }

@@ -42,41 +42,53 @@ namespace Garnet.server
         /// </summary>
         TxnAbort = 0x22,
         /// <summary>
-        /// Checkpoint for main store start
+        /// Checkpoint start marker for unified checkpoint
         /// </summary>
-        MainStoreCheckpointStartCommit = 0x30,
+        CheckpointStartCommit = 0x30,
         /// <summary>
-        /// Checkpoint for object store start
+        /// Checkpoint end marker for unified checkpoint
         /// </summary>
-        ObjectStoreCheckpointStartCommit = 0x31,
+        CheckpointEndCommit = 0x32,
         /// <summary>
-        /// Checkpoint for main store end
-        /// </summary>
-        MainStoreCheckpointEndCommit = 0x32,
-        /// <summary>
-        /// Checkpoint for object store end
-        /// </summary>
-        ObjectStoreCheckpointEndCommit = 0x33,
-        /// <summary>
-        /// Streaming checkpoint for main store start
+        /// Streaming checkpoint start marker for main store
         /// </summary>
         MainStoreStreamingCheckpointStartCommit = 0x40,
         /// <summary>
-        /// Streaming checkpoint for object store start
+        /// Streaming checkpoint start marker for object store
         /// </summary>
         ObjectStoreStreamingCheckpointStartCommit = 0x41,
         /// <summary>
-        /// Streaming checkpoint for main store end
+        /// Streaming checkpoint end marker for main store
         /// </summary>
         MainStoreStreamingCheckpointEndCommit = 0x42,
         /// <summary>
-        /// Streaming checkpoint for object store end
+        /// Streaming checkpoint end marker for object store
         /// </summary>
         ObjectStoreStreamingCheckpointEndCommit = 0x43,
         /// <summary>
         /// StoredProcedure
         /// </summary>
         StoredProcedure = 0x50,
+
+        /// <summary>
+        /// Flush all
+        /// </summary>
+        FlushAll = 0x60,
+        /// <summary>
+        /// Flush db
+        /// </summary>
+        FlushDb = 0x61,
+
+        #region Deprecated markers
+        /// <summary>
+        /// Deprecated with unified checkpointing: Checkpoint for object store start
+        /// </summary>
+        ObjectStoreCheckpointStartCommit = 0x31,
+        /// <summary>
+        /// Deprecated with unified checkpointing: Checkpoint for object store end
+        /// </summary>
+        ObjectStoreCheckpointEndCommit = 0x33,
+        #endregion
     }
 
     internal enum AofStoreType : byte
@@ -85,6 +97,7 @@ namespace Garnet.server
         ObjectStoreType = 0x1,
         TxnType = 0x2,
         ReplicationType = 0x3,
-        CheckpointType = 0x4
+        CheckpointType = 0x4,
+        FlushDbType = 0x5,
     }
 }

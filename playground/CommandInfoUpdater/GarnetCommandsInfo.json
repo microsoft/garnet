@@ -117,6 +117,19 @@
         "SubCommands": null
       },
       {
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "IsInternal": true,
+        "Arity": 2,
+        "Flags": "Admin, NoScript, NoMulti",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
         "Command": "CLUSTER_FAILREPLICATIONOFFSET",
         "Name": "CLUSTER|FAILREPLICATIONOFFSET",
         "IsInternal": true,

@@ -345,6 +345,7 @@ namespace Garnet.server
         CLUSTER_FAILOVER,
         CLUSTER_FAILREPLICATIONOFFSET,
         CLUSTER_FAILSTOPWRITES,
+        CLUSTER_FLUSHALL,
         CLUSTER_FORGET,
         CLUSTER_GETKEYSINSLOT,
         CLUSTER_GOSSIP,
@@ -2151,6 +2152,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
                 {
                     return RespCommand.CLUSTER_FAILSTOPWRITES;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
+                {
+                    return RespCommand.CLUSTER_FLUSHALL;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
                 {

@@ -175,15 +175,22 @@ namespace Garnet.cluster
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
             replicationManager.AddCheckpointEntry(entry, storeType, full);
 
+            // Truncate AOF
+            SafeTruncateAOF(CheckpointCoveredAofAddress);
+        }
+
+        /// <inheritdoc />
+        public void SafeTruncateAOF(long truncateUntil)
+        {
             if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
-                _ = replicationManager.SafeTruncateAof(CheckpointCoveredAofAddress);
+                _ = replicationManager.SafeTruncateAof(truncateUntil);
             else
             {
                 if (serverOptions.FastAofTruncate)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
+                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
                 else
                 {
-                    storeWrapper.appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
+                    storeWrapper.appendOnlyFile?.TruncateUntil(truncateUntil);
                     if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Commit();
                 }
             }
@@ -194,7 +201,13 @@ namespace Garnet.cluster
         {
             Debug.Assert(serverOptions.EnableCluster);
             if (serverOptions.EnableAOF && clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
-                CheckpointCoveredAofAddress = replicationManager.ReplicationOffset;
+            {
+                // When the replica takes a checkpoint on encountering the checkpoint end marker, it needs to truncate the AOF only
+                // until the checkpoint start marker. Otherwise, we will be left with an AOF that starts at the checkpoint end marker.
+                // ReplicationCheckpointStartOffset is set by { ReplicaReplayTask.Consume -> AofProcessor.ProcessAofRecordInternal } when
+                // it encounters the checkpoint start marker.
+                CheckpointCoveredAofAddress = replicationManager.ReplicationCheckpointStartOffset;
+            }
             else
                 CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.TailAddress;
 
@@ -246,6 +259,8 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString()));
                     replicationInfo.Add(new("replication_offset_lag", replicationOffsetLag.ToString()));
                     replicationInfo.Add(new("replication_offset_max_lag", storeWrapper.serverOptions.ReplicationOffsetMaxLag.ToString()));
+                    replicationInfo.Add(new("recover_status", replicationManager.recoverStatus.ToString()));
+                    replicationInfo.Add(new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus()));
                 }
                 else
                 {

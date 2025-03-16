@@ -958,9 +958,9 @@ namespace Tsavorite.test.recovery
                 this.expectedCount = expectedCount;
             }
 
-            public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
+            public bool OnStart(Guid checkpointToken, long currentVersion, long nextVersion)
             {
-                store2.SetVersion(targetVersion);
+                store2.SetVersion(nextVersion);
                 session2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
                 bc2 = session2.BasicContext;
                 return true;

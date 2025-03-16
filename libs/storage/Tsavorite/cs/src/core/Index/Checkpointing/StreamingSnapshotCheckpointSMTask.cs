@@ -17,12 +17,10 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        readonly long targetVersion;
-
-        public StreamingSnapshotCheckpointSMTask(long targetVersion, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public StreamingSnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
-            this.targetVersion = targetVersion;
+            isStreaming = true;
         }
 
         /// <inheritdoc />
@@ -31,15 +29,22 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._lastSnapshotCheckpoint.Dispose();
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
-                    store._hybridLogCheckpoint.info.version = next.Version;
-                    store._hybridLogCheckpoint.info.nextVersion = targetVersion == -1 ? next.Version + 1 : targetVersion;
+                    store._hybridLogCheckpoint.info.nextVersion = next.Version + 1;
                     store.StreamingSnapshotScanPhase1();
                     break;
 
+                case Phase.IN_PROGRESS:
+                    if (store._hybridLogCheckpoint.info.nextVersion != next.Version)
+                        throw new TsavoriteException($"StreamingSnapshotCheckpointSMTask: IN_PROGRESS phase with incorrect version {next.Version}, expected {store._hybridLogCheckpoint.info.nextVersion}");
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                    break;
+
                 case Phase.WAIT_FLUSH:
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     var finalLogicalAddress = store.hlogBase.GetTailAddress();
                     store.StreamingSnapshotScanPhase2(finalLogicalAddress);
                     break;

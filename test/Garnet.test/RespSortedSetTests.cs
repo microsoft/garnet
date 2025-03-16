@@ -717,18 +717,15 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommands("ZMSCORE zmscore", "PING");
             var expectedResponse = $"{FormatWrongNumOfArgsError("ZMSCORE")}+PONG\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("ZMSCORE nokey a b c", "PING", 4, 1);
             expectedResponse = "*3\r\n$-1\r\n$-1\r\n$-1\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("ZMSCORE zmscore a z b", "PING", 4, 1);
             expectedResponse = "*3\r\n$1\r\n0\r\n$-1\r\n$1\r\n1\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3156,18 +3153,15 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("ZADD board 340 Dave 400 Kendra 560 Tom 650 Barbara 690 Jennifer 690 Peter", bytesPerSend);
             var expectedResponse = ":6\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("ZCOUNT board 500 700", "PING");
             expectedResponse = ":4\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCOUNT board 500 700", bytesPerSend);
             expectedResponse = ":4\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3184,63 +3178,51 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1", bytesSent, 4);
             var expectedResponse = "*3\r\n$3\r\none\r\n$3\r\ntwo\r\n$5\r\nthree\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get a range by index with scores
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1 WITHSCORES", bytesSent, 7);
             expectedResponse = "*6\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board 2 3", 2);
             expectedResponse = "*1\r\n$5\r\nthree\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board -2 -1", 3);
             expectedResponse = "*2\r\n$3\r\ntwo\r\n$5\r\nthree\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board -2 -1 WITHSCORES", 5);
             expectedResponse = "*4\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board -50 -1 WITHSCORES", 7);
             expectedResponse = "*6\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board -50 -10 WITHSCORES", 1);
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board 2 1 WITHSCORES", 1);
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board -1 -2 WITHSCORES", 1);
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board 50 60 WITHSCORES", 1);
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board (1 +inf BYSCORE LIMIT 1 1", 2);
             expectedResponse = "*1\r\n$5\r\nthree\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANGE board (1 +inf BYSCORE LIMIT 1 1", bytesSent, 2);
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         // ZRANGEBSTORE
@@ -3252,49 +3234,50 @@ namespace Garnet.test
         public void CheckSortedSetRangeStoreLC(string key, string destinationKey, string[] elements, double[] scores, string[] expectedElements, double[] expectedScores, int start = 0, int stop = -1)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
+            byte[] response;
+            string expectedResponse;
 
             // Setup initial sorted set if elements exist
             if (elements.Length > 0)
             {
                 var addCommand = $"ZADD {key} " + string.Join(" ", elements.Zip(scores, (e, s) => $"{s} {e}"));
-                var response = lightClientRequest.SendCommand(addCommand);
-                var expectedResponse = $":{elements.Length}\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                response = lightClientRequest.SendCommand(addCommand);
+                expectedResponse = $":{elements.Length}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
 
             // Execute ZRANGESTORE
             var rangeStoreCommand = $"ZRANGESTORE {destinationKey} {key} {start} {stop}";
-            var response2 = lightClientRequest.SendCommand(rangeStoreCommand);
-            var expectedResponse2 = $":{expectedElements.Length}\r\n";
-            var actualValue2 = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse2.Length);
-            ClassicAssert.AreEqual(expectedResponse2, actualValue2);
+            response = lightClientRequest.SendCommand(rangeStoreCommand);
+            expectedResponse = $":{expectedElements.Length}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify stored result using ZRANGE
             if (expectedElements.Length > 0)
             {
                 var verifyCommand = $"ZRANGE {destinationKey} 0 -1 WITHSCORES";
-                var response3 = lightClientRequest.SendCommand(verifyCommand, expectedElements.Length * 2 + 1);
-                var expectedItems = new List<string>();
-                expectedItems.Add($"*{expectedElements.Length * 2}");
-                for (int i = 0; i < expectedElements.Length; i++)
+                response = lightClientRequest.SendCommand(verifyCommand, expectedElements.Length * 2 + 1);
+                var expectedItems = new List<string>
+                {
+                    $"*{expectedElements.Length * 2}"
+                };
+
+                for (var i = 0; i < expectedElements.Length; i++)
                 {
                     expectedItems.Add($"${expectedElements[i].Length}");
                     expectedItems.Add(expectedElements[i]);
                     expectedItems.Add($"${expectedScores[i].ToString().Length}");
                     expectedItems.Add(expectedScores[i].ToString());
                 }
-                var expectedResponse3 = string.Join("\r\n", expectedItems) + "\r\n";
-                var actualValue3 = Encoding.ASCII.GetString(response3).Substring(0, expectedResponse3.Length);
-                ClassicAssert.AreEqual(expectedResponse3, actualValue3);
+                expectedResponse = string.Join("\r\n", expectedItems) + "\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
             else
             {
                 var verifyCommand = $"ZRANGE {destinationKey} 0 -1";
-                var response3 = lightClientRequest.SendCommand(verifyCommand);
-                var expectedResponse3 = "*0\r\n";
-                var actualValue3 = Encoding.ASCII.GetString(response3).Substring(0, expectedResponse3.Length);
-                ClassicAssert.AreEqual(expectedResponse3, actualValue3);
+                response = lightClientRequest.SendCommand(verifyCommand);
+                expectedResponse = "*0\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
         }
 
@@ -3313,14 +3296,12 @@ namespace Garnet.test
             // 1 < score <= 5
             response = lightClientRequest.SendCommandChunks("ZRANGEBYSCORE board (1 5", bytesSent, 3);
             var expectedResponse = "*2\r\n$3\r\ntwo\r\n$5\r\nthree\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // 1 < score <= 5
             response = lightClientRequest.SendCommands("ZRANGEBYSCORE board (1 5", "PING", 3, 1);
             expectedResponse = "*2\r\n$3\r\ntwo\r\n$5\r\nthree\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3338,20 +3319,17 @@ namespace Garnet.test
             // 5 < score <= 1
             response = lightClientRequest.SendCommandChunks("ZRANGE board 2 5 BYSCORE REV", bytesSent, 1);
             var expectedResponse = "*0\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // 1 < score <= 5
             response = lightClientRequest.SendCommandChunks("ZRANGE board 5 2 BYSCORE REV", bytesSent, 3);
             expectedResponse = "*2\r\n$5\r\nthree\r\n$3\r\ntwo\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // 1 < score <= 5
             response = lightClientRequest.SendCommands("ZRANGE board 5 2 BYSCORE REV", "PING", 3, 1);
             expectedResponse = "*2\r\n$5\r\nthree\r\n$3\r\ntwo\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3386,7 +3364,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, response);
         }
 
-
         [Test]
         public void CanDoZRangeByLex()
         {
@@ -3403,26 +3380,22 @@ namespace Garnet.test
             // get a range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX", 3);
             var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [aaa (g BYLEX", 6);
             expectedResponse = "*5\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$1\r\nf\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board - [c BYLEX", 4);
             expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZRANGEBYLEX Synonym
             response = lightClientRequest.SendCommand("ZRANGEBYLEX board - [c", 4);
             //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3441,32 +3414,27 @@ namespace Garnet.test
             // get a range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX REV", 1);
             var expectedResponse = "*0\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get a range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (d (a BYLEX REV", 3);
             expectedResponse = "*2\r\n$1\r\nc\r\n$1\r\nb\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [g (aaa BYLEX REV", 6);
             expectedResponse = "*5\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [c - BYLEX REV", 4);
             expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZREVRANGEBYLEX Synonym
             response = lightClientRequest.SendCommand("ZREVRANGEBYLEX board [c - REV", 4);
             //expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3476,21 +3444,17 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand("ZADD mycity 0 Delhi 0 London 0 Paris 0 Tokyo 0 NewYork 0 Seoul");
             response = lightClientRequest.SendCommand("ZRANGE mycity (London + BYLEX", 5);
             var expectedResponse = "*4\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n$5\r\nTokyo\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE mycity - + BYLEX LIMIT 2 3", 4);
             expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZRANGEBYLEX Synonym
             response = lightClientRequest.SendCommand("ZRANGEBYLEX mycity - + LIMIT 2 3", 4);
             //expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         [TestCase(10)]
@@ -3511,10 +3475,10 @@ namespace Garnet.test
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1 REV", bytesSent, 7);
 
             var expectedResponse = "*6\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board 0 -1 REV", 7);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3526,13 +3490,11 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("ZADD cities 100000 Delhi 850000 Mumbai 700000 Hyderabad 800000 Kolkata", bytesSent);
             var expectedResponse = ":4\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREVRANGE cities -2 -1 WITHSCORES", bytesSent, 5);
             expectedResponse = "*4\r\n$9\r\nHyderabad\r\n$6\r\n700000\r\n$5\r\nDelhi\r\n$6\r\n100000\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3548,14 +3510,12 @@ namespace Garnet.test
             // Basic ZUNION
             var response = lightClientRequest.SendCommandChunks("ZUNION 2 zset1 zset2", bytesSent, 7);
             var expectedResponse = "*6\r\n$3\r\nuno\r\n$3\r\ndue\r\n$3\r\ntre\r\n$7\r\nquattro\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZUNION with WITHSCORES
             response = lightClientRequest.SendCommandChunks("ZUNION 2 zset1 zset2 WITHSCORES", bytesSent, 13);
             expectedResponse = "*12\r\n$3\r\nuno\r\n$1\r\n2\r\n$3\r\ndue\r\n$1\r\n4\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$1\r\n8\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3571,14 +3531,12 @@ namespace Garnet.test
             // Basic ZUNIONSTORE
             var response = lightClientRequest.SendCommandChunks("ZUNIONSTORE destset 2 zset1 zset2", bytesSent);
             var expectedResponse = ":6\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify stored result
             response = lightClientRequest.SendCommandChunks("ZRANGE destset 0 -1 WITHSCORES", bytesSent, 13);
             expectedResponse = "*12\r\n$3\r\nuno\r\n$1\r\n2\r\n$3\r\ndue\r\n$1\r\n4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$1\r\n8\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3590,8 +3548,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 1 one 2 two 3 three 4 four 5 five");
 
             var response = lightClientRequest.SendCommandChunks($"ZMPOP 1 board {direction} COUNT {count}", bytesSent);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3604,8 +3561,7 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand($"ZMPOP 1 board MIN {invalidArg}");
             var expectedResponse = "-ERR syntax error\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3617,8 +3573,7 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand("ZMPOP 2 board1 board2 MIN");
             var expectedResponse = "*2\r\n$6\r\nboard1\r\n*1\r\n*2\r\n$3\r\none\r\n$1\r\n1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
 
@@ -3632,8 +3587,7 @@ namespace Garnet.test
             // Test WEIGHTS and AGGREGATE together
             var response = lightClientRequest.SendCommand("ZUNION 2 zset1 zset2 WEIGHTS 2 3 AGGREGATE MAX WITHSCORES");
             var expectedResponse = "*8\r\n$3\r\nuno\r\n$2\r\n12\r\n$3\r\ndue\r\n$2\r\n15\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$2\r\n18\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         #endregion
@@ -3661,7 +3615,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, response);
         }
 
-
         [Test]
         [TestCase(10)]
         [TestCase(30)]
@@ -3671,37 +3624,30 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("ZCOUNT nokey 12 232 4343 5454", "PING");
             var expectedResponse = $"{FormatWrongNumOfArgsError("ZCOUNT")}+PONG\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 12 232 4343 5454", bytesSent);
             expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // no arguments
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
             expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // not found key
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
             expectedResponse = FormatWrongNumOfArgsError("ZCOUNT");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 1 2", bytesSent);
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("ZCOUNT nokey 1 2", "PING");
             expectedResponse = ":0\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         [TestCase(10)]
@@ -3712,13 +3658,11 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("ZINCRBY newboard 200 Tom", bytesSent);
             var expectedResponse = "$3\r\n200\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD newboard", bytesSent);
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3742,7 +3686,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(leaderBoard.Length, card);
         }
 
-
         [Test]
         [TestCase(10)]
         [TestCase(50)]
@@ -3752,17 +3695,14 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("ZADD board 340 Dave 400 Kendra 560 Tom 650 Barbara 690 Jennifer 690 Peter", bytesSent);
             var expectedResponse = ":6\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //get the number of elements in the Sorted Set
             response = lightClientRequest.SendCommand("ZCARD board");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3779,30 +3719,24 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Tom", bytesSent);
             var expectedResponse = "$3\r\n570\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZINCRBY board -590 Tom");
             expectedResponse = "$3\r\n-20\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
             expectedResponse = FormatWrongNumOfArgsError("ZINCRBY");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //using key exists but non existing member
             response = lightClientRequest.SendCommandChunks("ZINCRBY board 10 Julia", bytesSent);
             expectedResponse = "$2\r\n10\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
             expectedResponse = ":4\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3811,8 +3745,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("ZINCRBY nokey", "PING");
             var expectedResponse = $"{FormatWrongNumOfArgsError("ZINCRBY")}+PONG\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3828,8 +3761,7 @@ namespace Garnet.test
             //do zincrby
             var response = lightClientRequest.SendCommandChunks("ZINCRBY myboard 1 field1", bytesSent);
             var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3847,20 +3779,16 @@ namespace Garnet.test
             // get a range by lex order
             response = lightClientRequest.SendCommand("ZREVRANGE board 0 -1", 7);
             var expectedResponse = "*6\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // including scores
             response = lightClientRequest.SendCommand("ZREVRANGE board 0 -1 WITHSCORES", 13);
             expectedResponse = "*12\r\n$1\r\nf\r\n$2\r\n60\r\n$1\r\ne\r\n$2\r\n50\r\n$1\r\nd\r\n$2\r\n40\r\n$1\r\nc\r\n$2\r\n30\r\n$1\r\nb\r\n$2\r\n20\r\n$1\r\na\r\n$2\r\n10\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZREVRANGE board 0 1", 3);
             expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3878,24 +3806,20 @@ namespace Garnet.test
             // get a reverse range by score order
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 0", 7);
             var expectedResponse = "*6\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // including scores
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 60 10 WITHSCORES", 13);
             expectedResponse = "*12\r\n$1\r\nf\r\n$2\r\n60\r\n$1\r\ne\r\n$2\r\n50\r\n$1\r\nd\r\n$2\r\n40\r\n$1\r\nc\r\n$2\r\n30\r\n$1\r\nb\r\n$2\r\n20\r\n$1\r\na\r\n$2\r\n10\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board +inf 45", 3);
             expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 45 LIMIT 0 1", 2);
             expectedResponse = "*1\r\n$1\r\nf\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3912,23 +3836,19 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZRANK board Jon", bytesSent);
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANK board Tom INVALIDOPTION", bytesSent);
             expectedResponse = "-ERR syntax error\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANK board Tom", bytesSent);
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANK board Tom withscore", bytesSent);
             expectedResponse = "*2\r\n:2\r\n$3\r\n560\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3945,33 +3865,27 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Jon", bytesSent);
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Tom INVALIDOPTION", bytesSent);
             expectedResponse = "-ERR syntax error\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Tom", bytesSent);
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Kendra", bytesSent);
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Dave", bytesSent);
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Dave WITHSCORE", bytesSent);
             expectedResponse = "*2\r\n:2\r\n$3\r\n340\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3986,18 +3900,15 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD myzset 0 foo 0 zap 0 zip 0 ALPHA 0 alpha");
             response = lightClientRequest.SendCommand("ZRANGE myzset 0 -1", 11);
             var expectedResponse = "*10\r\n$5\r\nALPHA\r\n$4\r\naaaa\r\n$5\r\nalpha\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$3\r\nfoo\r\n$3\r\nzap\r\n$3\r\nzip\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYLEX myzset [alpha [omega", bytesSent);
             expectedResponse = ":6\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANGE myzset 0 -1", bytesSent, 5);
             expectedResponse = "*4\r\n$5\r\nALPHA\r\n$4\r\naaaa\r\n$3\r\nzap\r\n$3\r\nzip\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4016,40 +3927,32 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD myzset 0 foo 0 zap 0 zip 0 ALPHA 0 alpha");
             response = lightClientRequest.SendCommand("ZRANGE myzset 0 -1", 11);
             var expectedResponse = "*10\r\n$5\r\nALPHA\r\n$4\r\naaaa\r\n$5\r\nalpha\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$3\r\nfoo\r\n$3\r\nzap\r\n$3\r\nzip\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYLEX myzset [alpha [omega", bytesSent);
             expectedResponse = ":6\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYLEX myzset =a .", bytesSent);
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANGE myzset 0 -1", bytesSent, 5);
             expectedResponse = "*4\r\n$5\r\nALPHA\r\n$4\r\naaaa\r\n$3\r\nzap\r\n$3\r\nzip\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board a b", bytesSent);
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board 0 1", bytesSent);
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("ZREMRANGEBYRANK board 0 1", "PING");
             expectedResponse = ":1\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         [TestCase(10)]
@@ -4065,18 +3968,15 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYSCORE board -inf (500", bytesSent);
             var expectedResponse = ":2\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZCARD board", bytesSent);
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYSCORE board a b", bytesSent);
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4092,10 +3992,8 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1 LIMIT 1 1", bytesSent);
             var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_LIMIT_NOT_SUPPORTED)}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         [TestCase(10)]
@@ -4108,18 +4006,15 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZLEXCOUNT board - +", bytesSent);
             var expectedResponse = ":7\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZLEXCOUNT board [b [f", bytesSent);
             expectedResponse = ":5\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZLEXCOUNT board *d 8", bytesSent);
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4133,13 +4028,11 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommandChunks("ZPOPMIN board", bytesSent);
             var expectedResponse = "*2\r\n$3\r\none\r\n$1\r\n1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZPOPMIN board 3", bytesSent, 5);
             expectedResponse = "*4\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4163,26 +4056,21 @@ namespace Garnet.test
             // ZRANDMEMBER count
             var response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 5", bytesSent, 6);
             var expectedResponse = "*5\r\n"; // 5 values
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZRANDMEMBER [count [WITHSCORES]]
             response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 3 WITHSCORES", bytesSent, 7);
             expectedResponse = "*6\r\n"; // 3 keyvalue pairs
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 1 WITHSCORES", bytesSent, 3);
             expectedResponse = "*2\r\n"; // 2 elements
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 0 WITHSCORES", bytesSent);
             expectedResponse = "*0\r\n"; // Empty List
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public async Task CanUseZRandMemberWithSE()
@@ -4279,15 +4167,13 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD seconddadi 1 uno 2 due 3 tre 4 quattro");
 
             //zdiff withscores
-            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi WITHSCORES", bytesSent, 5);
+            var response = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi WITHSCORES", bytesSent, 5);
             var expectedResponse = "*4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
-            var actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi", bytesSent, 3);
+            response = lightClientRequest.SendCommandChunks("ZDIFF 2 dadi seconddadi", bytesSent, 3);
             expectedResponse = "*2\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
-            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4299,17 +4185,16 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
 
             //zdiff withscores
-            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
+            var response = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
             var expectedResponse = ":0\r\n";
-            var actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             lightClientRequest.SendCommand("ZADD dadi 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
             lightClientRequest.SendCommand("ZADD seconddadi 1 uno 2 due 3 tre 4 quattro");
 
-            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
-            expectedResponse = "1\r\n";
-            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
+            response = lightClientRequest.SendCommandChunks("ZDIFFSTORE desKey 2 dadi seconddadi", bytesSent);
+            expectedResponse = ":2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4323,16 +4208,14 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD zset2 1 uno 2 due 3 tre 4 quattro");
             lightClientRequest.SendCommand("ZADD zset3 300 Jean 500 Leia 350 Grant 700 Rue");
 
-            var zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3", bytesSent, 3);
+            var response = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3", bytesSent, 3);
             var expectedResponse = "*2\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
-            var actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Zdiff withscores
-            zdiffResult = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3 WITHSCORES", bytesSent, 5);
+            response = lightClientRequest.SendCommandChunks("ZDIFF 3 zset1 zset2 zset3 WITHSCORES", bytesSent, 5);
             expectedResponse = "*4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
-            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4340,15 +4223,13 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
-            var zdiffResult = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1");
+            var response = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1");
             var expectedResponse = "*0\r\n";
-            var actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            zdiffResult = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1notfound");
+            response = lightClientRequest.SendCommand("ZDIFF 2 zsetnotfound zset1notfound");
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(zdiffResult).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4356,73 +4237,60 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
 
-            var result = lightClientRequest.SendCommand("ZCARD nokey");
+            var response = lightClientRequest.SendCommand("ZCARD nokey");
             var expectedResponse = ":0\r\n";
-            var actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZSCORE nokey a");
+            response = lightClientRequest.SendCommand("ZSCORE nokey a");
             expectedResponse = "$-1\r\n"; // NULL
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZRANK noboard a");
+            response = lightClientRequest.SendCommand("ZRANK noboard a");
             expectedResponse = "$-1\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZRANGE unekey 0 1");
+            response = lightClientRequest.SendCommand("ZRANGE unekey 0 1");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZRANGEBYSCORE nonekey 0 1");
+            response = lightClientRequest.SendCommand("ZRANGEBYSCORE nonekey 0 1");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREVRANGE nonekey 0 1");
+            response = lightClientRequest.SendCommand("ZREVRANGE nonekey 0 1");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREVRANK nonekey 0");
+            response = lightClientRequest.SendCommand("ZREVRANK nonekey 0");
             expectedResponse = "$-1\r\n"; // NULL
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREVRANGE nonekey 0 1");
+            response = lightClientRequest.SendCommand("ZREVRANGE nonekey 0 1");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZLEXCOUNT nonekey [a [f");
+            response = lightClientRequest.SendCommand("ZLEXCOUNT nonekey [a [f");
             expectedResponse = ":0\r\n"; //integer reply
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //without the additional count argument, the command returns nil when key does not exist.
-            result = lightClientRequest.SendCommand("ZRANDMEMBER nonekey");
+            response = lightClientRequest.SendCommand("ZRANDMEMBER nonekey");
             expectedResponse = "$-1\r\n"; //nil when key does not exist.
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //when the additional count argument is passed, the command returns an array of elements,
             //or an empty array when key does not exist.
-            result = lightClientRequest.SendCommand("ZRANDMEMBER nonekey 1");
+            response = lightClientRequest.SendCommand("ZRANDMEMBER nonekey 1");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZDIFF 2 i i");
+            response = lightClientRequest.SendCommand("ZDIFF 2 i i");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZDIFF 1 nonekey");
+            response = lightClientRequest.SendCommand("ZDIFF 1 nonekey");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4430,59 +4298,48 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
 
-            var result = lightClientRequest.SendCommand("ZPOPMAX nokey");
+            var response = lightClientRequest.SendCommand("ZPOPMAX nokey");
             var expectedResponse = "*0\r\n";
-            var actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREM nokey a");
+            response = lightClientRequest.SendCommand("ZREM nokey a");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //for this case the boundaries arguments are wrong, in redis this validation occurs
             //before the validation of a non existing key, but we are not executing the backend until
             //the key is validated first.
-            result = lightClientRequest.SendCommand("ZREMRANGEBYLEX nokey 0 1");
+            response = lightClientRequest.SendCommand("ZREMRANGEBYLEX nokey 0 1");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //testing out only a nonexisting key
-            result = lightClientRequest.SendCommand("ZREMRANGEBYLEX nokey [a [b");
+            response = lightClientRequest.SendCommand("ZREMRANGEBYLEX nokey [a [b");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREMRANGEBYLEX iii [a [b");
+            response = lightClientRequest.SendCommand("ZREMRANGEBYLEX iii [a [b");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREM nokey a");
+            response = lightClientRequest.SendCommand("ZREM nokey a");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREMRANGEBYRANK nokey 0 1");
+            response = lightClientRequest.SendCommand("ZREMRANGEBYRANK nokey 0 1");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZREMRANGEBYSCORE nokey 0 1");
+            response = lightClientRequest.SendCommand("ZREMRANGEBYSCORE nokey 0 1");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
 
-            result = lightClientRequest.SendCommand("ZREMRANGEBYLEX zset1 0 1");
+            response = lightClientRequest.SendCommand("ZREMRANGEBYLEX zset1 0 1");
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n"; ;
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         /// <summary>
         /// This test executes an RMW followed by a Read method which none
@@ -4494,22 +4351,19 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
 
             // Executing an RMW method first
-            var result = lightClientRequest.SendCommand("ZPOPMAX nokey");
+            var response = lightClientRequest.SendCommand("ZPOPMAX nokey");
             var expectedResponse = "*0\r\n";
-            var actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // When the additional count argument is passed, the command returns an array of elements,
             // Or an empty array when key does not exist.
-            result = lightClientRequest.SendCommand("ZRANDMEMBER nokey 1");
+            response = lightClientRequest.SendCommand("ZRANDMEMBER nokey 1");
             expectedResponse = "*0\r\n"; //empty array
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            result = lightClientRequest.SendCommand("ZCARD nokey");
+            response = lightClientRequest.SendCommand("ZCARD nokey");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
 
@@ -4519,29 +4373,24 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("ZADD board 340 Dave 400 Kendra 560 Tom 650 Barbara 690 Jennifer 690 Peter", 100);
             var expectedResponse = ":6\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZPOPMAX board", 3);
             expectedResponse = "*2\r\n$5\r\nPeter\r\n$3\r\n690\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZPOPMAX board 2", 5);
             expectedResponse = "*4\r\n$8\r\nJennifer\r\n$3\r\n690\r\n$7\r\nBarbara\r\n$3\r\n650\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("DEL board", "PING");
             expectedResponse = ":1\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Check the key is null or empty
             response = lightClientRequest.SendCommand("ZPOPMAX board");
             expectedResponse = "*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -4573,71 +4422,70 @@ namespace Garnet.test
         public async Task CanFailWhenUseMultiWatchTest()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            string key = "MySSKey";
-            byte[] res;
+            var key = "MySSKey";
 
-            res = lightClientRequest.SendCommand($"ZADD {key} 1 a 2 b 3 c");
-            string expectedResponse = ":3\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var response = lightClientRequest.SendCommand($"ZADD {key} 1 a 2 b 3 c");
+            var expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"WATCH {key}");
+            response = lightClientRequest.SendCommand($"WATCH {key}");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
+            response = lightClientRequest.SendCommand("MULTI");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"ZREM {key} a");
+            response = lightClientRequest.SendCommand($"ZREM {key} a");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             await Task.Run(() => UpdateSortedSetKey(key));
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This sequence should work
-            res = lightClientRequest.SendCommand("MULTI");
+            response = lightClientRequest.SendCommand("MULTI");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"ZADD {key} 7 g");
+            response = lightClientRequest.SendCommand($"ZADD {key} 7 g");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This should commit
-            res = lightClientRequest.SendCommand("EXEC", 2);
+            response = lightClientRequest.SendCommand("EXEC", 2);
             expectedResponse = "*1\r\n:1\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
         public void CanUseMultiTest()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
+            byte[] response;
 
-            res = lightClientRequest.SendCommand("ZADD MySSKey 1 a 2 b 3 c");
-            string expectedResponse = ":3\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("ZADD MySSKey 1 a 2 b 3 c");
+            var expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
+            response = lightClientRequest.SendCommand("MULTI");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("ZREM MySSKey a");
+            response = lightClientRequest.SendCommand("ZREM MySSKey a");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("ZADD MySSKey 7 g");
+            response = lightClientRequest.SendCommand("ZADD MySSKey 7 g");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("EXEC", 3);
+            response = lightClientRequest.SendCommand("EXEC", 3);
             expectedResponse = "*2\r\n:1\r\n:1\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4646,21 +4494,17 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ZSCORE foo bar foo bar foo");
             var expectedResponse = FormatWrongNumOfArgsError("ZSCORE");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Add a large number
             response = lightClientRequest.SendCommand("ZADD zset1 -9007199254740992 uno");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZSCORE zset1 uno");
             expectedResponse = $"$17\r\n-9007199254740992\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public void CanDoZaddWithInvalidInput()
@@ -4669,18 +4513,15 @@ namespace Garnet.test
             var key = "zset1";
             var response = lightClientRequest.SendCommand($"ZADD {key} 1 uno 2 due 3 tre 4 quattro 5 cinque foo bar");
             var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT)}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             key = "zset2";
             response = lightClientRequest.SendCommand($"ZADD {key} 1 uno 2 due 3 tre foo bar 4 quattro 5 cinque");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             key = "zset3";
             response = lightClientRequest.SendCommand($"ZADD {key} foo bar 1 uno 2 due 3 tre 4 quattro 5 cinque");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4703,45 +4544,39 @@ namespace Garnet.test
             // ZRANGE
             var response = lightClientRequest.SendCommand($"ZRANGE {keys[0]} 0 -1");
             var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZREVRANGE
             response = lightClientRequest.SendCommand($"ZREVRANGE {keys[0]} 0 -1");
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZREMRANGEBYLEX
             response = lightClientRequest.SendCommand($"ZREMRANGEBYLEX {keys[0]} {values[1][0]} {values[1][1]}");
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZREVRANGEBYSCORE
             response = lightClientRequest.SendCommand($"ZREVRANGEBYSCORE {keys[0]} 0 -1");
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         #endregion
 
         private static void SendCommandWithoutKey(string command, LightClientRequest lightClientRequest)
         {
-            var result = lightClientRequest.SendCommand(command);
+            var response = lightClientRequest.SendCommand(command);
             var expectedResponse = FormatWrongNumOfArgsError(command);
-            var actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         private static void UpdateSortedSetKey(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res = lightClientRequest.SendCommand($"ZADD {keyName} 4 d");
-            string expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var response = lightClientRequest.SendCommand($"ZADD {keyName} 4 d");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
@@ -4765,8 +4600,7 @@ namespace Garnet.test
                 if (numKeys == 2)
                 {
                     var expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
-                    var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                    ClassicAssert.AreEqual(expectedResponse, actualValue);
+                    TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
                 }
             }
             else
@@ -4774,14 +4608,12 @@ namespace Garnet.test
                 if (numKeys == 2)
                 {
                     var expectedResponse = "*2\r\n$3\r\none\r\n$3\r\ntwo\r\n";
-                    var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                    ClassicAssert.AreEqual(expectedResponse, actualValue);
+                    TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
                 }
                 else if (numKeys == 3)
                 {
                     var expectedResponse = "*1\r\n$3\r\none\r\n";
-                    var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                    ClassicAssert.AreEqual(expectedResponse, actualValue);
+                    TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
                 }
             }
         }
@@ -4801,8 +4633,7 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand(command);
             var expectedResponse = $":{expectedCount}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -4820,8 +4651,7 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand(command);
             var expectedResponse = $":{expectedCount}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify stored results
             response = lightClientRequest.SendCommand("ZRANGE dest 0 -1 WITHSCORES");
@@ -4841,8 +4671,7 @@ namespace Garnet.test
             {
                 expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
             }
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }
 

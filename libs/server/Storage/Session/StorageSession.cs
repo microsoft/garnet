@@ -45,6 +45,7 @@ namespace Garnet.server
         public readonly FunctionsState functionsState;
 
         public TransactionManager txnManager;
+        public StateMachineDriver stateMachineDriver;
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
@@ -64,7 +65,7 @@ namespace Garnet.server
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-
+            this.stateMachineDriver = storeWrapper.serverOptions.StateMachineDriver;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState();

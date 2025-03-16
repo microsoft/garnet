@@ -36,6 +36,10 @@ namespace Tsavorite.core
         ///     <term>The record corresponding to 'key' is on disk and the operation.</term>
         ///     </item>
         ///     <item>
+        ///     <term>CPR_SHIFT_DETECTED</term>
+        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
+        ///     </item>
+        ///     <item>
         ///     <term>RETRY_LATER</term>
         ///     <term>Refresh the epoch and retry.</term>
         ///     </item>
@@ -106,6 +110,10 @@ namespace Tsavorite.core
                 pendingContext.InitialEntryAddress = stackCtx.hei.Address;
                 pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+
+                // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+                if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                    return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
@@ -222,6 +230,10 @@ namespace Tsavorite.core
         ///     <item>
         ///     <term>RECORD_ON_DISK</term>
         ///     <term>The record corresponding to 'key' is on disk and the operation.</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>CPR_SHIFT_DETECTED</term>
+        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
         ///     </item>
         ///     <item>
         ///     <term>RETRY_LATER</term>
