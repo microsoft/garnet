@@ -408,8 +408,9 @@ namespace Garnet.server
             {
                 // expirationTimes and expirationQueue will be out of sync when user is updating the expire time of key which already has some TTL.
                 // PriorityQueue Doesn't have update option, so we will just enqueue the new expiration and already treat expirationTimes as the source of truth
-                if (expirationTimes.Remove(key, out var actualExpiration) && actualExpiration == expiration)
+                if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
                 {
+                    expirationTimes.Remove(key);
                     expirationQueue.Dequeue();
                     UpdateExpirationSize(key, false);
                     if (hash.Remove(key, out var value))
@@ -610,7 +611,7 @@ namespace Garnet.server
                 expirationTimes.Remove(keyArray))
 #endif
             {
-                Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                 CleanupExpirationStructures();
                 return ExpireResult.ExpireUpdated;
             }
