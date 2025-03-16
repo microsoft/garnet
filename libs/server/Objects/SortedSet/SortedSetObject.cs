@@ -155,6 +155,11 @@ namespace Garnet.server
         /// Expiration time as a timestamp.
         /// </summary>
         InTimestamp = 1 << 1,
+
+        /// <summary>
+        /// Avoid skipping arguments when parsing parseState. This will be used when called programmatically.
+        /// </summary>
+        NoSkip = 1 << 2,
     }
 
     /// <summary>

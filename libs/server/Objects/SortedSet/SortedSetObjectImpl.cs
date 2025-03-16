@@ -1142,12 +1142,15 @@ namespace Garnet.server
                     expiration = ConvertUtils.UnixTimestampInSecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiration);
                 }
 
-                if (expireOption != ExpireOption.None)
+                if (!inputFlags.HasFlag(SortedSetExpireInputFlags.NoSkip))
                 {
-                    idx++;
-                }
+                    if (expireOption != ExpireOption.None)
+                    {
+                        idx++;
+                    }
 
-                idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the valudation is done in the caller
+                    idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the valudation is done in the caller
+                }
 
                 var numFields = input.parseState.Count - idx;
                 while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))

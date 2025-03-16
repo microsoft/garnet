@@ -119,7 +119,7 @@ namespace Garnet
                 return false;
 
             status = api.SortedSetTimeToLive(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var expireIn);
-            if (status != GarnetStatus.OK || expireIn.Length != 2 || expireIn[0].TotalMicroseconds == 0 || expireIn[1].TotalMicroseconds != 0)
+            if (status != GarnetStatus.OK || expireIn.Length != 2 || expireIn[0].TotalMilliseconds <= 0 || expireIn[0].TotalMilliseconds > TimeSpan.FromMinutes(10).TotalMilliseconds || expireIn[1].TotalMilliseconds != 0)
                 return false;
 
             status = api.SortedSetPersist(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var persistResults);

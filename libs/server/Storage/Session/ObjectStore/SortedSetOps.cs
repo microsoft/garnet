@@ -1511,18 +1511,19 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             results = default;
-            var expireAtUtc = expireAt.UtcTicks;
-            var expiryLength = NumUtils.CountDigits(expireAtUtc);
-            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
-            var expirySpan = expirySlice.Span;
-            NumUtils.WriteInt64(expireAtUtc, expirySpan);
+            var expireMillisecs = expireAt.ToUnixTimeMilliseconds();
+            var expiryLength = NumUtils.CountDigits(expireMillisecs);
+            var expiryArg = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySpan = expiryArg.Span;
+            NumUtils.WriteInt64(expireMillisecs, expirySpan);
 
             parseState.Initialize(1 + members.Length);
-            parseState.SetArgument(0, expirySlice);
+            parseState.SetArgument(0, expiryArg);
             parseState.SetArguments(1, members);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var innerInput = new ObjectInput(header, ref parseState, startIdx: 0, arg1: (int)expireOption);
+            var inputFlag = SortedSetExpireInputFlags.InMilliseconds | SortedSetExpireInputFlags.InTimestamp | SortedSetExpireInputFlags.NoSkip;
+            var innerInput = new ObjectInput(header, ref parseState, startIdx: 0, arg1: (int)expireOption, arg2: (int)inputFlag);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref outputFooter);
@@ -1579,7 +1580,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                expireIn = ProcessRespIntegerArrayOutput(outputFooter, out _).Select(x => TimeSpan.FromMilliseconds(x < 0 ? 0 : x)).ToArray();
+                expireIn = ProcessRespInt64ArrayOutput(outputFooter, out _).Select(x => TimeSpan.FromMilliseconds(x < 0 ? 0 : x)).ToArray();
             }
 
             return status;
