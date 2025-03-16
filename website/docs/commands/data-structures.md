@@ -1621,34 +1621,45 @@ GEORADIUS_RO key longitude latitude radius <M | KM | FT | MI>
   [STORE key | STOREDIST key]
 ```
 
-Return the members of a sorted set populated with geospatial information using GEOADD, which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
+Return the members of a sorted set populated with geospatial information using [GEOADD](#geoadd), which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
 
 The common use case for this command is to retrieve geospatial items near a specified point not farther than a given amount of meters (or other units). This allows, for example, to suggest mobile users of an application nearby places.
 
 The radius is specified in one of the following units:
 
-    m for meters.
-    km for kilometers.
-    mi for miles.
-    ft for feet.
+* m for meters.
+* km for kilometers.
+* mi for miles.
+* ft for feet.
 
 The command optionally returns additional information using the following options:
 
-    WITHDIST: Also return the distance of the returned items from the specified center. The distance is returned in the same unit as the unit specified as the radius argument of the command.
-    WITHCOORD: Also return the longitude,latitude coordinates of the matching items.
-    WITHHASH: Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
+* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit as specified for the radius or height and width arguments.
+* **WITHCOORD:** Also return the longitude and latitude of the matching items.
+* **WITHHASH:** Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
 
 The command default is to return unsorted items. Two different sorting methods can be invoked using the following two options:
 
-    ASC: Sort returned items from the nearest to the farthest, relative to the center.
-    DESC: Sort returned items from the farthest to the nearest, relative to the center.
+* **ASC:** Sort returned items from the nearest to the farthest, relative to the center point.
+* **DESC:** Sort returned items from the farthest to the nearest, relative to the center point.
 
-By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT option. 
+By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT option. When ANY is provided the command will return as soon as enough matches are found, so the results may not be the ones closest to the specified point, but on the other hand, the effort invested by the server is significantly lower. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
 
 By default the command returns the items to the client. It is possible to store the results with one of these options:
 
-    STORE: Store the items in a sorted set populated with their geospatial information.
-    STOREDIST: Store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius.
+* **STORE:** Store the items in a sorted set populated with their geospatial information.
+* **STOREDIST:** Store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius.
+
+**Reply**
+
+One of the following:
+
+* If STORE or STOREDIST option is specified, the number of elements in the resulting set (Integer).
+* If no WITH* option is specified, an Array reply of matched member names
+* If WITHCOORD, WITHDIST, or WITHHASH options are specified, the command returns an Array reply of arrays, where each sub-array represents a single item:
+   * The distance from the center as a floating point number, in the same unit specified in the radius.
+   * The Geohash integer.
+   * The coordinates as a two items x,y array (longitude,latitude).
 
 ---
 
@@ -1661,30 +1672,39 @@ GEORADIUS_RO key longitude latitude radius <M | KM | FT | MI>
   [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
 ```
 
-Return the members of a sorted set populated with geospatial information using GEOADD, which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
+Return the members of a sorted set populated with geospatial information using [GEOADD](#geoadd), which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
 
 The common use case for this command is to retrieve geospatial items near a specified point not farther than a given amount of meters (or other units). This allows, for example, to suggest mobile users of an application nearby places.
 
 The radius is specified in one of the following units:
 
-    m for meters.
-    km for kilometers.
-    mi for miles.
-    ft for feet.
+* m for meters.
+* km for kilometers.
+* mi for miles.
+* ft for feet.
 
 The command optionally returns additional information using the following options:
 
-    WITHDIST: Also return the distance of the returned items from the specified center. The distance is returned in the same unit as the unit specified as the radius argument of the command.
-    WITHCOORD: Also return the longitude,latitude coordinates of the matching items.
-    WITHHASH: Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
+* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit as specified for the radius or height and width arguments.
+* **WITHCOORD:** Also return the longitude and latitude of the matching items.
+* **WITHHASH:** Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
 
 The command default is to return unsorted items. Two different sorting methods can be invoked using the following two options:
 
-    ASC: Sort returned items from the nearest to the farthest, relative to the center.
-    DESC: Sort returned items from the farthest to the nearest, relative to the center.
+* **ASC:** Sort returned items from the nearest to the farthest, relative to the center point.
+* **DESC:** Sort returned items from the farthest to the nearest, relative to the center point.
 
 By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT option. When ANY is provided the command will return as soon as enough matches are found, so the results may not be the ones closest to the specified point, but on the other hand, the effort invested by the server is significantly lower. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
 
+**Reply**
+
+One of the following:
+
+* If no WITH* option is specified, an Array reply of matched member names
+* If WITHCOORD, WITHDIST, or WITHHASH options are specified, the command returns an Array reply of arrays, where each sub-array represents a single item:
+   * The distance from the center as a floating point number, in the same unit specified in the radius.
+   * The Geohash integer.
+   * The coordinates as a two items x,y array (longitude,latitude).
 ---
 
 ### GEORADIUSBYMEMBER
@@ -1723,7 +1743,10 @@ The position of the specified member is used as the center of the query.
 #### Syntax
 
 ```bash
-    GEOSEARCH key <FROMMEMBER member> <BYBOX width height <M|KM|FT|MI>> [ASC|DESC] [WITHCOORD WITHDIST WITHHASH]
+    GEOSEARCH key <FROMMEMBER member | FROMLONLAT longitude latitude>
+  <BYRADIUS radius <M | KM | FT | MI> | BYBOX width height <M | KM |
+  FT | MI>> [ASC | DESC] [COUNT count [ANY]] [WITHCOORD] [WITHDIST]
+  [WITHHASH]
 ```
 
 Return the members of a sorted set populated with geospatial information using [GEOADD](#geoadd), which are within the borders of the area specified by a given shape.
@@ -1731,9 +1754,11 @@ Return the members of a sorted set populated with geospatial information using [
 The query's center point is provided by one of these mandatory options:
 
 * **FROMMEMBER:** Use the position of the given existing *member* in the sorted set.
+* **FROMLONLAT:** Use the given *longitude* and *latitude* position.
 
 The query's shape is provided by this option:
 
+* **BYRADIUS:** Similar to [GEORADIUS](#georadius), search inside circular area according to given *radius*.
 * **BYBOX:** Search inside an axis-aligned rectangle, determined by *height* and *width*.
 
 The command optionally returns additional information using the following options:
@@ -1745,12 +1770,19 @@ The command optionally returns additional information using the following option
 Matching items are returned unsorted by default. To sort them, use one of the following two options:
 
 * **ASC:** Sort returned items from the nearest to the farthest, relative to the center point.
-
 * **DESC:** Sort returned items from the farthest to the nearest, relative to the center point.
+
+All matching items are returned by default. To limit the results to the first N matching items, use the COUNT *count* option. When the ANY option is used, the command returns as soon as enough matches are found. This means that the results returned may not be the ones closest to the specified point, but the effort invested by the server to generate them is significantly less. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
 
 **Reply**
 
-An Array reply of matched members, where each sub-array represents a single item, (longitude,latitude).
+One of the following:
+
+* If no WITH* option is specified, an Array reply of matched member names
+* If WITHCOORD, WITHDIST, or WITHHASH options are specified, the command returns an Array reply of arrays, where each sub-array represents a single item:
+   * The distance from the center as a floating point number, in the same unit specified in the radius.
+   * The Geohash integer.
+   * The coordinates as a two items x,y array (longitude,latitude).
 
 ---
 
@@ -1766,6 +1798,8 @@ GEOSEARCHSTORE destination source <FROMMEMBER member |
 ```
 
 This command is like [GEOSEARCH](#geosearch), but stores the result in destination key.
+
+When using the STOREDIST option, the command stores the items in a sorted set populated with their distance from the center of the circle or box, as a floating-point number, in the same unit specified for that shape.
 
 **Reply**
 
