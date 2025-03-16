@@ -136,6 +136,28 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Flags for specifying expiration input.
+    /// </summary>
+    [Flags]
+    internal enum SortedSetExpireInputFlags : byte
+    {
+        /// <summary>
+        /// Default input flags.
+        /// </summary>
+        Default = 0,
+
+        /// <summary>
+        /// Expiration time in milliseconds.
+        /// </summary>
+        InMilliseconds = 1,
+
+        /// <summary>
+        /// Expiration time as a timestamp.
+        /// </summary>
+        InTimestamp = 1 << 1,
+    }
+
+    /// <summary>
     /// Sorted Set
     /// </summary>
     public partial class SortedSetObject : GarnetObjectBase

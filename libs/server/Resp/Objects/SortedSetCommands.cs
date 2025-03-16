@@ -1719,9 +1719,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            long expireAt = 0;
-            var isMilliseconds = false;
-            if (!parseState.TryGetLong(1, out expireAt))
+            if (!parseState.TryGetLong(1, out var expireAt))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
@@ -1731,20 +1729,20 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
             }
 
+            var inputFlag = SortedSetExpireInputFlags.Default;
             switch (command)
             {
-                case RespCommand.ZEXPIRE:
-                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireAt;
-                    isMilliseconds = false;
-                    break;
                 case RespCommand.ZPEXPIRE:
-                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireAt;
-                    isMilliseconds = true;
+                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
+                    break;
+                case RespCommand.ZEXPIREAT:
+                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
                     break;
                 case RespCommand.ZPEXPIREAT:
-                    isMilliseconds = true;
+                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
+                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
                     break;
-                default: // RespCommand.ZEXPIREAT
+                default: // RespCommand.ZEXPIRE
                     break;
             }
 
@@ -1770,14 +1768,12 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
             }
 
-            var membersParseState = parseState.Slice(currIdx, numMembers);
-
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var input = new ObjectInput(header, ref membersParseState);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter);
+            var status = storageApi.SortedSetExpire(key, ref input, ref outputFooter);
 
             switch (status)
             {

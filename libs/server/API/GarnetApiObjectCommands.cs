@@ -170,8 +170,8 @@ namespace Garnet.server
             => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetExpire(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetExpire(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results)

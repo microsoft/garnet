@@ -556,12 +556,10 @@ namespace Garnet.server
         /// Sets an expiration time on a sorted set member.
         /// </summary>
         /// <param name="key">The key of the sorted set.</param>
-        /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
-        /// <param name="expireOption">The expiration option to apply.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="outputFooter">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus SortedSetExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Sets an expiration time on a sorted set member.

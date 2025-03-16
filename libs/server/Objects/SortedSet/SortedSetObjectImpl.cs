@@ -1118,12 +1118,42 @@ namespace Garnet.server
                 DeleteExpiredItems();
 
                 var expireOption = (ExpireOption)input.arg1;
-                var expiration = input.parseState.GetLong(0);
-                var numFields = input.parseState.Count - 1;
+                var inputFlags = (SortedSetExpireInputFlags)input.arg2;
+                var isInMilliseconds = inputFlags.HasFlag(SortedSetExpireInputFlags.InMilliseconds);
+                var isInTimestamp = inputFlags.HasFlag(SortedSetExpireInputFlags.InTimestamp);
+                var idx = 0;
+                var expiration = input.parseState.GetLong(idx++);
+
+                // Convert to UTC ticks
+                if (isInMilliseconds && isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
+                }
+                else if (isInMilliseconds && !isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiration);
+                }
+                else if (!isInMilliseconds && isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInSecondsToTicks(expiration);
+                }
+                else if (!isInMilliseconds && !isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInSecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiration);
+                }
+
+                if (expireOption != ExpireOption.None)
+                {
+                    idx++;
+                }
+
+                idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the valudation is done in the caller
+
+                var numFields = input.parseState.Count - idx;
                 while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                foreach (var item in input.parseState.Parameters.Slice(1))
+                foreach (var item in input.parseState.Parameters.Slice(idx))
                 {
                     var result = SetExpiration(item.ToArray(), expiration, expireOption);
                     while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
