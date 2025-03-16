@@ -4,7 +4,7 @@ using Garnet.server.KeyspaceNotifications;
 
 namespace Garnet.server
 {
-    internal sealed partial class RespServerSession : ServerSessionBase
+    internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         // TODO: use same parameter for key and keyevent; pass keyevent as ref; test performance; avoid concatSpans and remove concatenated Spans; check access modifiers
         internal void PublishKeyspaceNotification(KeyspaceNotificationType keyspaceNotificationType, ref ArgSlice key, ReadOnlySpan<byte> keyevent) 

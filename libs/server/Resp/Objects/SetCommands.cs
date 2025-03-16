@@ -607,6 +607,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
+                    // TODO: check usage of output var to send correct keyspace notification
                     PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref sourceKey, CmdStrings.srem);
                     PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref destinationKey, CmdStrings.ssadd);
                     while (!RespWriteUtils.TryWriteInt32(output, ref dcurr, dend))

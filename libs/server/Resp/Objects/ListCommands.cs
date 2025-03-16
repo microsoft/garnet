@@ -505,11 +505,11 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
+                    PublishKeyspaceNotification(KeyspaceNotificationType.List, ref parseState.GetArgSliceByRef(0), CmdStrings.ltrim);
                     //GarnetStatus.OK or NOTFOUND have same result
                     // no need to process output, just send OK
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
-                    PublishKeyspaceNotification(KeyspaceNotificationType.List, ref parseState.GetArgSliceByRef(0), CmdStrings.ltrim);
                     break;
             }
 
