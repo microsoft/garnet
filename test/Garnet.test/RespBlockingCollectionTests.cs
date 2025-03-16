@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
