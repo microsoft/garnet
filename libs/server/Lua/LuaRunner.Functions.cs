@@ -260,9 +260,19 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.ErrWrongNumberOfArgs);
             }
 
-            if (!state.CheckBuffer(1, out var bytes))
+            ReadOnlySpan<byte> bytes;
+            var argType = state.Type(1);
+            if (argType == LuaType.String)
             {
-                bytes = default;
+                state.KnownStringToBuffer(1, out bytes);
+            }
+            else if (argType == LuaType.Number)
+            {
+                state.NumberToString(1, out bytes);
+            }
+            else
+            {
+                bytes = [];
             }
 
             Span<byte> hashBytes = stackalloc byte[SessionScriptCache.SHA1Len / 2];
@@ -320,8 +330,15 @@ namespace Garnet.server
             string logMessage;
             if (argCount == 2)
             {
-                if (state.CheckBuffer(2, out var buff))
+                var type = state.Type(2);
+                if (type == LuaType.String)
                 {
+                    state.KnownStringToBuffer(2, out var buff);
+                    logMessage = Encoding.UTF8.GetString(buff);
+                }
+                else if (type == LuaType.Number)
+                {
+                    state.NumberToString(2, out var buff);
                     logMessage = Encoding.UTF8.GetString(buff);
                 }
                 else
@@ -335,15 +352,28 @@ namespace Garnet.server
 
                 for (var argIx = 2; argIx <= argCount; argIx++)
                 {
-                    if (state.CheckBuffer(argIx, out var buff))
-                    {
-                        if (sb.Length != 0)
-                        {
-                            _ = sb.Append(' ');
-                        }
+                    ReadOnlySpan<byte> buff;
+                    var type = state.Type(argIx);
 
-                        _ = sb.Append(Encoding.UTF8.GetString(buff));
+                    if (type == LuaType.String)
+                    {
+                        state.KnownStringToBuffer(argIx, out buff);
                     }
+                    else if (type == LuaType.Number)
+                    {
+                        state.NumberToString(argIx, out buff);
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    if (sb.Length != 0)
+                    {
+                        _ = sb.Append(' ');
+                    }
+
+                    _ = sb.Append(Encoding.UTF8.GetString(buff));
                 }
 
                 logMessage = sb.ToString();
@@ -670,7 +700,7 @@ namespace Garnet.server
                 state.Pop(1);
             }
 
-            _ = state.CheckBuffer(1, out var buff);
+            state.KnownStringToBuffer(1, out var buff);
             if (buff.Contains((byte)0))
             {
                 return LuaWrappedError(2, constStrs.BadArgLoadStringNullByte);
@@ -1046,7 +1076,7 @@ namespace Garnet.server
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.String, "Expected string on top of stack");
 
-                _ = self.state.CheckBuffer(self.state.StackTop, out var buff);
+                self.state.KnownStringToBuffer(self.state.StackTop, out var buff);
 
                 self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'"';
                 self.scratchBufferManager.MoveOffset(1);
@@ -1236,7 +1266,7 @@ namespace Garnet.server
                     // can continue using it with Next(...)
                     if (keyType == LuaType.Number)
                     {
-                        _ = self.state.CheckBuffer(tableIndex + 3, out _);
+                        self.state.NumberToString(tableIndex + 3, out _);
                     }
 
                     // Encode key
@@ -1297,7 +1327,7 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.BadArgDecode);
             }
 
-            _ = state.CheckBuffer(1, out var buff);
+            state.KnownStringToBuffer(1, out var buff);
 
             try
             {
@@ -1719,7 +1749,7 @@ namespace Garnet.server
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
 
-                _ = self.state.CheckBuffer(stackIndex, out var data);
+                self.state.KnownStringToBuffer(stackIndex, out var data);
 
                 if (data.Length < 32)
                 {
@@ -1957,7 +1987,7 @@ namespace Garnet.server
 
             var numLuaArgs = state.StackTop;
 
-            if (numLuaArgs == 0)
+            if (numLuaArgs == 0 || state.Type(1) != LuaType.String)
             {
                 // This method returns variable numbers of arguments, so the error goes in the first slot
                 return LuaWrappedError(0, constStrs.BadArgUnpack);
@@ -1974,8 +2004,7 @@ namespace Garnet.server
                 return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
             }
 
-            _ = state.CheckBuffer(1, out var data);
-
+            state.KnownStringToBuffer(1, out var data);
 
             var decodedCount = 0;
             while (!data.IsEmpty)
@@ -2555,10 +2584,12 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.PleaseSpecifyRedisCall);
             }
 
-            if (!state.CheckBuffer(1, out var cmdSpan))
+            if (state.Type(1) != LuaType.String)
             {
                 return LuaWrappedError(1, constStrs.ErrBadArg);
             }
+
+            state.KnownStringToBuffer(1, out var cmdSpan);
 
             // It's most accurate to use our existing parsing code
             // But it requires correct argument counts, and redis.acl_check_cmd doesn't.
@@ -2884,10 +2915,12 @@ namespace Garnet.server
                     return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
                 }
 
-                if (!state.CheckBuffer(1, out var cmdSpan))
+                if (state.Type(1) != LuaType.String)
                 {
                     return LuaWrappedError(1, constStrs.ErrBadArg);
                 }
+
+                state.KnownStringToBuffer(1, out var cmdSpan);
 
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
                 if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "SET"u8) && argCount == 3)
@@ -2897,7 +2930,32 @@ namespace Garnet.server
                         return LuaWrappedError(1, constStrs.ErrNoAuth);
                     }
 
-                    if (!state.CheckBuffer(2, out var keySpan) || !state.CheckBuffer(3, out var valSpan))
+                    ReadOnlySpan<byte> keySpan;
+                    var keyType = state.Type(2);
+                    if (keyType == LuaType.String)
+                    {
+                        state.KnownStringToBuffer(2, out keySpan);
+                    }
+                    else if (keyType == LuaType.Number)
+                    {
+                        state.NumberToString(2, out keySpan);
+                    }
+                    else
+                    {
+                        return LuaWrappedError(1, constStrs.ErrBadArg);
+                    }
+
+                    ReadOnlySpan<byte> valSpan;
+                    var valType = state.Type(3);
+                    if (valType == LuaType.String)
+                    {
+                        state.KnownStringToBuffer(3, out valSpan);
+                    }
+                    else if (valType == LuaType.Number)
+                    {
+                        state.NumberToString(3, out valSpan);
+                    }
+                    else
                     {
                         return LuaWrappedError(1, constStrs.ErrBadArg);
                     }
@@ -2918,7 +2976,17 @@ namespace Garnet.server
                         return LuaWrappedError(1, constStrs.ErrNoAuth);
                     }
 
-                    if (!state.CheckBuffer(2, out var keySpan))
+                    ReadOnlySpan<byte> keySpan;
+                    var keyType = state.Type(2);
+                    if (keyType == LuaType.String)
+                    {
+                        state.KnownStringToBuffer(2, out keySpan);
+                    }
+                    else if (keyType == LuaType.Number)
+                    {
+                        state.NumberToString(2, out keySpan);
+                    }
+                    else
                     {
                         return LuaWrappedError(1, constStrs.ErrBadArg);
                     }
@@ -2955,14 +3023,14 @@ namespace Garnet.server
                     {
                         scratchBufferManager.WriteNullArgument();
                     }
-                    else if (argType is LuaType.String or LuaType.Number)
+                    else if (argType is LuaType.String)
                     {
-                        // KnownStringToBuffer will coerce a number into a string
-                        //
-                        // Redis nominally converts numbers to integers, but in this case just ToStrings things
                         state.KnownStringToBuffer(argIx, out var span);
-
-                        // Span remains pinned so long as we don't pop the stack
+                        scratchBufferManager.WriteArgument(span);
+                    }
+                    else if (argType is LuaType.Number)
+                    {
+                        state.NumberToString(argIx, out var span);
                         scratchBufferManager.WriteArgument(span);
                     }
                     else

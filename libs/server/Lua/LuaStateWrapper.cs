@@ -159,17 +159,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all CheckBuffer calls into Lua.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly bool CheckBuffer(int index, out ReadOnlySpan<byte> str)
-        {
-            AssertLuaStackIndexInBounds(index);
-
-            return NativeMethods.CheckBuffer(state, index, out str);
-        }
-
-        /// <summary>
         /// This should be used for all Type calls into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -472,20 +461,31 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Call when value at index is KNOWN to be a string or number
+        /// Call to convert a number on the stack to a string in the same slot.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void NumberToString(int stackIndex, out ReadOnlySpan<byte> str)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+
+            Debug.Assert(Type(stackIndex) is LuaType.Number, "Called with non-number");
+
+            var convRes = NativeMethods.CheckBuffer(state, stackIndex, out str);
+            Debug.Assert(convRes, "Conversion failed, this should not happen");
+        }
+
+        /// <summary>
+        /// Call when value at index is KNOWN to be a string.
         /// 
         /// <paramref name="str"/> only remains valid as long as the buffer remains on the stack,
         /// use with care.
-        /// 
-        /// Note that is changes the value on the stack to be a string if it returns true, regardless of
-        /// what it was originally.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly void KnownStringToBuffer(int stackIndex, out ReadOnlySpan<byte> str)
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            Debug.Assert(Type(stackIndex) is LuaType.String or LuaType.Number, "Called with non-string, non-number");
+            Debug.Assert(Type(stackIndex) is LuaType.String, "Called with non-string");
 
             NativeMethods.KnownStringToBuffer(state, stackIndex, out str);
         }

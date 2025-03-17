@@ -873,13 +873,14 @@ end
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
             {
-                if (state.StackTop == 1 && state.CheckBuffer(1, out var buff))
+                if (state.StackTop == 1 && state.Type(1) == LuaType.String)
                 {
+                    state.KnownStringToBuffer(1, out var buff);
                     var innerError = Encoding.UTF8.GetString(buff);
-                    throw new GarnetException($"Could initialize Lua VM: {innerError}");
+                    throw new GarnetException($"Could not initialize Lua VM: {innerError}");
                 }
 
-                throw new GarnetException("Could initialize Lua VM");
+                throw new GarnetException("Could not initialize Lua VM");
             }
 
             var sandboxRes = state.PCall(0, -1);
@@ -2096,7 +2097,7 @@ end
 
                 state.ClearStack();
                 state.PushConstantString(err);
-                _ = state.CheckBuffer(1, out var errBuff);
+                state.KnownStringToBuffer(1, out var errBuff);
 
                 while (!RespWriteUtils.TryWriteError(errBuff, ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
@@ -2223,7 +2224,7 @@ end
                         else
                         {
                             // Force double to string for RESP2
-                            _ = runner.state.CheckBuffer(curTop + 1, out _);
+                            runner.state.NumberToString(curTop + 1, out _);
                             if (!TryWriteString(runner, canSend, ref resp, out errConstStrIndex))
                             {
                                 fitInBuffer = false;
