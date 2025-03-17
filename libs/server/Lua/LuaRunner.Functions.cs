@@ -55,13 +55,114 @@ namespace Garnet.server
         /// </summary>
         internal int UnsafeRunPreambleForRunner(nint luaStatePtr)
         {
+            // Space for table and key
+            const int NeededStackSize = 2;
+
             state.CallFromLuaEntered(luaStatePtr);
 
             state.ExpectLuaStackEmpty();
 
             scratchBufferManager?.Reset();
 
-            return LoadParametersForRunner(preambleKeys, preambleArgv);
+            var keys = preambleKeys;
+            var argv = preambleArgv;
+
+            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
+            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
+
+            if (!TryResetParameters(keys?.Length ?? 0, argv?.Length ?? 0, out var failingStatus))
+            {
+                var constStrId =
+                    failingStatus switch
+                    {
+                        LuaStatus.ErrSyntax => constStrs.ParameterResetFailedSyntax,
+                        LuaStatus.ErrMem => constStrs.ParameterResetFailedMemory,
+                        LuaStatus.ErrRun => constStrs.ParameterResetFailedRuntime,
+                        LuaStatus.ErrErr or LuaStatus.Yield or LuaStatus.OK or _ => constStrs.ParameterResetFailedOther,
+                    };
+                return LuaWrappedError(0, constStrId);
+            }
+
+            if (keys != null)
+            {
+                if (keysArrCapacity < keys.Length)
+                {
+                    if (!TryRecreateKEYS(keys.Length))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+                }
+
+                // get KEYS on the stack
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+                state.PushConstantString(constStrs.KEYS);
+                _ = state.RawGet(LuaType.Table, 1);
+                state.Remove(1);
+
+                for (var i = 0; i < keys.Length; i++)
+                {
+                    // equivalent to KEYS[i+1] = keys[i]
+                    var key = keys[i];
+                    PrepareString(key, scratchBufferManager, out var encoded);
+
+                    if (!state.TryPushBuffer(encoded))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+
+                    state.RawSetInteger(keysArrCapacity, 1, i + 1);
+                }
+
+                state.Pop(1);
+            }
+
+            if (argv != null)
+            {
+                if (argvArrCapacity < argv.Length)
+                {
+                    if (!TryRecreateARGV(argv.Length))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+                }
+
+                // get ARGV on the stack
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+                state.PushConstantString(constStrs.ARGV);
+                _ = state.RawGet(LuaType.Table, 1);
+                state.Remove(1);
+
+                for (var i = 0; i < argv.Length; i++)
+                {
+                    // equivalent to ARGV[i+1] = keys[i]
+                    var arg = argv[i];
+                    PrepareString(arg, scratchBufferManager, out var encoded);
+
+                    if (!state.TryPushBuffer(encoded))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+
+                    state.RawSetInteger(argvArrCapacity, 1, i + 1);
+                }
+
+                state.Pop(1);
+            }
+
+            return 0;
+
+            // Convert string into a span, using buffer for storage
+            static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
+            {
+                var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
+
+                buffer.Reset();
+                var argSlice = buffer.CreateArgSlice(maxLen);
+                var span = argSlice.Span;
+
+                var written = Encoding.UTF8.GetBytes(raw, span);
+                strBytes = span[..written];
+            }
         }
 
         /// <summary>
@@ -100,6 +201,14 @@ namespace Garnet.server
 
             if (nKeys > 0)
             {
+                if (keysArrCapacity < nKeys)
+                {
+                    if (!TryRecreateKEYS(nKeys))
+                    {
+                        return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                    }
+                }
+
                 // One for KEYS, one for the key being written;
                 const int NeededStackSpace = 2;
 
@@ -109,7 +218,10 @@ namespace Garnet.server
                 }
 
                 // Get KEYS on the stack
-                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, keysTableRegistryIndex);
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+                state.PushConstantString(constStrs.KEYS);
+                _ = state.RawGet(LuaType.Table, 1);
+                state.Remove(1);
 
                 for (var i = 0; i < nKeys; i++)
                 {
@@ -128,7 +240,7 @@ namespace Garnet.server
                         return LuaWrappedError(0, constStrs.OutOfMemory);
                     }
 
-                    state.RawSetInteger(1, i + 1);
+                    state.RawSetInteger(keysArrCapacity, 1, i + 1);
 
                     offset++;
                 }
@@ -141,6 +253,14 @@ namespace Garnet.server
 
             if (preambleKeyAndArgvCount > 0)
             {
+                if (argvArrCapacity < preambleKeyAndArgvCount)
+                {
+                    if (!TryRecreateARGV(preambleKeyAndArgvCount))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+                }
+
                 // One for ARGV, one for the arg being written
                 const int NeededStackSpace = 2;
 
@@ -150,7 +270,10 @@ namespace Garnet.server
                 }
 
                 // Get ARGV on the stack
-                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, argvTableRegistryIndex);
+                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+                state.PushConstantString(constStrs.ARGV);
+                _ = state.RawGet(LuaType.Table, 1);
+                state.Remove(1);
 
                 for (var i = 0; i < preambleKeyAndArgvCount; i++)
                 {
@@ -162,7 +285,7 @@ namespace Garnet.server
                         return LuaWrappedError(0, constStrs.OutOfMemory);
                     }
 
-                    state.RawSetInteger(1, i + 1);
+                    state.RawSetInteger(argvArrCapacity, 1, i + 1);
 
                     offset++;
                 }
@@ -1453,7 +1576,7 @@ namespace Garnet.server
                     }
 
                     // Save into the table
-                    self.state.RawSetInteger(tableIndex, storeAtIx);
+                    self.state.RawSetInteger(arr.Count, tableIndex, storeAtIx);
                     storeAtIx++;
                 }
 
@@ -2383,7 +2506,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    self.state.RawSetInteger(arrayIndex, i);
+                    self.state.RawSetInteger(len, arrayIndex, i);
                 }
 
                 constStrErrId = -1;
@@ -2416,7 +2539,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    self.state.RawSetInteger(arrayIndex, i);
+                    self.state.RawSetInteger(len, arrayIndex, i);
                 }
 
                 constStrErrId = -1;
@@ -2457,7 +2580,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    self.state.RawSetInteger(arrayIndex, i);
+                    self.state.RawSetInteger((int)len, arrayIndex, i);
                 }
 
                 constStrErrId = -1;

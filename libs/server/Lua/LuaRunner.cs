@@ -295,6 +295,10 @@ namespace Garnet.server
             internal int XOR { get; }
             /// <see cref="CmdStrings.LUA_NOT"/>
             internal int NOT { get; }
+            /// <see cref="CmdStrings.LUA_KEYS"/>
+            internal int KEYS { get; }
+            /// <see cref="CmdStrings.LUA_ARGV"/>
+            internal int ARGV { get; }
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
@@ -375,6 +379,8 @@ namespace Garnet.server
                 OR = ConstantStringToRegistry(ref state, CmdStrings.LUA_OR);
                 XOR = ConstantStringToRegistry(ref state, CmdStrings.LUA_XOR);
                 NOT = ConstantStringToRegistry(ref state, CmdStrings.LUA_NOT);
+                KEYS = ConstantStringToRegistry(ref state, CmdStrings.LUA_KEYS);
+                ARGV = ConstantStringToRegistry(ref state, CmdStrings.LUA_ARGV);
             }
 
             /// <summary>
@@ -399,10 +405,6 @@ namespace Garnet.server
         private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes);
 
         private const string LoaderBlock = @"
--- globals to fill in on each invocation
-KEYS = {}
-ARGV = {}
-
 -- disable for sandboxing purposes
 import = function () end
 
@@ -677,13 +679,13 @@ function recursively_readonly_table(table)
 end
 -- do resets in the Lua side to minimize pinvokes
 function reset_keys_and_argv(fromKey, fromArgv)
-    local keyRef = KEYS
+    local keyRef = sandbox_env.KEYS
     local keyCount = #keyRef
     for i = fromKey, keyCount do
         table.remove(keyRef)
     end
 
-    local argvRef = ARGV
+    local argvRef = sandbox_env.ARGV
     local argvCount = #argvRef
     for i = fromArgv, argvCount do
         table.remove(argvRef)
@@ -753,8 +755,7 @@ end
         // These are mix of objects we regularly update,
         // constants we want to avoid copying from .NET to Lua,
         // and the compiled function definition.
-        readonly int keysTableRegistryIndex;
-        readonly int argvTableRegistryIndex;
+        readonly int sandboxEnvRegistryIndex;
         readonly int loadSandboxedRegistryIndex;
         readonly int resetKeysAndArgvRegistryIndex;
         readonly int requestTimeoutRegsitryIndex;
@@ -791,6 +792,10 @@ end
 
         internal readonly ILogger logger;
 
+        // Size of the array compontents of KEYS and ARGV
+        // We keep these up to date so we can reason about allocations
+        int keysArrCapacity, argvArrCapacity;
+
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
@@ -807,6 +812,13 @@ end
             ILogger logger = null
         )
         {
+            // KEYS and ARGV are always access by index, and to avoid allocation concerns
+            // we also want to track their 'array'-bits sizes
+            //
+            // So we explicitly create them with these capacities, and recreate them as necessary
+            const int InitialKeysCapacity = 5;
+            const int InitialArgvCapacity = 5;
+
             this.source = source;
             this.txnMode = txnMode;
             this.respServerSession = respServerSession;
@@ -826,12 +838,19 @@ end
                 (respServerSession.noScriptStart, respServerSession.noScriptBitmap) = NoScriptDetails;
             }
 
-            keysTableRegistryIndex = -1;
-            argvTableRegistryIndex = -1;
+            sandboxEnvRegistryIndex = -1;
             loadSandboxedRegistryIndex = -1;
             functionRegistryIndex = -1;
 
             state = new LuaStateWrapper(memMode, memLimitBytes, this.logger);
+
+            state.CreateTable(InitialKeysCapacity, 0);
+            state.SetGlobal("KEYS\0"u8);
+            keysArrCapacity = InitialKeysCapacity;
+
+            state.CreateTable(InitialArgvCapacity, 0);
+            state.SetGlobal("ARGV\0"u8);
+            argvArrCapacity = InitialArgvCapacity;
 
             delegate* unmanaged[Cdecl]<nint, int> garnetCall;
             if (txnMode)
@@ -934,11 +953,8 @@ end
                 throw new GarnetException($"Could not initialize Lua sandbox state: {errMsg}");
             }
 
-            state.GetGlobal(LuaType.Table, "KEYS\0"u8);
-            keysTableRegistryIndex = state.Ref();
-
-            state.GetGlobal(LuaType.Table, "ARGV\0"u8);
-            argvTableRegistryIndex = state.Ref();
+            state.GetGlobal(LuaType.Table, "sandbox_env\0"u8);
+            sandboxEnvRegistryIndex = state.Ref();
 
             state.GetGlobal(LuaType.Function, "load_sandboxed\0"u8);
             loadSandboxedRegistryIndex = state.Ref();
@@ -1277,7 +1293,7 @@ end
                                 _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                                 // Store the item into the table
-                                state.RawSetInteger(curTop + 1, itemIx + 1);
+                                state.RawSetInteger(arrayItemCount, curTop + 1, itemIx + 1);
                             }
                         }
 
@@ -1898,87 +1914,61 @@ end
         }
 
         /// <summary>
-        /// Takes .NET strings for keys and args and pushes them into KEYS and ARGV globals.
+        /// Replace KEYS in sandbox_env with a new table with the given array capacity.
         /// </summary>
-        private int LoadParametersForRunner(string[] keys, string[] argv)
+        private bool TryRecreateKEYS(int length)
         {
-            // Space for table and value
-            const int NeededStackSize = 2;
+            // 1 for sandbox_env, 1 for "KEYS", and 1 for new table
+            const int NeededStackSpace = 3;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
-            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
-
-            if (!TryResetParameters(keys?.Length ?? 0, argv?.Length ?? 0, out var failingStatus))
+            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
             {
-                var constStrId =
-                    failingStatus switch
-                    {
-                        LuaStatus.ErrSyntax => constStrs.ParameterResetFailedSyntax,
-                        LuaStatus.ErrMem => constStrs.ParameterResetFailedMemory,
-                        LuaStatus.ErrRun => constStrs.ParameterResetFailedRuntime,
-                        LuaStatus.ErrErr or LuaStatus.Yield or LuaStatus.OK or _ => constStrs.ParameterResetFailedOther,
-                    };
-                return LuaWrappedError(0, constStrId);
+                return false;
             }
 
-            if (keys != null)
+            // Get sandbox_env and "KEYS" on the stack
+            var sandboxEnvIndex = state.StackTop;
+            _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+            state.PushConstantString(constStrs.KEYS);
+
+            // Make new KEYS
+            state.CreateTable(length, 0);
+
+            // Save it, which should have NO allocation impact because we're updating an existing slot
+            state.RawSet(sandboxEnvIndex);
+
+            keysArrCapacity = length;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Replace ARGV in sandbox_env with a new table with the given array capacity.
+        /// </summary>
+        private bool TryRecreateARGV(int length)
+        {
+            // 1 for sandbox_env, 1 for "ARGV", and 1 for new table
+            const int NeededStackSpace = 3;
+
+            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
             {
-                // get KEYS on the stack
-                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, keysTableRegistryIndex);
-
-                for (var i = 0; i < keys.Length; i++)
-                {
-                    // equivalent to KEYS[i+1] = keys[i]
-                    var key = keys[i];
-                    PrepareString(key, scratchBufferManager, out var encoded);
-
-                    if (!state.TryPushBuffer(encoded))
-                    {
-                        return LuaWrappedError(0, constStrs.OutOfMemory);
-                    }
-
-                    state.RawSetInteger(1, i + 1);
-                }
-
-                state.Pop(1);
+                return false;
             }
 
-            if (argv != null)
-            {
-                // get ARGV on the stack
-                _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, argvTableRegistryIndex);
+            // Get sandbox_env and "KEYS" on the stack
+            var sandboxEnvIndex = state.StackTop;
+            _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+            state.PushConstantString(constStrs.ARGV);
 
-                for (var i = 0; i < argv.Length; i++)
-                {
-                    // equivalent to ARGV[i+1] = keys[i]
-                    var arg = argv[i];
-                    PrepareString(arg, scratchBufferManager, out var encoded);
+            // Make new ARGV
+            state.CreateTable(length, 0);
 
-                    if (!state.TryPushBuffer(encoded))
-                    {
-                        return LuaWrappedError(0, constStrs.OutOfMemory);
-                    }
+            // Save it, which should have NO allocation impact because we're updating an existing slot
+            state.RawSet(sandboxEnvIndex);
 
-                    state.RawSetInteger(1, i + 1);
-                }
+            argvArrCapacity = length;
 
-                state.Pop(1);
-            }
-
-            return 0;
-
-            // Convert string into a span, using buffer for storage
-            static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
-            {
-                var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
-
-                buffer.Reset();
-                var argSlice = buffer.CreateArgSlice(maxLen);
-                var span = argSlice.Span;
-
-                var written = Encoding.UTF8.GetBytes(raw, span);
-                strBytes = span[..written];
-            }
+            return true;
         }
 
         /// <summary>

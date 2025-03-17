@@ -467,5 +467,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_OR => "OR"u8;
         public static ReadOnlySpan<byte> LUA_XOR => "XOR"u8;
         public static ReadOnlySpan<byte> LUA_NOT => "NOT"u8;
+        public static ReadOnlySpan<byte> LUA_KEYS => "KEYS"u8;
+        public static ReadOnlySpan<byte> LUA_ARGV => "ARGV"u8;
     }
 }

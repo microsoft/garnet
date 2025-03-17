@@ -297,9 +297,11 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void RawSetInteger(int stackIndex, int tableIndex)
+        internal void RawSetInteger(int tableArraySize, int stackIndex, int tableIndex)
         {
             AssertLuaStackIndexInBounds(stackIndex);
+
+            Debug.Assert(tableIndex >= 1 && tableIndex <= tableArraySize, "Assigning index in table could cause allocation");
 
             NativeMethods.RawSetInteger(state, stackIndex, tableIndex);
             UpdateStackTop(-1);
@@ -690,7 +692,7 @@ namespace Garnet.server
         /// Checks to see if an allocation of a given size would succeed, given the current <see cref="ILuaAllocator"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool ProbeAllocate(int numBytes)
+        private readonly bool ProbeAllocate(int numBytes)
         {
             if (customAllocator == null)
             {
