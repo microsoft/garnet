@@ -1595,6 +1595,7 @@ namespace Garnet.server
                 }
 
                 self.state.CreateTable(0, obj.Count);
+                var setInTable = 0;
 
                 var tableIndex = self.state.StackTop;
 
@@ -1615,8 +1616,10 @@ namespace Garnet.server
                         return r;
                     }
 
-                    self.state.RawSet(tableIndex);
+                    self.state.RawSet(obj.Count, tableIndex, ref setInTable);
                 }
+
+                Debug.Assert(setInTable == obj.Count, "Didn't fill table with records");
 
                 return 1;
             }
@@ -2603,6 +2606,8 @@ namespace Garnet.server
                 var len = sigil & 0b0000_1111;
 
                 self.state.CreateTable(0, len);
+                var setInTable = 0;
+
                 var mapIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
@@ -2619,8 +2624,10 @@ namespace Garnet.server
                         return false;
                     }
 
-                    self.state.RawSet(mapIndex);
+                    self.state.RawSet(len, mapIndex, ref setInTable);
                 }
+
+                Debug.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
                 return true;
@@ -2643,6 +2650,8 @@ namespace Garnet.server
                 data = data[2..];
 
                 self.state.CreateTable(0, len);
+                var setInTable = 0;
+
                 var mapIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
@@ -2659,8 +2668,9 @@ namespace Garnet.server
                         return false;
                     }
 
-                    self.state.RawSet(mapIndex);
+                    self.state.RawSet(len, mapIndex, ref setInTable);
                 }
+                Debug.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
                 return true;
@@ -2691,6 +2701,8 @@ namespace Garnet.server
                 }
 
                 self.state.CreateTable(0, (int)len);
+                var setInTable = 0;
+
                 var mapIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
@@ -2707,8 +2719,9 @@ namespace Garnet.server
                         return false;
                     }
 
-                    self.state.RawSet(mapIndex);
+                    self.state.RawSet((int)len, mapIndex, ref setInTable);
                 }
+                Debug.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
                 return true;

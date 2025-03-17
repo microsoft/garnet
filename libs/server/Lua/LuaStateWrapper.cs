@@ -295,6 +295,10 @@ namespace Garnet.server
         /// This should be used for all RawSetIntegers into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// 
+        /// Takes <paramref name="tableArraySize"/>, the size of the array portion of the table being updated.
+        /// 
+        /// Incorrectly specifying this <paramref name="tableArraySize"/> cause OOMs which lead to crashes.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void RawSetInteger(int tableArraySize, int stackIndex, int tableIndex)
@@ -313,9 +317,12 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void RawSet(int stackIndex)
+        internal void RawSet(int tableRecordCount, int stackIndex, ref int setRecordCount)
         {
             AssertLuaStackIndexInBounds(stackIndex);
+
+            setRecordCount++;
+            Debug.Assert(tableRecordCount >= 1 && setRecordCount <= tableRecordCount, "Assigning key in table could cause allocation");
 
             NativeMethods.RawSet(state, stackIndex);
             UpdateStackTop(-2);
@@ -702,6 +709,7 @@ namespace Garnet.server
             var hasSpace = customAllocator.ProbeAllocate(numBytes);
             if (!hasSpace)
             {
+                // TODO: Make sure this call actually works - it's a weird one
                 NativeMethods.GC(state, LuaGC.Collect);
 
                 hasSpace = customAllocator.ProbeAllocate(numBytes);

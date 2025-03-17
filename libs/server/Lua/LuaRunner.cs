@@ -1169,13 +1169,15 @@ end
                         // Construct a table = { 'ok': value }
                         state.CreateTable(0, 1);
                         state.PushConstantString(constStrs.OkLower);
+                        var setInOkTable = 0;
 
                         if (!state.TryPushBuffer(resultSpan))
                         {
                             return LuaWrappedError(1, constStrs.OutOfMemory);
                         }
 
-                        state.RawSet(curTop + 1);
+                        state.RawSet(1, curTop + 1, ref setInOkTable);
+                        Debug.Assert(setInOkTable == 1, "Didn't fill table with expected records");
 
                         return 1;
                     }
@@ -1320,9 +1322,12 @@ end
                         }
 
                         // Response is a two level table, where { map = { ... } }
-                        state.CreateTable(1, 0);
+                        state.CreateTable(0, 1);
+                        var setRecordsInTable = 0;
+
                         state.PushConstantString(constStrs.Map);
-                        state.CreateTable(mapPairCount, 0);
+                        state.CreateTable(0, mapPairCount);
+                        var setRecordsInMap = 0;
 
                         for (var pair = 0; pair < mapPairCount; pair++)
                         {
@@ -1333,11 +1338,13 @@ end
                             _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Set t[k] = v
-                            state.RawSet(curTop + 3);
+                            state.RawSet(mapPairCount, curTop + 3, ref setRecordsInMap);
                         }
+                        Debug.Assert(mapPairCount == setRecordsInMap, "Didn't fill table with records");
 
                         // Store the sub-table into the parent table
-                        state.RawSet(curTop + 1);
+                        state.RawSet(1, curTop + 1, ref setRecordsInTable);
+                        Debug.Assert(setRecordsInMap == 1, "Didn't fill table with records");
 
                         return 1;
                     }
@@ -1391,9 +1398,12 @@ end
                         }
 
                         // Response is a two level table, where { set = { ... } }
-                        state.CreateTable(1, 0);
+                        state.CreateTable(0, 1);
+                        var setRecordsInTable = 0;
+
                         state.PushConstantString(constStrs.Set);
-                        state.CreateTable(setItemCount, 0);
+                        state.CreateTable(0, setItemCount);
+                        var setRecordsInSet = 0;
 
                         for (var pair = 0; pair < setItemCount; pair++)
                         {
@@ -1404,11 +1414,13 @@ end
                             state.PushBoolean(true);
 
                             // Set t[value] = true
-                            state.RawSet(curTop + 3);
+                            state.RawSet(setItemCount, curTop + 3, ref setRecordsInSet);
                         }
+                        Debug.Assert(setItemCount == setRecordsInSet, "Didn't fill table with records");
 
                         // Store the sub-table into the parent table
-                        state.RawSet(curTop + 1);
+                        state.RawSet(1, curTop + 1, ref setRecordsInTable);
+                        Debug.Assert(setRecordsInTable == 1, "Didn't fill table with records");
 
                         return 1;
                     }
@@ -1507,11 +1519,14 @@ end
                             }
 
                             // Create table like { double = <parsed> }
-                            state.CreateTable(1, 0);
+                            state.CreateTable(0, 1);
+                            var setRecordsInTable = 0;
+
                             state.PushConstantString(constStrs.Double);
                             state.PushNumber(parsed);
 
-                            state.RawSet(curTop + 1);
+                            state.RawSet(1, curTop + 1, ref setRecordsInTable);
+                            Debug.Assert(setRecordsInTable == 1, "Didn't fill table with records");
 
                             return 1;
                         }
@@ -1551,7 +1566,9 @@ end
                                 }
 
                                 // Create table like { big_number = <bigNumBuf> }
-                                state.CreateTable(1, 0);
+                                state.CreateTable(0, 1);
+                                var setRecordsInTable = 0;
+
                                 state.PushConstantString(constStrs.BigNumber);
 
                                 if (!state.TryPushBuffer(bigNumSpan))
@@ -1559,7 +1576,8 @@ end
                                     return LuaWrappedError(1, constStrs.OutOfMemory);
                                 }
 
-                                state.RawSet(curTop + 1);
+                                state.RawSet(1, curTop + 1, ref setRecordsInTable);
+                                Debug.Assert(setRecordsInTable == 1, "Didn't fill table with records");
 
                                 return 1;
                             }
@@ -1602,7 +1620,8 @@ end
                                 return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
                             }
 
-                            state.CreateTable(2, 0);
+                            state.CreateTable(0, 2);
+                            var setRecordsInTable = 0;
 
                             state.PushConstantString(constStrs.Format);
 
@@ -1611,7 +1630,7 @@ end
                                 return LuaWrappedError(1, constStrs.OutOfMemory);
                             }
 
-                            state.RawSet(curTop + 1);
+                            state.RawSet(2, curTop + 1, ref setRecordsInTable);
 
                             state.PushConstantString(constStrs.String);
 
@@ -1620,7 +1639,8 @@ end
                                 return LuaWrappedError(1, constStrs.OutOfMemory);
                             }
 
-                            state.RawSet(curTop + 1);
+                            state.RawSet(2, curTop + 1, ref setRecordsInTable);
+                            Debug.Assert(setRecordsInTable == 2, "Didn't fill table with records");
 
                             return 1;
                         }
@@ -1935,7 +1955,8 @@ end
             state.CreateTable(length, 0);
 
             // Save it, which should have NO allocation impact because we're updating an existing slot
-            state.RawSet(sandboxEnvIndex);
+            var ignored = 0;
+            state.RawSet(1, sandboxEnvIndex, ref ignored);
 
             keysArrCapacity = length;
 
@@ -1964,7 +1985,8 @@ end
             state.CreateTable(length, 0);
 
             // Save it, which should have NO allocation impact because we're updating an existing slot
-            state.RawSet(sandboxEnvIndex);
+            var ignored = 0;
+            state.RawSet(1, sandboxEnvIndex, ref ignored);
 
             argvArrCapacity = length;
 
