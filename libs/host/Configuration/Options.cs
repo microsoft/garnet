@@ -183,8 +183,8 @@ namespace Garnet
         [Option("cluster-password", Required = false, HelpText = "Password to authenticate intra-cluster communication with.")]
         public string ClusterPassword { get; set; }
 
-        [Option("notify-keyspace-events-arguments", Required = false, HelpText = "Keyspace Notification argument string.")]
-        public string NotifiyKeyspaceEventsArguments { get; set; }
+        [Option("notify-keyspace-events", Required = false, HelpText = "Keyspace Notification argument string.")]
+        public string NotifyKeyspaceEventsArguments { get; set; }
 
         [FilePathValidation(true, true, false)]
         [Option("acl-file", Required = false, HelpText = "External ACL user file.")]
