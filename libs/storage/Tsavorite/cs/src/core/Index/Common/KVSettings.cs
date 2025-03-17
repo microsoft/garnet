@@ -120,6 +120,16 @@ namespace Tsavorite.core
         public RevivificationSettings RevivificationSettings;
 
         /// <summary>
+        /// Epoch instance used by the store
+        /// </summary>
+        public LightEpoch Epoch = null;
+
+        /// <summary>
+        /// State machine driver for the store
+        /// </summary>
+        public StateMachineDriver StateMachineDriver = null;
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").

@@ -3968,6 +3968,7 @@ end
         private void RunInTransaction<TResponse>(ref TResponse response)
             where TResponse : struct, IResponseAdapter
         {
+            var txnVersion = respServerSession.storageSession.stateMachineDriver.AcquireTransactionVersion();
             try
             {
                 respServerSession.storageSession.lockableContext.BeginLockable();
@@ -3976,6 +3977,10 @@ end
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
 
+                txnVersion = respServerSession.storageSession.stateMachineDriver.VerifyTransactionVersion(txnVersion);
+                respServerSession.storageSession.lockableContext.LocksAcquired(txnVersion);
+                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.storageSession.objectStoreLockableContext.LocksAcquired(txnVersion);
                 RunCommon(ref response);
             }
             finally
@@ -3985,6 +3990,7 @@ end
                 respServerSession.storageSession.lockableContext.EndLockable();
                 if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                     respServerSession.storageSession.objectStoreLockableContext.EndLockable();
+                respServerSession.storageSession.stateMachineDriver.EndTransaction(txnVersion);
             }
         }
 

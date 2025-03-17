@@ -54,6 +54,12 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Replication offset corresponding to the checkpoint start marker. We will truncate only to this point after taking a checkpoint (the checkpoint
+        /// is taken only when we encounter a checkpoint end marker).
+        /// </summary>
+        public long ReplicationCheckpointStartOffset;
+
+        /// <summary>
         /// Replication offset until which AOF address is valid for old primary if failover has occurred
         /// </summary>
         public long ReplicationOffset2
@@ -112,9 +118,13 @@ namespace Garnet.cluster
             ReplicationOffset = 0;
 
             // Set the appendOnlyFile field for all stores
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShift = CheckpointVersionShift;
+            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
+            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
             if (storeWrapper.objectStore != null)
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
+            {
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftStart = CheckpointVersionShiftStart;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
+            }
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery(RecoveryStatus.InitializeRecover))
@@ -157,14 +167,44 @@ namespace Garnet.cluster
 
         public string GetBufferPoolStats() => networkPool.GetStats();
 
-        void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)
+        void CheckpointVersionShiftStart(bool isMainStore, long oldVersion, long newVersion, bool isStreaming)
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
                 return;
-            var entryType = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                (isMainStore ? AofEntryType.MainStoreStreamingCheckpointStartCommit : AofEntryType.ObjectStoreStreamingCheckpointStartCommit) :
-                (isMainStore ? AofEntryType.MainStoreCheckpointStartCommit : AofEntryType.ObjectStoreCheckpointStartCommit);
-            storeWrapper.EnqueueCommit(entryType, newVersion);
+
+            if (isStreaming)
+            {
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.MainStoreStreamingCheckpointStartCommit, newVersion);
+                else
+                    storeWrapper.EnqueueCommit(AofEntryType.ObjectStoreStreamingCheckpointStartCommit, newVersion);
+            }
+            else
+            {
+                // We enqueue a single checkpoint start marker, since we have unified checkpointing
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.CheckpointStartCommit, newVersion);
+            }
+        }
+
+        void CheckpointVersionShiftEnd(bool isMainStore, long oldVersion, long newVersion, bool isStreaming)
+        {
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
+                return;
+
+            if (isStreaming)
+            {
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.MainStoreStreamingCheckpointEndCommit, newVersion);
+                else
+                    storeWrapper.EnqueueCommit(AofEntryType.ObjectStoreStreamingCheckpointEndCommit, newVersion);
+            }
+            else
+            {
+                // We enqueue a single checkpoint end marker, since we have unified checkpointing
+                if (isMainStore)
+                    storeWrapper.EnqueueCommit(AofEntryType.CheckpointEndCommit, newVersion);
+            }
         }
 
         /// <summary>
