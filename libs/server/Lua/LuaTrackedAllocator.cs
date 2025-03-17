@@ -24,6 +24,18 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public bool ProbeAllocate(int sizeBytes)
+        {
+            if (limitBytes == null)
+            {
+                return true;
+            }
+
+            var space = limitBytes.Value - allocatedBytes;
+            return space >= sizeBytes;
+        }
+
+        /// <inheritdoc/>
         public ref byte AllocateNew(int sizeBytes, out bool failed)
         {
             if (limitBytes != null)

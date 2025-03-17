@@ -283,6 +283,18 @@ namespace Garnet.server
             internal int ParameterResetFailedRuntime { get; }
             /// <see cref="CmdStrings.LUA_parameter_reset_failed_other"/>
             internal int ParameterResetFailedOther { get; }
+            /// <see cref="CmdStrings.LUA_out_of_memory"/>
+            internal int OutOfMemory { get; }
+            /// <see cref="CmdStrings.LUA_load_string_error"/>
+            internal int LoadStringError { get; }
+            /// <see cref="CmdStrings.LUA_AND"/>
+            internal int AND { get; }
+            /// <see cref="CmdStrings.LUA_OR"/>
+            internal int OR { get; }
+            /// <see cref="CmdStrings.LUA_XOR"/>
+            internal int XOR { get; }
+            /// <see cref="CmdStrings.LUA_NOT"/>
+            internal int NOT { get; }
 
             internal ConstantStringRegistryIndexes(ref LuaStateWrapper state)
             {
@@ -357,6 +369,12 @@ namespace Garnet.server
                 ParameterResetFailedSyntax = ConstantStringToRegistry(ref state, CmdStrings.LUA_parameter_reset_failed_syntax);
                 ParameterResetFailedRuntime = ConstantStringToRegistry(ref state, CmdStrings.LUA_parameter_reset_failed_runtime);
                 ParameterResetFailedOther = ConstantStringToRegistry(ref state, CmdStrings.LUA_parameter_reset_failed_other);
+                OutOfMemory = ConstantStringToRegistry(ref state, CmdStrings.LUA_out_of_memory);
+                LoadStringError = ConstantStringToRegistry(ref state, CmdStrings.LUA_load_string_error);
+                AND = ConstantStringToRegistry(ref state, CmdStrings.LUA_AND);
+                OR = ConstantStringToRegistry(ref state, CmdStrings.LUA_OR);
+                XOR = ConstantStringToRegistry(ref state, CmdStrings.LUA_XOR);
+                NOT = ConstantStringToRegistry(ref state, CmdStrings.LUA_NOT);
             }
 
             /// <summary>
@@ -366,7 +384,11 @@ namespace Garnet.server
             /// </summary>
             private static int ConstantStringToRegistry(ref LuaStateWrapper state, ReadOnlySpan<byte> str)
             {
-                state.PushBuffer(str);
+                if (!state.TryPushBuffer(str))
+                {
+                    throw new GarnetException("Insufficient space in Lua VM for constant string");
+                }
+
                 return state.Ref();
             }
         }
@@ -859,7 +881,11 @@ end
             state.Register("garnet_unpack_trampoline\0"u8, &LuaRunnerTrampolines.UnpackTrampoline);
 
             var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
-            state.PushBuffer(redisVersionBytes);
+            if (!state.TryPushBuffer(redisVersionBytes))
+            {
+                throw new GarnetException("Insufficient space in Lua VM for redis version global");
+            }
+
             state.SetGlobal("garnet_REDIS_VERSION\0"u8);
 
             var redisVersionParsed = Version.Parse(redisVersion);
@@ -1047,8 +1073,12 @@ end
                 state.PushNil();
             }
 
-            // TODO: These should be constants, otherwise they can also fail
-            state.PushBuffer(errorMsg);
+            if (!state.TryPushBuffer(errorMsg))
+            {
+                // Don't have enough space to provide the actual error, which is itself an OOM error
+                return LuaWrappedError(nonErrorReturns, constStrs.OutOfMemory);
+            }
+
             return nonErrorReturns + 1;
         }
 
@@ -1123,7 +1153,12 @@ end
                         // Construct a table = { 'ok': value }
                         state.CreateTable(0, 1);
                         state.PushConstantString(constStrs.OkLower);
-                        state.PushBuffer(resultSpan);
+
+                        if (!state.TryPushBuffer(resultSpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
+
                         state.RawSet(curTop + 1);
 
                         return 1;
@@ -1197,7 +1232,10 @@ end
                             return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
                         }
 
-                        state.PushBuffer(bulkSpan);
+                        if (!state.TryPushBuffer(bulkSpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
 
                         return 1;
                     }
@@ -1499,7 +1537,11 @@ end
                                 // Create table like { big_number = <bigNumBuf> }
                                 state.CreateTable(1, 0);
                                 state.PushConstantString(constStrs.BigNumber);
-                                state.PushBuffer(bigNumSpan);
+
+                                if (!state.TryPushBuffer(bigNumSpan))
+                                {
+                                    return LuaWrappedError(1, constStrs.OutOfMemory);
+                                }
 
                                 state.RawSet(curTop + 1);
 
@@ -1547,11 +1589,21 @@ end
                             state.CreateTable(2, 0);
 
                             state.PushConstantString(constStrs.Format);
-                            state.PushBuffer(format);
+
+                            if (!state.TryPushBuffer(format))
+                            {
+                                return LuaWrappedError(1, constStrs.OutOfMemory);
+                            }
+
                             state.RawSet(curTop + 1);
 
                             state.PushConstantString(constStrs.String);
-                            state.PushBuffer(data);
+
+                            if (!state.TryPushBuffer(data))
+                            {
+                                return LuaWrappedError(1, constStrs.OutOfMemory);
+                            }
+
                             state.RawSet(curTop + 1);
 
                             return 1;
@@ -1879,7 +1931,12 @@ end
                     // equivalent to KEYS[i+1] = keys[i]
                     var key = keys[i];
                     PrepareString(key, scratchBufferManager, out var encoded);
-                    state.PushBuffer(encoded);
+
+                    if (!state.TryPushBuffer(encoded))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+
                     state.RawSetInteger(1, i + 1);
                 }
 
@@ -1896,7 +1953,12 @@ end
                     // equivalent to ARGV[i+1] = keys[i]
                     var arg = argv[i];
                     PrepareString(arg, scratchBufferManager, out var encoded);
-                    state.PushBuffer(encoded);
+
+                    if (!state.TryPushBuffer(encoded))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+
                     state.RawSetInteger(1, i + 1);
                 }
 

@@ -123,7 +123,11 @@ namespace Garnet.server
                     }
 
                     // Equivalent to KEYS[i+1] = key
-                    state.PushBuffer(key.ReadOnlySpan);
+                    if (!state.TryPushBuffer(key.ReadOnlySpan))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+
                     state.RawSetInteger(1, i + 1);
 
                     offset++;
@@ -153,7 +157,11 @@ namespace Garnet.server
                     ref var argv = ref parseState.GetArgSliceByRef(offset);
 
                     // Equivalent to ARGV[i+1] = argv
-                    state.PushBuffer(argv.ReadOnlySpan);
+                    if (!state.TryPushBuffer(argv.ReadOnlySpan))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
+
                     state.RawSetInteger(1, i + 1);
 
                     offset++;
@@ -280,7 +288,11 @@ namespace Garnet.server
 
             SessionScriptCache.GetScriptDigest(bytes, hashBytes, hexRes);
 
-            state.PushBuffer(hexRes);
+            if (!state.TryPushBuffer(hexRes))
+            {
+                return LuaWrappedError(1, constStrs.OutOfMemory);
+            }
+
             return 1;
         }
 
@@ -716,7 +728,7 @@ namespace Garnet.server
             {
                 state.ClearStack();
                 state.PushNil();
-                state.PushBuffer("load_string encountered error"u8);
+                state.PushConstantString(constStrs.LoadStringError);
                 return 2;
             }
 
@@ -805,7 +817,11 @@ namespace Garnet.server
             // Free up space on stack
             state.Pop(luaArgCount);
 
-            state.PushBuffer(buff);
+            if (!state.TryPushBuffer(buff))
+            {
+                return LuaWrappedError(1, constStrs.OutOfMemory);
+            }
+
             return 1;
         }
 
@@ -978,7 +994,10 @@ namespace Garnet.server
 
                 // Push the encoded string
                 var result = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
-                state.PushBuffer(result);
+                if (!state.TryPushBuffer(result))
+                {
+                    return LuaWrappedError(1, constStrs.OutOfMemory);
+                }
             }
 
             return ret;
@@ -1391,7 +1410,10 @@ namespace Garnet.server
                         self.scratchBufferManager.Reset();
                         var buf = self.scratchBufferManager.UTF8EncodeString(str);
 
-                        self.state.PushBuffer(buf);
+                        if (!self.state.TryPushBuffer(buf))
+                        {
+                            return self.LuaWrappedError(1, self.constStrs.OutOfMemory);
+                        }
                         break;
                     case JsonValueKind.Undefined:
                     case JsonValueKind.Object:
@@ -1458,7 +1480,10 @@ namespace Garnet.server
                     // Decode key to string
                     self.scratchBufferManager.Reset();
                     var buf = self.scratchBufferManager.UTF8EncodeString(key);
-                    self.state.PushBuffer(buf);
+                    if (!self.state.TryPushBuffer(buf))
+                    {
+                        return self.LuaWrappedError(1, self.constStrs.OutOfMemory);
+                    }
 
                     // Decode value
                     var r = Decode(self, value);
@@ -1508,7 +1533,10 @@ namespace Garnet.server
             state.ExpectLuaStackEmpty();
 
             var ret = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
-            state.PushBuffer(ret);
+            if (!state.TryPushBuffer(ret))
+            {
+                return LuaWrappedError(1, constStrs.OutOfMemory);
+            }
 
             return 1;
 
@@ -2250,7 +2278,12 @@ namespace Garnet.server
                 var len = sigil & 0b0001_1111;
                 var str = data[..len];
 
-                self.state.PushBuffer(str);
+                if (!self.state.TryPushBuffer(str))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
+
                 data = data[len..];
 
                 constStrErrId = -1;
@@ -2265,7 +2298,11 @@ namespace Garnet.server
 
                 var str = data[..len];
 
-                self.state.PushBuffer(str);
+                if (!self.state.TryPushBuffer(str))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
 
                 data = data[str.Length..];
 
@@ -2281,7 +2318,11 @@ namespace Garnet.server
 
                 var str = data[..(int)len];
 
-                self.state.PushBuffer(str);
+                if (!self.state.TryPushBuffer(str))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
 
                 data = data[str.Length..];
 
@@ -2305,7 +2346,11 @@ namespace Garnet.server
 
                 var str = data[..(int)len];
 
-                self.state.PushBuffer(str);
+                if (!self.state.TryPushBuffer(str))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
 
                 data = data[str.Length..];
 
@@ -2626,14 +2671,13 @@ namespace Garnet.server
                 {
                     switch (subCommand)
                     {
-                        case RespCommand.BITOP_AND: state.PushBuffer("AND"u8); break;
-                        case RespCommand.BITOP_OR: state.PushBuffer("OR"u8); break;
-                        case RespCommand.BITOP_XOR: state.PushBuffer("XOR"u8); break;
-                        case RespCommand.BITOP_NOT: state.PushBuffer("NOT"u8); break;
+                        case RespCommand.BITOP_AND: state.PushConstantString(constStrs.AND); break;
+                        case RespCommand.BITOP_OR: state.PushConstantString(constStrs.OR); break;
+                        case RespCommand.BITOP_XOR: state.PushConstantString(constStrs.XOR); break;
+                        case RespCommand.BITOP_NOT: state.PushConstantString(constStrs.NOT); break;
 
                         default: throw new InvalidOperationException($"Unexpected BITOP sub command: {subCommand}");
                     }
-
 
                     var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, info, cmdSpan, luaArgCount: 2);
 
@@ -2710,7 +2754,11 @@ namespace Garnet.server
 
                         var subCommandBuf = subCommandScratch[..written];
 
-                        state.PushBuffer(subCommandBuf);
+                        if (!state.TryPushBuffer(subCommandBuf))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
+
                         var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, subCommand, cmdSpan, luaArgCount: 2);
 
                         // Remove the extra sub-command
@@ -2853,7 +2901,13 @@ namespace Garnet.server
             Debug.Assert(stackRes, "LUA_MIN_STACK should be high enough that this cannot happen");
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
-            state.PushBuffer(source.Span);
+            if (!state.TryPushBuffer(source.Span))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                return 0;
+            }
 
             var callRes = state.PCall(1, 2);
 
@@ -2997,7 +3051,10 @@ namespace Garnet.server
 
                     if (status == GarnetStatus.OK)
                     {
-                        state.PushBuffer(value.ReadOnlySpan);
+                        if (!state.TryPushBuffer(value.ReadOnlySpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                     }
                     else
                     {

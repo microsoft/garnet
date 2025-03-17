@@ -27,6 +27,10 @@ namespace Garnet.server
         public LuaManagedAllocator() { }
 
         /// <inheritdoc/>
+        public bool ProbeAllocate(int sizeBytes)
+        => true;
+
+        /// <inheritdoc/>
         public ref byte AllocateNew(int sizeBytes, out bool failed)
         {
             for (var i = 0; i < subAllocators.Count; i++)

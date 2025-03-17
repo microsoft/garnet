@@ -16,6 +16,11 @@ namespace Garnet.server
     internal interface ILuaAllocator
     {
         /// <summary>
+        /// Returns true if a call to <see cref="AllocateNew(int, out bool)"/> with this size would succeed.
+        /// </summary>
+        bool ProbeAllocate(int sizeBytes);
+
+        /// <summary>
         /// Allocate a new chunk of memory of at least <paramref name="sizeBytes"/> size.
         /// 
         /// Note that 0-sized allocations MUST succeed and MUST return a non-null reference.

@@ -22,6 +22,8 @@ namespace Garnet.server
     {
         internal const int LUA_MINSTACK = 20;
 
+        private readonly ILuaAllocator customAllocator;
+
         private SingleWriterMultiReaderLock hookLock;
 
         private GCHandle customAllocatorHandle;
@@ -42,7 +44,7 @@ namespace Garnet.server
             // TODO: Consider a better way to do this?
             LuaStateWrapperTrampolines.PanicLogger ??= logger;
 
-            ILuaAllocator customAllocator =
+            customAllocator =
                 (memMode, memLimitBytes) switch
                 {
                     (LuaMemoryManagementMode.Native, null) => null,
@@ -175,12 +177,27 @@ namespace Garnet.server
         /// If the string is a constant, consider registering it in the constructor and using <see cref="PushConstantString"/> instead.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void PushBuffer(ReadOnlySpan<byte> buffer)
+        internal bool TryPushBuffer(ReadOnlySpan<byte> buffer)
         {
+            // See: https://www.lua.org/source/5.4/lobject.h.html#TString
+            const int AllocationOverheadBytes = 1 + 1 + 8 + 8; // 2 bytes, 1 "int", 1 pointer
+
             AssertLuaStackNotFull();
 
-            _ = ref NativeMethods.PushBuffer(state, buffer);
+            // Technically Lua will fail if buffer is too big, but "too big" is UInt32.MaxValue or UInt64.MaxValue
+            // neither of which ReadOnlySpan<byte> can reach
+
+            var maximumAllocationSize = AllocationOverheadBytes + buffer.Length;
+
+            if (!ProbeAllocate(maximumAllocationSize))
+            {
+                return false;
+            }
+
+            NativeMethods.PushBuffer(state, buffer);
             UpdateStackTop(1);
+
+            return true;
         }
 
         /// <summary>
@@ -667,6 +684,28 @@ namespace Garnet.server
         {
             StackTop += by;
             AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// Checks to see if an allocation of a given size would succeed, given the current <see cref="ILuaAllocator"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool ProbeAllocate(int numBytes)
+        {
+            if (customAllocator == null)
+            {
+                return true;
+            }
+
+            var hasSpace = customAllocator.ProbeAllocate(numBytes);
+            if (!hasSpace)
+            {
+                NativeMethods.GC(state, LuaGC.Collect);
+
+                hasSpace = customAllocator.ProbeAllocate(numBytes);
+            }
+
+            return hasSpace;
         }
 
         // Conditional compilation checks

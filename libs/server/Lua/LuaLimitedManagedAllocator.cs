@@ -310,6 +310,42 @@ namespace Garnet.server
             firstBlock.PrevFreeBlockRefRaw = 0;
         }
 
+        /// <inheritdoc/>
+        public bool ProbeAllocate(int sizeBytes)
+        {
+            var actualSizeBytes = RoundToMinAlloc(sizeBytes);
+
+            var firstAttempt = true;
+
+        tryAgain:
+            ref var freeList = ref GetFreeList();
+            ref var cur = ref freeList;
+            while (IsValidBlockRef(ref cur))
+            {
+                // We know this block is free, so touch size directly
+                var freeBlockSize = cur.SizeBytesRaw;
+
+                if (freeBlockSize >= actualSizeBytes)
+                {
+                    return true;
+                }
+
+                cur = ref cur.GetNextFreeBlockRef();
+            }
+
+            // Do a coalesce pass if we're going to fail
+            if (firstAttempt)
+            {
+                firstAttempt = false;
+                if (TryCoalesceAllFreeBlocks())
+                {
+                    goto tryAgain;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Allocate a new chunk which can fit at least <paramref name="sizeBytes"/> of data.
         /// 

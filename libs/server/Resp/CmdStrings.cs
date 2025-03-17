@@ -461,5 +461,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_parameter_reset_failed_syntax => "Resetting parameters to Lua script failed: Syntax"u8;
         public static ReadOnlySpan<byte> LUA_parameter_reset_failed_runtime => "Resetting parameters to Lua script failed: Runtime"u8;
         public static ReadOnlySpan<byte> LUA_parameter_reset_failed_other => "Resetting parameters to Lua script failed: Other"u8;
+        public static ReadOnlySpan<byte> LUA_out_of_memory => "Lua VM ran out of memory"u8;
+        public static ReadOnlySpan<byte> LUA_load_string_error => "load_string encountered error"u8;
+        public static ReadOnlySpan<byte> LUA_AND => "AND"u8;
+        public static ReadOnlySpan<byte> LUA_OR => "OR"u8;
+        public static ReadOnlySpan<byte> LUA_XOR => "XOR"u8;
+        public static ReadOnlySpan<byte> LUA_NOT => "NOT"u8;
     }
 }
