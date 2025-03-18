@@ -137,31 +137,36 @@ Take a look at the ETag caching sample to see the usage of the `GETIFNOTMATCH` A
 
 ## Avoiding Costly Transactions When Working with Non-Atomic Operations
 
-Databases with ACID compliance (ignoring the durability for this discussion) rely on synchronization mechanisms like locks to ensure isolation. Garnet employs **state-of-the-art transaction concurrency control** using two-phase locking. However, transactions in Garnet are not permitted during certain initial server states, such as when the checkpointing mechanism is active for durability.
+Cache-stores such as Garnet rely on key-level (or bucket-level) locks on the server to ensure atomic updates by multiple clients to a key-value pair. We often wish to read a remote value, perform some local computations that update the value, and then write the new value back to the server. Due to the cost of the network round-trip and the potential for clients to crash at any time, holding a server-side lock for such a long duration of time is not possible. ETags offer an alternative to transactions when working with such use cases.
 
-ETags offer an alternative to transactions when working with a single key for handling the update logic, enabling coordination between multiple clients without locking while ensuring no missed updates.  
-
-### Scenario: Concurrent Updates to a Non-Atomic Value  
+### Scenario: Concurrent updates to the same Value  
 
 Imagine multiple clients concurrently modifying an XML document stored in Garnet.  
-For example:  
 
+For example:  
 - Client 1 reads the XML, updates Field A, and writes it back.
 - Client 2 reads the same XML, updates Field B, and writes it back concurrently.  
 
 Without ETags, the following sequence of events might occur:  
-
 1. Client 1 reads value `v0` for key `k1`.  
 2. Client 1 modifies Field A, creating a local copy `v1`.  
 3. Client 2 reads the same value `v0` before Client 1 writes `v1`.  
 4. Client 2 modifies Field B, creating another local copy `v2`.  
 5. Either Client 1 or Client 2 writes its version back to the server, potentially overwriting the other’s changes since `v1` and `v2` both don't have either's changes.
 
-This race condition results in lost updates.  
+This race condition results in lost updates. With ETags, you can use the `SETIFMATCH` API [here](/docs/commands/garnet-specific-commands#setifmatch) to implement a **compare-and-swap** mechanism which guarantees that no updates are lost.
 
-With ETags, you can use the `SETIFMATCH` API [here](/docs/commands/garnet-specific-commands#setifmatch) to implement a **compare-and-swap** mechanism that guarantees no updates are lost. The following code snippets demonstrate how this can be achieved.
+1. Client 1 reads value `v0` for key `k1`.  
+2. Client 1 modifies Field A, creating a local copy `v1`.  
+3. Client 2 reads the same value `v0` before Client 1 writes `v1`.  
+4. Client 2 modifies Field B, creating another local copy `v2`.  
+5. Client 1 does a `SETIFMATCH` to try and install its update, which succeeds.
+6. Client 2 does a `SETIFMATCH` to try and install its update, which fails as the server's ETag has now changed.
+7. Client 2 retries with the updated value, and eventually succeeds in applying its changes to the value.
 
 ---
+
+The following code snippets demonstrate how this can be achieved.
 
 ### Example Code  
 
