@@ -1,9 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Numerics.Tensors;
 using System.Runtime.Intrinsics;
 using Garnet.common;
-using static Garnet.common.Numerics.TensorPrimitives;
+using Garnet.common.Numerics;
 
 namespace Garnet.server
 {
@@ -25,7 +27,8 @@ namespace Garnet.server
             switch (bitop)
             {
                 case (byte)BitmapOperation.NOT:
-                    InvokeSingleKeyBitwiseNot(dstPtr, dstLen, srcStartPtrs[0], srcEndPtrs[0] - srcStartPtrs[0]);
+                    var firstKeyLength = checked((int)(srcEndPtrs[0] - srcStartPtrs[0]));
+                    TensorPrimitives.OnesComplement(new ReadOnlySpan<byte>(srcStartPtrs[0], firstKeyLength), new Span<byte>(dstPtr, dstLen));
                     break;
                 case (byte)BitmapOperation.AND:
                     InvokeMultiKeyBitwise<BitwiseAndOperator>(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
@@ -40,81 +43,6 @@ namespace Garnet.server
                     throw new GarnetException("Unsupported BitOp command");
             }
             return true;
-        }
-
-        /// <summary>
-        /// Invokes unary bitwise-NOT operation for single source key.
-        /// </summary>
-        /// <param name="dstPtr">Output buffer to write BitOp result</param>
-        /// <param name="dstLen">Output buffer length.</param>
-        /// <param name="srcPtr">Pointer to source.</param>
-        /// <param name="srcLen">Source length.</param>
-        private static void InvokeSingleKeyBitwiseNot(byte* dstPtr, long dstLen, byte* srcPtr, long srcLen)
-        {
-            var remainingLength = srcLen;
-            var remainder = remainingLength & ((Vector256<byte>.Count * 8) - 1);
-
-            //iterate using srcPtr because dstLen >= srcLen always
-            var srcCurr = srcPtr;
-            var srcEnd = srcCurr + (remainingLength - remainder);
-            var dstCurr = dstPtr;
-
-            while (srcCurr < srcEnd)
-            {
-                var d00 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 0));
-                var d01 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 1));
-                var d02 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 2));
-                var d03 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 3));
-                var d04 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 4));
-                var d05 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 5));
-                var d06 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 6));
-                var d07 = Vector256.Load(srcCurr + (Vector256<byte>.Count * 7));
-
-                Vector256.Store(~d00, dstCurr + (Vector256<byte>.Count * 0));
-                Vector256.Store(~d01, dstCurr + (Vector256<byte>.Count * 1));
-                Vector256.Store(~d02, dstCurr + (Vector256<byte>.Count * 2));
-                Vector256.Store(~d03, dstCurr + (Vector256<byte>.Count * 3));
-                Vector256.Store(~d04, dstCurr + (Vector256<byte>.Count * 4));
-                Vector256.Store(~d05, dstCurr + (Vector256<byte>.Count * 5));
-                Vector256.Store(~d06, dstCurr + (Vector256<byte>.Count * 6));
-                Vector256.Store(~d07, dstCurr + (Vector256<byte>.Count * 7));
-
-                srcCurr += Vector256<byte>.Count * 8;
-                dstCurr += Vector256<byte>.Count * 8;
-            }
-            if (remainder == 0) return;
-
-            remainingLength = remainder;
-            remainder = remainingLength & (Vector256<byte>.Count - 1);
-            srcEnd = srcCurr + (remainingLength - remainder);
-            while (srcCurr < srcEnd)
-            {
-                Vector256.Store(~Vector256.Load(srcCurr), dstCurr);
-
-                srcCurr += Vector256<byte>.Count;
-                dstCurr += Vector256<byte>.Count;
-            }
-            if (remainder == 0) return;
-
-            remainingLength = remainder;
-            remainder = remainingLength & (sizeof(ulong) - 1);
-            srcEnd = srcCurr + (remainingLength - remainder);
-            while (srcCurr < srcEnd)
-            {
-                *(ulong*)dstCurr = ~*(ulong*)srcCurr;
-
-                srcCurr += sizeof(ulong);
-                dstCurr += sizeof(ulong);
-            }
-            if (remainder == 0) return;
-
-            if (remainder >= 7) dstCurr[6] = (byte)~srcCurr[6];
-            if (remainder >= 6) dstCurr[5] = (byte)~srcCurr[5];
-            if (remainder >= 5) dstCurr[4] = (byte)~srcCurr[4];
-            if (remainder >= 4) dstCurr[3] = (byte)~srcCurr[3];
-            if (remainder >= 3) dstCurr[2] = (byte)~srcCurr[2];
-            if (remainder >= 2) dstCurr[1] = (byte)~srcCurr[1];
-            if (remainder >= 1) dstCurr[0] = (byte)~srcCurr[0];
         }
 
         /// <summary>
