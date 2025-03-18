@@ -192,6 +192,7 @@ namespace Garnet.server
                 RespCommand.PING => 1,
                 RespCommand.PUBLISH => 1,
                 RespCommand.SPUBLISH => 1,
+                RespCommand.SELECT => 1,
                 _ => -1
             };
         }

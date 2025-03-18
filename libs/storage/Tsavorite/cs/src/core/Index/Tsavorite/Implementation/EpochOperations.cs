@@ -25,12 +25,6 @@ namespace Tsavorite.core
             Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
         }
 
-        /// <summary>
-        /// Increment global current epoch
-        /// </summary>
-        /// <returns></returns>
-        public long BumpCurrentEpoch() => epoch.BumpCurrentEpoch();
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SpinWaitUntilClosed(long address)
         {

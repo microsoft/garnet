@@ -520,7 +520,7 @@ namespace Garnet.test
                 }
             }
 
-            // Command line args
+            // JSON args
             {
                 // No value is accepted
                 {
@@ -561,6 +561,92 @@ namespace Garnet.test
                 // Invalid rejected
                 {
                     const string JSON = @"{ ""EnableLua"": true, ""LuaLoggingMode"": ""Foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void LuaAllowedFunctions()
+        {
+            // Command line args
+            {
+                // No value is accepted
+                {
+                    var args = new[] { "--lua" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(0, options.LuaAllowedFunctions.Count());
+                }
+
+                // One option works
+                {
+                    var args = new[] { "--lua", "--lua-allowed-functions", "os" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(1, options.LuaAllowedFunctions.Count());
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("os"));
+                }
+
+                // Multiple option works
+                {
+                    var args = new[] { "--lua", "--lua-allowed-functions", "os,assert,rawget" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(3, options.LuaAllowedFunctions.Count());
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("os"));
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("assert"));
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("rawget"));
+                }
+
+                // Invalid rejected
+                {
+                    var args = new[] { "--lua", "--lua-allowed-functions" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // No value is accepted
+                {
+                    const string JSON = @"{ ""EnableLua"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(0, options.LuaAllowedFunctions.Count());
+                }
+
+                // One option works
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaAllowedFunctions"": [""os""] }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(1, options.LuaAllowedFunctions.Count());
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("os"));
+                }
+
+                // Multiple option works
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaAllowedFunctions"": [""os"", ""assert"", ""rawget""] }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableLua);
+                    ClassicAssert.AreEqual(3, options.LuaAllowedFunctions.Count());
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("os"));
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("assert"));
+                    ClassicAssert.IsTrue(options.LuaAllowedFunctions.Contains("rawget"));
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""EnableLua"": true, ""LuaAllowedFunctions"": { } }";
                     var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
                     ClassicAssert.IsFalse(parseSuccessful);
                 }

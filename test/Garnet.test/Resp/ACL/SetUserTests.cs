@@ -3,7 +3,6 @@
 
 using System;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -30,10 +29,9 @@ namespace Garnet.test.Resp.ACL
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = "+default\r\n";
             var response = lightClientRequest.SendCommand("ACL WHOAMI");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
 
             // Correctness check
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         /// <summary>

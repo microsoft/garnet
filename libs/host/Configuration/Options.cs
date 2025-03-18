@@ -560,6 +560,27 @@ namespace Garnet
         [Option("lua-logging-mode", Required = false, HelpText = "Behavior of redis.log(...) when called from Lua scripts.  Defaults to Enable.")]
         public LuaLoggingMode LuaLoggingMode { get; set; }
 
+        // Parsing is a tad tricky here as JSON wants to set to empty at certain points
+        //
+        // A bespoke union-on-set gets the desired semantics.
+        private readonly HashSet<string> luaAllowedFunctions = [];
+
+        [OptionValidation]
+        [Option("lua-allowed-functions", Separator = ',', Required = false, HelpText = "If set, restricts the functions available in Lua scripts to given list.")]
+        public IEnumerable<string> LuaAllowedFunctions
+        {
+            get => luaAllowedFunctions;
+            set
+            {
+                if (value == null)
+                {
+                    return;
+                }
+
+                luaAllowedFunctions.UnionWith(value);
+            }
+        }
+
         [FilePathValidation(false, true, false)]
         [Option("unixsocket", Required = false, HelpText = "Unix socket address path to bind server to")]
         public string UnixSocketPath { get; set; }
@@ -811,7 +832,7 @@ namespace Garnet
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
-                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, logger) : null,
+                LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions
             };

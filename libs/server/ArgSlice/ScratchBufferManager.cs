@@ -114,6 +114,27 @@ namespace Garnet.server
             return retVal;
         }
 
+        public ReadOnlySpan<byte> UTF8EncodeString(string str)
+        {
+            // We'll always need AT LEAST this many bytes
+            ExpandScratchBufferIfNeeded(str.Length);
+
+            var space = FullBuffer()[scratchBufferOffset..];
+
+            // Attempt to fit in the existing buffer first
+            if (!Encoding.UTF8.TryGetBytes(str, space, out var written))
+            {
+                // If that fails, figure out exactly how much space we need
+                var neededBytes = Encoding.UTF8.GetByteCount(str);
+                ExpandScratchBufferIfNeeded(neededBytes);
+
+                space = FullBuffer()[scratchBufferOffset..];
+                written = Encoding.UTF8.GetBytes(str, space);
+            }
+
+            return space[..written];
+        }
+
         /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice values (arg1 and arg2)
         /// </summary>
