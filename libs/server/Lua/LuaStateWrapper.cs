@@ -619,12 +619,19 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void PushCFunction(delegate* unmanaged[Cdecl]<nint, int> function)
         {
+            AssertLuaStackNotFull();
+
             NativeMethods.PushCFunction(state, (nint)function);
             UpdateStackTop(1);
         }
 
         /// <summary>
         /// Call to register a function in the Lua global namespace.
+        /// 
+        /// Note this will CRASH if there is insufficient memory to create or update the global.
+        /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
+        /// 
+        /// TODO: Can this be removed?
         /// </summary>
         internal unsafe void Register(ReadOnlySpan<byte> nullTerminatedName, delegate* unmanaged[Cdecl]<nint, int> function)
         {
@@ -652,7 +659,7 @@ namespace Garnet.server
             AssertLuaStackIndexInBounds(tableIndex);
 
             // Will always remove 1 key, and _may_ push 2 new values for a net growth of 1
-            AssertLuaStackNotFull(1);
+            AssertLuaStackNotFull();
 
             var ret = NativeMethods.Next(state, tableIndex);
 
@@ -701,7 +708,7 @@ namespace Garnet.server
         /// This should be used for all Rotates into Lua.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Rotate(int stackIndex, int n)
+        internal readonly void Rotate(int stackIndex, int n)
         {
             AssertLuaStackIndexInBounds(stackIndex);
             Debug.Assert(Math.Abs(n) <= (StackTop - stackIndex), "Rotation cannot be larger than slice being rotated");
@@ -773,7 +780,6 @@ namespace Garnet.server
             var hasSpace = customAllocator.ProbeAllocate(numBytes);
             if (!hasSpace)
             {
-                // TODO: Make sure this call actually works - it's a weird one
                 NativeMethods.GC(state, LuaGC.Collect);
 
                 hasSpace = customAllocator.ProbeAllocate(numBytes);

@@ -191,7 +191,7 @@ namespace Garnet.server
         /// Because this is variadic, must use DllImport and extern despite that being the old style.
         /// </summary>
         [DllImport(LuaLibraryName, EntryPoint = nameof(lua_gc), CallingConvention = CallingConvention.Cdecl)]
-        private static extern void lua_gc(lua_State luaState, int what, __arglist);
+        private static extern int lua_gc(lua_State luaState, int what, __arglist);
 
         // GC Transition suppressed - only do this after auditing the Lua method and confirming constant-ish, fast, runtime w/o allocations
 
@@ -373,7 +373,7 @@ namespace Garnet.server
         {
             fixed (byte* ptr = str)
             {
-                _ =  lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
+                _ = lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
             }
         }
 
@@ -657,6 +657,9 @@ namespace Garnet.server
         /// Invoke the Lua GC.
         /// </summary>
         internal static void GC(lua_State luaState, LuaGC gc)
-        => lua_gc(luaState, (int)gc, __arglist());
+        {
+            var res = lua_gc(luaState, (int)gc, __arglist());
+            Debug.Assert(res != -1, "Response indicates failure in lua_gc");
+        }
     }
 }
