@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkwebsite=self.webpackChunkwebsite||[]).push([[4797],{1205:e=>{e.exports=JSON.parse('{"authors":[{"name":"Badrish Chandramouli","title":"Partner Research Manager, Microsoft Research","url":"https://badrish.net","imageURL":"https://badrish.net/assets/icons/badrish4.jpg","key":"badrishc","page":null,"count":2}]}')}}]);
