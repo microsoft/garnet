@@ -536,14 +536,32 @@ namespace Garnet.server
         /// Call to convert a number on the stack to a string in the same slot.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void NumberToString(int stackIndex, out ReadOnlySpan<byte> str)
+        internal readonly bool TryNumberToString(int stackIndex, out ReadOnlySpan<byte> str)
         {
+            // See: https://www.lua.org/source/5.4/lobject.h.html#TString
+            const int AllocationOverheadBytes = 1 + 1 + 8 + 8; // 2 bytes, 1 "int", 1 pointer
+
+            // See: https://www.lua.org/source/5.4/lobject.c.html#MAXNUMBER2STR
+            const int MaxNumberToString = 44;
+
+            // Worst case, a number can will turn into a 44-character string
+            // So probe for that before attempting any conversion
+            const int ProbeBytes = AllocationOverheadBytes + MaxNumberToString;
+
             AssertLuaStackIndexInBounds(stackIndex);
 
             Debug.Assert(Type(stackIndex) is LuaType.Number, "Called with non-number");
 
+            if (!ProbeAllocate(ProbeBytes))
+            {
+                str = default;
+                return false;
+            }
+
             var convRes = NativeMethods.CheckBuffer(state, stackIndex, out str);
             Debug.Assert(convRes, "Conversion failed, this should not happen");
+
+            return true;
         }
 
         /// <summary>

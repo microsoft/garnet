@@ -2347,7 +2347,13 @@ end
                         else
                         {
                             // Force double to string for RESP2
-                            runner.state.NumberToString(curTop + 1, out _);
+                            if(!runner.state.TryNumberToString(curTop + 1, out _))
+                            {
+                                // Fail the whole serialization
+                                errConstStrIndex = runner.constStrs.OutOfMemory;
+                                return false;
+                            }
+
                             if (!TryWriteString(runner, canSend, ref resp, out errConstStrIndex))
                             {
                                 fitInBuffer = false;

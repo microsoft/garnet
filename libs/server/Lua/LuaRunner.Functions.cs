@@ -399,7 +399,10 @@ namespace Garnet.server
             }
             else if (argType == LuaType.Number)
             {
-                state.NumberToString(1, out bytes);
+                if (!state.TryNumberToString(1, out bytes))
+                {
+                    return LuaWrappedError(1, constStrs.OutOfMemory);
+                }
             }
             else
             {
@@ -473,7 +476,10 @@ namespace Garnet.server
                 }
                 else if (type == LuaType.Number)
                 {
-                    state.NumberToString(2, out var buff);
+                    if (!state.TryNumberToString(2, out var buff))
+                    {
+                        return LuaWrappedError(0, constStrs.OutOfMemory);
+                    }
                     logMessage = Encoding.UTF8.GetString(buff);
                 }
                 else
@@ -496,7 +502,10 @@ namespace Garnet.server
                     }
                     else if (type == LuaType.Number)
                     {
-                        state.NumberToString(argIx, out buff);
+                        if (!state.TryNumberToString(argIx, out buff))
+                        {
+                            return LuaWrappedError(0, constStrs.OutOfMemory);
+                        }
                     }
                     else
                     {
@@ -1408,7 +1417,10 @@ namespace Garnet.server
                     // can continue using it with Next(...)
                     if (keyType == LuaType.Number)
                     {
-                        self.state.NumberToString(tableIndex + 3, out _);
+                        if (!self.state.TryNumberToString(tableIndex + 3, out _))
+                        {
+                            return self.LuaWrappedError(1, self.constStrs.OutOfMemory);
+                        }
                     }
 
                     // Encode key
@@ -3158,7 +3170,10 @@ namespace Garnet.server
                     }
                     else if (keyType == LuaType.Number)
                     {
-                        state.NumberToString(2, out keySpan);
+                        if (!state.TryNumberToString(2, out keySpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                     }
                     else
                     {
@@ -3173,7 +3188,10 @@ namespace Garnet.server
                     }
                     else if (valType == LuaType.Number)
                     {
-                        state.NumberToString(3, out valSpan);
+                        if (!state.TryNumberToString(3, out valSpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                     }
                     else
                     {
@@ -3204,7 +3222,10 @@ namespace Garnet.server
                     }
                     else if (keyType == LuaType.Number)
                     {
-                        state.NumberToString(2, out keySpan);
+                        if (!state.TryNumberToString(2, out keySpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                     }
                     else
                     {
@@ -3253,7 +3274,10 @@ namespace Garnet.server
                     }
                     else if (argType is LuaType.Number)
                     {
-                        state.NumberToString(argIx, out var span);
+                        if (!state.TryNumberToString(argIx, out var span))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                         scratchBufferManager.WriteArgument(span);
                     }
                     else
