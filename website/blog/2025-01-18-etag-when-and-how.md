@@ -6,10 +6,10 @@ tags: [garnet, concurrency, caching, lock-free, etags]
 ---
 
 **Garnet recently announced native support for ETag-based commands.**  
-ETags are a powerful feature that enable techniques such as **Optimistic Concurrency Control**, **more efficient network bandwidth utilization for caching**, and **keeping your cache consistent with the database.**
 
-Currently, Garnet provides ETags as raw strings. This feature is available without requiring any migration, allowing your existing key-value pairs to start leveraging ETags immediately without impacting performance metrics.  
-You can find the [ETag API documentation here](/docs/commands/garnet-specific-commands#native-etag-support).
+Native ETags in a cache-store enable real-world use cases such as maintaining cache consistency, reducing network bandwidth utilization, and avoiding full-blown transactions for several applications.
+
+Garnet provides native ETag support for raw strings (data added and retrieved using operations such as `GET` and `SET`). It is not available for objects (such as sorted-set, hash, list). This feature is available without requiring any migration, allowing your existing key-value pairs to start leveraging ETags immediately. You can find the ETag API documentation [here](/docs/commands/garnet-specific-commands#native-etag-support).
 
 This article explores when and how you can use this new Garnet feature for both your current and future applications.
 
@@ -18,37 +18,27 @@ This article explores when and how you can use this new Garnet feature for both 
 ---
 
 ## Why Read This Article?  
+
 If you're looking to:  
 
-1. **Keep your cache consistent with your Database for keys with contention**
+1. **Keep your cache consistent with your back-end database**
 2. **Reduce network bandwidth utilization for caching.**  
-3. **Avoid the cost of transactions when working with non-atomic values in your cache store.**
+3. **Atomically updating cached records based on client-side update logic.**
 
-We'll cover these scenarios case by case.
+We'll cover these scenarios one by one below.
 
 
 ---
 
-## Keeping Cache consistent state with Database for High Contention Keys with Concurrent Clients
+## Keeping the Cache Consistent with its Back-end Database
 
-In a distributed environment it is common to have a cache being updated along with your main source of truth database. This is not a challenge when every client is interacting with keys with no contention. However, in cases where a key in your cache is being updated concurrently by multiple clients as they coordinate writing to the database and then updating the cache. In such a situation whichever client writes to the cache last decides the final state (last write wins), even if they were not the last client to update the database!
+In a distributed environment it is common to have a cache in front of your main _source of truth_ database. Typically, multiple client applications access the cache and the database at the same time. If every client were to access a different set of keys, the caches can easily be maintained consistenty: a client simply writes to the database and then updates the cache.
 
-To make the above scenario consider a cache-database setup where 2 clients are interacting with the pair. They both follow the same protocol where on writes they first update the database, and then update the cache. We will denote each client by c1 and c2, the request to update the datbase as D, and the request to update the cache as C.
-All is good when the sequence of events is as follows:
-```mermaid
-sequenceDiagram
-    participant c1 as Client 1
-    participant db as Database
-    participant cache as Cache
-    participant c2 as Client 2
+However, in cases where a key can be updated by multiple clients, the naive approach of first updating the database and then updating the cache can lead to subtle race conditions. Specifically, whichever client writes to the cache last determines the final state of the cache. This cached state may not ever correspond to the final state of the database for the same key!
 
-    c1->>db: D (older state)
-    c1->>cache: C (older state)
-    c2->>db: D (latest state)
-    c2->>cache: C (latest state)
-```
+To make the above scenario clearer, consider a cache-database setup where 2 clients are interacting with the pair. They both follow the same protocol where on writes they first update the database, and then update the cache. We will denote each client by c1 and c2, the request to update the datbase as D, and the request to update the cache as C.
 
-If c1 finishes its database-cache update protocol strictly before c2 starts its protocol. Even the case of interleaving is not entirely bound to produce errors! In the below sequencing the cache will eventually be consistent with the database!
+All is good for sequences where the last writer to the database is also the last writer to the cache:
 
 ```mermaid
 sequenceDiagram
@@ -63,7 +53,8 @@ sequenceDiagram
     c2->>cache: C (latest state)
 ```
 
-However, in the case where between c1 updating the database and the cache, c2 happens to interleave such that it updates the database and the cache before c1, we hit a consistency issue!
+However, if the last writer to the database is NOT the last writer to the case, we introduce a _permanent_ inconsistency between the cache and the database, as the following diagram depicts:
+
 ```mermaid
 sequenceDiagram
     participant c1 as Client 1
@@ -76,18 +67,19 @@ sequenceDiagram
     c2->>cache: C (latest state)
     c1->>cache: C (older state)
 ```
-In the above sequencing you will see that c2 is the last write to the database but c1 has the last write to the cache. So the cache and datbase have gone out of sync.
+In the above sequencing, note that c2 performs the last write to the database. However, c1 performs the last write to the cache. As a result, the cache and the database have gone out of sync.
 
-For handling such cases we can rely on the newly introduced ETag feature in Garnet to construct a logical clock around the updates that protect establishing cache consistency (*provided your database also supports ETags such as Cosmos DB).
+For handling such cases we can rely on the newly introduced ETag feature in Garnet to construct a logical clock around the updates that protect establishing cache consistency (*provided your database also supports ETags or some other form of server-side transactions).
 
-In such a scenario the client should use our `SETIFGREATER` API [here](/docs/commands/garnet-specific-commands#setifgreater), when interacting with the cache. `SETIFGREATER` sends a key-value pair along with an etag from the client, and only sets the value if the sent ETag is greater than what is set against the key-value pair already.
+In such a scenario the client should use our `SETIFGREATER` API [here](/docs/commands/garnet-specific-commands#setifgreater), when interacting with the cache. `SETIFGREATER` sends a key-value pair along with an etag from the client, and only sets the value if the sent ETag is greater than what is currently set in the cache for that key-value pair.
 
 Every client would now follow the following protocol:
-- `SETIFGREATER` or `SETIFMATCH` [API](/docs/commands/garnet-specific-commands#setifmatch) based update to the source of truth first.
-- Use the retrieved ETag from our previous call as an argument for SETIFGREATER to update the cache.
+- Database stores a pair of (value, etag) on the server
+- Use a transaction (or `SETIFGREATER` or `SETIFMATCH` [API](/docs/commands/garnet-specific-commands#setifmatch)) on the database to atomically update `(oldValue, etag)` to `(newValue, etag+1)`, and return the new etag to the client.
+- Use the retrieved ETag from our previous call as an argument for SETIFGREATER to update the cache, so that the cache is updated only if the new tag is greater than what is currently stored in the cache.
 
-If every client follows the above protocol. We can ensure that only the last/latest database write is reflected in the client as well.
-The same sequencing of events but with the clients following our new updated protocol.
+If every client follows the above protocol. We can ensure that only the last/latest database write will be reflected in the cache, leading to eventual consistency. The same sequencing of events as before, but with the clients following our new updated protocol, is shown below:
+
 ```mermaid
 sequenceDiagram
     participant c1 as Client 1
