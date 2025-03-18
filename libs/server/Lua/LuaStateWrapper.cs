@@ -458,6 +458,11 @@ namespace Garnet.server
         /// This should be used for all SetGlobals into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// 
+        /// Note this will CRASH if there is insufficient memory to create or update the global.
+        /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
+        /// 
+        /// TODO: Can this be removed?
         /// </summary>
         internal void SetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
         {
@@ -480,6 +485,8 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull(2);
 
+            // Note that https://www.lua.org/source/5.4/lauxlib.c.html#luaL_loadbufferx is implemented in terms of
+            // a PCall, so we don't have to worry about crashes.
             var ret = NativeMethods.LoadBuffer(state, buffer);
 
             if (ret != LuaStatus.OK)
@@ -507,6 +514,8 @@ namespace Garnet.server
         {
             AssertLuaStackNotFull(2);
 
+            // Note that https://www.lua.org/source/5.4/lauxlib.h.html#luaL_loadbuffer is implemented in terms of
+            // a PCall, so we don't have to worry about crashes.
             var ret = NativeMethods.LoadString(state, buffer);
 
             if (ret != LuaStatus.OK)
