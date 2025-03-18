@@ -1560,7 +1560,10 @@ namespace Garnet.server
                     return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
                 }
 
-                self.state.CreateTable(arr.Count, 0);
+                if (!self.state.TryCreateTable(arr.Count, 0))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.OutOfMemory);
+                }
 
                 var tableIndex = self.state.StackTop;
 
@@ -1594,7 +1597,10 @@ namespace Garnet.server
                     return self.LuaWrappedError(1, self.constStrs.InsufficientLuaStackSpace);
                 }
 
-                self.state.CreateTable(0, obj.Count);
+                if (!self.state.TryCreateTable(0, obj.Count))
+                {
+                    return self.LuaWrappedError(1, self.constStrs.OutOfMemory);
+                }
                 var setInTable = 0;
 
                 var tableIndex = self.state.StackTop;
@@ -2498,7 +2504,11 @@ namespace Garnet.server
 
                 var len = sigil & 0b0000_1111;
 
-                self.state.CreateTable(len, 0);
+                if (!self.state.TryCreateTable(len, 0))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
                 var arrayIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
@@ -2531,7 +2541,11 @@ namespace Garnet.server
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
 
-                self.state.CreateTable(len, 0);
+                if (!self.state.TryCreateTable(len, 0))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
                 var arrayIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
@@ -2572,7 +2586,11 @@ namespace Garnet.server
                     return false;
                 }
 
-                self.state.CreateTable((int)len, 0);
+                if (!self.state.TryCreateTable((int)len, 0))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
                 var arrayIndex = self.state.StackTop;
 
                 for (var i = 1; i <= len; i++)
@@ -2605,7 +2623,11 @@ namespace Garnet.server
 
                 var len = sigil & 0b0000_1111;
 
-                self.state.CreateTable(0, len);
+                if (!self.state.TryCreateTable(0, len))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
                 var setInTable = 0;
 
                 var mapIndex = self.state.StackTop;
@@ -2649,7 +2671,11 @@ namespace Garnet.server
                 var len = BinaryPrimitives.ReadUInt16BigEndian(data);
                 data = data[2..];
 
-                self.state.CreateTable(0, len);
+                if (!self.state.TryCreateTable(0, len))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
                 var setInTable = 0;
 
                 var mapIndex = self.state.StackTop;
@@ -2700,7 +2726,11 @@ namespace Garnet.server
                     return false;
                 }
 
-                self.state.CreateTable(0, (int)len);
+                if (!self.state.TryCreateTable(0, (int)len))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
                 var setInTable = 0;
 
                 var mapIndex = self.state.StackTop;
@@ -3057,7 +3087,7 @@ namespace Garnet.server
 
                 Debug.Assert(state.Type(2) == LuaType.Function, "Unexpected type returned from load_sandboxed");
 
-                functionRegistryIndex = state.Ref();
+                functionRegistryIndex = state.UnsafeRef();
             }
             else
             {

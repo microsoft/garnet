@@ -369,9 +369,14 @@ namespace Garnet.server
         /// This should be used for all Refs into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// 
+        /// Note this will CRASH if there is insufficient memory to create the ref.
+        /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
+        /// 
+        /// TODO: Can this be removed?
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int Ref()
+        internal int UnsafeRef()
         {
             var ret = NativeMethods.Ref(state, (int)LuaRegistry.Index);
             UpdateStackTop(-1);
@@ -394,12 +399,44 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CreateTable(int numArr, int numRec)
+        internal bool TryCreateTable(int numArr, int numRec)
         {
+            // Bytes needed just from creating a Table
+            // see: https://www.lua.org/source/5.4/lobject.h.html#Table
+            const int AllocationOverheadBytes =
+                8 + 1 + 1 +     // CommonHeader: 1 pointer, 2 bytes
+                1 + 1 +         // Table: 2 bytes
+                8 + 8 + 8 + 8 + // Table: 1 "int", 3 pointers
+                8 + 8;          // Table: 2 pointers
+
+            // Bytes for each record
+            // see: https://www.lua.org/source/5.4/lobject.h.html#Node
+            const int NodeBytes =
+                8 +     // Value union: equivalent to 1 pointer
+                1 +     // TValuefields: 1 byte
+                1 + 8 + // NodeKey: 1 byte, 1 "int"
+                8;      // Value union: equivalent to 1 pointer
+
+            // Bytes for each array value
+            // see: https://www.lua.org/source/5.4/lobject.h.html#TValue
+            const int ValueBytes = 8 + 1; // TValuefields, 1 pointer (from Value union) & 1 byte
+
+            // Extra padding since we're probing _once_ but Lua will actually do up-to-three allocations
+            const int PaddingBytes = NodeBytes + ValueBytes;
+
             AssertLuaStackNotFull();
+
+            var neededBytes = AllocationOverheadBytes + (numArr * ValueBytes) + (numRec * NodeBytes) + PaddingBytes;
+
+            if (!ProbeAllocate(neededBytes))
+            {
+                return false;
+            }
 
             NativeMethods.CreateTable(state, numArr, numRec);
             UpdateStackTop(1);
+
+            return true;
         }
 
         /// <summary>

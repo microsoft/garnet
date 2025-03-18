@@ -395,7 +395,7 @@ namespace Garnet.server
                     throw new GarnetException("Insufficient space in Lua VM for constant string");
                 }
 
-                return state.Ref();
+                return state.UnsafeRef();
             }
         }
 
@@ -844,11 +844,17 @@ end
 
             state = new LuaStateWrapper(memMode, memLimitBytes, this.logger);
 
-            state.CreateTable(InitialKeysCapacity, 0);
+            if (!state.TryCreateTable(InitialKeysCapacity, 0))
+            {
+                throw new GarnetException("Insufficient space in Lua VM for KEYS");
+            }
             state.SetGlobal("KEYS\0"u8);
             keysArrCapacity = InitialKeysCapacity;
 
-            state.CreateTable(InitialArgvCapacity, 0);
+            if (!state.TryCreateTable(InitialArgvCapacity, 0))
+            {
+                throw new GarnetException("Insufficient space in Lua VM for ARGV");
+            }
             state.SetGlobal("ARGV\0"u8);
             argvArrCapacity = InitialArgvCapacity;
 
@@ -954,16 +960,16 @@ end
             }
 
             state.GetGlobal(LuaType.Table, "sandbox_env\0"u8);
-            sandboxEnvRegistryIndex = state.Ref();
+            sandboxEnvRegistryIndex = state.UnsafeRef();
 
             state.GetGlobal(LuaType.Function, "load_sandboxed\0"u8);
-            loadSandboxedRegistryIndex = state.Ref();
+            loadSandboxedRegistryIndex = state.UnsafeRef();
 
             state.GetGlobal(LuaType.Function, "reset_keys_and_argv\0"u8);
-            resetKeysAndArgvRegistryIndex = state.Ref();
+            resetKeysAndArgvRegistryIndex = state.UnsafeRef();
 
             state.GetGlobal(LuaType.Function, "request_timeout\0"u8);
-            requestTimeoutRegsitryIndex = state.Ref();
+            requestTimeoutRegsitryIndex = state.UnsafeRef();
 
             // Load all the constant strings into the VM
             constStrs = new(ref state);
@@ -1167,7 +1173,11 @@ end
                         }
 
                         // Construct a table = { 'ok': value }
-                        state.CreateTable(0, 1);
+                        if (!state.TryCreateTable(0, 1))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                         state.PushConstantString(constStrs.OkLower);
                         var setInOkTable = 0;
 
@@ -1287,7 +1297,11 @@ end
                                 return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
                             }
 
-                            state.CreateTable(arrayItemCount, 0);
+                            if (!state.TryCreateTable(arrayItemCount, 0))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.OutOfMemory);
+                            }
 
                             for (var itemIx = 0; itemIx < arrayItemCount; itemIx++)
                             {
@@ -1322,11 +1336,19 @@ end
                         }
 
                         // Response is a two level table, where { map = { ... } }
-                        state.CreateTable(0, 1);
+                        if (!state.TryCreateTable(0, 1))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                         var setRecordsInTable = 0;
 
                         state.PushConstantString(constStrs.Map);
-                        state.CreateTable(0, mapPairCount);
+                        if (!state.TryCreateTable(0, mapPairCount))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                         var setRecordsInMap = 0;
 
                         for (var pair = 0; pair < mapPairCount; pair++)
@@ -1398,11 +1420,19 @@ end
                         }
 
                         // Response is a two level table, where { set = { ... } }
-                        state.CreateTable(0, 1);
+                        if (!state.TryCreateTable(0, 1))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                         var setRecordsInTable = 0;
 
                         state.PushConstantString(constStrs.Set);
-                        state.CreateTable(0, setItemCount);
+                        if (!state.TryCreateTable(0, setItemCount))
+                        {
+                            respPtr = respEnd;
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
                         var setRecordsInSet = 0;
 
                         for (var pair = 0; pair < setItemCount; pair++)
@@ -1519,7 +1549,11 @@ end
                             }
 
                             // Create table like { double = <parsed> }
-                            state.CreateTable(0, 1);
+                            if (!state.TryCreateTable(0, 1))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.OutOfMemory);
+                            }
                             var setRecordsInTable = 0;
 
                             state.PushConstantString(constStrs.Double);
@@ -1566,13 +1600,18 @@ end
                                 }
 
                                 // Create table like { big_number = <bigNumBuf> }
-                                state.CreateTable(0, 1);
+                                if (!state.TryCreateTable(0, 1))
+                                {
+                                    respPtr = respEnd;
+                                    return LuaWrappedError(1, constStrs.OutOfMemory);
+                                }
                                 var setRecordsInTable = 0;
 
                                 state.PushConstantString(constStrs.BigNumber);
 
                                 if (!state.TryPushBuffer(bigNumSpan))
                                 {
+                                    respPtr = respEnd;
                                     return LuaWrappedError(1, constStrs.OutOfMemory);
                                 }
 
@@ -1620,7 +1659,11 @@ end
                                 return LuaWrappedError(1, constStrs.InsufficientLuaStackSpace);
                             }
 
-                            state.CreateTable(0, 2);
+                            if (!state.TryCreateTable(0, 2))
+                            {
+                                respPtr = respEnd;
+                                return LuaWrappedError(1, constStrs.OutOfMemory);
+                            }
                             var setRecordsInTable = 0;
 
                             state.PushConstantString(constStrs.Format);
@@ -1952,7 +1995,10 @@ end
             state.PushConstantString(constStrs.KEYS);
 
             // Make new KEYS
-            state.CreateTable(length, 0);
+            if (!state.TryCreateTable(length, 0))
+            {
+                return false;
+            }
 
             // Save it, which should have NO allocation impact because we're updating an existing slot
             var ignored = 0;
@@ -1982,7 +2028,10 @@ end
             state.PushConstantString(constStrs.ARGV);
 
             // Make new ARGV
-            state.CreateTable(length, 0);
+            if (!state.TryCreateTable(length, 0))
+            {
+                return false;
+            }
 
             // Save it, which should have NO allocation impact because we're updating an existing slot
             var ignored = 0;
