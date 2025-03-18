@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Numerics.Tensors;
 using System.Runtime.Intrinsics;
-using Garnet.common;
 using Garnet.common.Numerics;
 
 namespace Garnet.server
@@ -14,35 +14,49 @@ namespace Garnet.server
         /// <summary>
         /// BitOp main driver.
         /// </summary>
-        /// <param name="dstPtr">Output buffer to write BitOp result</param>
-        /// <param name="dstLen">Output buffer length.</param>
-        /// <param name="srcStartPtrs">Array of pointers to bitmaps used as input in the corresponding bitop.</param>
-        /// <param name="srcEndPtrs">Array of pointers to bitmap sources.</param>
-        /// <param name="srcKeyCount">Number of source keys.</param>
-        /// <param name="minSize">Minimum size of source bitmap.</param>
-        /// <param name="bitop">Type of bitop operation being executed.</param>
+        /// <param name="op">Type of the operation being executed</param>
+        /// <param name="srcKeyCount">Number of source keys</param>
+        /// <param name="srcKeyPtrs">Array of pointers to source key buffers. The array length must be greater than or equal to <paramref name="srcKeyCount"/></param>
+        /// <param name="srcKeyEndPtrs">Array of the buffer lengths of the keys specified in <paramref name="srcKeyPtrs"/>. The array length must be greater than or equal to <paramref name="srcKeyCount"/></param>
+        /// <param name="minLength">Minimum length of source key buffers</param>
+        /// <param name="dstPtr">Output buffer to write the result</param>
+        /// <param name="dstLength">Output buffer length</param>
         /// <returns></returns>
-        public static bool BitOpMainUnsafeMultiKey(byte* dstPtr, int dstLen, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minSize, byte bitop)
+        public static void BitOpMainUnsafeMultiKey(BitmapOperation op, int srcKeyCount, byte** srcKeyPtrs, byte** srcKeyEndPtrs, byte* dstPtr, int dstLength, int minLength)
         {
-            switch (bitop)
+            Debug.Assert(srcKeyCount > 0);
+            Debug.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR);
+
+            if (srcKeyCount == 1)
             {
-                case (byte)BitmapOperation.NOT:
-                    var firstKeyLength = checked((int)(srcEndPtrs[0] - srcStartPtrs[0]));
-                    TensorPrimitives.OnesComplement(new ReadOnlySpan<byte>(srcStartPtrs[0], firstKeyLength), new Span<byte>(dstPtr, dstLen));
-                    break;
-                case (byte)BitmapOperation.AND:
-                    InvokeMultiKeyBitwise<BitwiseAndOperator>(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
-                    break;
-                case (byte)BitmapOperation.OR:
-                    InvokeMultiKeyBitwise<BitwiseOrOperator>(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
-                    break;
-                case (byte)BitmapOperation.XOR:
-                    InvokeMultiKeyBitwise<BitwiseXorOperator>(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
-                    break;
-                default:
-                    throw new GarnetException("Unsupported BitOp command");
+                var srcKey = new ReadOnlySpan<byte>(srcKeyPtrs[0], checked((int)(srcKeyEndPtrs[0] - srcKeyPtrs[0])));
+                var dst = new Span<byte>(dstPtr, dstLength);
+
+                if (op == BitmapOperation.NOT)
+                {
+                    TensorPrimitives.OnesComplement(srcKey, dst);
+                }
+                else
+                {
+                    srcKey.CopyTo(dst);
+                }
             }
-            return true;
+            else if (srcKeyCount == 2)
+            {
+                var firstSrcKey = new ReadOnlySpan<byte>(srcKeyPtrs[0], checked((int)(srcKeyEndPtrs[0] - srcKeyPtrs[0])));
+                var secondSrcKey = new ReadOnlySpan<byte>(srcKeyPtrs[1], checked((int)(srcKeyEndPtrs[1] - srcKeyPtrs[1])));
+                var dst = new Span<byte>(dstPtr, dstLength);
+
+                if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrcKey, secondSrcKey, dst);
+                else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrcKey, secondSrcKey, dst);
+                else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrcKey, secondSrcKey, dst);
+            }
+            else
+            {
+                if (op == BitmapOperation.AND) InvokeMultiKeyBitwise<BitwiseAndOperator>(srcKeyCount, srcKeyPtrs, srcKeyEndPtrs, dstPtr, dstLength, minLength);
+                else if (op == BitmapOperation.OR) InvokeMultiKeyBitwise<BitwiseOrOperator>(srcKeyCount, srcKeyPtrs, srcKeyEndPtrs, dstPtr, dstLength, minLength);
+                else if (op == BitmapOperation.XOR) InvokeMultiKeyBitwise<BitwiseXorOperator>(srcKeyCount, srcKeyPtrs, srcKeyEndPtrs, dstPtr, dstLength, minLength);
+            }
         }
 
         /// <summary>
@@ -51,11 +65,11 @@ namespace Garnet.server
         /// <typeparam name="TBinaryOperator">The binary operator type to compute bitwise</typeparam>
         /// <param name="dstPtr">Output buffer to write BitOp result</param>
         /// <param name="dstLength">Output buffer length.</param>
-        /// <param name="srcStartPtrs">Pointer to start of bitmap sources.</param>
-        /// <param name="srcEndPtrs">Pointer to end of bitmap sources</param>
+        /// <param name="srcKeyPtrs">Array of pointers to source key buffers.</param>
+        /// <param name="srcKeyEndPtrs">Array of the of pointers pointing to the end of the respective the keys specified in <paramref name="srcKeyPtrs"/>.</param>
         /// <param name="srcKeyCount">Number of source keys.</param>
         /// <param name="minLength">Minimum length of source bitmaps.</param>
-        private static void InvokeMultiKeyBitwise<TBinaryOperator>(byte* dstPtr, int dstLength, byte** srcStartPtrs, byte** srcEndPtrs, int srcKeyCount, int minLength)
+        private static void InvokeMultiKeyBitwise<TBinaryOperator>(int srcKeyCount, byte** srcKeyPtrs, byte** srcKeyEndPtrs, byte* dstPtr, int dstLength, int minLength)
             where TBinaryOperator : struct, IBinaryOperator
         {
             var dstEndPtr = dstPtr + dstLength;
@@ -64,7 +78,7 @@ namespace Garnet.server
             long batchRemainder = minLength;
             byte* dstBatchEndPtr;
 
-            ref var firstKeyPtr = ref srcStartPtrs[0];
+            ref var firstKeyPtr = ref srcKeyPtrs[0];
 
             if (Vector256.IsHardwareAccelerated && Vector256<byte>.IsSupported)
             {
@@ -73,7 +87,7 @@ namespace Garnet.server
                 dstBatchEndPtr = dstPtr + (remainingLength - batchRemainder);
                 remainingLength = batchRemainder;
 
-                Vectorized256(ref firstKeyPtr, srcStartPtrs, srcKeyCount, ref dstPtr, dstBatchEndPtr);
+                Vectorized256(ref firstKeyPtr, srcKeyPtrs, srcKeyCount, ref dstPtr, dstBatchEndPtr);
             }
             else if (Vector128.IsHardwareAccelerated && Vector128<byte>.IsSupported)
             {
@@ -82,7 +96,7 @@ namespace Garnet.server
                 dstBatchEndPtr = dstPtr + (remainingLength - batchRemainder);
                 remainingLength = batchRemainder;
 
-                Vectorized128(ref firstKeyPtr, srcStartPtrs, srcKeyCount, ref dstPtr, dstBatchEndPtr);
+                Vectorized128(ref firstKeyPtr, srcKeyPtrs, srcKeyCount, ref dstPtr, dstBatchEndPtr);
             }
 
             // Scalar: 8 bytes x 4
@@ -101,14 +115,14 @@ namespace Garnet.server
 
                 for (var i = 1; i < srcKeyCount; i++)
                 {
-                    ref var keyStartPtr = ref srcStartPtrs[i];
+                    ref var keyStartPtr = ref srcKeyPtrs[i];
 
                     d00 = TBinaryOperator.Invoke(d00, *(ulong*)(keyStartPtr + (sizeof(ulong) * 0)));
                     d01 = TBinaryOperator.Invoke(d01, *(ulong*)(keyStartPtr + (sizeof(ulong) * 1)));
                     d02 = TBinaryOperator.Invoke(d02, *(ulong*)(keyStartPtr + (sizeof(ulong) * 2)));
                     d03 = TBinaryOperator.Invoke(d03, *(ulong*)(keyStartPtr + (sizeof(ulong) * 3)));
 
-                    srcStartPtrs[i] += sizeof(ulong) * 4;
+                    srcKeyPtrs[i] += sizeof(ulong) * 4;
                 }
 
                 *(ulong*)(dstPtr + (sizeof(ulong) * 0)) = d00;
@@ -124,7 +138,7 @@ namespace Garnet.server
             {
                 byte d00 = 0;
 
-                if (firstKeyPtr < srcEndPtrs[0])
+                if (firstKeyPtr < srcKeyEndPtrs[0])
                 {
                     d00 = *firstKeyPtr;
                     firstKeyPtr++;
@@ -132,10 +146,10 @@ namespace Garnet.server
 
                 for (var i = 1; i < srcKeyCount; i++)
                 {
-                    if (srcStartPtrs[i] < srcEndPtrs[i])
+                    if (srcKeyPtrs[i] < srcKeyEndPtrs[i])
                     {
-                        d00 = TBinaryOperator.Invoke(d00, *srcStartPtrs[i]);
-                        srcStartPtrs[i]++;
+                        d00 = TBinaryOperator.Invoke(d00, *srcKeyPtrs[i]);
+                        srcKeyPtrs[i]++;
                     }
                     else if (typeof(TBinaryOperator) == typeof(BitwiseAndOperator))
                     {

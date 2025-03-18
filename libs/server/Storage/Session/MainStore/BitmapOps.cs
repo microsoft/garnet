@@ -85,8 +85,8 @@ namespace Garnet.server
             // 8 byte start pointer
             // 4 byte int length
             var output = stackalloc byte[12];
-            var srcBitmapStartPtrs = stackalloc byte*[keyCount - 1];
-            var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
+            var srcKeyPtrs = stackalloc byte*[keyCount - 1];
+            var srcKeyEndPtrs = stackalloc byte*[keyCount - 1];
 
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
@@ -125,18 +125,18 @@ namespace Garnet.server
                         continue;
 
                     var outputBitmapPtr = outputBitmap.SpanByte.ToPointer();
-                    var localSrcBitmapPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
-                    var len = *(int*)(outputBitmapPtr + 8);
+                    var localKeyPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
+                    var localKeyLength = *(int*)(outputBitmapPtr + 8);
 
                     // Keep track of pointers returned from ISessionFunctions
-                    srcBitmapStartPtrs[keysFound] = localSrcBitmapPtr;
-                    srcBitmapEndPtrs[keysFound] = localSrcBitmapPtr + len;
+                    srcKeyPtrs[keysFound] = localKeyPtr;
+                    srcKeyEndPtrs[keysFound] = localKeyPtr + localKeyLength;
                     keysFound++;
-                    maxBitmapLen = Math.Max(len, maxBitmapLen);
-                    minBitmapLen = Math.Min(len, minBitmapLen);
+
+                    maxBitmapLen = Math.Max(localKeyLength, maxBitmapLen);
+                    minBitmapLen = Math.Min(localKeyLength, minBitmapLen);
                 }
 
-                #region performBitop
                 // Allocate result buffers
                 sectorAlignedMemoryBitmap ??= new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
@@ -152,13 +152,10 @@ namespace Garnet.server
                     dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
                 }
 
-
                 // Check if at least one key is found and execute bitop
                 if (keysFound > 0)
                 {
-                    //1. Multi-way bitmap merge
-                    _ = BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, keysFound, minBitmapLen, (byte)bitOp);
-                    #endregion
+                    BitmapManager.BitOpMainUnsafeMultiKey(bitOp, keysFound, srcKeyPtrs, srcKeyEndPtrs, dstBitmapPtr, maxBitmapLen, minBitmapLen);
 
                     if (maxBitmapLen > 0)
                     {
