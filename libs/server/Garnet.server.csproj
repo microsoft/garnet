@@ -17,7 +17,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.IdentityModel.Validators" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
