@@ -3,12 +3,18 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
@@ -235,44 +241,197 @@ namespace Garnet.server
             }
         }
 
-        const string LoaderBlock = @"
-import = function () end
+        /// <summary>
+        /// Simple cache of allowed functions to loader block.
+        /// </summary>
+        private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes);
+
+        private const string LoaderBlock = @"
+-- globals to fill in on each invocation
 KEYS = {}
 ARGV = {}
+
+-- disable for sandboxing purposes
+import = function () end
+
+-- cutdown os for sandboxing purposes
+local osClockRef = os.clock
+os = {
+    clock = osClockRef
+}
+
+-- define cjson for (optional) inclusion into sandbox_env
+local cjson = {
+    encode = garnet_cjson_encode;
+    decode = garnet_cjson_decode;
+}
+
+-- define bit for (optional) inclusion into sandbox_env
+local bit = {
+    tobit = garnet_bit_tobit;
+    tohex = garnet_bit_tohex;
+    bnot = function(...) return garnet_bitop(0, ...); end;
+    bor = function(...) return garnet_bitop(1, ...); end;
+    band = function(...) return garnet_bitop(2, ...); end;
+    bxor = function(...) return garnet_bitop(3, ...); end;
+    lshift = function(...) return garnet_bitop(4, ...); end;
+    rshift = function(...) return garnet_bitop(5, ...); end;
+    arshift = function(...) return garnet_bitop(6, ...); end;
+    rol = function(...) return garnet_bitop(7, ...); end;
+    ror = function(...) return garnet_bitop(8, ...); end;
+    bswap = garnet_bit_bswap;
+}
+
+-- define cmsgpack for (optional) inclusion into sandbox_env
+local cmsgpack = {
+    pack = garnet_cmsgpack_pack;
+    unpack = garnet_cmsgpack_unpack;
+}
+
+-- define struct for (optional) inclusion into sandbox_env
+local struct = {
+    pack = string.pack;
+    unpack = string.unpack;
+    size = string.packsize;
+}
+
+-- define redis for (optional, but almost always) inclusion into sandbox_env
+local garnetCallRef = garnet_call
+local pCallRef = pcall
+local redis = {
+    status_reply = function(text)
+        return text
+    end,
+
+    error_reply = function(text)
+        return { err = 'ERR ' .. text }
+    end,
+
+    call = garnetCallRef,
+
+    pcall = function(...)
+        local success, errOrRes = pCallRef(garnetCallRef, ...)
+        if success then
+            return errOrRes
+        end
+
+        return { err = errOrRes }
+    end,
+
+    sha1hex = garnet_sha1hex,
+
+    LOG_DEBUG = 0,
+    LOG_VERBOSE = 1,
+    LOG_NOTICE = 2,
+    LOG_WARNING = 3,
+
+    log = garnet_log,
+
+    REPL_ALL = 3,
+    REPL_AOF = 1,
+    REPL_REPLICA = 2,
+    REPL_SLAVE = 2,
+    REPL_NONE = 0,
+
+    set_repl = function(...)
+        -- this is a giant footgun, straight up not implementing it
+        error('ERR redis.set_repl is not supported in Garnet', 0)
+    end,
+
+    replicate_commands = function(...)
+        return true
+    end,
+
+    breakpoint = function(...)
+        -- this is giant and weird, not implementing
+        error('ERR redis.breakpoint is not supported in Garnet', 0)
+    end,
+
+    debug = function(...)
+        -- this is giant and weird, not implementing
+        error('ERR redis.debug is not supported in Garnet', 0)
+    end,
+
+    acl_check_cmd = garnet_acl_check_cmd,
+    setresp = garnet_setresp,
+
+    REDIS_VERSION = garnet_REDIS_VERSION,
+    REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
+}
+
+-- unpack moved after Lua 5.1, this provides Redis compat
+local unpack = table.unpack
+
+-- added after Lua 5.1, removing to maintain Redis compat
+string.pack = nil
+string.unpack = nil
+string.packsize = nil
+math.maxinteger = nil
+math.type = nil
+math.mininteger = nil
+math.tointeger = nil
+math.ult = nil
+table.pack = nil
+table.unpack = nil
+table.move = nil
+
+-- in Lua 5.1 but not 5.4, so implemented on the .NET side
+local loadstring = garnet_loadstring
+math.atan2 = garnet_atan2
+math.cosh = garnet_cosh
+math.frexp = garnet_frexp
+math.ldexp = garnet_ldexp
+math.log10 = garnet_log10
+math.pow = garnet_pow
+math.sinh = garnet_sinh
+math.tanh = garnet_tanh
+table.maxn = garnet_maxn
+
+local collectgarbageRef = collectgarbage
+local setMetatableRef = setmetatable
+local rawsetRef = rawset
+
+-- prevent modification to metatables for readonly tables
+-- Redis accomplishes this by patching Lua, we'd rather ship
+-- vanilla Lua and do it in code
+local setmetatable = function(table, metatable)
+    if table and table.__readonly then
+        error('Attempt to modify a readonly table', 0)
+    end
+
+    return setMetatableRef(table, metatable)
+end
+
+-- prevent bypassing metatables to update readonly tables
+-- as above, Redis prevents this with a patch to Lua
+local rawset = function(table, key, value)
+    if table and table.__readonly then
+        error('Attempt to modify a readonly table', 0)
+    end
+
+    return rawsetRef(table, key, value)
+end
+
+-- technically deprecated in 5.1, but available in Redis
+-- this is only 'sort of' correct as 5.4 doesn't expose the same
+-- gc primitives
+local gcinfo = function()
+    return collectgarbageRef('count'), 0
+end
+
+-- global object used for the sandbox environment
+--
+-- replacements are performed before VM initialization
+-- to allow configuring available functions
 sandbox_env = {
     _VERSION = _VERSION;
 
-    assert = assert;
-    collectgarbage = collectgarbage;
-    coroutine = coroutine;
-    error = error;
-    gcinfo = gcinfo;
-    -- explicitly not allowing getfenv
-    getmetatable = getmetatable;
-    ipairs = ipairs;
-    load = load;
-    loadstring = loadstring;
-    math = math;
-    next = next;
-    pairs = pairs;
-    pcall = pcall;
-    rawequal = rawequal;
-    rawget = rawget;
-    -- rawset is proxied to implement readonly tables
-    select = select;
-    -- explicitly not allowing setfenv
-    -- setmetatable is proxied to implement readonly tables
-    string = string;
-    table = table;
-    tonumber = tonumber;
-    tostring = tostring;
-    type = type;
-    unpack = table.unpack;
-    xpcall = xpcall;
-
     KEYS = KEYS;
     ARGV = ARGV;
+
+!!SANDBOX_ENV REPLACEMENT TARGET!!
 }
+
 -- no reference to outermost set of globals (_G) should survive sandboxing
 sandbox_env._G = sandbox_env
 -- lock down a table, recursively doing the same to all table members
@@ -298,7 +457,7 @@ function recursively_readonly_table(table)
         end
     end
 
-    setmetatable(table, readonly_metatable)
+    setMetatableRef(table, readonly_metatable)
 end
 -- do resets in the Lua side to minimize pinvokes
 function reset_keys_and_argv(fromKey, fromArgv)
@@ -316,98 +475,6 @@ function reset_keys_and_argv(fromKey, fromArgv)
 end
 -- responsible for sandboxing user provided code
 function load_sandboxed(source)
-    -- move into a local to avoid global lookup
-    local garnetCallRef = garnet_call
-    local pCallRef = pcall
-    local sha1hexRef = garnet_sha1hex
-    local logRef = garnet_log
-    local aclCheckCmdRef = garnet_acl_check_cmd
-    local setRespRef = garnet_setresp
-    local setMetatableRef = setmetatable
-    local rawsetRaw = rawset
-
-    sandbox_env.redis = {
-        status_reply = function(text)
-            return text
-        end,
-
-        error_reply = function(text)
-            return { err = 'ERR ' .. text }
-        end,
-
-        call = garnetCallRef,
-
-        pcall = function(...)
-            local success, errOrRes = pCallRef(garnetCallRef, ...)
-            if success then
-                return errOrRes
-            end
-
-            return { err = errOrRes }
-        end,
-
-        sha1hex = sha1hexRef,
-
-        LOG_DEBUG = 0,
-        LOG_VERBOSE = 1,
-        LOG_NOTICE = 2,
-        LOG_WARNING = 3,
-
-        log = logRef,
-
-        REPL_ALL = 3,
-        REPL_AOF = 1,
-        REPL_REPLICA = 2,
-        REPL_SLAVE = 2,
-        REPL_NONE = 0,
-
-        set_repl = function(...)
-            -- this is a giant footgun, straight up not implementing it
-            error('ERR redis.set_repl is not supported in Garnet', 0)
-        end,
-
-        replicate_commands = function(...)
-            return true
-        end,
-
-        breakpoint = function(...)
-            -- this is giant and weird, not implementing
-            error('ERR redis.breakpoint is not supported in Garnet', 0)
-        end,
-
-        debug = function(...)
-            -- this is giant and weird, not implementing
-            error('ERR redis.debug is not supported in Garnet', 0)
-        end,
-
-        acl_check_cmd = aclCheckCmdRef,
-        setresp = setRespRef,
-
-        REDIS_VERSION = garnet_REDIS_VERSION,
-        REDIS_VERSION_NUM = garnet_REDIS_VERSION_NUM
-    }
-
-    -- prevent modification to metatables for readonly tables
-    -- Redis accomplishes this by patching Lua, we'd rather ship
-    -- vanilla Lua and do it in code
-    sandbox_env.setmetatable = function(table, metatable)
-        if table and table.__readonly then
-            error('Attempt to modify a readonly table', 0)
-        end
-
-        return setMetatableRef(table, metatable)
-    end
-
-    -- prevent bypassing metatables to update readonly tables
-    -- as above, Redis prevents this with a patch to Lua
-    sandbox_env.rawset = function(table, key, value)
-        if table and table.__readonly then
-            error('Attempt to modify a readonly table', 0)
-        end
-
-        return rawsetRef(table, key, value)
-    end
-
     recursively_readonly_table(sandbox_env)
 
     local rawFunc, err = load(source, nil, nil, sandbox_env)
@@ -415,8 +482,53 @@ function load_sandboxed(source)
     return err, rawFunc
 end
 ";
+        private static readonly HashSet<string> DefaultAllowedFunctions = [
+            // Built ins
+            "assert",
+            "collectgarbage",
+            "coroutine",
+            "error",
+            "gcinfo",
+            // Intentionally not supporting getfenv, as it's too weird to backport to Lua 5.4
+            "getmetatable",
+            "ipairs",
+            "load",
+            "loadstring",
+            "math",
+            "next",
+            "pairs",
+            "pcall",
+            "rawequal",
+            "rawget",
+            // Note rawset is proxied to implement readonly tables
+            "rawset",
+            "select",
+            // Intentionally not supporting setfenv, as it's too weird to backport to Lua 5.4
+            // Note setmetatable is proxied to implement readonly tables
+            "setmetatable",
+            "string",
+            "table",
+            "tonumber",
+            "tostring",
+            "type",
+            // Note unpack is actually table.unpack, and defined in the loader block
+            "unpack",
+            "xpcall",
 
-        private static readonly ReadOnlyMemory<byte> LoaderBlockBytes = Encoding.UTF8.GetBytes(LoaderBlock);
+            // Runtime libs
+            "bit",
+            "cjson",
+            "cmsgpack",
+            // Note os only contains clock due to definition in the loader block
+            "os",
+            // Note struct is actually implemented by Lua 5.4's string.pack/unpack/size
+            "struct",
+
+            // Interface force communicating back with Garnet
+            "redis",
+        ];
+
+        private static LoaderBlockCache CachedLoaderBlock;
 
         private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
 
@@ -432,6 +544,7 @@ end
         readonly ConstantStringRegistryIndexes constStrs;
 
         readonly LuaLoggingMode logMode;
+        readonly HashSet<string> allowedFunctions;
         readonly ReadOnlyMemory<byte> source;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
@@ -467,6 +580,7 @@ end
             LuaMemoryManagementMode memMode,
             int? memLimitBytes,
             LuaLoggingMode logMode,
+            HashSet<string> allowedFunctions,
             ReadOnlyMemory<byte> source,
             bool txnMode = false,
             RespServerSession respServerSession = null,
@@ -480,6 +594,7 @@ end
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
             this.logMode = logMode;
+            this.allowedFunctions = allowedFunctions;
             this.logger = logger;
 
             scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
@@ -518,10 +633,56 @@ end
                 garnetCall = &LuaRunnerTrampolines.GarnetCallNoSession;
             }
 
-            var loadRes = state.LoadBuffer(LoaderBlockBytes.Span);
+            // Lua 5.4 does not provide these functions, but 5.1 does - so implement tehm
+            state.Register("garnet_atan2\0"u8, &LuaRunnerTrampolines.Atan2);
+            state.Register("garnet_cosh\0"u8, &LuaRunnerTrampolines.Cosh);
+            state.Register("garnet_frexp\0"u8, &LuaRunnerTrampolines.Frexp);
+            state.Register("garnet_ldexp\0"u8, &LuaRunnerTrampolines.Ldexp);
+            state.Register("garnet_log10\0"u8, &LuaRunnerTrampolines.Log10);
+            state.Register("garnet_pow\0"u8, &LuaRunnerTrampolines.Pow);
+            state.Register("garnet_sinh\0"u8, &LuaRunnerTrampolines.Sinh);
+            state.Register("garnet_tanh\0"u8, &LuaRunnerTrampolines.Tanh);
+            state.Register("garnet_maxn\0"u8, &LuaRunnerTrampolines.Maxn);
+            state.Register("garnet_loadstring\0"u8, &LuaRunnerTrampolines.LoadString);
+
+            // Things provided as Lua libraries, which we actually implement in .NET
+            state.Register("garnet_cjson_encode\0"u8, &LuaRunnerTrampolines.CJsonEncode);
+            state.Register("garnet_cjson_decode\0"u8, &LuaRunnerTrampolines.CJsonDecode);
+            state.Register("garnet_bit_tobit\0"u8, &LuaRunnerTrampolines.BitToBit);
+            state.Register("garnet_bit_tohex\0"u8, &LuaRunnerTrampolines.BitToHex);
+            // garnet_bitop implements bnot, bor, band, xor, etc. but isn't directly exposed
+            state.Register("garnet_bitop\0"u8, &LuaRunnerTrampolines.Bitop);
+            state.Register("garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
+            state.Register("garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
+            state.Register("garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
+            state.Register("garnet_call\0"u8, garnetCall);
+            state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
+            state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
+            state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
+            state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
+
+            var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
+            state.PushBuffer(redisVersionBytes);
+            state.SetGlobal("garnet_REDIS_VERSION\0"u8);
+
+            var redisVersionParsed = Version.Parse(redisVersion);
+            var redisVersionNum =
+                ((byte)redisVersionParsed.Major << 16) |
+                ((byte)redisVersionParsed.Minor << 8) |
+                ((byte)redisVersionParsed.Build << 0);
+            state.PushInteger(redisVersionNum);
+            state.SetGlobal("garnet_REDIS_VERSION_NUM\0"u8);
+
+            var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
             {
-                throw new GarnetException("Couldn't load loader into Lua");
+                if (state.StackTop == 1 && state.CheckBuffer(1, out var buff))
+                {
+                    var innerError = Encoding.UTF8.GetString(buff);
+                    throw new GarnetException($"Could initialize Lua VM: {innerError}");
+                }
+
+                throw new GarnetException("Could initialize Lua VM");
             }
 
             var sandboxRes = state.PCall(0, -1);
@@ -549,25 +710,6 @@ end
                 throw new GarnetException($"Could not initialize Lua sandbox state: {errMsg}");
             }
 
-            // Register functions provided by .NET in global namespace
-            state.Register("garnet_call\0"u8, garnetCall);
-            state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
-            state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
-            state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
-            state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
-
-            var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
-            state.PushBuffer(redisVersionBytes);
-            state.SetGlobal("garnet_REDIS_VERSION\0"u8);
-
-            var redisVersionParsed = Version.Parse(redisVersion);
-            var redisVersionNum =
-                ((byte)redisVersionParsed.Major << 16) |
-                ((byte)redisVersionParsed.Minor << 8) |
-                ((byte)redisVersionParsed.Build << 0);
-            state.PushInteger(redisVersionNum);
-            state.SetGlobal("garnet_REDIS_VERSION_NUM\0"u8);
-
             state.GetGlobal(LuaType.Table, "KEYS\0"u8);
             keysTableRegistryIndex = state.Ref();
 
@@ -590,7 +732,7 @@ end
         /// Creates a new runner with the source of the script
         /// </summary>
         public LuaRunner(LuaOptions options, string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, string redisVersion = "0.0.0.0", ILogger logger = null)
-            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
+            : this(options.MemoryManagementMode, options.GetMemoryLimitBytes(), options.LogMode, options.AllowedFunctions, Encoding.UTF8.GetBytes(source), txnMode, respServerSession, scratchBufferNetworkSender, redisVersion, logger)
         {
         }
 
@@ -662,7 +804,7 @@ end
                     return false;
                 }
 
-                return true;
+                return functionRegistryIndex != -1;
             }
             finally
             {
@@ -858,6 +1000,1844 @@ end
             logger.Log(logLevel, "redis.log: {message}", logMessage.ToString());
 
             return 0;
+        }
+
+        /// <summary>
+        /// Entry point for math.atan2 from a Lua script.
+        /// </summary>
+        public int Atan2(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to atan2");
+            }
+
+            var x = state.CheckNumber(1);
+            var y = state.CheckNumber(2);
+
+            var res = Math.Atan2(x, y);
+            state.Pop(2);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.cosh from a Lua script.
+        /// </summary>
+        public int Cosh(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to cosh");
+            }
+
+            var value = state.CheckNumber(1);
+
+            var res = Math.Cosh(value);
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.frexp from a Lua script.
+        /// </summary>
+        public int Frexp(nint luaStatePtr)
+        {
+            // Based on: https://github.com/MachineCognitis/C.math.NET/ (MIT License)
+
+            const long DBL_EXP_MASK = 0x7FF0000000000000L;
+            const int DBL_MANT_BITS = 52;
+            const long DBL_SGN_MASK = -1 - 0x7FFFFFFFFFFFFFFFL;
+            const long DBL_MANT_MASK = 0x000FFFFFFFFFFFFFL;
+            const long DBL_EXP_CLR_MASK = DBL_SGN_MASK | DBL_MANT_MASK;
+
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to frexp");
+            }
+
+            var number = state.CheckNumber(1);
+
+            var bits = BitConverter.DoubleToInt64Bits(number);
+            var exp = (int)((bits & DBL_EXP_MASK) >> DBL_MANT_BITS);
+            var exponent = 0;
+
+            if (exp == 0x7FF || number == 0D)
+            {
+                number += number;
+            }
+            else
+            {
+                // Not zero and finite.
+                exponent = exp - 1022;
+                if (exp == 0)
+                {
+                    // Subnormal, scale number so that it is in [1, 2).
+                    number *= BitConverter.Int64BitsToDouble(0x4350000000000000L); // 2^54
+                    bits = BitConverter.DoubleToInt64Bits(number);
+                    exp = (int)((bits & DBL_EXP_MASK) >> DBL_MANT_BITS);
+                    exponent = exp - 1022 - 54;
+                }
+                // Set exponent to -1 so that number is in [0.5, 1).
+                number = BitConverter.Int64BitsToDouble((bits & DBL_EXP_CLR_MASK) | 0x3FE0000000000000L);
+            }
+
+            state.ForceMinimumStackCapacity(2);
+            state.Pop(1);
+
+            var numberAsFloat = (float)number;
+
+            if ((long)numberAsFloat == numberAsFloat)
+            {
+                state.PushInteger((long)numberAsFloat);
+            }
+            else
+            {
+                state.PushNumber(number);
+            }
+
+            state.PushInteger(exponent);
+
+            return 2;
+        }
+
+        /// <summary>
+        /// Entry point for math.ldexp from a Lua script.
+        /// </summary>
+        public int Ldexp(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to ldexp");
+            }
+
+            var m = state.CheckNumber(1);
+            var e = (int)state.CheckNumber(2);
+
+            var res = m * Math.Pow(2, e);
+
+            state.Pop(2);
+
+            if ((long)res == res)
+            {
+                state.PushInteger((long)res);
+            }
+            else
+            {
+                state.PushNumber(res);
+            }
+
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.log10 from a Lua script.
+        /// </summary>
+        public int Log10(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to log10");
+            }
+
+            var val = state.CheckNumber(1);
+
+            var res = Math.Log10(val);
+
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.pow from a Lua script.
+        /// </summary>
+        public int Pow(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 2 || state.Type(1) != LuaType.Number || state.Type(2) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to pow");
+            }
+
+            var x = state.CheckNumber(1);
+            var y = state.CheckNumber(2);
+
+            var res = Math.Pow(x, y);
+
+            state.Pop(2);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.sinh from a Lua script.
+        /// </summary>
+        public int Sinh(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to sinh");
+            }
+
+            var val = state.CheckNumber(1);
+
+            var res = Math.Sinh(val);
+
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for math.sinh from a Lua script.
+        /// </summary>
+        public int Tanh(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to tanh");
+            }
+
+            var val = state.CheckNumber(1);
+
+            var res = Math.Tanh(val);
+
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for table.maxn from a Lua script.
+        /// </summary>
+        public int Maxn(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Table)
+            {
+                return state.RaiseError("bad argument to maxn");
+            }
+
+            state.ForceMinimumStackCapacity(2);
+
+            double res = 0;
+
+            // Initial key value onto stack
+            state.PushNil();
+            while (state.Next(1) != 0)
+            {
+                // Remove value
+                state.Pop(1);
+
+                double keyVal;
+                if (state.Type(2) == LuaType.Number && (keyVal = state.CheckNumber(2)) > res)
+                {
+                    res = keyVal;
+                }
+            }
+
+            // Remove table, and push largest number
+            state.Pop(1);
+            state.PushNumber(res);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for loadstring from a Lua script.
+        /// </summary>
+        public int LoadString(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (
+                (luaArgCount == 1 && state.Type(1) != LuaType.String) ||
+                (luaArgCount == 2 && (state.Type(1) != LuaType.String || state.Type(2) != LuaType.String)) ||
+                (luaArgCount > 2)
+              )
+            {
+                return state.RaiseError("bad argument to loadstring");
+            }
+
+            // Ignore chunk name
+            if (luaArgCount == 2)
+            {
+                state.Pop(1);
+            }
+
+            _ = state.CheckBuffer(1, out var buff);
+            if (buff.Contains((byte)0))
+            {
+                return state.RaiseError("bad argument to loadstring, interior null byte");
+            }
+
+            state.ForceMinimumStackCapacity(1);
+
+            var res = state.LoadString(buff);
+            if (res != LuaStatus.OK)
+            {
+                state.ClearStack();
+                state.PushNil();
+                state.PushBuffer("load_string encountered error"u8);
+                return 2;
+            }
+
+            return 1;
+        }
+
+        /// <summary>
+        /// Converts a Lua number (ie. a double) into the expected 32-bit integer for
+        /// bit operations.
+        /// </summary>
+        private static int LuaNumberToBitValue(double value)
+        {
+            var scaled = value + 6_755_399_441_055_744.0;
+            var asULong = BitConverter.DoubleToUInt64Bits(scaled);
+            var asUInt = (uint)asULong;
+
+            return (int)asUInt;
+        }
+
+        /// <summary>
+        /// Entry point for bit.tobit from a Lua script.
+        /// </summary>
+        public int BitToBit(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount < 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to tobit");
+            }
+
+            var rawValue = state.CheckNumber(1);
+
+            // Make space on the stack
+            state.Pop(1);
+
+            state.PushNumber(LuaNumberToBitValue(rawValue));
+
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for bit.tohex from a Lua script.
+        /// </summary>
+        public int BitToHex(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to tohex");
+            }
+
+            var numDigits = 8;
+
+            if (luaArgCount == 2)
+            {
+                if (state.Type(2) != LuaType.Number)
+                {
+                    return state.RaiseError("bad argument to tohex");
+                }
+
+                numDigits = (int)state.CheckNumber(2);
+            }
+
+            var value = LuaNumberToBitValue(state.CheckNumber(1));
+
+            ReadOnlySpan<byte> hexBytes;
+            if (numDigits == int.MinValue)
+            {
+                numDigits = 8;
+                hexBytes = "0123456789ABCDEF"u8;
+            }
+            else if (numDigits < 0)
+            {
+                numDigits = -numDigits;
+                hexBytes = "0123456789ABCDEF"u8;
+            }
+            else
+            {
+                hexBytes = "0123456789abcdef"u8;
+            }
+
+            if (numDigits > 8)
+            {
+                numDigits = 8;
+            }
+
+            Span<byte> buff = stackalloc byte[numDigits];
+            for (var i = buff.Length - 1; i >= 0; i--)
+            {
+                buff[i] = hexBytes[value & 0xF];
+                value >>= 4;
+            }
+
+            // Free up space on stack
+            state.Pop(luaArgCount);
+
+            state.PushBuffer(buff);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for bit.bswap from a Lua script.
+        /// </summary>
+        public int BitBswap(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bad argument to bswap");
+            }
+
+            var value = LuaNumberToBitValue(state.CheckNumber(1));
+
+            // Free up space on stack
+            state.Pop(1);
+
+            var swapped = BinaryPrimitives.ReverseEndianness(value);
+            state.PushNumber(swapped);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for garnet_bitop from a Lua script.
+        /// 
+        /// Used to implement bit.bnot, bit.bor, bit.band, etc.
+        /// </summary>
+        public int Bitop(nint luaStatePtr)
+        {
+            const int BNot = 0;
+            const int BOr = 1;
+            const int BAnd = 2;
+            const int BXor = 3;
+            const int LShift = 4;
+            const int RShift = 5;
+            const int ARShift = 6;
+            const int Rol = 7;
+            const int Ror = 8;
+
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount == 0 || state.Type(1) != LuaType.Number)
+            {
+                return state.RaiseError("bitop was not indicated, should never happen");
+            }
+
+            var bitop = (int)state.CheckNumber(1);
+            if (bitop < BNot || bitop > Ror)
+            {
+                return state.RaiseError($"invalid bitop {bitop} was indicated, should never happen");
+            }
+
+            // Handle bnot specially
+            if (bitop == BNot)
+            {
+                if (luaArgCount < 2 || state.Type(2) != LuaType.Number)
+                {
+                    return state.RaiseError("bad argument to bnot");
+                }
+
+                var val = LuaNumberToBitValue(state.CheckNumber(2));
+                var res = ~val;
+                state.Pop(2);
+
+                state.PushNumber(res);
+                return 1;
+            }
+
+            var binOpName =
+                bitop switch
+                {
+                    BOr => "bor",
+                    BAnd => "band",
+                    BXor => "bxor",
+                    LShift => "lshift",
+                    RShift => "rshift",
+                    ARShift => "arshift",
+                    Rol => "rol",
+                    _ => "ror",
+                };
+
+            if (luaArgCount < 2)
+            {
+                return state.RaiseError($"bad argument to {binOpName}");
+            }
+
+            if (bitop is BOr or BAnd or BXor)
+            {
+                var ret =
+                    bitop switch
+                    {
+                        BOr => 0,
+                        BXor => 0,
+                        _ => -1,
+                    };
+
+                for (var argIx = 2; argIx <= luaArgCount; argIx++)
+                {
+                    if (state.Type(argIx) != LuaType.Number)
+                    {
+                        return state.RaiseError($"bad argument to {binOpName}");
+                    }
+
+                    var nextValue = LuaNumberToBitValue(state.CheckNumber(argIx));
+
+                    ret =
+                        bitop switch
+                        {
+                            BOr => ret | nextValue,
+                            BXor => ret ^ nextValue,
+                            _ => ret & nextValue,
+                        };
+                }
+
+                state.Pop(luaArgCount);
+                state.PushNumber(ret);
+
+                return 1;
+            }
+
+            if (luaArgCount < 3 || state.Type(2) != LuaType.Number || state.Type(3) != LuaType.Number)
+            {
+                return state.RaiseError($"bad argument to {binOpName}");
+            }
+
+            var x = LuaNumberToBitValue(state.CheckNumber(2));
+            var n = ((int)state.CheckNumber(3)) & 0b1111;
+
+            var shiftRes =
+                bitop switch
+                {
+                    LShift => x << n,
+                    RShift => (int)((uint)x >> n),
+                    ARShift => x >> n,
+                    Rol => (int)BitOperations.RotateLeft((uint)x, n),
+                    _ => (int)BitOperations.RotateRight((uint)x, n),
+                };
+
+            state.Pop(luaArgCount);
+            state.PushNumber(shiftRes);
+            return 1;
+        }
+
+        /// <summary>
+        /// Entry point for cjson.encode from a Lua script.
+        /// </summary>
+        public int CJsonEncode(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1)
+            {
+                return state.RaiseError("bad argument to encode");
+            }
+
+            Encode(this, 0);
+
+            // Encoding should leave nothing on the stack
+            state.ExpectLuaStackEmpty();
+
+            // Push the encoded string
+            var result = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
+            state.PushBuffer(result);
+
+            return 1;
+
+            // Encode the unknown type on the top of the stack
+            static void Encode(LuaRunner self, int depth)
+            {
+                if (depth > 1000)
+                {
+                    // Match Redis max decoding depth
+                    _ = self.state.RaiseError("Cannot serialise, excessive nesting (1001)");
+                }
+
+                var argType = self.state.Type(self.state.StackTop);
+
+                switch (argType)
+                {
+                    case LuaType.Boolean:
+                        EncodeBool(self);
+                        break;
+                    case LuaType.Nil:
+                        EncodeNull(self);
+                        break;
+                    case LuaType.Number:
+                        EncodeNumber(self);
+                        break;
+                    case LuaType.String:
+                        EncodeString(self);
+                        break;
+                    case LuaType.Table:
+                        EncodeTable(self, depth);
+                        break;
+                    case LuaType.Function:
+                    case LuaType.LightUserData:
+                    case LuaType.None:
+                    case LuaType.Thread:
+                    case LuaType.UserData:
+                    default:
+                        _ = self.state.RaiseError($"Cannot serialise {argType} to JSON");
+                        break;
+                }
+            }
+
+            // Encode the boolean on the top of the stack and remove it
+            static void EncodeBool(LuaRunner self)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Boolean, "Expected boolean on top of stack");
+
+                var data = self.state.ToBoolean(self.state.StackTop) ? "true"u8 : "false"u8;
+
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(data.Length).Span;
+                data.CopyTo(into);
+                self.scratchBufferManager.MoveOffset(data.Length);
+
+                self.state.Pop(1);
+            }
+
+            // Encode the nil on the top of the stack and remove it
+            static void EncodeNull(LuaRunner self)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
+
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(4).Span;
+                "null"u8.CopyTo(into);
+                self.scratchBufferManager.MoveOffset(4);
+
+                self.state.Pop(1);
+            }
+
+            // Encode the number on the top of the stack and remove it
+            static void EncodeNumber(LuaRunner self)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Number, "Expected number on top of stack");
+
+                var number = self.state.CheckNumber(self.state.StackTop);
+
+                Span<byte> space = stackalloc byte[64];
+
+                if (!number.TryFormat(space, out var written, "G", CultureInfo.InvariantCulture))
+                {
+                    _ = self.state.RaiseError("Unable to format number");
+                }
+
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(written).Span;
+                space[..written].CopyTo(into);
+                self.scratchBufferManager.MoveOffset(written);
+
+                self.state.Pop(1);
+            }
+
+            // Encode the string on the top of the stack and remove it
+            static void EncodeString(LuaRunner self)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.String, "Expected string on top of stack");
+
+                _ = self.state.CheckBuffer(self.state.StackTop, out var buff);
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'"';
+                self.scratchBufferManager.MoveOffset(1);
+
+                var escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
+                while (escapeIx != -1)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(escapeIx + 2).Span;
+                    buff[..escapeIx].CopyTo(into);
+
+                    into[escapeIx] = (byte)'\\';
+
+                    var toEscape = buff[escapeIx];
+                    if (toEscape == (byte)'"')
+                    {
+                        into[escapeIx + 1] = (byte)'"';
+                    }
+                    else
+                    {
+                        into[escapeIx + 1] = (byte)'\\';
+                    }
+
+                    self.scratchBufferManager.MoveOffset(escapeIx + 2);
+
+                    buff = buff[(escapeIx + 1)..];
+                    escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
+                }
+
+                var tailInto = self.scratchBufferManager.ViewRemainingArgSlice(buff.Length + 1).Span;
+                buff.CopyTo(tailInto);
+                tailInto[buff.Length] = (byte)'"';
+                self.scratchBufferManager.MoveOffset(buff.Length + 1);
+
+                self.state.Pop(1);
+            }
+
+            // Encode the table on the top of the stack and remove it
+            static void EncodeTable(LuaRunner self, int depth)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
+
+                // Space for key & value
+                self.state.ForceMinimumStackCapacity(2);
+
+                var tableIndex = self.state.StackTop;
+
+                var isArray = false;
+                var arrayLength = 0;
+
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
+                {
+                    // Pop value
+                    self.state.Pop(1);
+
+                    double keyAsNumber;
+                    if (self.state.Type(tableIndex + 1) == LuaType.Number && (keyAsNumber = self.state.CheckNumber(tableIndex + 1)) >= 1 && keyAsNumber == (int)keyAsNumber)
+                    {
+                        if (keyAsNumber > arrayLength)
+                        {
+                            // Need at least one integer key >= 1 to consider this an array
+                            isArray = true;
+                            arrayLength = (int)keyAsNumber;
+                        }
+                    }
+                    else
+                    {
+                        // Non-integer key, or integer <= 0, so it's not an array
+                        isArray = false;
+
+                        // Remove key
+                        self.state.Pop(1);
+
+                        break;
+                    }
+                }
+
+                if (isArray)
+                {
+                    EncodeArray(self, arrayLength, depth);
+                }
+                else
+                {
+                    EncodeObject(self, depth);
+                }
+            }
+
+            // Encode the table on the top of the stack as an array and remove it
+            static void EncodeArray(LuaRunner self, int length, int depth)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
+
+                // Space for value
+                self.state.ForceMinimumStackCapacity(1);
+
+                var tableIndex = self.state.StackTop;
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'[';
+                self.scratchBufferManager.MoveOffset(1);
+
+                for (var ix = 1; ix <= length; ix++)
+                {
+                    if (ix != 1)
+                    {
+                        self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)',';
+                        self.scratchBufferManager.MoveOffset(1);
+                    }
+
+                    _ = self.state.RawGetInteger(null, tableIndex, ix);
+                    Encode(self, depth + 1);
+                }
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)']';
+                self.scratchBufferManager.MoveOffset(1);
+
+                // Remove table
+                self.state.Pop(1);
+            }
+
+            // Encode the table on the top of the stack as an object and remove it
+            static void EncodeObject(LuaRunner self, int depth)
+            {
+                Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Table, "Expected table on top of stack");
+
+                // Space for key and value and a copy of key
+                self.state.ForceMinimumStackCapacity(3);
+
+                var tableIndex = self.state.StackTop;
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'{';
+                self.scratchBufferManager.MoveOffset(1);
+
+                var firstValue = true;
+
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
+                {
+                    LuaType keyType;
+                    if ((keyType = self.state.Type(tableIndex + 1)) is not (LuaType.String or LuaType.Number))
+                    {
+                        // Ignore non-string-ify-abile keys
+
+                        // Remove value
+                        self.state.Pop(1);
+
+                        continue;
+                    }
+
+                    if (!firstValue)
+                    {
+                        self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)',';
+                        self.scratchBufferManager.MoveOffset(1);
+                    }
+
+                    // Copy key to top of stack
+                    self.state.PushValue(tableIndex + 1);
+
+                    // Force the _copy_ of the key to be a string
+                    // if it is not already one.
+                    //
+                    // We don't modify the original key value, so we
+                    // can continue using it with Next(...)
+                    if (keyType == LuaType.Number)
+                    {
+                        _ = self.state.CheckBuffer(tableIndex + 3, out _);
+                    }
+
+                    // Encode key
+                    Encode(self, depth + 1);
+
+                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)':';
+                    self.scratchBufferManager.MoveOffset(1);
+
+                    // Encode value
+                    Encode(self, depth + 1);
+
+                    firstValue = false;
+                }
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'}';
+                self.scratchBufferManager.MoveOffset(1);
+
+                // Remove table
+                self.state.Pop(1);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for cjson.decode from a Lua script.
+        /// </summary>
+        public int CJsonDecode(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var luaArgCount = state.StackTop;
+            if (luaArgCount != 1)
+            {
+                return state.RaiseError("bad argument to decode");
+            }
+
+            var argType = state.Type(1);
+            if (argType == LuaType.Number)
+            {
+                // We'd coerce this to a string, and then decode it, so just pass it back as is
+                //
+                // There are some cases where this wouldn't work, potentially, but they are super implementation
+                // specific so we can just pretend we made them work
+                return 1;
+            }
+
+            if (argType != LuaType.String)
+            {
+                return state.RaiseError("bad argument to decode");
+            }
+
+            _ = state.CheckBuffer(1, out var buff);
+
+            try
+            {
+                var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = 1000 });
+                Decode(this, parsed);
+
+                return 1;
+            }
+            catch (Exception e)
+            {
+                if (e.Message.Contains("maximum configured depth of 1000"))
+                {
+                    // Maximum depth exceeded, munge to a compatible Redis error
+                    return state.RaiseError("Found too many nested data structures (1001)");
+                }
+
+                // Invalid token is implied (and matches Redis error replies)
+                //
+                // Additinal error details can be gleaned from messages
+                return state.RaiseError($"Expected value but found invalid token.  Inner Message = {e.Message}");
+            }
+
+            // Convert the JsonNode into a Lua value on the stack
+            static void Decode(LuaRunner self, JsonNode node)
+            {
+                if (node is JsonValue v)
+                {
+                    DecodeValue(self, v);
+                }
+                else if (node is JsonArray a)
+                {
+                    DecodeArray(self, a);
+                }
+                else if (node is JsonObject o)
+                {
+                    DecodeObject(self, o);
+                }
+                else
+                {
+                    _ = self.state.RaiseError($"Unexpected json node type: {node.GetType().Name}");
+                }
+            }
+
+            // Convert the JsonValue int to a Lua string, nil, or number on the stack
+            static void DecodeValue(LuaRunner self, JsonValue value)
+            {
+                // Reserve space for the value
+                self.state.ForceMinimumStackCapacity(1);
+
+                switch (value.GetValueKind())
+                {
+                    case JsonValueKind.Null: self.state.PushNil(); break;
+                    case JsonValueKind.True: self.state.PushBoolean(true); break;
+                    case JsonValueKind.False: self.state.PushBoolean(false); break;
+                    case JsonValueKind.Number: self.state.PushNumber(value.GetValue<double>()); break;
+                    case JsonValueKind.String:
+                        var str = value.GetValue<string>();
+
+                        self.scratchBufferManager.Reset();
+                        var buf = self.scratchBufferManager.UTF8EncodeString(str);
+
+                        self.state.PushBuffer(buf);
+                        break;
+                    case JsonValueKind.Undefined:
+                    case JsonValueKind.Object:
+                    case JsonValueKind.Array:
+                    default:
+                        _ = self.state.RaiseError($"Unexpected json value kind: {value.GetValueKind()}");
+                        break;
+                }
+            }
+
+            // Convert the JsonArray into a Lua table on the stack
+            static void DecodeArray(LuaRunner self, JsonArray arr)
+            {
+                // Reserve space for the table
+                self.state.ForceMinimumStackCapacity(1);
+
+                self.state.CreateTable(arr.Count, 0);
+
+                var tableIndex = self.state.StackTop;
+
+                var storeAtIx = 1;
+                foreach (var item in arr)
+                {
+                    // Places item on the stack
+                    Decode(self, item);
+
+                    // Save into the table
+                    self.state.RawSetInteger(tableIndex, storeAtIx);
+                    storeAtIx++;
+                }
+            }
+
+            // Convert the JsonObject into a Lua table on the stack
+            static void DecodeObject(LuaRunner self, JsonObject obj)
+            {
+                // Reserve space for table and key
+                self.state.ForceMinimumStackCapacity(2);
+
+                self.state.CreateTable(0, obj.Count);
+
+                var tableIndex = self.state.StackTop;
+
+                foreach (var (key, value) in obj)
+                {
+                    // Decode key to string
+                    self.scratchBufferManager.Reset();
+                    var buf = self.scratchBufferManager.UTF8EncodeString(key);
+                    self.state.PushBuffer(buf);
+
+                    // Decode value
+                    Decode(self, value);
+
+                    self.state.RawSet(tableIndex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Entry point for cmsgpack.pack from a Lua script.
+        /// </summary>
+        public int CMsgPackPack(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+
+            if (numLuaArgs == 0)
+            {
+                return state.RaiseError("bad argument to pack");
+            }
+
+            // Redis concatenates all the message packs together if there are multiple
+            //
+            // Somewhat odd, but we match that behavior
+
+            scratchBufferManager.Reset();
+
+            for (var argIx = 1; argIx <= numLuaArgs; argIx++)
+            {
+                // Because each encode removes the encoded value
+                // we always encode the argument at position 1
+                Encode(this, 1, 0);
+            }
+
+            // After all encoding, stack should be empty
+            state.ExpectLuaStackEmpty();
+
+            var ret = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
+            state.PushBuffer(ret);
+
+            return 1;
+
+            // Encode a single item at the top of the stack, and remove it
+            static void Encode(LuaRunner self, int stackIndex, int depth)
+            {
+                var type = self.state.Type(stackIndex);
+                switch (type)
+                {
+                    case LuaType.Boolean: EncodeBool(self, stackIndex); break;
+                    case LuaType.Number: EncodeNumber(self, stackIndex); break;
+                    case LuaType.String: EncodeBytes(self, stackIndex); break;
+                    case LuaType.Table:
+
+                        if (depth == 16)
+                        {
+                            // Redis treats a too deeply nested table as a null
+                            //
+                            // This is weird, but we match it
+                            self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = 0xC0;
+                            self.scratchBufferManager.MoveOffset(1);
+
+                            self.state.Remove(stackIndex);
+
+                            return;
+                        }
+
+                        EncodeTable(self, stackIndex, depth);
+                        break;
+
+                    // Everything else maps to null, NOT an error
+                    case LuaType.Function:
+                    case LuaType.LightUserData:
+                    case LuaType.Nil:
+                    case LuaType.None:
+                    case LuaType.Thread:
+                    case LuaType.UserData:
+                    default: EncodeNull(self, stackIndex); break;
+                }
+            }
+
+            // Encode a null-ish value at stackIndex, and remove it
+            static void EncodeNull(LuaRunner self, int stackIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = 0xC0;
+                self.scratchBufferManager.MoveOffset(1);
+
+                self.state.Remove(stackIndex);
+            }
+
+            // Encode a boolean at stackIndex, and remove it
+            static void EncodeBool(LuaRunner self, int stackIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Boolean, "Expected boolean");
+
+                var value = (byte)(self.state.ToBoolean(stackIndex) ? 0xC3 : 0xC2);
+
+                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = value;
+                self.scratchBufferManager.MoveOffset(1);
+
+                self.state.Remove(stackIndex);
+            }
+
+            // Encode a number at stackIndex, and remove it
+            static void EncodeNumber(LuaRunner self, int stackIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+
+                var numRaw = self.state.CheckNumber(stackIndex);
+                var isInt = numRaw == (long)numRaw;
+
+                if (isInt)
+                {
+                    EncodeInteger(self, (long)numRaw);
+                }
+                else
+                {
+                    EncodeFloatingPoint(self, numRaw);
+                }
+
+                self.state.Remove(stackIndex);
+            }
+
+            // Encode an integer
+            static void EncodeInteger(LuaRunner self, long value)
+            {
+                // positive 7-bit fixint
+                if ((byte)(value & 0b0111_1111) == value)
+                {
+                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(1);
+
+                    return;
+                }
+
+                // negative 5-bit fixint
+                if ((sbyte)(value | 0b1110_0000) == value)
+                {
+                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(1);
+                    return;
+                }
+
+                // 8-bit int
+                if (value is >= sbyte.MinValue and <= sbyte.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2).Span;
+
+                    into[0] = 0xD0;
+                    into[1] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(2);
+                    return;
+                }
+
+                // 8-bit uint
+                if (value is >= byte.MinValue and <= byte.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2).Span;
+
+                    into[0] = 0xCC;
+                    into[1] = (byte)value;
+                    self.scratchBufferManager.MoveOffset(2);
+                    return;
+                }
+
+                // 16-bit int
+                if (value is >= short.MinValue and <= short.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+
+                    into[0] = 0xD1;
+                    BinaryPrimitives.WriteInt16BigEndian(into[1..], (short)value);
+                    self.scratchBufferManager.MoveOffset(3);
+                    return;
+                }
+
+                // 16-bit uint
+                if (value is >= ushort.MinValue and <= ushort.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+
+                    into[0] = 0xCD;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)value);
+                    self.scratchBufferManager.MoveOffset(3);
+                    return;
+                }
+
+                // 32-bit int
+                if (value is >= int.MinValue and <= int.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+
+                    into[0] = 0xD2;
+                    BinaryPrimitives.WriteInt32BigEndian(into[1..], (int)value);
+                    self.scratchBufferManager.MoveOffset(5);
+                    return;
+                }
+
+                // 32-bit uint
+                if (value is >= uint.MinValue and <= uint.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+
+                    into[0] = 0xCE;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)value);
+                    self.scratchBufferManager.MoveOffset(5);
+                    return;
+                }
+
+                // 64-bit uint
+                if (value > uint.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
+
+                    into[0] = 0xCF;
+                    BinaryPrimitives.WriteUInt64BigEndian(into[1..], (ulong)value);
+                    self.scratchBufferManager.MoveOffset(9);
+                    return;
+                }
+
+                // 64-bit int
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
+
+                    into[0] = 0xD3;
+                    BinaryPrimitives.WriteInt64BigEndian(into[1..], value);
+                    self.scratchBufferManager.MoveOffset(9);
+                }
+            }
+
+            // Encode a floating point value
+            static void EncodeFloatingPoint(LuaRunner self, double value)
+            {
+                // While Redis has code that attempts to pack doubles into floats
+                // it doesn't appear to do anything, so we just always write a double
+
+                var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
+
+                into[0] = 0xCB;
+                BinaryPrimitives.WriteDoubleBigEndian(into[1..], value);
+                self.scratchBufferManager.MoveOffset(9);
+            }
+
+            // Encodes a string as at stackIndex, and remove it
+            static void EncodeBytes(LuaRunner self, int stackIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
+
+                _ = self.state.CheckBuffer(stackIndex, out var data);
+
+                if (data.Length < 32)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1 + data.Length).Span;
+
+                    into[0] = (byte)(0xA0 | data.Length);
+                    data.CopyTo(into[1..]);
+                    self.scratchBufferManager.MoveOffset(1 + data.Length);
+                }
+                else if (data.Length <= byte.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2 + data.Length).Span;
+
+                    into[0] = 0xD9;
+                    into[1] = (byte)data.Length;
+                    data.CopyTo(into[2..]);
+                    self.scratchBufferManager.MoveOffset(2 + data.Length);
+                }
+                else if (data.Length <= ushort.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3 + data.Length).Span;
+
+                    into[0] = 0xDA;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)data.Length);
+                    data.CopyTo(into[3..]);
+                    self.scratchBufferManager.MoveOffset(3 + data.Length);
+                }
+                else
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5 + data.Length).Span;
+
+                    into[0] = 0xDB;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)data.Length);
+                    data.CopyTo(into[5..]);
+                    self.scratchBufferManager.MoveOffset(5 + data.Length);
+                }
+
+                self.state.Remove(stackIndex);
+            }
+
+            // Encode a table at stackIndex, and remove it
+            static void EncodeTable(LuaRunner self, int stackIndex, int depth)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
+
+                // Space for key and value
+                self.state.ForceMinimumStackCapacity(2);
+
+                var tableIndex = stackIndex;
+
+                // A zero-length table is serialized as an array
+                var isArray = true;
+                var count = 0;
+                var max = 0;
+
+                var keyIndex = self.state.StackTop + 1;
+
+                // Measure the table and figure out if we're creating a map or an array
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
+                {
+                    count++;
+
+                    // Remove value
+                    self.state.Pop(1);
+
+                    double keyAsNum;
+                    if (self.state.Type(keyIndex) != LuaType.Number || (keyAsNum = self.state.CheckNumber(keyIndex)) <= 0 || keyAsNum != (int)keyAsNum)
+                    {
+                        isArray = false;
+                    }
+                    else
+                    {
+                        if (keyAsNum > max)
+                        {
+                            max = (int)keyAsNum;
+                        }
+                    }
+                }
+
+                if (isArray && count == max)
+                {
+                    EncodeArray(self, stackIndex, depth, count);
+                }
+                else
+                {
+                    EncodeMap(self, stackIndex, depth, count);
+                }
+            }
+
+            // Encode a table at stackIndex into an array, and remove it
+            static void EncodeArray(LuaRunner self, int stackIndex, int depth, int count)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
+                Debug.Assert(count >= 0, "Array should have positive length");
+
+                // Reserve space for value
+                self.state.ForceMinimumStackCapacity(1);
+
+                var tableIndex = stackIndex;
+                var valueIndex = tableIndex + 1;
+
+                // Encode length
+                if (count <= 15)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1).Span;
+                    into[0] = (byte)(0b1001_0000 | count);
+                    self.scratchBufferManager.MoveOffset(1);
+                }
+                else if (count <= ushort.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+
+                    into[0] = 0xDC;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)count);
+                    self.scratchBufferManager.MoveOffset(3);
+                }
+                else
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+
+                    into[0] = 0xDD;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)count);
+                    self.scratchBufferManager.MoveOffset(5);
+                }
+
+                // Write each element out
+                for (var ix = 1; ix <= count; ix++)
+                {
+                    _ = self.state.RawGetInteger(null, tableIndex, ix);
+                    Encode(self, valueIndex, depth + 1);
+                }
+
+                self.state.Remove(tableIndex);
+            }
+
+            // Encode a table at stackIndex into a map, and remove it
+            static void EncodeMap(LuaRunner self, int stackIndex, int depth, int count)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Table, "Expected table");
+                Debug.Assert(count >= 0, "Map should have positive length");
+
+                // Reserve space for key, value, and copy of key
+                self.state.ForceMinimumStackCapacity(2);
+
+                var tableIndex = stackIndex;
+                var keyIndex = self.state.StackTop + 1;
+                var valueIndex = keyIndex + 1;
+                var keyCopyIndex = valueIndex + 1;
+
+                // Encode length
+                if (count <= 15)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1).Span;
+
+                    into[0] = (byte)(0b1000_0000 | count);
+                    self.scratchBufferManager.MoveOffset(1);
+                }
+                else if (count <= ushort.MaxValue)
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+
+                    into[0] = 0xDE;
+                    BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)count);
+                    self.scratchBufferManager.MoveOffset(3);
+                }
+                else
+                {
+                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+
+                    into[0] = 0xDF;
+                    BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)count);
+                    self.scratchBufferManager.MoveOffset(5);
+                }
+
+                self.state.PushNil();
+                while (self.state.Next(tableIndex) != 0)
+                {
+                    // Make a copy of the key
+                    self.state.PushValue(keyIndex);
+
+                    // Write the key
+                    Encode(self, keyCopyIndex, depth + 1);
+
+                    // Write the value
+                    Encode(self, valueIndex, depth + 1);
+                }
+
+                self.state.Remove(tableIndex);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for cmsgpack.unpack from a Lua script.
+        /// </summary>
+        public int CMsgPackUnpack(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+
+            if (numLuaArgs == 0)
+            {
+                return state.RaiseError("bad argument to unpack");
+            }
+
+            _ = state.CheckBuffer(1, out var data);
+
+            var decodedCount = 0;
+            while (!data.IsEmpty)
+            {
+                // Reserve space for the result
+                state.ForceMinimumStackCapacity(1);
+
+                try
+                {
+                    Decode(ref data, ref state);
+                    decodedCount++;
+                }
+                catch (Exception e)
+                {
+                    // Best effort at matching Redis behavior
+                    return state.RaiseError($"Missing bytes in input. {e.Message}");
+                }
+            }
+
+            return decodedCount;
+
+            // Decode a msg pack
+            static void Decode(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var sigil = data[0];
+                data = data[1..];
+
+                switch (sigil)
+                {
+                    case 0xC0: DecodeNull(ref data, ref state); return;
+                    case 0xC2: DecodeBoolean(false, ref data, ref state); return;
+                    case 0xC3: DecodeBoolean(true, ref data, ref state); return;
+                    // 7-bit positive integers handled below
+                    // 5-bit negative integers handled below
+                    case 0xCC: DecodeUInt8(ref data, ref state); return;
+                    case 0xCD: DecodeUInt16(ref data, ref state); return;
+                    case 0xCE: DecodeUInt32(ref data, ref state); return;
+                    case 0xCF: DecodeUInt64(ref data, ref state); return;
+                    case 0xD0: DecodeInt8(ref data, ref state); return;
+                    case 0xD1: DecodeInt16(ref data, ref state); return;
+                    case 0xD2: DecodeInt32(ref data, ref state); return;
+                    case 0xD3: DecodeInt64(ref data, ref state); return;
+                    case 0xCA: DecodeSingle(ref data, ref state); return;
+                    case 0xCB: DecodeDouble(ref data, ref state); return;
+                    // <= 31 byte strings handled below
+                    case 0xD9: DecodeSmallString(ref data, ref state); return;
+                    case 0xDA: DecodeMidString(ref data, ref state); return;
+                    case 0xDB: DecodeLargeString(ref data, ref state); return;
+                    // We treat bins as strings
+                    case 0xC4: goto case 0xD9;
+                    case 0xC5: goto case 0xDA;
+                    case 0xC6: goto case 0xDB;
+                    // <= 15 element arrays are handled below
+                    case 0xDC: DecodeMidArray(ref data, ref state); return;
+                    case 0xDD: DecodeLargeArray(ref data, ref state); return;
+                    // <= 15 pair maps are handled below
+                    case 0xDE: DecodeMidMap(ref data, ref state); return;
+                    case 0xDF: DecodeLargeMap(ref data, ref state); return;
+
+                    default:
+                        if ((sigil & 0b1000_0000) == 0)
+                        {
+                            DecodeTinyUInt(sigil, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1110_0000) == 0b1110_0000)
+                        {
+                            DecodeTinyInt(sigil, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1110_0000) == 0b1010_0000)
+                        {
+                            DecodeTinyString(sigil, ref data, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1111_0000) == 0b1001_0000)
+                        {
+                            DecodeSmallArray(sigil, ref data, ref state);
+                            return;
+                        }
+                        else if ((sigil & 0b1111_0000) == 0b1000_0000)
+                        {
+                            DecodeSmallMap(sigil, ref data, ref state);
+                            return;
+                        }
+
+                        _ = state.RaiseError($"Unexpected MsgPack sigil {sigil}/x{sigil:X2}/b{sigil:B8}");
+                        return;
+                }
+            }
+
+            // Decode a null push it to the stack
+            static void DecodeNull(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNil();
+            }
+
+            // Decode a boolean and push it to the stack
+            static void DecodeBoolean(bool b, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushBoolean(b);
+            }
+
+            // Decode a byte, moving past it in data and pushing it to the stack
+            static void DecodeUInt8(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(data[0]);
+                data = data[1..];
+            }
+
+            // Decode a positive 7-bit value, pushing it to the stack
+            static void DecodeTinyUInt(byte sigil, ref LuaStateWrapper state)
+            {
+                state.PushNumber(sigil);
+            }
+
+            // Decode a ushort, moving past it in data and pushing it to the stack
+            static void DecodeUInt16(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadUInt16BigEndian(data));
+                data = data[2..];
+            }
+
+            // Decode a uint, moving past it in data and pushing it to the stack
+            static void DecodeUInt32(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadUInt32BigEndian(data));
+                data = data[4..];
+            }
+
+            // Decode a ulong, moving past it in data and pushing it to the stack
+            static void DecodeUInt64(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadUInt64BigEndian(data));
+                data = data[8..];
+            }
+
+            // Decode a negative 5-bit value, pushing it to the stack
+            static void DecodeTinyInt(byte sigil, ref LuaStateWrapper state)
+            {
+                var signExtended = (int)(0xFFFF_FF00 | sigil);
+                state.PushNumber(signExtended);
+            }
+
+            // Decode a sbyte, moving past it in data and pushing it to the stack
+            static void DecodeInt8(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber((sbyte)data[0]);
+                data = data[1..];
+            }
+
+            // Decode a short, moving past it in data and pushing it to the stack
+            static void DecodeInt16(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadInt16BigEndian(data));
+                data = data[2..];
+            }
+
+            // Decode a int, moving past it in data and pushing it to the stack
+            static void DecodeInt32(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadInt32BigEndian(data));
+                data = data[4..];
+            }
+
+            // Decode a long, moving past it in data and pushing it to the stack
+            static void DecodeInt64(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadInt64BigEndian(data));
+                data = data[8..];
+            }
+
+            // Decode a float, moving past it in data and pushing it to the stack
+            static void DecodeSingle(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadSingleBigEndian(data));
+                data = data[4..];
+            }
+
+            // Decode a double, moving past it in data and pushing it to the stack
+            static void DecodeDouble(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                state.PushNumber(BinaryPrimitives.ReadDoubleBigEndian(data));
+                data = data[8..];
+            }
+
+            // Decode a string size <= 31, moving past it in data and pushing it to the stack
+            static void DecodeTinyString(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = sigil & 0b0001_1111;
+                var str = data[..len];
+
+                state.PushBuffer(str);
+                data = data[len..];
+            }
+
+            // Decode a string size <= 255, moving past it in data and pushing it to the stack
+            static void DecodeSmallString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = data[0];
+                data = data[1..];
+
+                var str = data[..len];
+
+                state.PushBuffer(str);
+
+                data = data[str.Length..];
+            }
+
+            // Decode a string size <= 65,535, moving past it in data and pushing it to the stack
+            static void DecodeMidString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = BinaryPrimitives.ReadUInt16BigEndian(data);
+                data = data[2..];
+
+                var str = data[..(int)len];
+
+                state.PushBuffer(str);
+
+                data = data[str.Length..];
+            }
+
+            // Decode a string size <= 4,294,967,295, moving past it in data and pushing it to the stack
+            static void DecodeLargeString(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                var len = BinaryPrimitives.ReadUInt32BigEndian(data);
+                data = data[4..];
+
+                if ((int)len < 0)
+                {
+                    _ = state.RaiseError($"String length is too long: {len}");
+                    return;
+                }
+
+                var str = data[..(int)len];
+
+                state.PushBuffer(str);
+
+                data = data[str.Length..];
+            }
+
+            // Decode an array with <= 15 items, moving past it in data and pushing it to the stack
+            static void DecodeSmallArray(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary item
+                state.ForceMinimumStackCapacity(1);
+
+                var len = sigil & 0b0000_1111;
+
+                state.CreateTable(len, 0);
+                var arrayIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the element onto the stack
+                    Decode(ref data, ref state);
+                    state.RawSetInteger(arrayIndex, i);
+                }
+            }
+
+            // Decode an array with <= 65,535 items, moving past it in data and pushing it to the stack
+            static void DecodeMidArray(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary item
+                state.ForceMinimumStackCapacity(1);
+
+                var len = BinaryPrimitives.ReadUInt16BigEndian(data);
+                data = data[2..];
+
+                state.CreateTable(len, 0);
+                var arrayIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the element onto the stack
+                    Decode(ref data, ref state);
+                    state.RawSetInteger(arrayIndex, i);
+                }
+            }
+
+            // Decode an array with <= 4,294,967,295 items, moving past it in data and pushing it to the stack
+            static void DecodeLargeArray(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary item
+                state.ForceMinimumStackCapacity(1);
+
+                var len = BinaryPrimitives.ReadUInt32BigEndian(data);
+                data = data[4..];
+
+                if ((int)len < 0)
+                {
+                    _ = state.RaiseError($"Array length is too long: {len}");
+                    return;
+                }
+
+                state.CreateTable((int)len, 0);
+                var arrayIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the element onto the stack
+                    Decode(ref data, ref state);
+                    state.RawSetInteger(arrayIndex, i);
+                }
+            }
+
+            // Decode an map with <= 15 key-value pairs, moving past it in data and pushing it to the stack
+            static void DecodeSmallMap(byte sigil, ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var len = sigil & 0b0000_1111;
+
+                state.CreateTable(0, len);
+                var mapIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the key onto the stack
+                    Decode(ref data, ref state);
+
+                    // Push the value onto the stack
+                    Decode(ref data, ref state);
+
+                    state.RawSet(mapIndex);
+                }
+            }
+
+            // Decode a map with <= 65,535 key-value pairs, moving past it in data and pushing it to the stack
+            static void DecodeMidMap(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var len = BinaryPrimitives.ReadUInt16BigEndian(data);
+                data = data[2..];
+
+                state.CreateTable(0, len);
+                var mapIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the key onto the stack
+                    Decode(ref data, ref state);
+
+                    // Push the value onto the stack
+                    Decode(ref data, ref state);
+
+                    state.RawSet(mapIndex);
+                }
+            }
+
+            // Decode a map with <= 4,294,967,295 key-value pairs, moving past it in data and pushing it to the stack
+            static void DecodeLargeMap(ref ReadOnlySpan<byte> data, ref LuaStateWrapper state)
+            {
+                // Reserve extra space for the temporary key & value
+                state.ForceMinimumStackCapacity(2);
+
+                var len = BinaryPrimitives.ReadUInt32BigEndian(data);
+                data = data[4..];
+
+                if ((int)len < 0)
+                {
+                    _ = state.RaiseError($"Map length is too long: {len}");
+                    return;
+                }
+
+                state.CreateTable(0, (int)len);
+                var mapIndex = state.StackTop;
+
+                for (var i = 1; i <= len; i++)
+                {
+                    // Push the key onto the stack
+                    Decode(ref data, ref state);
+
+                    // Push the value onto the stack
+                    Decode(ref data, ref state);
+
+                    state.RawSet(mapIndex);
+                }
+            }
         }
 
         /// <summary>
@@ -1328,7 +3308,7 @@ end
         {
             var respEnd = respPtr + respLen;
 
-            var ret = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+            var ret = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
             if (respPtr != respEnd)
             {
@@ -1338,7 +3318,7 @@ end
             return ret;
         }
 
-        private unsafe int ProcessSingleResp3Term(byte respProtocolVersion, ref byte* respPtr, byte* respEnd)
+        private unsafe int ProcessSingleRespTerm(byte respProtocolVersion, ref byte* respPtr, byte* respEnd)
         {
             var indicator = (char)*respPtr;
 
@@ -1440,7 +3420,7 @@ end
                             for (var itemIx = 0; itemIx < arrayItemCount; itemIx++)
                             {
                                 // Pushes the item to the top of the stack
-                                _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                                _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                                 // Store the item into the table
                                 state.RawSetInteger(curTop + 1, itemIx + 1);
@@ -1470,10 +3450,10 @@ end
                         for (var pair = 0; pair < mapPairCount; pair++)
                         {
                             // Read key
-                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                            _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Read value
-                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                            _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Set t[k] = v
                             state.RawSet(curTop + 3);
@@ -1526,7 +3506,7 @@ end
                         for (var pair = 0; pair < setItemCount; pair++)
                         {
                             // Read value, which we use as a key
-                            _ = ProcessSingleResp3Term(respProtocolVersion, ref respPtr, respEnd);
+                            _ = ProcessSingleRespTerm(respProtocolVersion, ref respPtr, respEnd);
 
                             // Unconditionally the value under the key is true
                             state.PushBoolean(true);
@@ -2471,7 +4451,34 @@ end
             {
                 runner.state.KnownStringToBuffer(runner.state.StackTop, out var buf);
 
-                while (!RespWriteUtils.TryWriteBulkString(buf, ref resp.BufferCur, resp.BufferEnd))
+                // Strings can be veeeerrrrry large, so we can't use the short helpers
+                // Thus we write the full string directly
+                while (!RespWriteUtils.TryWriteBulkStringLength(buf, ref resp.BufferCur, resp.BufferEnd))
+                    resp.SendAndReset();
+
+                // Repeat while we have bytes left to write
+                while (!buf.IsEmpty)
+                {
+                    // Copy bytes over
+                    var destSpace = resp.BufferEnd - resp.BufferCur;
+                    var copyLen = (int)(destSpace < buf.Length ? destSpace : buf.Length);
+                    buf.Slice(0, copyLen).CopyTo(new Span<byte>(resp.BufferCur, copyLen));
+
+                    // Advance
+                    resp.BufferCur += copyLen;
+
+                    // Flush if we filled the buffer
+                    if (destSpace == copyLen)
+                    {
+                        resp.SendAndReset();
+                    }
+
+                    // Move past the data we wrote out
+                    buf = buf.Slice(copyLen);
+                }
+
+                // End the string
+                while (!RespWriteUtils.TryWriteNewLine(ref resp.BufferCur, resp.BufferEnd))
                     resp.SendAndReset();
 
                 runner.state.Pop(1);
@@ -2811,6 +4818,77 @@ end
 
             return (start, bitmap);
         }
+
+        /// <summary>
+        /// Modifies <see cref="LoaderBlock"/> to account for <paramref name="allowedFunctions"/>, and converts to bytes.
+        /// 
+        /// Provided as an optimization, as often this can be memoized.
+        /// </summary>
+        private static ReadOnlyMemory<byte> PrepareLoaderBlockBytes(HashSet<string> allowedFunctions)
+        {
+            // If nothing is explicitly allowed, fallback to our defaults
+            if (allowedFunctions.Count == 0)
+            {
+                allowedFunctions = DefaultAllowedFunctions;
+            }
+
+            // Most of the time this list never changes, so reuse the work
+            var cache = CachedLoaderBlock;
+            if (cache != null && ReferenceEquals(cache.AllowedFunctions, allowedFunctions))
+            {
+                return cache.LoaderBlockBytes;
+            }
+
+            // Build the subset of a Lua table where we export all these functions
+            var wholeIncludes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var replacement = new StringBuilder();
+            foreach (var wholeRef in allowedFunctions.Where(static x => !x.Contains('.')))
+            {
+                if (!DefaultAllowedFunctions.Contains(wholeRef))
+                {
+                    // Skip functions not intentionally exported
+                    continue;
+                }
+
+                _ = replacement.AppendLine($"    {wholeRef}={wholeRef};");
+                _ = wholeIncludes.Add(wholeRef);
+            }
+
+            // Partial includes (ie. os.clock) need special handling
+            var partialIncludes = allowedFunctions.Where(static x => x.Contains('.')).Select(static x => (Leading: x[..x.IndexOf('.')], Trailing: x[(x.IndexOf('.') + 1)..]));
+            foreach (var grouped in partialIncludes.GroupBy(static t => t.Leading, StringComparer.OrdinalIgnoreCase))
+            {
+                if (wholeIncludes.Contains(grouped.Key))
+                {
+                    // Including a subset of something included in whole doesn't affect things
+                    continue;
+                }
+
+                if (!DefaultAllowedFunctions.Contains(grouped.Key))
+                {
+                    // Skip functions not intentionally exported
+                    continue;
+                }
+
+                _ = replacement.AppendLine($"    {grouped.Key}={{");
+                foreach (var part in grouped.Select(static t => t.Trailing).Distinct().OrderBy(static t => t))
+                {
+                    _ = replacement.AppendLine($"        {part}={grouped.Key}.{part};");
+                }
+                _ = replacement.AppendLine("    };");
+            }
+
+            var decl = replacement.ToString();
+            var finalLoaderBlock = LoaderBlock.Replace("!!SANDBOX_ENV REPLACEMENT TARGET!!", decl);
+
+            // Save off for next caller
+            //
+            // Inherently race-y, but that's fine - worst case we do a little extra work
+            var newCache = new LoaderBlockCache(allowedFunctions, Encoding.UTF8.GetBytes(finalLoaderBlock));
+            CachedLoaderBlock = newCache;
+
+            return newCache.LoaderBlockBytes;
+        }
     }
 
     /// <summary>
@@ -2950,5 +5028,132 @@ end
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static int SetResp(nint luaState)
         => CallbackContext.SetResp(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.atan2.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Atan2(nint luaState)
+        => CallbackContext.Atan2(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.cosh.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Cosh(nint luaState)
+        => CallbackContext.Cosh(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.frexp.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Frexp(nint luaState)
+        => CallbackContext.Frexp(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.ldexp.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Ldexp(nint luaState)
+        => CallbackContext.Ldexp(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.log10.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Log10(nint luaState)
+        => CallbackContext.Log10(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.pow.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Pow(nint luaState)
+        => CallbackContext.Pow(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.sinh.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Sinh(nint luaState)
+        => CallbackContext.Sinh(luaState);
+
+        /// <summary>
+        /// Entry point for calls to math.tanh.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Tanh(nint luaState)
+        => CallbackContext.Tanh(luaState);
+
+        /// <summary>
+        /// Entry point for calls to table.maxn.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Maxn(nint luaState)
+        => CallbackContext.Maxn(luaState);
+
+        /// <summary>
+        /// Entry point for calls to loadstring.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int LoadString(nint luaState)
+        => CallbackContext.LoadString(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cjson.encode.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CJsonEncode(nint luaState)
+        => CallbackContext.CJsonEncode(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cjson.decode.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CJsonDecode(nint luaState)
+        => CallbackContext.CJsonDecode(luaState);
+
+        /// <summary>
+        /// Entry point for calls to bit.tobit.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int BitToBit(nint luaState)
+        => CallbackContext.BitToBit(luaState);
+
+        /// <summary>
+        /// Entry point for calls to bit.tohex.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int BitToHex(nint luaState)
+        => CallbackContext.BitToHex(luaState);
+
+        /// <summary>
+        /// Entry point for calls to garnet_bitop, which backs
+        /// bit.bnot, bit.bor, etc.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int Bitop(nint luaState)
+        => CallbackContext.Bitop(luaState);
+
+        /// <summary>
+        /// Entry point for calls to bit.bswap.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int BitBswap(nint luaState)
+        => CallbackContext.BitBswap(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cmsgpack.pack.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CMsgPackPack(nint luaState)
+        => CallbackContext.CMsgPackPack(luaState);
+
+        /// <summary>
+        /// Entry point for calls to cmsgpack.unpack.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int CMsgPackUnpack(nint luaState)
+        => CallbackContext.CMsgPackUnpack(luaState);
     }
 }
