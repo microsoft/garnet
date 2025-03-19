@@ -36,6 +36,7 @@ namespace Garnet.cluster
         internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
 
         private SingleWriterMultiReaderLock recoverLock;
+        private SingleWriterMultiReaderLock recoveryStateChangeLock;
 
         public bool IsRecovering => currentRecoveryStatus != RecoveryStatus.NoRecovery;
 
@@ -249,46 +250,51 @@ namespace Garnet.cluster
         /// <param name="nextRecoveryStatus"></param>
         public void CompleteRecovery(RecoveryStatus nextRecoveryStatus)
         {
-            logger?.LogTrace("{method} [{currentStatus},{recoverStatus}]", nameof(CompleteRecovery), currentRecoveryStatus, nextRecoveryStatus);
+            logger?.LogTrace("{method} [{currentRecoveryStatus},{nextRecoveryStatus}]", nameof(CompleteRecovery), currentRecoveryStatus, nextRecoveryStatus);
 
-            switch (currentRecoveryStatus)
+            try
             {
-                case RecoveryStatus.NoRecovery:
-                    Debug.Fail("There is no ongoing recovery!");
-                    break;
-                case RecoveryStatus.InitializeRecover:
-                case RecoveryStatus.ClusterReplicate:
-                case RecoveryStatus.ClusterFailover:
-                case RecoveryStatus.ReplicaOfNoOne:
-                    switch (nextRecoveryStatus)
-                    {
-                        case RecoveryStatus.CheckpointRecoveredAtReplica:
-                            Debug.Assert(currentRecoveryStatus is not RecoveryStatus.NoRecovery and not RecoveryStatus.CheckpointRecoveredAtReplica);
-                            currentRecoveryStatus = nextRecoveryStatus;
-                            break;
-                        case RecoveryStatus.NoRecovery:
-                            currentRecoveryStatus = nextRecoveryStatus;
-                            recoverLock.WriteUnlock();
-                            clusterProvider.storeWrapper.ResumeCheckpoints();
-                            break;
-                        default:
-                            Debug.Fail("Invalid next recovery status");
-                            break;
-                    }
-                    break;
-                case RecoveryStatus.CheckpointRecoveredAtReplica:
-                    switch (nextRecoveryStatus)
-                    {
-                        case RecoveryStatus.NoRecovery:
-                            currentRecoveryStatus = nextRecoveryStatus;
-                            recoverLock.WriteUnlock();
-                            clusterProvider.storeWrapper.ResumeCheckpoints();
-                            break;
-                        default:
-                            Debug.Fail("Invalid next recovery status");
-                            break;
-                    }
-                    break;
+                recoveryStateChangeLock.WriteLock();
+                switch (currentRecoveryStatus)
+                {
+                    case RecoveryStatus.NoRecovery:
+                        throw new GarnetException($"Invalid state change [{currentRecoveryStatus},{nextRecoveryStatus}]");
+                    case RecoveryStatus.InitializeRecover:
+                    case RecoveryStatus.ClusterReplicate:
+                    case RecoveryStatus.ClusterFailover:
+                    case RecoveryStatus.ReplicaOfNoOne:
+                        switch (nextRecoveryStatus)
+                        {
+                            case RecoveryStatus.CheckpointRecoveredAtReplica:
+                                Debug.Assert(currentRecoveryStatus is not RecoveryStatus.NoRecovery and not RecoveryStatus.CheckpointRecoveredAtReplica);
+                                currentRecoveryStatus = nextRecoveryStatus;
+                                break;
+                            case RecoveryStatus.NoRecovery:
+                                currentRecoveryStatus = nextRecoveryStatus;
+                                recoverLock.WriteUnlock();
+                                clusterProvider.storeWrapper.ResumeCheckpoints();
+                                break;
+                            default:
+                                throw new GarnetException($"Invalid state change [{currentRecoveryStatus},{nextRecoveryStatus}]");
+                        }
+                        break;
+                    case RecoveryStatus.CheckpointRecoveredAtReplica:
+                        switch (nextRecoveryStatus)
+                        {
+                            case RecoveryStatus.NoRecovery:
+                                currentRecoveryStatus = nextRecoveryStatus;
+                                recoverLock.WriteUnlock();
+                                clusterProvider.storeWrapper.ResumeCheckpoints();
+                                break;
+                            default:
+                                throw new GarnetException($"Invalid state change [{currentRecoveryStatus},{nextRecoveryStatus}]");
+                        }
+                        break;
+                }
+            }
+            finally
+            {
+                recoveryStateChangeLock.WriteUnlock();
             }
         }
 
