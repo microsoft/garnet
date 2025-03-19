@@ -148,7 +148,12 @@ namespace Tsavorite.core
         public byte* GetValidPointer() => BufferPtr + ValidOffset;
 
         /// <summary>
-        /// Get valid span
+        /// Gets a span over the allocated memory.
+        /// </summary>
+        public Span<byte> AsSpan() => new(BufferPtr, Length);
+
+        /// <summary>
+        /// Gets a valid span which is calculated using <see cref="ValidOffset"/>
         /// </summary>
         public Span<byte> AsValidSpan() => new(BufferPtr + ValidOffset, Length - ValidOffset);
 
