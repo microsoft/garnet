@@ -1,20 +1,20 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System;
-using KeraLua;
-using System.Text;
-using Garnet.common;
-using Microsoft.Extensions.Logging;
-using System.Buffers.Binary;
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
-using System.Text.Json.Nodes;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Garnet.common;
+using KeraLua;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -3099,7 +3099,7 @@ namespace Garnet.server
 
                 Debug.Assert(state.Type(2) == LuaType.Function, "Unexpected type returned from load_sandboxed");
 
-                if(!state.TryRef(out functionRegistryIndex))
+                if (!state.TryRef(out functionRegistryIndex))
                 {
                     // Uh-oh, couldn't save the function under the registry
                     while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
