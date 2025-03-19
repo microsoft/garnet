@@ -131,7 +131,7 @@ namespace Garnet.cluster
             }
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !ResumeRecovery(RecoveryStatus.InitializeRecover))
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -214,7 +214,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
         /// </summary>
-        public bool ResumeRecovery(RecoveryStatus recoverStatus)
+        public bool BeginRecovery(RecoveryStatus recoverStatus)
         {
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
             {
@@ -239,7 +239,7 @@ namespace Garnet.cluster
         /// Release recovery and checkpoint locks
         /// </summary>
         /// <param name="currentEpoch"></param>
-        public void PauseRecovery(long currentEpoch)
+        public void CompleteRecovery(long currentEpoch)
         {
             if (currentEpoch == -1 || RecoveryEpoch != currentEpoch)
             {

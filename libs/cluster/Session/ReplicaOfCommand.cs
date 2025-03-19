@@ -31,7 +31,7 @@ namespace Garnet.cluster
                 var currentRecoveryEpoch = -1L;
                 try
                 {
-                    if (!clusterProvider.replicationManager.ResumeRecovery(RecoveryStatus.ReplicaOfNoOne))
+                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
@@ -47,7 +47,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    clusterProvider.replicationManager.PauseRecovery(currentRecoveryEpoch);
+                    clusterProvider.replicationManager.CompleteRecovery(currentRecoveryEpoch);
                 }
             }
             else

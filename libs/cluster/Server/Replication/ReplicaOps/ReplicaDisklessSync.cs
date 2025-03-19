@@ -54,7 +54,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
-                PauseRecovery(currentEpoch);
+                CompleteRecovery(currentEpoch);
                 replicateLock.WriteUnlock();
             }
             return true;
@@ -131,7 +131,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
                     clusterProvider.clusterManager.TryResetReplica();
-                    PauseRecovery(currentEpoch);
+                    CompleteRecovery(currentEpoch);
                     return ex.Message;
                 }
                 finally
@@ -185,7 +185,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                PauseRecovery(RecoveryEpoch);
+                CompleteRecovery(RecoveryEpoch);
             }
         }
     }

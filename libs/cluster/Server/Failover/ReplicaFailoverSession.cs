@@ -155,7 +155,7 @@ namespace Garnet.cluster
             try
             {
                 // Make replica syncing unavailable by setting recovery flag
-                if (!clusterProvider.replicationManager.ResumeRecovery(RecoveryStatus.ClusterFailover))
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover))
                 {
                     logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     return false;
@@ -180,7 +180,7 @@ namespace Garnet.cluster
             finally
             {
                 // Disable recovering as now this node has become a primary or failed in its attempt earlier
-                clusterProvider.replicationManager.PauseRecovery(currentRecoveryEpoch);
+                clusterProvider.replicationManager.CompleteRecovery(currentRecoveryEpoch);
             }
 
             return true;

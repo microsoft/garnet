@@ -158,7 +158,7 @@ namespace Garnet.cluster
                     {
                         logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
                         clusterProvider.clusterManager.TryResetReplica();
-                        PauseRecovery(currentEpoch);
+                        CompleteRecovery(currentEpoch);
                         return ex.Message;
                     }
                     finally
@@ -174,7 +174,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryClusterReplicateAttach)}");
-                PauseRecovery(currentEpoch);
+                CompleteRecovery(currentEpoch);
                 return false;
             }
             finally
@@ -371,7 +371,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                PauseRecovery(RecoveryEpoch);
+                CompleteRecovery(RecoveryEpoch);
             }
         }
     }
