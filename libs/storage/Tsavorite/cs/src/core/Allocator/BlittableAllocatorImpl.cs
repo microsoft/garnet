@@ -194,6 +194,7 @@ namespace Tsavorite.core
         internal void ClearPage(long page, int offset)
         {
             Debug.Assert(offset < PageSize);
+            Debug.Assert(IsAllocated(GetPageIndexForPage(page)));
 
             var ptr = pointers[page % BufferSize] + offset;
             var length = (uint)(PageSize - offset);
@@ -205,7 +206,7 @@ namespace Tsavorite.core
         {
             ClearPage(page, 0);
             if (EmptyPageCount > 0)
-                ReturnPage((int)(page % BufferSize));
+                ReturnPage(GetPageIndexForPage(page));
         }
 
         /// <summary>
@@ -215,8 +216,12 @@ namespace Tsavorite.core
         {
             for (var i = 0; i < BufferSize; i++)
             {
-                NativeMemory.AlignedFree(pointers[i]);
-                pointers[i] = null;
+                var pagePtr = pointers[i];
+                if (pagePtr != null)
+                {
+                    NativeMemory.AlignedFree(pagePtr);
+                    pointers[i] = null;
+                }
             }
         }
 
