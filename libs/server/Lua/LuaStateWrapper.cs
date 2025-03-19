@@ -865,28 +865,45 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static unsafe nint LuaAllocateBytes(nint udPtr, nint ptr, nuint osize, nuint nsize)
         {
-            // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
-
-            var handle = (GCHandle)udPtr;
-            Debug.Assert(handle.IsAllocated, "GCHandle should always be valid");
-
-            var customAllocator = (ILuaAllocator)handle.Target;
-
-            if (ptr != IntPtr.Zero)
+            try
             {
-                // Now osize is the size used to (re)allocate ptr last
+                // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
 
-                ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+                var handle = (GCHandle)udPtr;
+                Debug.Assert(handle.IsAllocated, "GCHandle should always be valid");
 
-                if (nsize == 0)
+                var customAllocator = (ILuaAllocator)handle.Target;
+
+                if (ptr != IntPtr.Zero)
                 {
-                    customAllocator.Free(ref dataRef, (int)osize);
+                    // Now osize is the size used to (re)allocate ptr last
 
-                    return 0;
+                    ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                    if (nsize == 0)
+                    {
+                        customAllocator.Free(ref dataRef, (int)osize);
+
+                        return 0;
+                    }
+                    else
+                    {
+                        ref var ret = ref customAllocator.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
+                        if (failed)
+                        {
+                            return 0;
+                        }
+
+                        var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                        return retPtr;
+                    }
                 }
                 else
                 {
-                    ref var ret = ref customAllocator.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
+                    // Now osize is the size of the object being allocated, but nsize is the desired size
+
+                    ref var ret = ref customAllocator.AllocateNew((int)nsize, out var failed);
                     if (failed)
                     {
                         return 0;
@@ -897,19 +914,11 @@ namespace Garnet.server
                     return retPtr;
                 }
             }
-            else
+            catch (Exception e)
             {
-                // Now osize is the size of the object being allocated, but nsize is the desired size
+                PanicLogger?.LogCritical(e, "Exception raised in LuaAllocateBytes, this is likely to crash the process");
 
-                ref var ret = ref customAllocator.AllocateNew((int)nsize, out var failed);
-                if (failed)
-                {
-                    return 0;
-                }
-
-                var retPtr = (nint)Unsafe.AsPointer(ref ret);
-
-                return retPtr;
+                throw;
             }
         }
     }
