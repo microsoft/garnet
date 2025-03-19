@@ -15,7 +15,9 @@ namespace Garnet.cluster
         ISSUING_PAUSE_WRITES,
         WAITING_FOR_SYNC,
         FAILOVER_IN_PROGRESS,
-        TAKING_OVER_AS_PRIMARY
+        TAKING_OVER_AS_PRIMARY,
+        FAILOVER_COMPLETED,
+        FAILOVER_ABORTED
     }
 
     internal static class FailoverUtils
@@ -36,6 +38,8 @@ namespace Garnet.cluster
                 FailoverStatus.WAITING_FOR_SYNC => "waiting-for-sync",
                 FailoverStatus.FAILOVER_IN_PROGRESS => "failover-in-progress",
                 FailoverStatus.TAKING_OVER_AS_PRIMARY => "taking-over-as-primary",
+                FailoverStatus.FAILOVER_COMPLETED => "failover-completed",
+                FailoverStatus.FAILOVER_ABORTED => "failover-aborted",
                 _ => throw new Exception("invalid failover status"),
             };
         }

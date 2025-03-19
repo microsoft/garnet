@@ -51,6 +51,12 @@ namespace Tsavorite.core
         void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata);
 
         /// <summary>
+        /// Cleanup index checkpoint
+        /// </summary>
+        /// <param name="indexToken"></param>
+        void CleanupIndexCheckpoint(Guid indexToken);
+
+        /// <summary>
         /// Commit log checkpoint (snapshot and fold-over)
         /// </summary>
         /// <param name="logToken"></param>
@@ -59,11 +65,26 @@ namespace Tsavorite.core
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
-        /// Callback to indicate version shift during checkpoint
+        /// Cleanup log checkpoint
+        /// </summary>
+        /// <param name="logToken"></param>
+        void CleanupLogCheckpoint(Guid logToken);
+
+        /// <summary>
+        /// Callback to indicate start of version shift during checkpoint
         /// </summary>
         /// <param name="oldVersion"></param>
         /// <param name="newVersion"></param>
-        void CheckpointVersionShift(long oldVersion, long newVersion);
+        /// <param name="isStreaming"></param>
+        void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming);
+
+        /// <summary>
+        /// Callback to indicate end of version shift during checkpoint
+        /// </summary>
+        /// <param name="oldVersion"></param>
+        /// <param name="newVersion"></param>
+        /// <param name="isStreaming"></param>
+        void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming);
 
         /// <summary>
         /// Commit log incremental checkpoint (incremental snapshot)
@@ -73,6 +94,12 @@ namespace Tsavorite.core
         /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
         void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog);
+
+        /// <summary>
+        /// Cleanup log incremental checkpoint (incremental snapshot)
+        /// </summary>
+        /// <param name="logToken"></param>
+        void CleanupLogIncrementalCheckpoint(Guid logToken);
 
         /// <summary>
         /// Retrieve commit metadata for specified index checkpoint

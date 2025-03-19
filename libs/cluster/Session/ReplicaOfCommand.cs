@@ -24,13 +24,13 @@ namespace Garnet.cluster
             var addressSpan = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var portSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-            //Turn of replication and make replica into a primary but do not delete data
+            // Turn of replication and make replica into a primary but do not delete data
             if (addressSpan.EqualsUpperCaseSpanIgnoringCase("NO"u8) &&
                 portSpan.EqualsUpperCaseSpanIgnoringCase("ONE"u8))
             {
                 try
                 {
-                    if (!clusterProvider.replicationManager.StartRecovery())
+                    if (!clusterProvider.replicationManager.StartRecovery(RecoveryStatus.ReplicaOfNoOne))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))

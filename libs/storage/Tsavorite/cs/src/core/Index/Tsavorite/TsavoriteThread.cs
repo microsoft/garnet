@@ -17,31 +17,36 @@ namespace Tsavorite.core
         {
             epoch.ProtectAndDrain();
 
-            // Fast path: check if we are in unchanged REST phase
-            if (sessionFunctions.Ctx.SessionState.Phase == Phase.REST && SystemState.Equal(sessionFunctions.Ctx.SessionState, stateMachineDriver.SystemState))
+            // Fast path: check if we are in an unchanged REST phase
+            if (sessionFunctions.Ctx.SessionState.Phase == Phase.REST &&
+                SystemState.Equal(sessionFunctions.Ctx.SessionState, stateMachineDriver.SystemState))
                 return;
 
             while (true)
             {
-                // Grab current system state into session state under epoch protection
+                // Acquire a session-local copy of the system state
                 sessionFunctions.Ctx.SessionState = stateMachineDriver.SystemState;
 
-                //   If a session is in PREPARE/PREPARE_GROW phase AND is not currently in a transaction
-                //      Then the session will SPIN during Refresh until it is in (IN_PROGRESS, v+1).
-                //
-                //   That way no session can work in the PREPARE/PREPARE_GROW phase while any session works in IN_PROGRESS phase.
-                //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) only if all sessions
-                //   have reached PREPARE/PREPARE_GROW and all transactions have concluded (i.e., NumActiveLockingSessions == 0).
-                //   See HybridLogCheckpointSMTask and IndexResizeSMTask for state machine progress condition.
-                //
-                //   Also, ClientSession.AcquireLockable() ensures that no new transactions are started in
-                //   the PREPARE/PREPARE_GROW phase.
-                if ((sessionFunctions.Ctx.phase == Phase.PREPARE || sessionFunctions.Ctx.phase == Phase.PREPARE_GROW)
-                    && !sessionFunctions.Ctx.isAcquiredLockable)
+                switch (sessionFunctions.Ctx.SessionState.Phase)
                 {
-                    epoch.ProtectAndDrain();
-                    _ = Thread.Yield();
-                    continue;
+                    case Phase.IN_PROGRESS:
+                        // Adjust session's effective state if there is an ongoing active transaction.
+                        if (sessionFunctions.Ctx.txnVersion == sessionFunctions.Ctx.SessionState.Version - 1)
+                        {
+                            sessionFunctions.Ctx.SessionState = SystemState.Make(Phase.PREPARE, sessionFunctions.Ctx.txnVersion);
+                        }
+                        break;
+                    case Phase.PREPARE_GROW:
+                        // Session needs to wait in PREPARE_GROW phase unless it is in an active transaction.
+                        // We cannot avoid spinning on hash table growth: operations (and transactions) in (v) have to drain
+                        // out before we grow the hash table because the lock table is co-located with the hash table.
+                        if (!sessionFunctions.Ctx.isAcquiredLockable)
+                        {
+                            epoch.ProtectAndDrain();
+                            _ = Thread.Yield();
+                            continue;
+                        }
+                        break;
                 }
                 break;
             }
