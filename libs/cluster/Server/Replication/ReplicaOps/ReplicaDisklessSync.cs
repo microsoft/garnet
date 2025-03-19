@@ -38,15 +38,26 @@ namespace Garnet.cluster
 
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();
-                _ = Task.Run(() => TryBeginReplicaSync());
+                if (background)
+                    _ = Task.Run(() => TryBeginReplicaSync());
+                else
+                {
+                    var result = TryBeginReplicaSync().Result;
+                    if (result != null)
+                    {
+                        errorMessage = Encoding.ASCII.GetBytes(result);
+                        return false;
+                    }
+                }
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
                 replicateLock.WriteUnlock();
             }
+            return true;
 
-            async Task TryBeginReplicaSync()
+            async Task<string> TryBeginReplicaSync()
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 var disableObjects = clusterProvider.serverOptions.DisableObjects;
@@ -84,7 +95,7 @@ namespace Garnet.cluster
                     {
                         var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
                         logger?.LogError("{msg}", errorMsg);
-                        return;
+                        return errorMsg;
                     }
 
                     gcs = new(
@@ -119,6 +130,7 @@ namespace Garnet.cluster
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
                     clusterProvider.clusterManager.TryResetReplica();
                     SuspendRecovery();
+                    return ex.Message;
                 }
                 finally
                 {
@@ -126,9 +138,8 @@ namespace Garnet.cluster
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
                 }
+                return null;
             }
-
-            return true;
         }
 
         public long ReplicaRecoverDiskless(SyncMetadata primarySyncMetadata, out ReadOnlySpan<byte> errorMessage)
