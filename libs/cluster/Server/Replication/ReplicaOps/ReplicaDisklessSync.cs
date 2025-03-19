@@ -38,18 +38,18 @@ namespace Garnet.cluster
                 return false;
             }
 
-            var currentEpoch = -1L;
+            var currentRecoveryEpoch = -1L;
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
-                if (!clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (!clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out currentRecoveryEpoch, out errorMessage, logger: logger))
                 {
                     replicateLock.WriteUnlock();
                     return false;
                 }
 
                 // Acquire recovery epoch to distinguish between PauseRecoveryLocks
-                currentEpoch = tryAddReplica ? RecoveryEpoch : InitializeRecoverEpoch;
+                if (!tryAddReplica) currentRecoveryEpoch = InitializeRecoverEpoch;
 
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();
@@ -68,7 +68,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
-                CompleteRecovery(currentEpoch);
+                CompleteRecovery(currentRecoveryEpoch);
                 replicateLock.WriteUnlock();
             }
             return true;
@@ -145,7 +145,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
                     clusterProvider.clusterManager.TryResetReplica();
-                    CompleteRecovery(currentEpoch);
+                    CompleteRecovery(currentRecoveryEpoch);
                     return ex.Message;
                 }
                 finally

@@ -40,7 +40,7 @@ namespace Garnet.cluster
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
-            var currentEpoch = -1L;
+            var currentRecoveryEpoch = -1L;
             try
             {
                 // Ensure two replicate commands do not execute at the same time.
@@ -52,11 +52,11 @@ namespace Garnet.cluster
 
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out currentRecoveryEpoch, out errorMessage, logger: logger))
                     return false;
 
                 // Acquire recovery epoch to distinguish between PauseRecoveryLocks
-                currentEpoch = tryAddReplica ? RecoveryEpoch : InitializeRecoverEpoch;
+                if (!tryAddReplica) currentRecoveryEpoch = InitializeRecoverEpoch;
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
@@ -158,7 +158,7 @@ namespace Garnet.cluster
                     {
                         logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
                         clusterProvider.clusterManager.TryResetReplica();
-                        CompleteRecovery(currentEpoch);
+                        CompleteRecovery(currentRecoveryEpoch);
                         return ex.Message;
                     }
                     finally
@@ -174,7 +174,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSync)}");
-                CompleteRecovery(currentEpoch);
+                CompleteRecovery(currentRecoveryEpoch);
                 return false;
             }
             finally
