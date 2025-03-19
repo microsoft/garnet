@@ -116,12 +116,12 @@ namespace Garnet.server
 
             try
             {
-                sectorAlignedMemoryHll1 ??= SectorAlignedMemory.Allocate(hllBufferSize, alignment: sectorAlignedMemoryPoolAlignment);
-                sectorAlignedMemoryHll2 ??= SectorAlignedMemory.Allocate(hllBufferSize, alignment: sectorAlignedMemoryPoolAlignment);
+                sectorAlignedMemoryHll1 ??= SectorAlignedMemory.Allocate(hllBufferSize, sectorAlignedMemoryPoolAlignment);
+                sectorAlignedMemoryHll2 ??= SectorAlignedMemory.Allocate(hllBufferSize, sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
                 var dstMergeBuffer = SpanByteAndMemory.FromPinnedSpan(sectorAlignedMemoryHll1.AsValidSpan());
-                var srcMergeBuffer = SpanByteAndMemory.FromPinnedSpan(sectorAlignedMemoryHll1.AsValidSpan());
+                var srcMergeBuffer = SpanByteAndMemory.FromPinnedSpan(sectorAlignedMemoryHll2.AsValidSpan());
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
