@@ -14,7 +14,8 @@ namespace Tsavorite.core
         private enum LatchDestination
         {
             CreateNewRecord,
-            NormalProcessing
+            NormalProcessing,
+            Retry
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -36,7 +37,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check the version of the passed-in record.
+        /// This is a wrapper for checking the record's version instead of just peeking at the latest record at the tail of the bucket.
+        /// By calling with the address of the traced record, we can prevent a different key sharing the same bucket from deceiving 
+        /// the operation to think that the version of the key has reached v+1 and thus to incorrectly update in place.
         /// </summary>
         /// <param name="logicalAddress">The logical address of the traced record for the key</param>
         /// <returns></returns>
@@ -44,7 +47,18 @@ namespace Tsavorite.core
         private bool IsRecordVersionNew(long logicalAddress)
         {
             HashBucketEntry entry = new() { word = logicalAddress };
+            return IsEntryVersionNew(ref entry);
+        }
 
+        /// <summary>
+        /// Check the version of the passed-in entry. 
+        /// The semantics of this function are to check the tail of a bucket (indicated by entry), so we name it this way.
+        /// </summary>
+        /// <param name="entry">the last entry of a bucket</param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool IsEntryVersionNew(ref HashBucketEntry entry)
+        {
             // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
             if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress)
                 return false;

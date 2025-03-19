@@ -12,7 +12,7 @@ namespace Garnet.server
         // * Layout, size, contents of this struct
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
-        const byte AofHeaderVersion = 1;
+        const byte AofHeaderVersion = 2;
 
         /// <summary>
         /// Version of AOF

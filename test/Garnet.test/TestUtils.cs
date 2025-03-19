@@ -10,6 +10,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -90,6 +91,12 @@ namespace Garnet.test
                 }
                 return false;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
+        {
+            ClassicAssert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response, 0, expectedResponse.Length));
         }
 
         /// <summary>
@@ -221,6 +228,7 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
+            IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
@@ -305,7 +313,7 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold
@@ -521,6 +529,7 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
+            IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null)
         {
             if (useAzureStorage)
@@ -624,7 +633,7 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = 1

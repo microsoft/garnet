@@ -11,10 +11,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine with the given tasks. Does not load any tasks by default.
         /// </summary>
-        /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">The tasks to load onto the state machine</param>
-        public HybridLogCheckpointSM(long targetVersion, params IStateMachineTask[] tasks)
-            : base(targetVersion, tasks) { }
+        public HybridLogCheckpointSM(params IStateMachineTask[] tasks)
+            : base(tasks) { }
 
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)

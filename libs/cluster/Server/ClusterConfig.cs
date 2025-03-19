@@ -1301,6 +1301,7 @@ namespace Garnet.cluster
         /// Check if sender has same local worker epoch as the receiver node and resolve collision.
         /// </summary>
         /// <param name="senderConfig">Incoming configuration object.</param>
+        /// <param name="logger"></param>
         /// <returns>ClusterConfig object with updates.</returns>
         public ClusterConfig HandleConfigEpochCollision(ClusterConfig senderConfig, ILogger logger = null)
         {

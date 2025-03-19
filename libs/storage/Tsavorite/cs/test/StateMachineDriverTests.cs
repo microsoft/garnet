@@ -18,12 +18,14 @@ namespace Tsavorite.test.recovery
     public abstract class StateMachineDriverTestsBase
     {
         readonly int numOpThreads = 2;
-        IDevice log;
+        protected readonly int numKeys = 4;
+        readonly int numIterations = 3;
 
+        IDevice log;
         protected bool opsDone;
         protected long[] expectedV1Count;
         protected long[] expectedV2Count;
-        protected readonly int numKeys = 4;
+        protected int currentIteration;
 
         protected void BaseSetup()
         {
@@ -40,11 +42,9 @@ namespace Tsavorite.test.recovery
             DeleteDirectory(MethodTestDir, true);
         }
 
-        protected abstract void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store);
+        protected abstract void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store);
 
-        public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, long indexSize, bool useTimingFuzzing)
         {
             // Create the original store
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
@@ -58,111 +58,199 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            // Start operation threads
-            var opTasks = new Task[numOpThreads];
-            for (int i = 0; i < numOpThreads; i++)
+            for (currentIteration = 0; currentIteration < numIterations; currentIteration++)
             {
-                var thread_id = i;
-                opTasks[i] = Task.Run(() => OperationThread(thread_id, store1));
-            }
+                opsDone = false;
 
-            // Wait for some operations to complete in v1
-            await Task.Delay(500);
-
-            // Initiate checkpoint concurrent to the operation threads
-            var task = store1.TakeFullCheckpointAsync(checkpointType);
-
-            // Wait for the checkpoint to complete
-            Guid token;
-            if (isAsync)
-            {
-                (var status, token) = await task;
-            }
-            else
-            {
-                (var status, token) = task.AsTask().GetAwaiter().GetResult();
-            }
-
-            // Wait for some operations to complete in v2
-            await Task.Delay(500);
-
-            // Signal operation threads to stop, and wait for them to finish
-            opsDone = true;
-            await Task.WhenAll(opTasks);
-
-            // Verify the final state of the old store
-            using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
-            var bc1 = s1.BasicContext;
-            for (long key = 0; key < numKeys; key++)
-            {
-                long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (status.IsPending)
+                // Start operation threads
+                var opTasks = new Task[numOpThreads];
+                for (int i = 0; i < numOpThreads; i++)
                 {
-                    var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
-                    ClassicAssert.IsTrue(completed);
-                    bool result = completedOutputs.Next();
-                    ClassicAssert.IsTrue(result);
-                    status = completedOutputs.Current.Status;
-                    output = completedOutputs.Current.Output;
-                    result = completedOutputs.Next();
-                    ClassicAssert.IsFalse(result);
+                    var thread_id = i;
+                    opTasks[i] = Task.Run(() => OperationThread(thread_id, useTimingFuzzing, store1));
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
 
-                // The old store should have the latest state
-                ClassicAssert.AreEqual(expectedV2Count[key], output, $"output = {output}");
+                // Wait for some operations to complete in v1
+                await Task.Delay(500);
+
+                // Initiate checkpoint concurrent to the operation threads
+                var task = store1.TakeFullCheckpointAsync(checkpointType);
+
+                // Wait for the checkpoint to complete
+                (var checkpointStatus, var checkpointToken) = await task;
+
+                // Wait for some operations to complete in v2
+                await Task.Delay(500);
+
+                // Signal operation threads to stop, and wait for them to finish
+                opsDone = true;
+                await Task.WhenAll(opTasks);
+
+                // Verify the final state of the old store
+                using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+                var bc1 = s1.BasicContext;
+                for (long key = 0; key < numKeys; key++)
+                {
+                    long output = default;
+                    var status = bc1.Read(ref key, ref output);
+                    if (status.IsPending)
+                    {
+                        var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
+                        ClassicAssert.IsTrue(completed);
+                        bool result = completedOutputs.Next();
+                        ClassicAssert.IsTrue(result);
+                        status = completedOutputs.Current.Status;
+                        output = completedOutputs.Current.Output;
+                        result = completedOutputs.Next();
+                        ClassicAssert.IsFalse(result);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+
+                    // The old store should have the latest state
+                    ClassicAssert.AreEqual(expectedV2Count[key], output, $"output = {output}");
+                }
+
+                // Recover new store from the checkpoint
+                using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+                {
+                    IndexSize = indexSize,
+                    LogDevice = log,
+                    MutableFraction = 1,
+                    PageSize = 1L << 10,
+                    MemorySize = 1L << 20,
+                    CheckpointDir = MethodTestDir
+                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+                _ = await store2.RecoverAsync(default, checkpointToken);
+
+                // Verify the state of the new store
+                using var s2 = store2.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+                var bc2 = s2.BasicContext;
+                for (long key = 0; key < numKeys; key++)
+                {
+                    long output = default;
+                    var status = bc2.Read(ref key, ref output);
+                    if (status.IsPending)
+                    {
+                        var completed = bc2.CompletePendingWithOutputs(out var completedOutputs, true);
+                        ClassicAssert.IsTrue(completed);
+                        bool result = completedOutputs.Next();
+                        ClassicAssert.IsTrue(result);
+                        status = completedOutputs.Current.Status;
+                        output = completedOutputs.Current.Output;
+                        result = completedOutputs.Next();
+                        ClassicAssert.IsFalse(result);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+
+                    // The new store should have state as of V1, and not the latest state of the old store
+                    ClassicAssert.AreEqual(expectedV1Count[key], output, $"output = {output}");
+                }
+
+                // Copy V2 counts to V1 counts for the next iteration
+                for (int i = 0; i < numKeys; i++)
+                {
+                    expectedV1Count[i] = expectedV2Count[i];
+                }
             }
+        }
 
-            // Recover new store from the checkpoint
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+        public async ValueTask DoGrowIndexVersionSwitchEquivalenceCheck(long indexSize, bool useTimingFuzzing)
+        {
+            // Create the original store
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
-                MutableFraction = 1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 20,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
-            , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            if (isAsync)
+            for (currentIteration = 0; currentIteration < numIterations; currentIteration++)
             {
-                _ = await store2.RecoverAsync(default, token);
-            }
-            else
-            {
-                _ = store2.Recover(default, token);
-            }
+                opsDone = false;
 
-            // Verify the state of the new store
-            using var s2 = store2.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
-            var bc2 = s2.BasicContext;
-            for (long key = 0; key < numKeys; key++)
-            {
-                long output = default;
-                var status = bc2.Read(ref key, ref output);
-                if (status.IsPending)
+                // Start operation threads
+                var opTasks = new Task[numOpThreads];
+                for (int i = 0; i < numOpThreads; i++)
                 {
-                    var completed = bc2.CompletePendingWithOutputs(out var completedOutputs, true);
-                    ClassicAssert.IsTrue(completed);
-                    bool result = completedOutputs.Next();
-                    ClassicAssert.IsTrue(result);
-                    status = completedOutputs.Current.Status;
-                    output = completedOutputs.Current.Output;
-                    result = completedOutputs.Next();
-                    ClassicAssert.IsFalse(result);
+                    var thread_id = i;
+                    opTasks[i] = Task.Run(() => OperationThread(thread_id, useTimingFuzzing, store1));
                 }
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
 
-                // The new store should have state as of V1, and not the latest state of the old store
-                ClassicAssert.AreEqual(expectedV1Count[key], output, $"output = {output}");
+                // Wait for some operations to complete in v1
+                await Task.Delay(500);
+
+                // Grow index concurrent to the operation threads
+                var growIndexStatus = await store1.GrowIndexAsync();
+                ClassicAssert.IsTrue(growIndexStatus);
+
+                // Wait for some operations to complete in v2
+                await Task.Delay(500);
+
+                // Signal operation threads to stop, and wait for them to finish
+                opsDone = true;
+                await Task.WhenAll(opTasks);
+
+                // Verify the final state of the store
+                using var s1 = store1.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(0, false));
+                var bc1 = s1.BasicContext;
+                for (long key = 0; key < numKeys; key++)
+                {
+                    long output = default;
+                    var status = bc1.Read(ref key, ref output);
+                    if (status.IsPending)
+                    {
+                        var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
+                        ClassicAssert.IsTrue(completed);
+                        bool result = completedOutputs.Next();
+                        ClassicAssert.IsTrue(result);
+                        status = completedOutputs.Current.Status;
+                        output = completedOutputs.Current.Output;
+                        result = completedOutputs.Next();
+                        ClassicAssert.IsFalse(result);
+                    }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+
+                    // The store should have the latest expected state
+                    ClassicAssert.AreEqual(expectedV2Count[key], output, $"output = {output}");
+                }
             }
         }
 
         public class SumFunctions : SimpleSimpleFunctions<long, long>
         {
-            public SumFunctions() : base((l, r) => l + r) { }
+            readonly Random fuzzer;
+
+            public SumFunctions(int thread_id, bool useTimingFuzzing) : base((l, r) => l + r)
+            {
+                if (useTimingFuzzing) fuzzer = new Random(thread_id);
+            }
+
+            public override bool InPlaceUpdater(ref long key, ref long input, ref long value, ref long output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            {
+                Fuzz();
+                var ret = base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                Fuzz();
+                return ret;
+            }
+
+            public override bool CopyUpdater(ref long key, ref long input, ref long oldValue, ref long newValue, ref long output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            {
+                Fuzz();
+                var ret = base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
+                Fuzz();
+                return ret;
+            }
+
+            void Fuzz()
+            {
+                if (fuzzer != null) Thread.Sleep(fuzzer.Next(30));
+            }
         }
     }
 
@@ -175,9 +263,9 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        protected override void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
+        protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
             var bc = s.BasicContext;
             var r = new Random(thread_id);
 
@@ -194,7 +282,7 @@ namespace Tsavorite.test.recovery
                 _ = bc.RMW(ref key, ref input);
 
                 // Update expected counts for the old and new version of store
-                if (bc.Session.Version == 1)
+                if (bc.Session.Version == currentIteration + 1)
                     v1count[key]++;
                 v2count[key]++;
             }
@@ -210,9 +298,15 @@ namespace Tsavorite.test.recovery
         [Test]
         public async ValueTask CheckpointVersionSwitchRmwTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync,
-            [Values(1L << 13, 1L << 16)] long indexSize)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize);
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, useTimingFuzzing);
+
+        [Test]
+        public async ValueTask GrowIndexVersionSwitchRmwTest(
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, useTimingFuzzing);
     }
 
     [TestFixture]
@@ -224,9 +318,9 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        protected override void OperationThread(int thread_id, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
+        protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions());
+            using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
             var lc = s.TransactionalContext;
             var r = new Random(thread_id);
 
@@ -249,14 +343,16 @@ namespace Tsavorite.test.recovery
                     new(key2, LockType.Exclusive, lc)
                 };
 
+                var txnVersion = store.stateMachineDriver.AcquireTransactionVersion();
+
                 // Start transaction, session does not acquire version in this call
                 lc.BeginTransaction();
 
                 // Lock keys, session acquires version in this call
                 lc.Lock(exclusiveVec);
 
-                // We have determined the version of the transaction
-                var txnVersion = lc.Session.Version;
+                txnVersion = store.stateMachineDriver.VerifyTransactionVersion(txnVersion);
+                lc.LocksAcquired(txnVersion);
 
                 // Run transaction
                 _ = lc.RMW(ref key1, ref input);
@@ -268,8 +364,10 @@ namespace Tsavorite.test.recovery
                 // End transaction
                 lc.EndTransaction();
 
+                store.stateMachineDriver.EndTransaction(txnVersion);
+
                 // Update expected counts for the old and new version of store
-                if (txnVersion == 1)
+                if (txnVersion == currentIteration + 1)
                 {
                     v1count[key1]++;
                     v1count[key2]++;
@@ -289,8 +387,14 @@ namespace Tsavorite.test.recovery
         [Test]
         public async ValueTask CheckpointVersionSwitchTxnTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync,
-            [Values(1L << 13, 1L << 16)] long indexSize)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, isAsync, indexSize);
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, useTimingFuzzing);
+
+        [Test]
+        public async ValueTask GrowIndexVersionSwitchTxnTest(
+            [Values(1L << 13, 1L << 16)] long indexSize,
+            [Values] bool useTimingFuzzing)
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, useTimingFuzzing);
     }
 }

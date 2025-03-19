@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -18,6 +19,7 @@ namespace Garnet.server
         public string MemoryLimit = "";
         public TimeSpan Timeout = System.Threading.Timeout.InfiniteTimeSpan;
         public LuaLoggingMode LogMode = LuaLoggingMode.Silent;
+        public HashSet<string> AllowedFunctions = [];
 
         /// <summary>
         /// Construct options with default options.
@@ -30,12 +32,13 @@ namespace Garnet.server
         /// <summary>
         /// Construct options with specific settings.
         /// </summary>
-        public LuaOptions(LuaMemoryManagementMode memoryMode, string memoryLimit, TimeSpan timeout, LuaLoggingMode logMode, ILogger logger = null) : this(logger)
+        public LuaOptions(LuaMemoryManagementMode memoryMode, string memoryLimit, TimeSpan timeout, LuaLoggingMode logMode, IEnumerable<string> allowedFunctions, ILogger logger = null) : this(logger)
         {
             MemoryManagementMode = memoryMode;
             MemoryLimit = memoryLimit;
             Timeout = timeout;
             LogMode = logMode;
+            AllowedFunctions = new HashSet<string>(allowedFunctions, StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>

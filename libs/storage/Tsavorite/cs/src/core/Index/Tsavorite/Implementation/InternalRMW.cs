@@ -40,6 +40,10 @@ namespace Tsavorite.core
         ///     <term>RETRY_LATER</term>
         ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later.</term>
         ///     </item>
+        ///     <item>
+        ///     <term>CPR_SHIFT_DETECTED</term>
+        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
+        ///     </item>
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -85,6 +89,8 @@ namespace Tsavorite.core
                     var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
+                        case LatchDestination.Retry:
+                            goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
                             if (stackCtx.recSrc.HasMainLogSrc)
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -295,11 +301,24 @@ namespace Tsavorite.core
 
         private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            // With version switch barrier, a thread in version V will never notice a record in V+1.
-            // A V+1 thread cannot update a V record; it needs to do a read-copy-update (or upsert at tail) instead of an in-place update.
+            // The idea of CPR is that if a thread in version V tries to perform an operation and notices a record in V+1, it needs to back off and run CPR_SHIFT_DETECTED.
+            // Similarly, a V+1 thread cannot update a V record; it needs to do a read-copy-update (or upsert at tail) instead of an in-place update.
+            // For background info: Prior to HashBucket-based locking, we had to lock the bucket in the following way:
+            //  1. V threads take shared lock on bucket
+            //  2. V+1 threads take exclusive lock on bucket, refreshing until they can
+            //  3. If V thread cannot take shared lock, that means the system is in V+1 so we can immediately refresh and go to V+1 (do CPR_SHIFT_DETECTED)
+            //  4. If V thread manages to get shared lock, but encounters a V+1 record, it knows the system is in V+1 so it will do CPR_SHIFT_DETECTED
+            // Now we no longer need to do the bucket latching, since we already have a latch on the bucket.
 
             switch (phase)
             {
+                case Phase.PREPARE: // Thread is in V
+                    if (!IsEntryVersionNew(ref stackCtx.hei.entry))
+                        break; // Normal Processing; thread is in V, record is in V
+
+                    status = OperationStatus.CPR_SHIFT_DETECTED;
+                    return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on v+1 record when thread is in V)
+
                 case Phase.IN_PROGRESS: // Thread is in v+1
                 case Phase.WAIT_INDEX_CHECKPOINT:
                 case Phase.WAIT_FLUSH:
