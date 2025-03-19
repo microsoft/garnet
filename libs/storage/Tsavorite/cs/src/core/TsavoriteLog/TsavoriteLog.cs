@@ -671,16 +671,16 @@ namespace Tsavorite.core
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
-            SetHeader(length, (byte*)physicalAddress);
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            entry.SerializeTo(new Span<byte>(headerSize + physicalAddress, length));
+            SetHeader(length, physicalAddress);
+
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
@@ -753,17 +753,16 @@ namespace Tsavorite.core
 
             logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
             if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            fixed (byte* bp = entry)
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
-            SetHeader(length, (byte*)physicalAddress);
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            fixed (byte* entryPtr = entry)
+                Buffer.MemoryCopy(entryPtr, headerSize + physicalAddress, length, length);
+            SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
@@ -834,9 +833,9 @@ namespace Tsavorite.core
                 return false;
             }
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            fixed (byte* bp = entry)
+                Buffer.MemoryCopy(bp, headerSize + physicalAddress, length, length);
             SetHeader(length, (byte*)physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -2282,12 +2281,12 @@ namespace Tsavorite.core
             info.BeginAddress = BeginAddress;
             info.UntilAddress = logicalAddress + allocatedLength;
 
-            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
 
             var entryBody = info.ToByteArray();
             fixed (byte* bp = entryBody)
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
-            SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
+                Buffer.MemoryCopy(bp, headerSize + physicalAddress, entryBody.Length, entryBody.Length);
+            SetCommitRecordHeader(entryBody.Length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             // Return the commit tail

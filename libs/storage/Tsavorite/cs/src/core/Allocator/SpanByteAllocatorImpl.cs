@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using static Tsavorite.core.Utility;
 
@@ -13,23 +14,22 @@ namespace Tsavorite.core
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
-        // Circular buffer definition
-        private readonly byte[][] values;
-        private readonly long[] pointers;
-        private readonly long* nativePointers;
+        /// <summary>
+        /// Circular buffer of <see cref="AllocatorBase{TKey, TValue, TStoreFunctions, TAllocator}.BufferSize"/> memory buffers 
+        /// with each byte being size of <see cref="AllocatorBase{TKey, TValue, TStoreFunctions, TAllocator}.PageSize"/>
+        /// </summary>
+        private readonly byte** pointers;
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
+            overflowPagePool = new OverflowPool<PageUnit>(4, static p => NativeMemory.AlignedFree(p.Pointer));
 
             if (BufferSize > 0)
             {
-                values = new byte[BufferSize][];
-                pointers = GC.AllocateArray<long>(BufferSize, true);
-                nativePointers = (long*)Unsafe.AsPointer(ref pointers[0]);
+                pointers = (byte**)NativeMemory.AllocZeroed((uint)BufferSize, (uint)sizeof(byte*));
             }
         }
 
@@ -49,15 +49,15 @@ namespace Tsavorite.core
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
-            if (values[index] != null)
+            var pagePtr = pointers[index];
+            if (pagePtr != null)
             {
                 overflowPagePool.TryAdd(new PageUnit
                 {
-                    pointer = pointers[index],
-                    value = values[index]
+                    Pointer = pagePtr
                 });
-                values[index] = null;
-                pointers[index] = 0;
+                pointers[index] = null;
+
                 Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
@@ -213,17 +213,12 @@ namespace Tsavorite.core
 
             if (overflowPagePool.TryGet(out var item))
             {
-                pointers[index] = item.pointer;
-                values[index] = item.value;
+                pointers[index] = item.Pointer;
                 return;
             }
 
-            var adjustedSize = PageSize + 2 * sectorSize;
-
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-            values[index] = tmp;
+            pointers[index] = (byte*)NativeMemory.AlignedAlloc((uint)PageSize, alignment: (uint)sectorSize);
+            ClearPage(index, 0);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -234,10 +229,10 @@ namespace Tsavorite.core
 
             // Index of page within the circular buffer
             var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-            return *(nativePointers + pageIndex) + offset;
+            return (long)(pointers[pageIndex] + offset);
         }
 
-        internal bool IsAllocated(int pageIndex) => values[pageIndex] != null;
+        internal bool IsAllocated(int pageIndex) => pointers[pageIndex] != null;
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
@@ -272,14 +267,12 @@ namespace Tsavorite.core
 
         internal void ClearPage(long page, int offset)
         {
-            if (offset == 0)
-                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
-            else
-            {
-                // Adjust array offset for cache alignment
-                offset += (int)(pointers[page % BufferSize] - (long)Unsafe.AsPointer(ref values[page % BufferSize][0]));
-                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
-            }
+            Debug.Assert(offset < PageSize);
+
+            var ptr = pointers[page % BufferSize] + offset;
+            var length = (uint)(PageSize - offset);
+
+            NativeMemory.Clear(ptr, length);
         }
 
         internal void FreePage(long page)
@@ -294,8 +287,11 @@ namespace Tsavorite.core
         /// </summary>
         internal override void DeleteFromMemory()
         {
-            for (int i = 0; i < values.Length; i++)
-                values[i] = null;
+            for (var i = 0; i < BufferSize; i++)
+            {
+                NativeMemory.AlignedFree(pointers[i]);
+                pointers[i] = null;
+            }
         }
 
         protected override void ReadAsync<TContext>(
