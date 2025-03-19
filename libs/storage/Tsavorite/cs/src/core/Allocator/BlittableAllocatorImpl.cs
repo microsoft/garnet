@@ -30,7 +30,10 @@ namespace Tsavorite.core
             if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
                 throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(TKey)}) and Value ({typeof(TValue)})");
 
-            overflowPagePool = new OverflowPool<PageUnit>(4, static p => NativeMemory.AlignedFree(p.Pointer));
+            overflowPagePool = new OverflowPool<PageUnit>(4, static p => {
+                NativeMemory.AlignedFree(p.Pointer);
+                GC.RemoveMemoryPressure(p.Size);
+            });
 
             if (BufferSize > 0)
             {
@@ -57,7 +60,8 @@ namespace Tsavorite.core
             {
                 _ = overflowPagePool.TryAdd(new PageUnit
                 {
-                    Pointer = pagePtr
+                    Pointer = pagePtr,
+                    Size = PageSize
                 });
                 pointers[index] = null;
 
@@ -136,6 +140,7 @@ namespace Tsavorite.core
             }
 
             pointers[index] = (byte*)NativeMemory.AlignedAlloc((uint)PageSize, alignment: (uint)sectorSize);
+            GC.AddMemoryPressure(PageSize);
             ClearPage(index, 0);
         }
 
@@ -220,6 +225,7 @@ namespace Tsavorite.core
                 if (pagePtr != null)
                 {
                     NativeMemory.AlignedFree(pagePtr);
+                    GC.RemoveMemoryPressure(PageSize);
                     pointers[i] = null;
                 }
             }

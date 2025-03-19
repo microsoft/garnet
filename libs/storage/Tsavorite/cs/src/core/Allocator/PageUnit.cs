@@ -5,10 +5,10 @@ using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
-    // TODO: Remove this and just cast nuints
     unsafe struct PageUnit
     {
         public byte* Pointer;
+        public int Size;
     }
 
     [StructLayout(LayoutKind.Explicit)]

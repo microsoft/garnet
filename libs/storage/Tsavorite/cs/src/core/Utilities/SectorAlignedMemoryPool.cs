@@ -126,6 +126,7 @@ namespace Tsavorite.core
             if (BufferPtr is not null)
             {
                 NativeMemory.AlignedFree(BufferPtr);
+                GC.RemoveMemoryPressure(Length);
                 BufferPtr = null;
             }
         }
@@ -168,7 +169,9 @@ namespace Tsavorite.core
         /// <returns>Returns a SectorAlignedMemory instance wrapping the allocated memory.</returns>
         public static SectorAlignedMemory Allocate(int byteCount, uint alignment)
         {
-            return new SectorAlignedMemory((byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment), byteCount);
+            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment);
+            GC.AddMemoryPressure(byteCount);
+            return new SectorAlignedMemory(memoryPtr, byteCount);
         }
 
         /// <summary>
@@ -181,7 +184,9 @@ namespace Tsavorite.core
         /// <returns>Returns a pool owned SectorAlignedMemory instance wrapping the allocated memory.</returns>
         internal static SectorAlignedMemory Allocate(int byteCount, uint alignment, SectorAlignedMemoryPool pool, int level)
         {
-            return new SectorAlignedMemory((byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment), byteCount, pool, level);
+            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment);
+            GC.AddMemoryPressure(byteCount);
+            return new SectorAlignedMemory(memoryPtr, byteCount, pool, level);
         }
     }
 

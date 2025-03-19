@@ -25,7 +25,10 @@ namespace Tsavorite.core
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            overflowPagePool = new OverflowPool<PageUnit>(4, static p => NativeMemory.AlignedFree(p.Pointer));
+            overflowPagePool = new OverflowPool<PageUnit>(4, static p => {
+                NativeMemory.AlignedFree(p.Pointer);
+                GC.RemoveMemoryPressure(p.Size);
+            });
 
             if (BufferSize > 0)
             {
@@ -54,7 +57,8 @@ namespace Tsavorite.core
             {
                 overflowPagePool.TryAdd(new PageUnit
                 {
-                    Pointer = pagePtr
+                    Pointer = pagePtr,
+                    Size = PageSize
                 });
                 pointers[index] = null;
 
@@ -218,6 +222,7 @@ namespace Tsavorite.core
             }
 
             pointers[index] = (byte*)NativeMemory.AlignedAlloc((uint)PageSize, alignment: (uint)sectorSize);
+            GC.AddMemoryPressure(PageSize);
             ClearPage(index, 0);
         }
 
@@ -294,6 +299,7 @@ namespace Tsavorite.core
                 if (pagePtr != null)
                 {
                     NativeMemory.AlignedFree(pagePtr);
+                    GC.RemoveMemoryPressure(PageSize);
                     pointers[i] = null;
                 }
             }
