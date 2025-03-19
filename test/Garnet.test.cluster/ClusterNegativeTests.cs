@@ -23,7 +23,8 @@ namespace Garnet.test.cluster
     {
         ClusterTestContext context;
 
-        readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
+        readonly int timeout = (int)TimeSpan.FromSeconds(30).TotalSeconds;
+        const int testTimeout = 60_000;
 
         readonly Dictionary<string, LogLevel> monitorTests = [];
 
@@ -150,7 +151,7 @@ namespace Garnet.test.cluster
         }
 
 #if DEBUG
-        //[Test, Order(23)]
+        [Test, Order(3)]
         public void ClusterExceptionAtReplicaAofSyncStart([Values] bool enableDisklessSync)
         {
             ExceptionScenarioHelper.EnableException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
@@ -181,5 +182,67 @@ namespace Garnet.test.cluster
             ExceptionScenarioHelper.DisableException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
         }
 #endif
+
+        [Test, Order(4), CancelAfter(testTimeout)]
+        public void ClusterFailoverDuringRecovery(CancellationToken cancellationToken)
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: true, timeout: timeout, replicaDisklessSyncDelay: 10);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Ensure node is known
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Issue background replicate
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, async: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            var infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.RECOVER_STATUS], logger: context.logger);
+            ClassicAssert.AreEqual("ClusterReplicate", infoItem[0].Item2);
+
+            // Issue failover at the same time
+            resp = context.clusterTestUtils.ClusterFailover(replicaIndex, "TAKEOVER", logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Wait until failover gets aborted
+            while (true)
+            {
+                infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-aborted"))
+                    break;
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for last failover to abort");
+            }
+            ClassicAssert.AreEqual("failover-aborted", infoItem[0].Item2);
+
+            // Wait until replicate completes
+            while (true)
+            {
+                infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.RECOVER_STATUS], logger: context.logger);
+                if (infoItem[0].Item2.Equals("NoRecovery"))
+                    break;
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for replicate to complete");
+            }
+
+            // Issue failover again
+            resp = context.clusterTestUtils.ClusterFailover(replicaIndex, "TAKEOVER", logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Wait until failover completes
+            while (true)
+            {
+                infoItem = context.clusterTestUtils.GetReplicationInfo(replicaIndex, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-completed"))
+                    break;
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for last failover to complete");
+            }
+            ClassicAssert.AreEqual("failover-completed", infoItem[0].Item2);
+        }
     }
 }
