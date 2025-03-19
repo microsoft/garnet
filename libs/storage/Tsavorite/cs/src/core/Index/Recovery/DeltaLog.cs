@@ -117,14 +117,14 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+        internal override unsafe void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
             IDevice usedDevice = deltaLogDevice;
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
+                if (!frame.IsAllocated(pageIndex))
                 {
                     frame.Allocate(pageIndex);
                 }

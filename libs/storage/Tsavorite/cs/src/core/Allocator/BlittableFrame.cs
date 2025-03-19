@@ -2,18 +2,18 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
     /// <summary>
     /// A frame is an in-memory circular buffer of log pages
     /// </summary>
-    internal sealed class BlittableFrame : IDisposable
+    internal sealed unsafe class BlittableFrame : IDisposable
     {
         public readonly int frameSize, pageSize, sectorSize;
-        public readonly byte[][] frame;
-        public readonly long[] pointers;
+        public readonly byte** pointers;
 
         public BlittableFrame(int frameSize, int pageSize, int sectorSize)
         {
@@ -21,32 +21,45 @@ namespace Tsavorite.core
             this.pageSize = pageSize;
             this.sectorSize = sectorSize;
 
-            frame = new byte[frameSize][];
-            pointers = new long[frameSize];
+            pointers = (byte**)NativeMemory.AllocZeroed((uint)frameSize, (uint)sizeof(byte*));
         }
 
-        public unsafe void Allocate(int index)
-        {
-            var adjustedSize = pageSize + 2 * sectorSize;
+        public bool IsAllocated(int pageIndex) => pointers[pageIndex] != null;
 
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-            frame[index] = tmp;
+        public void Allocate(int pageIndex)
+        {
+            Debug.Assert(pageIndex < frameSize);
+            Debug.Assert(!IsAllocated(pageIndex));
+
+            pointers[pageIndex] = (byte*)NativeMemory.AlignedAlloc((uint)pageSize, alignment: (uint)sectorSize);
+            GC.AddMemoryPressure(pageSize);
         }
 
         public void Clear(int pageIndex)
         {
-            Array.Clear(frame[pageIndex], 0, frame[pageIndex].Length);
+            Debug.Assert(pageIndex < frameSize);
+            Debug.Assert(IsAllocated(pageIndex));
+
+            NativeMemory.Clear(pointers[pageIndex], (uint)frameSize);
         }
 
         public long GetPhysicalAddress(long frameNumber, long offset)
         {
-            return pointers[frameNumber % frameSize] + offset;
+            return (long)pointers[frameNumber % frameSize] + offset;
         }
 
         public void Dispose()
         {
+            for (var i = 0; i < frameSize; i++)
+            {
+                var pagePtr = pointers[i];
+                if (pagePtr != null)
+                {
+                    NativeMemory.AlignedFree(pagePtr);
+                    GC.RemoveMemoryPressure(frameSize);
+                    pointers[i] = null;
+                }
+            }
         }
     }
 }

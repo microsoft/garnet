@@ -166,21 +166,18 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            if (values != null)
-            {
-                for (int i = 0; i < values.Length; i++)
-                    values[i] = null;
-                values = null;
-            }
-            overflowPagePool.Dispose();
             base.Dispose();
+            overflowPagePool.Dispose();
+            DeleteFromMemory();
         }
 
         /// <summary>Delete in-memory portion of the log</summary>
         internal override void DeleteFromMemory()
         {
             for (int i = 0; i < values.Length; i++)
+            {
                 values[i] = null;
+            }
             values = null;
         }
 

@@ -123,6 +123,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             overflowPagePool.Dispose();
+            DeleteFromMemory();
         }
 
         /// <summary>
@@ -324,7 +325,7 @@ namespace Tsavorite.core
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
+                if (!frame.IsAllocated(pageIndex))
                     frame.Allocate(pageIndex);
                 else
                     frame.Clear(pageIndex);
