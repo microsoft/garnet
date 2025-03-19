@@ -119,7 +119,7 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool IsReplica()
-            => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
+            => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.IsRecovering == true;
 
         /// <inheritdoc />
         public bool IsReplica(string nodeId)
@@ -237,7 +237,7 @@ namespace Garnet.cluster
                 new("store_recovered_safe_aof_address", clusterEnabled ? replicationManager.StoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
                 new("object_store_current_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreCurrentSafeAofAddress.ToString() : "N/A"),
                 new("object_store_recovered_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
-                new("recover_status", replicationManager.recoverStatus.ToString()),
+                new("recover_status", replicationManager.currentRecoveryStatus.ToString()),
                 new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus())
             };
 
@@ -252,7 +252,7 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
                     replicationInfo.Add(primaryLinkStatus[1]);
-                    replicationInfo.Add(new("master_sync_in_progress", replicationManager.Recovering.ToString()));
+                    replicationInfo.Add(new("master_sync_in_progress", replicationManager.IsRecovering.ToString()));
                     replicationInfo.Add(new("slave_read_repl_offset", replication_offset));
                     replicationInfo.Add(new("slave_priority", "100"));
                     replicationInfo.Add(new("slave_read_only", "1"));
@@ -301,7 +301,7 @@ namespace Garnet.cluster
                 address = address,
                 port = port,
                 replication_offset = replicationManager.ReplicationOffset,
-                replication_state = replicationManager.Recovering ? "sync" :
+                replication_state = replicationManager.IsRecovering ? "sync" :
                         connection.connected ? "connected" : "connect"
             };
 

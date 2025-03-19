@@ -28,18 +28,18 @@ namespace Garnet.cluster
             if (addressSpan.EqualsUpperCaseSpanIgnoringCase("NO"u8) &&
                 portSpan.EqualsUpperCaseSpanIgnoringCase("ONE"u8))
             {
-                var currentRecoveryEpoch = -1L;
+                var acquiredLock = false;
                 try
                 {
-                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne, out currentRecoveryEpoch))
+                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
+                    acquiredLock = true;
 
-                    currentRecoveryEpoch = clusterProvider.replicationManager.RecoveryEpoch;
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
@@ -47,7 +47,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    clusterProvider.replicationManager.CompleteRecovery(currentRecoveryEpoch);
+                    if (acquiredLock) clusterProvider.replicationManager.CompleteRecovery(RecoveryStatus.NoRecovery);
                 }
             }
             else

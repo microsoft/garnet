@@ -27,6 +27,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Recovery at replica of no one
         /// </summary>
-        ReplicaOfNoOne
+        ReplicaOfNoOne,
+        /// <summary>
+        /// Replica has recovered the checkpoint after signal from primary
+        /// </summary>
+        CheckpointRecoveredAtReplica,
     }
 }

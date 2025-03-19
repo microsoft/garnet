@@ -142,13 +142,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="force">Check if node is clean (i.e. is PRIMARY without any assigned nodes)</param>
-        /// <param name="currentRecoveryEpoch">Recovery epoch for locking</param>
         /// <param name="errorMessage">The ASCII encoded error response if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <param name="logger"></param>
-        public bool TryAddReplica(string nodeid, bool force, out long currentRecoveryEpoch, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
+        public bool TryAddReplica(string nodeid, bool force, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
         {
             errorMessage = default;
-            currentRecoveryEpoch = -1;
             while (true)
             {
                 var current = CurrentConfig;
@@ -190,7 +188,7 @@ namespace Garnet.cluster
 
                 // Transition to recovering state
                 // Only one caller will succeed in becoming a replica for the provided node-id
-                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate, out currentRecoveryEpoch))
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate))
                 {
                     logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK;
@@ -202,7 +200,7 @@ namespace Garnet.cluster
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
-                clusterProvider.replicationManager.CompleteRecovery(currentRecoveryEpoch);
+                clusterProvider.replicationManager.CompleteRecovery(RecoveryStatus.NoRecovery);
             }
             FlushConfig();
             return true;

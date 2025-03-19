@@ -8,7 +8,6 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -18,7 +17,6 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         public ReceiveCheckpointHandler recvCheckpointHandler = null;
-        public SingleWriterMultiReaderLock replicateLock;
         CheckpointEntry cEntry;
 
         /// <summary>
@@ -40,23 +38,12 @@ namespace Garnet.cluster
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
-            var currentRecoveryEpoch = -1L;
             try
             {
-                // Ensure two replicate commands do not execute at the same time.
-                if (!replicateLock.TryWriteLock())
-                {
-                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
-                    return false;
-                }
-
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out currentRecoveryEpoch, out errorMessage, logger: logger))
+                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
                     return false;
-
-                // Acquire recovery epoch to distinguish between PauseRecoveryLocks
-                if (!tryAddReplica) currentRecoveryEpoch = InitializeRecoverEpoch;
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
@@ -78,10 +65,20 @@ namespace Garnet.cluster
                     }
                 }
 
-                async Task<string> ReplicaSyncAttachTask()
-                {
-                    Debug.Assert(Recovering);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSync)}");
+                return false;
+            }
 
+            async Task<string> ReplicaSyncAttachTask()
+            {
+                Debug.Assert(IsRecovering);
+                GarnetClientSession gcs = null;
+                try
+                {
                     // Resetting here to decide later when to sync from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
 
@@ -114,7 +111,6 @@ namespace Garnet.cluster
                     //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     var (address, port) = current.GetLocalNodePrimaryAddress();
-                    GarnetClientSession gcs = null;
 
                     if (address == null || port == -1)
                     {
@@ -122,64 +118,48 @@ namespace Garnet.cluster
                         logger?.LogError("{msg}", errorMsg);
                         return errorMsg;
                     }
+                    gcs = new(
+                        new IPEndPoint(IPAddress.Parse(address), port),
+                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: clusterProvider.ClusterUsername,
+                        authPassword: clusterProvider.ClusterPassword);
+                    recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
+                    gcs.Connect();
 
-                    try
-                    {
-                        gcs = new(
-                            new IPEndPoint(IPAddress.Parse(address), port),
-                            clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
-                            clusterProvider.replicationManager.GetNetworkPool,
-                            tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                            authUsername: clusterProvider.ClusterUsername,
-                            authPassword: clusterProvider.ClusterPassword);
-                        recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                        gcs.Connect();
+                    var nodeId = current.LocalNodeId;
+                    cEntry = GetLatestCheckpointEntryFromDisk();
 
-                        var nodeId = current.LocalNodeId;
-                        cEntry = GetLatestCheckpointEntryFromDisk();
+                    storeWrapper.RecoverAOF();
+                    logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
 
-                        storeWrapper.RecoverAOF();
-                        logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
-
-                        // 1. Primary will signal checkpoint send complete
-                        // 2. Replica will receive signal and recover checkpoint, initialize AOF
-                        // 3. Replica signals recovery complete (here cluster replicate will return to caller)
-                        // 4. Replica responds with aofStartAddress sync
-                        // 5. Primary will initiate aof sync task
-                        // 6. Primary releases checkpoint
-                        var resp = await gcs.ExecuteReplicaSync(
-                            nodeId,
-                            PrimaryReplId,
-                            cEntry.ToByteArray(),
-                            storeWrapper.appendOnlyFile.BeginAddress,
-                            storeWrapper.appendOnlyFile.TailAddress).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
-                        clusterProvider.clusterManager.TryResetReplica();
-                        CompleteRecovery(currentRecoveryEpoch);
-                        return ex.Message;
-                    }
-                    finally
-                    {
-                        recvCheckpointHandler?.Dispose();
-                        gcs?.Dispose();
-                    }
-                    return null;
+                    // 1. Primary will signal checkpoint send complete
+                    // 2. Replica will receive signal and recover checkpoint, initialize AOF
+                    // 3. Replica signals recovery complete (here cluster replicate will return to caller)
+                    // 4. Replica responds with aofStartAddress sync
+                    // 5. Primary will initiate aof sync task
+                    // 6. Primary releases checkpoint
+                    var resp = await gcs.ExecuteReplicaSync(
+                        nodeId,
+                        PrimaryReplId,
+                        cEntry.ToByteArray(),
+                        storeWrapper.appendOnlyFile.BeginAddress,
+                        storeWrapper.appendOnlyFile.TailAddress).ConfigureAwait(false);
                 }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSync)}");
-                CompleteRecovery(currentRecoveryEpoch);
-                return false;
-            }
-            finally
-            {
-                replicateLock.WriteUnlock();
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
+                    clusterProvider.clusterManager.TryResetReplica();
+                    return ex.Message;
+                }
+                finally
+                {
+                    CompleteRecovery(RecoveryStatus.NoRecovery);
+                    recvCheckpointHandler?.Dispose();
+                    gcs?.Dispose();
+                }
+                return null;
             }
         }
 
@@ -371,7 +351,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                CompleteRecovery(RecoveryEpoch);
+                CompleteRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
             }
         }
     }

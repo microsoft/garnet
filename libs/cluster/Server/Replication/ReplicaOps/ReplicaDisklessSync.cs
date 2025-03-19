@@ -31,25 +31,12 @@ namespace Garnet.cluster
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
-            // Ensure two replicate commands do not execute at the same time.
-            if (!replicateLock.TryWriteLock())
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
-                return false;
-            }
 
-            var currentRecoveryEpoch = -1L;
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
-                if (!clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out currentRecoveryEpoch, out errorMessage, logger: logger))
-                {
-                    replicateLock.WriteUnlock();
+                if (!clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
                     return false;
-                }
-
-                // Acquire recovery epoch to distinguish between PauseRecoveryLocks
-                if (!tryAddReplica) currentRecoveryEpoch = InitializeRecoverEpoch;
 
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();
@@ -68,8 +55,6 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
-                CompleteRecovery(currentRecoveryEpoch);
-                replicateLock.WriteUnlock();
             }
             return true;
 
@@ -145,12 +130,11 @@ namespace Garnet.cluster
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
                     clusterProvider.clusterManager.TryResetReplica();
-                    CompleteRecovery(currentRecoveryEpoch);
                     return ex.Message;
                 }
                 finally
                 {
-                    replicateLock.WriteUnlock();
+                    CompleteRecovery(RecoveryStatus.NoRecovery);
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
                 }
@@ -199,7 +183,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                CompleteRecovery(RecoveryEpoch);
+                CompleteRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
             }
         }
     }

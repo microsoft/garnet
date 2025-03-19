@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -30,16 +31,15 @@ namespace Garnet.cluster
 
         private long primary_sync_last_time;
 
-        internal long LastPrimarySyncSeconds => Recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
+        internal long LastPrimarySyncSeconds => IsRecovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
 
         internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
 
         private SingleWriterMultiReaderLock recoverLock;
-        public bool Recovering => recoverLock.IsWriteLocked;
 
-        public long RecoveryEpoch { get; private set; }
+        public bool IsRecovering => currentRecoveryStatus != RecoveryStatus.NoRecovery;
 
-        public long InitializeRecoverEpoch;
+        public bool CannotStreamAOF => IsRecovering && currentRecoveryStatus != RecoveryStatus.CheckpointRecoveredAtReplica;
 
         private long replicationOffset;
 
@@ -78,7 +78,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Recovery status
         /// </summary>
-        public RecoveryStatus recoverStatus;
+        public RecoveryStatus currentRecoveryStatus;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReplicationLogCheckpointManager GetCkptManager(StoreType storeType)
@@ -121,7 +121,6 @@ namespace Garnet.cluster
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
             ReplicationOffset = 0;
-            RecoveryEpoch = 0;
 
             // Set the appendOnlyFile field for all stores
             clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
@@ -133,7 +132,7 @@ namespace Garnet.cluster
             }
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, out InitializeRecoverEpoch))
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -216,46 +215,81 @@ namespace Garnet.cluster
         /// <summary>
         /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
         /// </summary>
-        public bool BeginRecovery(RecoveryStatus recoverStatus, out long currentRecoveryEpoch)
+        /// <param name="nextRecoveryStatus"></param>
+        public bool BeginRecovery(RecoveryStatus nextRecoveryStatus)
         {
-            currentRecoveryEpoch = -1;
+            if (currentRecoveryStatus != RecoveryStatus.NoRecovery)
+            {
+                logger?.LogError("Error background recovering task has not completed [{recoverStatus}]", nextRecoveryStatus);
+                return false;
+            }
+
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
             {
-                logger?.LogError("Error could not acquire checkpoint lock [{recoverStatus}]", recoverStatus);
+                logger?.LogError("Error could not acquire checkpoint lock [{recoverStatus}]", nextRecoveryStatus);
                 return false;
             }
 
             if (!recoverLock.TryWriteLock())
             {
-                logger?.LogError("Error could not acquire recover lock [{recoverStatus}]", recoverStatus);
+                logger?.LogError("Error could not acquire recover lock [{recoverStatus}]", nextRecoveryStatus);
                 // If failed to acquire recoverLock re-enable checkpoint taking
                 clusterProvider.storeWrapper.ResumeCheckpoints();
                 return false;
             }
 
-            this.recoverStatus = recoverStatus;
-            currentRecoveryEpoch = RecoveryEpoch;
-            logger?.LogTrace("Success recover lock [{recoverStatus}]", recoverStatus);
+            currentRecoveryStatus = nextRecoveryStatus;
+            logger?.LogTrace("Success recover lock [{recoverStatus}]", nextRecoveryStatus);
             return true;
         }
 
         /// <summary>
         /// Release recovery and checkpoint locks
         /// </summary>
-        /// <param name="currentEpoch"></param>
-        public void CompleteRecovery(long currentEpoch)
+        /// <param name="nextRecoveryStatus"></param>
+        public void CompleteRecovery(RecoveryStatus nextRecoveryStatus)
         {
-            if (currentEpoch == -1 || RecoveryEpoch != currentEpoch)
-            {
-                logger?.LogTrace("Recovery already released [{recoverStatus},{currentEpoch}, {recoveryEpoch}]", recoverStatus, currentEpoch, RecoveryEpoch);
-                return;
-            }
+            logger?.LogTrace("{method} [{currentStatus},{recoverStatus}]", nameof(CompleteRecovery), currentRecoveryStatus, nextRecoveryStatus);
 
-            logger?.LogTrace("Releasing recovery lock [{recoverStatus},{currentEpoch}, {recoveryEpoch}]", recoverStatus, currentEpoch, RecoveryEpoch);
-            RecoveryEpoch++;
-            recoverStatus = RecoveryStatus.NoRecovery;
-            recoverLock.WriteUnlock();
-            clusterProvider.storeWrapper.ResumeCheckpoints();
+            switch (currentRecoveryStatus)
+            {
+                case RecoveryStatus.NoRecovery:
+                    Debug.Fail("There is no ongoing recovery!");
+                    break;
+                case RecoveryStatus.InitializeRecover:
+                case RecoveryStatus.ClusterReplicate:
+                case RecoveryStatus.ClusterFailover:
+                case RecoveryStatus.ReplicaOfNoOne:
+                    switch (nextRecoveryStatus)
+                    {
+                        case RecoveryStatus.CheckpointRecoveredAtReplica:
+                            Debug.Assert(currentRecoveryStatus is not RecoveryStatus.NoRecovery and not RecoveryStatus.CheckpointRecoveredAtReplica);
+                            currentRecoveryStatus = nextRecoveryStatus;
+                            break;
+                        case RecoveryStatus.NoRecovery:
+                            currentRecoveryStatus = nextRecoveryStatus;
+                            recoverLock.WriteUnlock();
+                            clusterProvider.storeWrapper.ResumeCheckpoints();
+                            break;
+                        default:
+                            Debug.Fail("Invalid next recovery status");
+                            break;
+                    }
+                    break;
+                case RecoveryStatus.CheckpointRecoveredAtReplica:
+                    switch (nextRecoveryStatus)
+                    {
+                        case RecoveryStatus.NoRecovery:
+                            currentRecoveryStatus = nextRecoveryStatus;
+                            recoverLock.WriteUnlock();
+                            clusterProvider.storeWrapper.ResumeCheckpoints();
+                            break;
+                        default:
+                            Debug.Fail("Invalid next recovery status");
+                            break;
+                    }
+                    break;
+            }
         }
 
         public void Dispose()
