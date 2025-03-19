@@ -264,6 +264,9 @@ namespace Garnet.cluster
 
                 logger?.LogSyncMetadata(LogLevel.Trace, "BeginAofSync", replicaSyncMetadata, recoverSyncMetadata);
 
+                // Check what happens if we fail after recovery and start AOF stream
+                ExceptionScenarioHelper.TriggerException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
@@ -275,8 +278,8 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, "{method}", $"{nameof(ReplicaSyncSession.BeginAofSync)}");
-                SetStatus(SyncStatus.FAILED, "Failed to begin AOF sync");
-                AofSyncTask?.Dispose();
+                SetStatus(SyncStatus.FAILED, ex.Message);
+                _ = clusterProvider.replicationManager.TryRemoveReplicationTask(AofSyncTask);
             }
         }
     }

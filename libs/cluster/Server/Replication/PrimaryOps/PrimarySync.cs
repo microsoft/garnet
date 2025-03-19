@@ -19,7 +19,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryAttachSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
         {
-            errorMessage = null;
+            errorMessage = [];
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
             {
                 if (!replicationSyncManager.AddReplicaSyncSession(replicaSyncMetadata, out var replicaSyncSession))
