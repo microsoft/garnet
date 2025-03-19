@@ -40,6 +40,7 @@ namespace Garnet.cluster
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
+            var currentEpoch = -1L;
             try
             {
                 // Ensure two replicate commands do not execute at the same time.
@@ -53,6 +54,9 @@ namespace Garnet.cluster
                 // Update the configuration to make this node a replica of provided nodeId
                 if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
                     return false;
+
+                // Acquire recovery epoch to distinguish between PauseRecoveryLocks
+                currentEpoch = RecoveryEpoch;
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
@@ -154,7 +158,7 @@ namespace Garnet.cluster
                     {
                         logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
                         clusterProvider.clusterManager.TryResetReplica();
-                        PauseRecovery();
+                        PauseRecovery(currentEpoch);
                         return ex.Message;
                     }
                     finally
@@ -170,7 +174,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryClusterReplicateAttach)}");
-                PauseRecovery();
+                PauseRecovery(currentEpoch);
                 return false;
             }
             finally
@@ -367,7 +371,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                PauseRecovery();
+                PauseRecovery(RecoveryEpoch);
             }
         }
     }

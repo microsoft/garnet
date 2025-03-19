@@ -195,12 +195,13 @@ namespace Garnet.cluster
                     return false;
                 }
 
+                var currentRecoveryEpoch = clusterProvider.replicationManager.RecoveryEpoch;
                 var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
-                clusterProvider.replicationManager.PauseRecovery();
+                clusterProvider.replicationManager.PauseRecovery(currentRecoveryEpoch);
             }
             FlushConfig();
             return true;

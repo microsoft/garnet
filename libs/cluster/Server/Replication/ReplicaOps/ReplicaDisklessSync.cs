@@ -27,6 +27,7 @@ namespace Garnet.cluster
                 return false;
             }
 
+            var currentEpoch = -1L;
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
@@ -53,6 +54,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
+                PauseRecovery(currentEpoch);
                 replicateLock.WriteUnlock();
             }
             return true;
@@ -129,7 +131,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
                     clusterProvider.clusterManager.TryResetReplica();
-                    PauseRecovery();
+                    PauseRecovery(currentEpoch);
                     return ex.Message;
                 }
                 finally
@@ -183,7 +185,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                PauseRecovery();
+                PauseRecovery(RecoveryEpoch);
             }
         }
     }

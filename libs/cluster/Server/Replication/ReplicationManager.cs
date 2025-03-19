@@ -37,6 +37,8 @@ namespace Garnet.cluster
         private SingleWriterMultiReaderLock recoverLock;
         public bool Recovering => recoverLock.IsWriteLocked;
 
+        public long RecoveryEpoch { get; private set; }
+
         private long replicationOffset;
 
         public long ReplicationOffset
@@ -117,6 +119,7 @@ namespace Garnet.cluster
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
             ReplicationOffset = 0;
+            RecoveryEpoch = 0;
 
             // Set the appendOnlyFile field for all stores
             clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
@@ -235,9 +238,17 @@ namespace Garnet.cluster
         /// <summary>
         /// Release recovery and checkpoint locks
         /// </summary>
-        public void PauseRecovery()
+        /// <param name="currentEpoch"></param>
+        public void PauseRecovery(long currentEpoch)
         {
-            logger?.LogTrace("Release recover lock [{recoverStatus}]", recoverStatus);
+            if (currentEpoch == -1 || RecoveryEpoch != currentEpoch)
+            {
+                logger?.LogTrace("Recovery already released [{recoverStatus},{currentEpoch}, {recoveryEpoch}]", recoverStatus, currentEpoch, RecoveryEpoch);
+                return;
+            }
+
+            logger?.LogTrace("Releasing recovery lock [{recoverStatus},{currentEpoch}, {recoveryEpoch}]", recoverStatus, currentEpoch, RecoveryEpoch);
+            RecoveryEpoch++;
             recoverStatus = RecoveryStatus.NoRecovery;
             recoverLock.WriteUnlock();
             clusterProvider.storeWrapper.ResumeCheckpoints();

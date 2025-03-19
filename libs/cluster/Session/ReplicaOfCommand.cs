@@ -28,6 +28,7 @@ namespace Garnet.cluster
             if (addressSpan.EqualsUpperCaseSpanIgnoringCase("NO"u8) &&
                 portSpan.EqualsUpperCaseSpanIgnoringCase("ONE"u8))
             {
+                var currentRecoveryEpoch = -1L;
                 try
                 {
                     if (!clusterProvider.replicationManager.ResumeRecovery(RecoveryStatus.ReplicaOfNoOne))
@@ -37,6 +38,8 @@ namespace Garnet.cluster
                             SendAndReset();
                         return true;
                     }
+
+                    currentRecoveryEpoch = clusterProvider.replicationManager.RecoveryEpoch;
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
@@ -44,7 +47,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    clusterProvider.replicationManager.PauseRecovery();
+                    clusterProvider.replicationManager.PauseRecovery(currentRecoveryEpoch);
                 }
             }
             else
