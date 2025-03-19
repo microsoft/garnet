@@ -30,7 +30,8 @@ namespace Tsavorite.core
             if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
                 throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(TKey)}) and Value ({typeof(TValue)})");
 
-            overflowPagePool = new OverflowPool<PageUnit>(4, static p => {
+            overflowPagePool = new OverflowPool<PageUnit>(4, static p =>
+            {
                 NativeMemory.AlignedFree(p.Pointer);
                 GC.RemoveMemoryPressure(p.Size);
             });
