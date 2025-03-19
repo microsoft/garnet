@@ -221,53 +221,36 @@ namespace Garnet.server
             SaveKeyEntryToLock(key, true, LockType.Shared);
             SaveKeyArgSlice(key);
 
-            if (command == RespCommand.GEORADIUS_RO)
-                return 1;
-
-            // Member commands have COMMAND key member syntax.
-            if (command == RespCommand.GEORADIUSBYMEMBER_RO || command == RespCommand.GEORADIUSBYMEMBER)
+            switch (command)
             {
-                var member = respSession.parseState.GetArgSliceByRef(++idx);
-                SaveKeyEntryToLock(member, true, LockType.Shared);
-                SaveKeyArgSlice(member);
-                if (command == RespCommand.GEORADIUSBYMEMBER_RO)
+                case RespCommand.GEOSEARCH:
+                case RespCommand.GEORADIUS_RO:
+                case RespCommand.GEORADIUSBYMEMBER_RO:
+                    return 1;
+                case RespCommand.GEOSEARCHSTORE:
                     return 2;
-            }
-
-            if (command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUSBYMEMBER)
-            {
-                // These commands may or may not store a result
-                for (var i = idx; i < inputCount - 1; ++i)
-                {
-                    var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
-
-                    if (span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
-                        span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                case RespCommand.GEORADIUS:
+                case RespCommand.GEORADIUSBYMEMBER:
+                    // These commands may or may not store a result
+                    for (var i = idx; i < inputCount - 1; ++i)
                     {
-                        var destinationKey = respSession.parseState.GetArgSliceByRef(i + 1);
-                        SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
-                        SaveKeyArgSlice(destinationKey);
-                        break;
+                        var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                        if (span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
+                            span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                        {
+                            var destinationKey = respSession.parseState.GetArgSliceByRef(i + 1);
+                            SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                            SaveKeyArgSlice(destinationKey);
+                            break;
+                        }
                     }
-                }
 
-                return 1;
+                    return 1;
+                default:
+                    // Should never reach here.
+                    throw new NotSupportedException();
             }
-
-            // GEOSEARCH, GEOSEARCHSTORE
-            // We'd like to check if there's a member and if so lock it for reading.
-            for (var i = idx; i < inputCount - 1; ++i)
-            {
-                if (respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FROMMEMBER))
-                {
-                    var member = respSession.parseState.GetArgSliceByRef(i + 1);
-                    SaveKeyEntryToLock(member, true, LockType.Shared);
-                    SaveKeyArgSlice(member);
-                    break;
-                }
-            }
-
-            return idx + 1;
         }
 
         private int SortedSetObjectKeys(SortedSetOperation command, int inputCount, int sortedSetType = 0)
