@@ -38,6 +38,7 @@ namespace Garnet.cluster
         public bool Recovering => recoverLock.IsWriteLocked;
 
         private long replicationOffset;
+
         public long ReplicationOffset
         {
             get
@@ -127,7 +128,7 @@ namespace Garnet.cluster
             }
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !StartRecovery(RecoveryStatus.InitializeRecover))
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !ResumeRecovery(RecoveryStatus.InitializeRecover))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -210,7 +211,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
         /// </summary>
-        public bool StartRecovery(RecoveryStatus recoverStatus)
+        public bool ResumeRecovery(RecoveryStatus recoverStatus)
         {
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
             {
@@ -234,7 +235,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Release recovery and checkpoint locks
         /// </summary>
-        public void SuspendRecovery()
+        public void PauseRecovery()
         {
             logger?.LogTrace("Release recover lock [{recoverStatus}]", recoverStatus);
             recoverStatus = RecoveryStatus.NoRecovery;
@@ -336,7 +337,7 @@ namespace Garnet.cluster
             if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
                 // At initialization of ReplicationManager, this node has been put into recovery mode
-                if (!TryReplicateFromPrimary(out var errorMessage))
+                if (!TryClusterReplicateAttach(null, null, background: false, force: false, tryAddReplica: false, out var errorMessage))
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)

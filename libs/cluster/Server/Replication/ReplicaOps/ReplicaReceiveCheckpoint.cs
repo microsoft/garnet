@@ -22,171 +22,161 @@ namespace Garnet.cluster
         CheckpointEntry cEntry;
 
         /// <summary>
-        /// Try to initiate replication while instance is up and running.
-        /// NOTE: Caller should be aware of the following
-        ///     It is assumed that when this method is called we are under epoch protection
-        ///     This method will try to acquire the replicate and recovery locks first.
-        ///     This method will try to make this instance a replica of the provided node-id by updating the local config after acquiring all the locks.
+        /// Try initiate replicate attach
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
-        /// <param name="nodeid">Node-id to replicate.</param>
+        /// <param name="nodeId">Node-id to replicate.</param>
         /// <param name="background">If replication sync will run in the background.</param>
         /// <param name="force">Force adding this node as replica.</param>
+        /// <param name="tryAddReplica">Execute try add replica.</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns>A boolean indicating whether replication initiation was successful.</returns>
-        public bool TryBeginReplicate(ClusterSession session, string nodeid, bool background, bool force, out ReadOnlySpan<byte> errorMessage)
+        public bool TryClusterReplicateAttach(
+            ClusterSession session,
+            string nodeId,
+            bool background,
+            bool force,
+            bool tryAddReplica,
+            out ReadOnlySpan<byte> errorMessage)
         {
-            errorMessage = default;
-            // Ensure two replicate commands do not execute at the same time.
-            if (!replicateLock.TryWriteLock())
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
-                return false;
-            }
-
+            errorMessage = [];
             try
             {
-                logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
-                if (!clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage, logger: logger))
+                // Ensure two replicate commands do not execute at the same time.
+                if (!replicateLock.TryWriteLock())
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_REPLICATE_LOCK;
+                    return false;
+                }
+
+                logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
+                // Update the configuration to make this node a replica of provided nodeId
+                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
                     return false;
 
                 // Wait for threads to agree
-                session.UnsafeBumpAndWaitForEpochTransition();
+                session?.UnsafeBumpAndWaitForEpochTransition();
 
-                // Resetting here to decide later when to sync from
-                clusterProvider.replicationManager.ReplicationOffset = 0;
-                return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
+                // Initiate remote checkpoint retrieval
+                if (background)
+                {
+                    logger?.LogInformation("Initiating background checkpoint retrieval");
+                    _ = Task.Run(ReplicaSyncAttachTask);
+                }
+                else
+                {
+                    logger?.LogInformation("Initiating foreground checkpoint retrieval");
+                    var resp = ReplicaSyncAttachTask().GetAwaiter().GetResult();
+                    if (resp != null)
+                    {
+                        errorMessage = Encoding.ASCII.GetBytes(resp);
+                        return false;
+                    }
+                }
+
+                async Task<string> ReplicaSyncAttachTask()
+                {
+                    Debug.Assert(Recovering);
+
+                    // Resetting here to decide later when to sync from
+                    clusterProvider.replicationManager.ReplicationOffset = 0;
+
+                    // The caller should have stopped accepting AOF records from old primary at this point
+                    // (TryREPLICAOF -> TryAddReplica -> UnsafeWaitForConfigTransition)
+
+                    // TODO: ensure we have quiesced reads (no writes on replica)
+
+                    // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
+                    // If FastCommit is enabled, we commit during AOF stream processing
+                    if (!clusterProvider.serverOptions.EnableFastCommit)
+                    {
+                        storeWrapper.appendOnlyFile?.Commit();
+                        storeWrapper.appendOnlyFile?.WaitForCommit();
+                    }
+
+                    // Reset background replay iterator
+                    ResetReplayIterator();
+
+                    // Reset replication offset
+                    ReplicationOffset = 0;
+
+                    // Reset the database in preparation for connecting to primary
+                    storeWrapper.Reset();
+
+                    // Send request to primary
+                    //      Primary will initiate background task and start sending checkpoint data
+                    //
+                    // Replica waits for retrieval to complete before moving forward to recovery
+                    //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    var (address, port) = current.GetLocalNodePrimaryAddress();
+                    GarnetClientSession gcs = null;
+
+                    if (address == null || port == -1)
+                    {
+                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
+                        logger?.LogError("{msg}", errorMsg);
+                        return errorMsg;
+                    }
+
+                    try
+                    {
+                        gcs = new(
+                            new IPEndPoint(IPAddress.Parse(address), port),
+                            clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                            clusterProvider.replicationManager.GetNetworkPool,
+                            tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                            authUsername: clusterProvider.ClusterUsername,
+                            authPassword: clusterProvider.ClusterPassword);
+                        recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
+                        gcs.Connect();
+
+                        var nodeId = current.LocalNodeId;
+                        cEntry = GetLatestCheckpointEntryFromDisk();
+
+                        storeWrapper.RecoverAOF();
+                        logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
+
+                        // 1. Primary will signal checkpoint send complete
+                        // 2. Replica will receive signal and recover checkpoint, initialize AOF
+                        // 3. Replica signals recovery complete (here cluster replicate will return to caller)
+                        // 4. Replica responds with aofStartAddress sync
+                        // 5. Primary will initiate aof sync task
+                        // 6. Primary releases checkpoint
+                        var resp = await gcs.ExecuteReplicaSync(
+                            nodeId,
+                            PrimaryReplId,
+                            cEntry.ToByteArray(),
+                            storeWrapper.appendOnlyFile.BeginAddress,
+                            storeWrapper.appendOnlyFile.TailAddress).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
+                        clusterProvider.clusterManager.TryResetReplica();
+                        PauseRecovery();
+                        return ex.Message;
+                    }
+                    finally
+                    {
+                        recvCheckpointHandler?.Dispose();
+                        gcs?.Dispose();
+                    }
+                    return null;
+                }
+
+                return true;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(TryBeginReplicate)}");
-                SuspendRecovery();
+                logger?.LogError(ex, $"{nameof(TryClusterReplicateAttach)}");
+                PauseRecovery();
                 return false;
             }
             finally
             {
                 replicateLock.WriteUnlock();
             }
-        }
-
-        /// <summary>
-        /// Try to initiate the attach to primary sequence to recover checkpoint, replay AOF and start AOF stream.
-        /// NOTE:
-        ///     This method may be called at runtime or at startup so it does not assume that we are running under epoch protection.
-        ///     WARNING: Caller is responsible for acquiring the recoveryLock
-        /// </summary>
-        /// <param name="errorMessage"></param>
-        /// <param name="background"></param>
-        /// <returns></returns>
-        public bool TryReplicateFromPrimary(out ReadOnlySpan<byte> errorMessage, bool background = false)
-        {
-            errorMessage = default;
-            Debug.Assert(Recovering);
-
-            // The caller should have stopped accepting AOF records from old primary at this point
-            // (TryREPLICAOF -> TryAddReplica -> UnsafeWaitForConfigTransition)
-
-            // TODO: ensure we have quiesced reads (no writes on replica)
-
-            // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
-            // If FastCommit is enabled, we commit during AOF stream processing
-            if (!clusterProvider.serverOptions.EnableFastCommit)
-            {
-                storeWrapper.appendOnlyFile?.Commit();
-                storeWrapper.appendOnlyFile?.WaitForCommit();
-            }
-
-            // Reset background replay iterator
-            ResetReplayIterator();
-
-            // Reset replication offset
-            ReplicationOffset = 0;
-
-            // Reset the database in preparation for connecting to primary
-            storeWrapper.Reset();
-
-            // Initiate remote checkpoint retrieval
-            if (background)
-            {
-                logger?.LogInformation("Initiating background checkpoint retrieval");
-                _ = Task.Run(InitiateReplicaSync);
-            }
-            else
-            {
-                logger?.LogInformation("Initiating foreground checkpoint retrieval");
-                var resp = InitiateReplicaSync().GetAwaiter().GetResult();
-                if (resp != null)
-                {
-                    errorMessage = Encoding.ASCII.GetBytes(resp);
-                    return false;
-                }
-            }
-
-            async Task<string> InitiateReplicaSync()
-            {
-                // Send request to primary
-                //      Primary will initiate background task and start sending checkpoint data
-                //
-                // Replica waits for retrieval to complete before moving forward to recovery
-                //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
-                var current = clusterProvider.clusterManager.CurrentConfig;
-                var (address, port) = current.GetLocalNodePrimaryAddress();
-                GarnetClientSession gcs = null;
-
-                if (address == null || port == -1)
-                {
-                    var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
-                    logger?.LogError("{msg}", errorMsg);
-                    return errorMsg;
-                }
-
-                try
-                {
-                    gcs = new(
-                        new IPEndPoint(IPAddress.Parse(address), port),
-                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
-                        clusterProvider.replicationManager.GetNetworkPool,
-                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                        authUsername: clusterProvider.ClusterUsername,
-                        authPassword: clusterProvider.ClusterPassword);
-                    recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                    gcs.Connect();
-
-                    var nodeId = current.LocalNodeId;
-                    cEntry = GetLatestCheckpointEntryFromDisk();
-
-                    storeWrapper.RecoverAOF();
-                    logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
-
-                    // 1. Primary will signal checkpoint send complete
-                    // 2. Replica will receive signal and recover checkpoint, initialize AOF
-                    // 3. Replica signals recovery complete (here cluster replicate will return to caller)
-                    // 4. Replica responds with aofStartAddress sync
-                    // 5. Primary will initiate aof sync task
-                    // 6. Primary releases checkpoint
-                    var resp = await gcs.ExecuteReplicaSync(
-                        nodeId,
-                        PrimaryReplId,
-                        cEntry.ToByteArray(),
-                        storeWrapper.appendOnlyFile.BeginAddress,
-                        storeWrapper.appendOnlyFile.TailAddress).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
-                    clusterProvider.clusterManager.TryResetReplica();
-                    clusterProvider.replicationManager.SuspendRecovery();
-                    return ex.Message;
-                }
-                finally
-                {
-                    recvCheckpointHandler?.Dispose();
-                    gcs?.Dispose();
-                }
-                return null;
-            }
-
-            return true;
         }
 
         /// <summary>
@@ -377,7 +367,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                SuspendRecovery();
+                PauseRecovery();
             }
         }
     }

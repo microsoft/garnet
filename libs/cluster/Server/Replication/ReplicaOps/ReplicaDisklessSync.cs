@@ -129,7 +129,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
                     clusterProvider.clusterManager.TryResetReplica();
-                    SuspendRecovery();
+                    PauseRecovery();
                     return ex.Message;
                 }
                 finally
@@ -183,7 +183,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                SuspendRecovery();
+                PauseRecovery();
             }
         }
     }

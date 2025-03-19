@@ -89,7 +89,7 @@ namespace Garnet.cluster
             {
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
                     clusterProvider.replicationManager.TryReplicateDisklessSync(this, nodeId, background: background, force: false, out var errorMessage) :
-                    clusterProvider.replicationManager.TryBeginReplicate(this, nodeId, background: background, force: false, out errorMessage);
+                    clusterProvider.replicationManager.TryClusterReplicateAttach(this, nodeId, background: background, force: false, tryAddReplica: true, out errorMessage);
 
                 if (success)
                 {

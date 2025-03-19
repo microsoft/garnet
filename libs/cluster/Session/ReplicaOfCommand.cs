@@ -30,7 +30,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    if (!clusterProvider.replicationManager.StartRecovery(RecoveryStatus.ReplicaOfNoOne))
+                    if (!clusterProvider.replicationManager.ResumeRecovery(RecoveryStatus.ReplicaOfNoOne))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
@@ -44,7 +44,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    clusterProvider.replicationManager.SuspendRecovery();
+                    clusterProvider.replicationManager.PauseRecovery();
                 }
             }
             else
@@ -69,7 +69,7 @@ namespace Garnet.cluster
 
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
                     clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, out var errorMessage) :
-                    clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true, out errorMessage);
+                    clusterProvider.replicationManager.TryClusterReplicateAttach(this, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
 
                 if (!success)
                 {
