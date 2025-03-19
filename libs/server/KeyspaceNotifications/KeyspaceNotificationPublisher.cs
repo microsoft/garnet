@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using Garnet.server.KeyspaceNotifications;
 
 namespace Garnet.server
