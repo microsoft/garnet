@@ -1605,9 +1605,14 @@ namespace Garnet.server
             var currTokenId = 0;
 
             // Read timeout
-            if (!parseState.TryGetDouble(currTokenId++, out var timeout) || (timeout < 0))
+            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            if (timeout < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
             }
 
             // Read count of keys
