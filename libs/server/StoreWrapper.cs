@@ -273,7 +273,7 @@ namespace Garnet.server
         /// </summary>
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
-            long storeVersion = -1, objectStoreVersion = -1;
+            long storeVersion = 0, objectStoreVersion = 0;
             try
             {
                 if (replicaRecover)
@@ -293,8 +293,29 @@ namespace Garnet.server
                 }
                 else
                 {
-                    storeVersion = store.Recover();
-                    if (objectStore != null) objectStoreVersion = objectStore.Recover();
+                    if (objectStore != null)
+                    {
+                        // Get store recover version
+                        var _storeVersion = store.GetRecoverVersion();
+                        // Get object store recover version
+                        var _objectStoreVersion = objectStore.GetRecoverVersion();
+
+                        // Choose the minimum common recover version for both stores
+                        if (_storeVersion < _objectStoreVersion)
+                            _objectStoreVersion = _storeVersion;
+                        else if (objectStoreVersion > 0) // handle the case where object store was disabled at checkpointing time
+                            _storeVersion = _objectStoreVersion;
+
+                        // Recover to the minimum common recover version
+                        storeVersion = store.Recover(recoverTo: _storeVersion);
+                        objectStoreVersion = objectStore.Recover(recoverTo: _objectStoreVersion);
+                        logger?.LogInformation("Recovered store to version {storeVersion} and object store to version {objectStoreVersion}", storeVersion, objectStoreVersion);
+                    }
+                    else
+                    {
+                        storeVersion = store.Recover();
+                        logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
+                    }
                 }
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
@@ -309,6 +330,14 @@ namespace Garnet.server
                 logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
                 if (serverOptions.FailOnRecoveryError)
                     throw;
+            }
+
+            // After recovery, we check if store versions match
+            if (objectStore != null && storeVersion != objectStoreVersion)
+            {
+                logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                if (serverOptions.FailOnRecoveryError)
+                    throw new GarnetException("Main store and object store checkpoint versions do not match");
             }
         }
 
@@ -762,28 +791,27 @@ namespace Garnet.server
             }
 
             // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-            await CheckpointTask(StoreType.All, logger: logger);
+            await CheckpointTask(logger);
         }
 
         /// <summary>
         /// Take checkpoint
         /// </summary>
         /// <param name="background"></param>
-        /// <param name="storeType"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null)
+        public bool TakeCheckpoint(bool background, ILogger logger = null)
         {
             // Prevent parallel checkpoint
             if (!TryPauseCheckpoints()) return false;
             if (background)
-                Task.Run(async () => await CheckpointTask(storeType, logger));
+                Task.Run(async () => await CheckpointTask(logger));
             else
-                CheckpointTask(storeType, logger).ConfigureAwait(false).GetAwaiter().GetResult();
+                CheckpointTask(logger).ConfigureAwait(false).GetAwaiter().GetResult();
             return true;
         }
 
-        private async Task CheckpointTask(StoreType storeType, ILogger logger = null)
+        private async Task CheckpointTask(ILogger logger = null)
         {
             try
             {
@@ -804,12 +832,11 @@ namespace Garnet.server
                     tryIncremental = false;
 
                 var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
-                await InitiateCheckpoint(full, checkpointType, tryIncremental, storeType, logger);
+                await InitiateCheckpoint(full, checkpointType, tryIncremental, logger);
                 if (full)
                 {
-                    if (storeType is StoreType.Main or StoreType.All)
-                        this.lastSaveStoreTailAddress = lastSaveStoreTailAddress;
-                    if (storeType is StoreType.Object or StoreType.All)
+                    this.lastSaveStoreTailAddress = lastSaveStoreTailAddress;
+                    if (objectStore != null)
                         this.lastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
                 }
                 lastSaveTime = DateTimeOffset.UtcNow;
@@ -824,9 +851,9 @@ namespace Garnet.server
             }
         }
 
-        private async Task InitiateCheckpoint(bool full, CheckpointType checkpointType, bool tryIncremental, StoreType storeType, ILogger logger = null)
+        private async Task InitiateCheckpoint(bool full, CheckpointType checkpointType, bool tryIncremental, ILogger logger = null)
         {
-            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, storeType = {storeType}", full, checkpointType, tryIncremental, storeType);
+            logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}", full, checkpointType, tryIncremental);
 
             long CheckpointCoveredAofAddress = 0;
             if (appendOnlyFile != null)
@@ -840,41 +867,40 @@ namespace Garnet.server
                     logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit)", CheckpointCoveredAofAddress);
             }
 
-            (bool success, Guid token) storeCheckpointResult = default;
-            (bool success, Guid token) objectStoreCheckpointResult = default;
+            (bool success, Guid token) checkpointResult = default;
+            IStateMachine sm;
             if (full)
             {
-                if (storeType is StoreType.Main or StoreType.All)
-                {
-                    storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
-                }
-
-                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
-                {
-                    objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
-                }
+                sm = objectStore == null ?
+                        Checkpoint.Full(store, checkpointType, out checkpointResult.token) :
+                        Checkpoint.Full(store, objectStore, checkpointType, out checkpointResult.token);
             }
             else
             {
-                if (storeType is StoreType.Main or StoreType.All)
-                {
-                    storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.MainStoreCheckpointEndCommit, store.CurrentVersion);
-                }
+                tryIncremental = tryIncremental && store.CanTakeIncrementalCheckpoint(checkpointType, out checkpointResult.token);
+                if (objectStore != null)
+                    tryIncremental = tryIncremental && objectStore.CanTakeIncrementalCheckpoint(checkpointType, out var guid2) && checkpointResult.token == guid2;
 
-                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                if (tryIncremental)
                 {
-                    objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
-                    if (serverOptions.EnableCluster && clusterProvider.IsPrimary()) EnqueueCommit(AofEntryType.ObjectStoreCheckpointEndCommit, objectStore.CurrentVersion);
+                    sm = objectStore == null ?
+                        Checkpoint.IncrementalHybridLogOnly(store, checkpointResult.token) :
+                        Checkpoint.IncrementalHybridLogOnly(store, objectStore, checkpointResult.token);
+                }
+                else
+                {
+                    sm = objectStore == null ?
+                        Checkpoint.HybridLogOnly(store, checkpointType, out checkpointResult.token) :
+                        Checkpoint.HybridLogOnly(store, objectStore, checkpointType, out checkpointResult.token);
                 }
             }
+
+            checkpointResult.success = await serverOptions.StateMachineDriver.RunAsync(sm);
 
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (serverOptions.EnableCluster && serverOptions.EnableAOF)
             {
-                clusterProvider.SafeTruncateAOF(storeType, full, CheckpointCoveredAofAddress, storeCheckpointResult.token, objectStoreCheckpointResult.token);
+                clusterProvider.SafeTruncateAOF(StoreType.All, full, CheckpointCoveredAofAddress, checkpointResult.token, checkpointResult.token);
             }
             else
             {

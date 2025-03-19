@@ -46,25 +46,14 @@ namespace Tsavorite.core
             where TSessionFunctions : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             CheckIsNotAcquiredTransactional(sessionFunctions);
+            sessionFunctions.Ctx.isAcquiredTransactional = true;
+        }
 
-            while (true)
-            {
-                // Checkpoints cannot complete while we have active locking sessions.
-                while (IsInPreparePhase())
-                {
-                    if (store.epoch.ThisInstanceProtected())
-                        store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctions>(sessionFunctions);
-                    Thread.Yield();
-                }
-
-                store.IncrementNumTransactionalSessions();
-                sessionFunctions.Ctx.isAcquiredTransactional = true;
-
-                if (!IsInPreparePhase())
-                    break;
-                InternalReleaseTransactional(sessionFunctions);
-                _ = Thread.Yield();
-            }
+        internal void LocksAcquired<TSessionFunctions>(TSessionFunctions sessionFunctions, long txnVersion)
+            where TSessionFunctions : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            CheckIsAcquiredTransactional(sessionFunctions);
+            sessionFunctions.Ctx.txnVersion = txnVersion;
         }
 
         internal void ReleaseTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
@@ -73,15 +62,8 @@ namespace Tsavorite.core
             CheckIsAcquiredTransactional(sessionFunctions);
             if (TotalLockCount > 0)
                 throw new TsavoriteException($"EndTransactional called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseTransactional(sessionFunctions);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
-            where TSessionFunctions : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
             sessionFunctions.Ctx.isAcquiredTransactional = false;
-            store.DecrementNumLockingSessions();
+            sessionFunctions.Ctx.txnVersion = 0;
         }
 
         internal void CheckIsAcquiredTransactional<TSessionFunctions>(TSessionFunctions sessionFunctions)
@@ -535,16 +517,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public void ResetRevivificationStats() => ctx.ResetRevivificationStats();
-
-        /// <summary>
-        /// Return true if Tsavorite State Machine is in PREPARE state
-        /// </summary>
-        internal bool IsInPreparePhase()
-        {
-            var storeState = store.stateMachineDriver.SystemState;
-            return storeState.Phase == Phase.PREPARE || storeState.Phase == Phase.PREPARE_GROW;
-        }
-
         #endregion Other Operations
     }
 }

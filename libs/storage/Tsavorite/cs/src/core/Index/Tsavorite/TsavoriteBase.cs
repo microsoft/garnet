@@ -52,10 +52,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public TsavoriteBase(ILogger logger = null)
+        public TsavoriteBase(LightEpoch epoch = null, ILogger logger = null)
         {
-            epoch = new LightEpoch();
-            overflowBucketsAllocator = new (logger);
+            this.epoch = epoch ?? new LightEpoch();
+            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
         }
 
         internal void Free()

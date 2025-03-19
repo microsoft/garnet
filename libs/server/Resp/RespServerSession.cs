@@ -229,7 +229,7 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
-            txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
+            txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.StateMachineDriver, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);

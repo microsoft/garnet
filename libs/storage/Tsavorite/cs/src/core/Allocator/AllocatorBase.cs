@@ -72,12 +72,6 @@ namespace Tsavorite.core
         /// <summary>HeadAddress offset from tail (currently page-aligned)</summary>
         internal long HeadAddressLagOffset;
 
-        /// <summary>
-        /// Number of <see cref="TransactionalUnsafeContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> or 
-        /// <see cref="TransactionalContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/> instances active.
-        /// </summary>
-        internal long NumActiveTransactionalSessions = 0;
-
         /// <summary>Log mutable fraction</summary>
         protected readonly double LogMutableFraction;
 

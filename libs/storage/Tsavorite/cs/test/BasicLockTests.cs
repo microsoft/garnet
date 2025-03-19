@@ -136,7 +136,7 @@ namespace Tsavorite.test.LockTests
 
         void UpdateFunc(bool useRMW, int numRecords, int numIters)
         {
-            for (var keyNum = 0; keyNum < numRecords; ++keyNum)
+            for (long keyNum = 0; keyNum < numRecords; ++keyNum)
             {
                 var key = SpanByteFrom(ref keyNum);
                 for (var iter = 0; iter < numIters; iter++)
@@ -165,9 +165,9 @@ namespace Tsavorite.test.LockTests
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
             long deleteKeyNum = NumRecords / 2;
-            long collidingKey = deleteKeyNum + NumRecords;
-            keyNum = collidingKey;
-            valueNum = collidingKey * ValueMult;
+            long collidingKeyNum = deleteKeyNum + NumRecords;
+            keyNum = collidingKeyNum;
+            valueNum = collidingKeyNum * ValueMult;
             SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum), deleteKey = SpanByteFrom(ref deleteKeyNum);
             ClassicAssert.IsFalse(bContext.Upsert(key, value).IsPending);
 
@@ -176,34 +176,32 @@ namespace Tsavorite.test.LockTests
             ClassicAssert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
             ClassicAssert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
             var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
-            var recordInfo = LogRecord.GetInfo(physicalAddress);
             var lookupKey = LogRecord.GetKey(physicalAddress);
-            ClassicAssert.AreEqual(collidingKey, lookupKey, "Expected collidingKey");
+            ClassicAssert.AreEqual(collidingKeyNum, lookupKey.AsRef<long>(), "Expected collidingKey");
 
             // Backtrace to deleteKey
-            physicalAddress = store.hlog.GetPhysicalAddress(recordInfo.PreviousAddress);
-            recordInfo = LogRecord.GetInfo(physicalAddress);
+            physicalAddress = store.hlog.GetPhysicalAddress(LogRecord.GetInfo(physicalAddress).PreviousAddress);
             lookupKey = LogRecord.GetKey(physicalAddress);
-            ClassicAssert.AreEqual(deleteKey, lookupKey, "Expected deleteKey");
-            ClassicAssert.IsFalse(recordInfo.Tombstone, "Tombstone should be false");
+            ClassicAssert.AreEqual(deleteKey.AsRef<long>(), lookupKey.AsRef<long>(), "Expected deleteKey");
+            ClassicAssert.IsFalse(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be false");
 
             // In-place delete.
             ClassicAssert.IsFalse(bContext.Delete(deleteKey).IsPending);
-            ClassicAssert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Delete");
+            ClassicAssert.IsTrue(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be true after Delete");
 
             if (flushMode == FlushMode.ReadOnly)
                 _ = store.hlogBase.ShiftReadOnlyAddress(store.Log.TailAddress);
 
             var status = updateOp switch
             {
-                UpdateOp.RMW => bContext.RMW(deleteKey, default),
-                UpdateOp.Upsert => bContext.Upsert(deleteKey, default),
+                UpdateOp.RMW => bContext.RMW(deleteKey, valueNum),
+                UpdateOp.Upsert => bContext.Upsert(deleteKey, value),
                 UpdateOp.Delete => throw new InvalidOperationException("UpdateOp.Delete not expected in this test"),
                 _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
             };
             ClassicAssert.IsFalse(status.IsPending);
 
-            ClassicAssert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Update");
+            ClassicAssert.IsTrue(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be true after Update");
         }
 
         [Test]

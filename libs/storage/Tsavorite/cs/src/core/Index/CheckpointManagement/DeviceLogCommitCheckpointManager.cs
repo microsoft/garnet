@@ -193,7 +193,11 @@ namespace Tsavorite.core
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Dispose();
+        }
 
+        /// <inheritdoc />
+        public unsafe void CleanupIndexCheckpoint(Guid indexToken)
+        {
             if (removeOutdated)
             {
                 var prior = indexTokenHistory[indexTokenHistoryOffset];
@@ -240,7 +244,11 @@ namespace Tsavorite.core
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
             device.Dispose();
+        }
 
+        /// <inheritdoc />
+        public virtual unsafe void CleanupLogCheckpoint(Guid logToken)
+        {
             if (removeOutdated)
             {
                 var prior = logTokenHistory[logTokenHistoryOffset];
@@ -271,6 +279,11 @@ namespace Tsavorite.core
             }
             deltaLog.Seal(commitMetadata.Length, DeltaLogEntryType.CHECKPOINT_METADATA);
             deltaLog.FlushAsync().Wait();
+        }
+
+        /// <inheritdoc />
+        public virtual unsafe void CleanupLogIncrementalCheckpoint(Guid logToken)
+        {
         }
 
         /// <inheritdoc />
@@ -486,7 +499,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual void CheckpointVersionShift(long oldVersion, long newVersion)
+        public virtual void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming)
+        {
+        }
+
+        /// <inheritdoc />
+        public virtual void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming)
         {
         }
     }

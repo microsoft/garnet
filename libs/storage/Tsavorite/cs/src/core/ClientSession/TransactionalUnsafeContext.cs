@@ -48,8 +48,11 @@ namespace Tsavorite.core
         public void BeginTransaction() => clientSession.AcquireTransactional(sessionFunctions);
 
         /// <inheritdoc/>
+        public void LocksAcquired(long txnVersion) => clientSession.LocksAcquired(sessionFunctions, txnVersion);
+
+        /// <inheritdoc/>
         public void EndTransaction() => clientSession.ReleaseTransactional(sessionFunctions);
-        #endregion Begin/EndTransactional
+        #endregion Begin/EndTransaction
 
         #region Key Locking
 

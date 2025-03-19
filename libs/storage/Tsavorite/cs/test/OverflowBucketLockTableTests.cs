@@ -375,8 +375,9 @@ namespace Tsavorite.test.LockTable
             {
                 Random rng = new(101 * tid);
 
-                // maxNumKeys < 0 means use random number of keys
+                // maxNumKeys < 0 means use random number of keys. SpanByte requires persistent storage so we need the threadKeyNums vector in parallel with threadStructs.
                 int numKeys = maxNumKeys < 0 ? rng.Next(1, -maxNumKeys) : maxNumKeys;
+                var threadKeyNums = new long[numKeys];
                 var threadStructs = new FixedLengthTransactionalKeyStruct[numKeys];
 
                 long getNextKey()
@@ -384,7 +385,7 @@ namespace Tsavorite.test.LockTable
                     while (true)
                     {
                         var key = rng.Next(lowKey, highKey + 1);    // +1 because the end # is not included
-                        if (!Array.Exists(threadStructs, it => it.Key.AsRef<long>() == key))
+                        if (!Array.Exists(threadStructs, it => it.Key.Length > 0 && it.Key.AsRef<long>() == key))
                             return key;
                     }
                 }
@@ -394,8 +395,9 @@ namespace Tsavorite.test.LockTable
                     // Create key structs
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        var keyLong = getNextKey();
-                        var key = SpanByteFrom(ref keyLong);
+                        var keyNum = getNextKey();
+                        threadKeyNums[ii] = keyNum;
+                        var key = SpanByteFrom(ref threadKeyNums[ii]);    // storage for the SpanByte
                         threadStructs[ii] = new()   // local var for debugging
                         {
                             Key = key,
@@ -433,7 +435,6 @@ namespace Tsavorite.test.LockTable
                     }
                     Array.Clear(threadStructs);
                 }
-
             }
 
             for (int t = 1; t <= numThreads; t++)

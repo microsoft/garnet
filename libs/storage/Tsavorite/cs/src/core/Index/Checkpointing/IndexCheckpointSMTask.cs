@@ -46,6 +46,10 @@ namespace Tsavorite.core
 
                 case Phase.PERSISTENCE_CALLBACK:
                     store.WriteIndexMetaInfo();
+                    break;
+
+                case Phase.REST:
+                    store.CleanupIndexCheckpoint();
                     store._indexCheckpoint.Reset();
                     break;
 

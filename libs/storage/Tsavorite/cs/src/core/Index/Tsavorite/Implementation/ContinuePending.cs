@@ -67,6 +67,10 @@ namespace Tsavorite.core
                                 memoryRecord = stackCtx.recSrc.CreateLogRecord();
                                 if (memoryRecord.Info.Tombstone)
                                     goto NotFound;
+
+                                // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+                                if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                                    return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
                             }
                             else
                             {

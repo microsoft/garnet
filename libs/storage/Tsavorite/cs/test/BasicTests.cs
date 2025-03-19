@@ -691,31 +691,6 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
-        // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
-        public void UpsertNoRefNoDefaultsTest()
-        {
-            // Just checking more parameter values so one device is enough
-            deviceType = DeviceType.MLSD;
-
-            Setup(new() { MemorySize = 1L << 29 }, deviceType);
-
-            InputStruct input = default;
-            OutputStruct output = default;
-
-            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
-            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-
-            _ = bContext.Upsert(SpanByteFrom(ref key1), SpanByteFrom(ref value), Empty.Default);
-            var status = bContext.Read(SpanByteFrom(ref key1), ref input, ref output, Empty.Default);
-            AssertCompleted(new(StatusCode.Found), status);
-
-            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
-            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
-        }
-
         //**** Quick End to End Sample code from help docs ***
         // Very minor changes to LogDevice call and type of Asserts to use but basically code from Sample code in docs
         // Also tests the overload call of .Read (ref key ref output) 

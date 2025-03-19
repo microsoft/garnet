@@ -118,6 +118,16 @@ namespace Tsavorite.core
         public RevivificationSettings RevivificationSettings;
 
         /// <summary>
+        /// Epoch instance used by the store
+        /// </summary>
+        public LightEpoch Epoch = null;
+
+        /// <summary>
+        /// State machine driver for the store
+        /// </summary>
+        public StateMachineDriver StateMachineDriver = null;
+
+        /// <summary>
         /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySize"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
         /// values larger than <see cref="MaxInlineValueSize"/>
         /// </summary>

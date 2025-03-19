@@ -59,6 +59,10 @@ namespace Tsavorite.core
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
                     Thread.Yield();
                     return true;
+                case OperationStatus.CPR_SHIFT_DETECTED:
+                    // Retry as (v+1) Operation
+                    SynchronizeEpoch(sessionFunctions.Ctx, ref pendingContext, sessionFunctions);
+                    return true;
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
                     Debug.Assert(!pendingContext.flushEvent.IsDefault(), "flushEvent is required for ALLOCATE_FAILED");
@@ -115,6 +119,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
+            Debug.Assert(operationStatus != OperationStatus.CPR_SHIFT_DETECTED, "OperationStatus.CPR_SHIFT_DETECTED should have been handled before HandleOperationStatus");
 
             request = default;
 
