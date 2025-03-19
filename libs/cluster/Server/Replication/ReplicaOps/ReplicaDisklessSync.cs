@@ -12,11 +12,22 @@ namespace Garnet.cluster
 {
     internal sealed partial class ReplicationManager : IDisposable
     {
+        /// <summary>
+        /// Try to replicate using diskless sync
+        /// </summary>
+        /// <param name="session"></param>
+        /// <param name="nodeId"></param>
+        /// <param name="background"></param>
+        /// <param name="force"></param>
+        /// <param name="tryAddReplica"></param>
+        /// <param name="errorMessage"></param>
+        /// <returns></returns>
         public bool TryReplicateDisklessSync(
             ClusterSession session,
             string nodeId,
             bool background,
             bool force,
+            bool tryAddReplica,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
@@ -36,6 +47,9 @@ namespace Garnet.cluster
                     replicateLock.WriteUnlock();
                     return false;
                 }
+
+                // Acquire recovery epoch to distinguish between PauseRecoveryLocks
+                currentEpoch = tryAddReplica ? RecoveryEpoch : InitializeRecoverEpoch;
 
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();

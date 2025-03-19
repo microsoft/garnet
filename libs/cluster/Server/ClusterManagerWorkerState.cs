@@ -188,14 +188,13 @@ namespace Garnet.cluster
 
                 // Transition to recovering state
                 // Only one caller will succeed in becoming a replica for the provided node-id
-                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate))
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate, out var currentRecoveryEpoch))
                 {
                     logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK;
                     return false;
                 }
 
-                var currentRecoveryEpoch = clusterProvider.replicationManager.RecoveryEpoch;
                 var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;

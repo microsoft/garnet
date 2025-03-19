@@ -39,6 +39,8 @@ namespace Garnet.cluster
 
         public long RecoveryEpoch { get; private set; }
 
+        public long InitializeRecoverEpoch;
+
         private long replicationOffset;
 
         public long ReplicationOffset
@@ -131,7 +133,7 @@ namespace Garnet.cluster
             }
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover))
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, out InitializeRecoverEpoch))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -214,8 +216,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
         /// </summary>
-        public bool BeginRecovery(RecoveryStatus recoverStatus)
+        public bool BeginRecovery(RecoveryStatus recoverStatus, out long currentRecoveryEpoch)
         {
+            currentRecoveryEpoch = -1;
             if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
             {
                 logger?.LogError("Error could not acquire checkpoint lock [{recoverStatus}]", recoverStatus);
@@ -231,6 +234,7 @@ namespace Garnet.cluster
             }
 
             this.recoverStatus = recoverStatus;
+            currentRecoveryEpoch = RecoveryEpoch;
             logger?.LogTrace("Success recover lock [{recoverStatus}]", recoverStatus);
             return true;
         }
@@ -347,8 +351,11 @@ namespace Garnet.cluster
             var replicaOfNodeId = current.LocalNodePrimaryId;
             if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
+                var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
+                    TryReplicateDisklessSync(null, null, background: false, force: true, tryAddReplica: false, out var errorMessage) :
+                    TryReplicateDiskbasedSync(null, null, background: false, force: false, tryAddReplica: false, out errorMessage);
                 // At initialization of ReplicationManager, this node has been put into recovery mode
-                if (!TryClusterReplicateAttach(null, null, background: false, force: false, tryAddReplica: false, out var errorMessage))
+                if (!success)
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)

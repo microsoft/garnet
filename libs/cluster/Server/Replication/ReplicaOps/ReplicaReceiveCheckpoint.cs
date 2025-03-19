@@ -31,7 +31,7 @@ namespace Garnet.cluster
         /// <param name="tryAddReplica">Execute try add replica.</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns>A boolean indicating whether replication initiation was successful.</returns>
-        public bool TryClusterReplicateAttach(
+        public bool TryReplicateDiskbasedSync(
             ClusterSession session,
             string nodeId,
             bool background,
@@ -56,7 +56,7 @@ namespace Garnet.cluster
                     return false;
 
                 // Acquire recovery epoch to distinguish between PauseRecoveryLocks
-                currentEpoch = RecoveryEpoch;
+                currentEpoch = tryAddReplica ? RecoveryEpoch : InitializeRecoverEpoch;
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
@@ -173,7 +173,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(TryClusterReplicateAttach)}");
+                logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSync)}");
                 CompleteRecovery(currentEpoch);
                 return false;
             }

@@ -31,7 +31,7 @@ namespace Garnet.cluster
                 var currentRecoveryEpoch = -1L;
                 try
                 {
-                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne))
+                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne, out currentRecoveryEpoch))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
@@ -71,8 +71,8 @@ namespace Garnet.cluster
                 }
 
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, out var errorMessage) :
-                    clusterProvider.replicationManager.TryClusterReplicateAttach(this, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, tryAddReplica: true, out var errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
 
                 if (!success)
                 {

@@ -155,12 +155,11 @@ namespace Garnet.cluster
             try
             {
                 // Make replica syncing unavailable by setting recovery flag
-                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover))
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, out currentRecoveryEpoch))
                 {
                     logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     return false;
                 }
-                currentRecoveryEpoch = clusterProvider.replicationManager.RecoveryEpoch;
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
 
                 // Take over slots from old primary
