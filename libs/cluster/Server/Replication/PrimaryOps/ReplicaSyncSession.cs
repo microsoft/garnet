@@ -34,7 +34,7 @@ namespace Garnet.cluster
         readonly TimeSpan timeout = timeout;
         readonly CancellationToken token = token;
         readonly CancellationTokenSource cts = new();
-        SectorAlignedBufferPool bufferPool = null;
+        SectorAlignedMemoryPool bufferPool = null;
         readonly SemaphoreSlim semaphore = new(0);
 
         public readonly string replicaNodeId = replicaNodeId;
@@ -55,7 +55,7 @@ namespace Garnet.cluster
             cts.Cancel();
             cts.Dispose();
             semaphore?.Dispose();
-            bufferPool?.Free();
+            bufferPool?.Dispose();
         }
 
         /// <summary>
@@ -529,16 +529,16 @@ namespace Garnet.cluster
         /// <param name="segmentId"></param>
         private unsafe (SectorAlignedMemory, int) ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
         {
-            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            bufferPool ??= new SectorAlignedMemoryPool(1, (int)device.SectorSize);
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
             if (segmentId == -1)
-                device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr, (uint)numBytesToRead, IOCallback, null);
             else
-                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.BufferPtr, (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
             return (pbuffer, (int)numBytesToRead);
         }
@@ -558,7 +558,7 @@ namespace Garnet.cluster
     {
         public static Span<byte> GetSlice(this SectorAlignedMemory pbuffer, int length)
         {
-            return new Span<byte>(pbuffer.aligned_pointer, length);
+            return new Span<byte>(pbuffer.BufferPtr, length);
         }
     }
 }

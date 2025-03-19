@@ -22,7 +22,7 @@ namespace Tsavorite.core
         private readonly bool osReadBuffering;
         private readonly bool readOnly;
         private readonly SafeConcurrentDictionary<int, (AsyncPool<Stream>, AsyncPool<Stream>)> logHandles;
-        private readonly SectorAlignedBufferPool pool;
+        private readonly SectorAlignedMemoryPool pool;
 
         /// <summary>
         /// Number of pending reads on device
@@ -45,7 +45,7 @@ namespace Tsavorite.core
         public ManagedLocalStorageDevice(string filename, bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, long capacity = Devices.CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool osReadBuffering = false, bool readOnly = false)
             : base(filename, GetSectorSize(filename), capacity)
         {
-            pool = new(1, 1);
+            pool = new(recordSize: 1, sectorSize: 1);
             ThrottleLimit = 120;
 
             string path = new FileInfo(filename).Directory.FullName;
@@ -386,7 +386,7 @@ namespace Tsavorite.core
                 if (deleteOnClose)
                     File.Delete(GetSegmentName(entry.Key));
             }
-            pool.Free();
+            pool.Dispose();
         }
 
         private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);

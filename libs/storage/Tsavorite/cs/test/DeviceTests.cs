@@ -16,7 +16,7 @@ namespace Tsavorite.test
     public class DeviceTests
     {
         const int entryLength = 1024;
-        SectorAlignedBufferPool bufferPool;
+        SectorAlignedMemoryPool bufferPool;
         readonly byte[] entry = new byte[entryLength];
         SemaphoreSlim semaphore;
 
@@ -30,7 +30,7 @@ namespace Tsavorite.test
             for (int i = 0; i < entry.Length; i++)
                 entry[i] = (byte)i;
 
-            bufferPool = new SectorAlignedBufferPool(1, 512);
+            bufferPool = new SectorAlignedMemoryPool(recordSize: 1, sectorSize: 512);
             semaphore = new SemaphoreSlim(0);
         }
 
@@ -38,7 +38,7 @@ namespace Tsavorite.test
         public void TearDown()
         {
             semaphore.Dispose();
-            bufferPool.Free();
+            bufferPool.Dispose();
 
             // Clean up log files
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -99,10 +99,10 @@ namespace Tsavorite.test
             var pbuffer = bufferPool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
             }
 
-            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
+            device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, IOCallback, null);
             semaphore.Wait();
 
             pbuffer.Return();
@@ -114,12 +114,12 @@ namespace Tsavorite.test
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
                 (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 

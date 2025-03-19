@@ -247,7 +247,7 @@ namespace Garnet.cluster
             _disposed = true;
 
             replicationConfigDevice?.Dispose();
-            replicationConfigDevicePool?.Free();
+            replicationConfigDevicePool?.Dispose();
 
             replicationSyncManager?.Dispose();
 

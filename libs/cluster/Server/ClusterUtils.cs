@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal static class ClusterUtils
     {
-        public static byte[] ReadDevice(IDevice device, SectorAlignedBufferPool pool, ILogger logger = null)
+        public static byte[] ReadDevice(IDevice device, SectorAlignedMemoryPool pool, ILogger logger = null)
         {
             ReadInto(device, pool, 0, out byte[] writePad, sizeof(int), logger);
             int size = BitConverter.ToInt32(writePad, 0);
@@ -32,7 +32,7 @@ namespace Garnet.cluster
         /// <param name="buffer"></param>
         /// <param name="size"></param>
         /// <param name="logger"></param>
-        public static unsafe void WriteInto(IDevice device, SectorAlignedBufferPool pool, ulong address, byte[] buffer, int size = 0, ILogger logger = null)
+        public static unsafe void WriteInto(IDevice device, SectorAlignedMemoryPool pool, ulong address, byte[] buffer, int size = 0, ILogger logger = null)
         {
             if (size == 0) size = buffer.Length;
             var _buffer = new byte[size + sizeof(int)];
@@ -47,10 +47,10 @@ namespace Garnet.cluster
             var pbuffer = pool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = _buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
             }
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
+            device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
             semaphore.Wait();
 
             pbuffer.Return();
@@ -66,20 +66,20 @@ namespace Garnet.cluster
         /// <param name="buffer"></param>
         /// <param name="size"></param>
         /// <param name="logger"></param>
-        private static unsafe void ReadInto(IDevice device, SectorAlignedBufferPool pool, ulong address, out byte[] buffer, int size, ILogger logger = null)
+        private static unsafe void ReadInto(IDevice device, SectorAlignedMemoryPool pool, ulong address, out byte[] buffer, int size, ILogger logger = null)
         {
             using var semaphore = new SemaphoreSlim(0);
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
                 (uint)numBytesToRead, logger == null ? IOCallback : logger.IOCallback, semaphore);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 

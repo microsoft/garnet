@@ -193,7 +193,7 @@ namespace Tsavorite.core
                         }
                         else
                         {
-                            if (memory.AlignedTotalCapacity < recordSize)
+                            if (memory.Length < recordSize)
                             {
                                 memory.Return();
                                 memory = hlog.bufferPool.Get(recordSize);
@@ -206,8 +206,8 @@ namespace Tsavorite.core
 
                         unsafe
                         {
-                            Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.aligned_pointer, recordSize, recordSize);
-                            currentPhysicalAddress = (long)memory.aligned_pointer;
+                            Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.BufferPtr, recordSize, recordSize);
+                            currentPhysicalAddress = (long)memory.BufferPtr;
                         }
                     }
                     finally
@@ -316,7 +316,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.RequiredBytes, result.page);
                 result.freeBuffer1.Return();
                 result.freeBuffer1 = null;
             }

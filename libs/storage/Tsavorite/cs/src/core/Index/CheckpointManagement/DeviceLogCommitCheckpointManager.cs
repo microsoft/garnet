@@ -32,7 +32,7 @@ namespace Tsavorite.core
         private readonly SemaphoreSlim semaphore;
 
         private readonly bool removeOutdated;
-        private SectorAlignedBufferPool bufferPool;
+        private SectorAlignedMemoryPool bufferPool;
 
         /// <summary>
         /// Track historical commits for automatic purging
@@ -455,19 +455,19 @@ namespace Tsavorite.core
         protected unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
             if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                bufferPool = new SectorAlignedMemoryPool(recordSize: 1, (int)device.SectorSize);
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
                 (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 
@@ -481,7 +481,7 @@ namespace Tsavorite.core
         protected unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
             if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                bufferPool = new SectorAlignedMemoryPool(recordSize: 1, (int)device.SectorSize);
 
             long numBytesToWrite = size;
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
@@ -489,10 +489,10 @@ namespace Tsavorite.core
             var pbuffer = bufferPool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
             }
 
-            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
+            device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, IOCallback, null);
             semaphore.Wait();
 
             pbuffer.Return();

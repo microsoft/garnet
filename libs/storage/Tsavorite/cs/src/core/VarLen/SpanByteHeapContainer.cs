@@ -12,7 +12,7 @@ namespace Tsavorite.core
     {
         readonly SectorAlignedMemory mem;
 
-        public unsafe SpanByteHeapContainer(ref SpanByte obj, SectorAlignedBufferPool pool)
+        public unsafe SpanByteHeapContainer(ref SpanByte obj, SectorAlignedMemoryPool pool)
         {
             mem = pool.Get(obj.TotalSize);
             obj.CopyTo(mem.GetValidPointer());

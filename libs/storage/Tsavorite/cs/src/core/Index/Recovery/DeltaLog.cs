@@ -58,7 +58,7 @@ namespace Tsavorite.core
         bool disposed = false;
 
         // Fields to support writes
-        SectorAlignedBufferPool memory;
+        SectorAlignedMemoryPool memory;
         long tailAddress;
         long flushedUntilAddress;
 
@@ -300,7 +300,7 @@ namespace Tsavorite.core
         /// Initialize for writes
         /// </summary>
         /// <param name="memory"></param>
-        public void InitializeForWrites(SectorAlignedBufferPool memory)
+        public void InitializeForWrites(SectorAlignedMemoryPool memory)
         {
             this.memory = memory;
             buffer = memory.Get(PageSize);
@@ -317,7 +317,7 @@ namespace Tsavorite.core
             long dataStartAddress = tailAddress + HeaderSize;
             maxEntryLength = (int)(pageEndAddress - dataStartAddress);
             int offset = (int)(dataStartAddress & PageSizeMask);
-            physicalAddress = (long)buffer.aligned_pointer + offset;
+            physicalAddress = (long)buffer.BufferPtr + offset;
         }
 
         /// <summary>
@@ -330,7 +330,7 @@ namespace Tsavorite.core
             if (entryLength > 0)
             {
                 int offset = (int)(tailAddress & PageSizeMask);
-                SetBlockHeader(entryLength, type, buffer.aligned_pointer + offset);
+                SetBlockHeader(entryLength, type, buffer.BufferPtr + offset);
 
                 long oldTailAddress = tailAddress;
                 tailAddress += HeaderSize + entryLength;
@@ -364,7 +364,7 @@ namespace Tsavorite.core
             var asyncResult = new PageAsyncFlushResult<Empty> { count = 1, freeBuffer1 = buffer };
             var alignedBlockSize = Align(tailAddress - pageStartAddress);
             Interlocked.Increment(ref issuedFlush);
-            deltaLogDevice.WriteAsync((IntPtr)buffer.aligned_pointer + startOffset,
+            deltaLogDevice.WriteAsync((IntPtr)buffer.BufferPtr + startOffset,
                         (ulong)pageStartAddress,
                         (uint)alignedBlockSize, AsyncFlushPageToDeviceCallback, asyncResult);
             flushedUntilAddress = tailAddress;

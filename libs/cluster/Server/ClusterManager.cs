@@ -18,7 +18,7 @@ namespace Garnet.cluster
     {
         ClusterConfig currentConfig;
         readonly IDevice clusterConfigDevice;
-        readonly SectorAlignedBufferPool pool;
+        readonly SectorAlignedMemoryPool pool;
         readonly ILogger logger;
 
         /// <summary>
@@ -103,7 +103,7 @@ namespace Garnet.cluster
             DisposeBackgroundTasks();
 
             clusterConfigDevice.Dispose();
-            pool.Free();
+            pool.Dispose();
         }
 
         /// <summary>

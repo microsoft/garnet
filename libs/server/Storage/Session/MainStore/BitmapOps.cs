@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
@@ -138,20 +139,21 @@ namespace Garnet.server
 
                 #region performBitop
                 // Allocate result buffers
-                sectorAlignedMemoryBitmap ??= new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
-                if (maxBitmapLen + sectorAlignedMemoryPoolAlignment > bitmapBufferSize)
-                {
-                    do
-                    {
-                        bitmapBufferSize <<= 1;
-                    } while (maxBitmapLen + sectorAlignedMemoryPoolAlignment > bitmapBufferSize);
 
-                    sectorAlignedMemoryBitmap.Dispose();
-                    sectorAlignedMemoryBitmap = new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                    dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
+                // We need to store the bitmap as 32-bit integer,
+                // but to keep the destination bitmap buffer aligned, we for ask whatever our alignment is.
+                var requiredOutputLength = maxBitmapLen + sectorAlignedMemoryPoolAlignment;
+
+                var bufferSize = (int)Math.Max(bitmapBufferSize, BitOperations.RoundUpToPowerOf2((uint)maxBitmapLen));
+                if (sectorAlignedMemoryBitmap == null || requiredOutputLength > bitmapBufferSize)
+                {
+                    bitmapBufferSize = bufferSize;
+
+                    sectorAlignedMemoryBitmap?.Dispose();
+                    sectorAlignedMemoryBitmap = SectorAlignedMemory.Allocate(bitmapBufferSize, sectorAlignedMemoryPoolAlignment);
                 }
 
+                var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
 
                 // Check if at least one key is found and execute bitop
                 if (keysFound > 0)

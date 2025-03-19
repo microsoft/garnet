@@ -15,7 +15,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         IDevice writeIntoCkptDevice = null;
         private SemaphoreSlim writeCheckpointSemaphore = null;
-        private SectorAlignedBufferPool writeCheckpointBufferPool = null;
+        private SectorAlignedMemoryPool writeCheckpointBufferPool = null;
 
         readonly ILogger logger;
 
@@ -28,7 +28,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             writeCheckpointSemaphore?.Dispose();
-            writeCheckpointBufferPool?.Free();
+            writeCheckpointBufferPool?.Dispose();
             writeCheckpointBufferPool = null;
             CloseDevice();
         }
@@ -78,7 +78,7 @@ namespace Garnet.cluster
         private unsafe void WriteInto(IDevice device, ulong address, ReadOnlySpan<byte> buffer, int size, int segmentId = -1)
         {
             if (writeCheckpointBufferPool == null)
-                writeCheckpointBufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+                writeCheckpointBufferPool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
 
             long numBytesToWrite = size;
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
@@ -86,15 +86,15 @@ namespace Garnet.cluster
             var pbuffer = writeCheckpointBufferPool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
             }
 
             if (writeCheckpointSemaphore == null) writeCheckpointSemaphore = new(0);
 
             if (segmentId == -1)
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
+                device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, IOCallback, null);
             else
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
+                device.WriteAsync((IntPtr)pbuffer.BufferPtr, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
             writeCheckpointSemaphore.Wait();
 
             pbuffer.Return();

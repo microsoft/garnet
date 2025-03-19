@@ -116,14 +116,12 @@ namespace Garnet.server
 
             try
             {
-                sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment,
-                    sectorAlignedMemoryPoolAlignment);
-                sectorAlignedMemoryHll2 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment,
-                    sectorAlignedMemoryPoolAlignment);
+                sectorAlignedMemoryHll1 ??= SectorAlignedMemory.Allocate(hllBufferSize, alignment: sectorAlignedMemoryPoolAlignment);
+                sectorAlignedMemoryHll2 ??= SectorAlignedMemory.Allocate(hllBufferSize, alignment: sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
-                var dstMergeBuffer = new SpanByteAndMemory(srcReadBuffer, hllBufferSize);
-                var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
+                var dstMergeBuffer = SpanByteAndMemory.FromPinnedSpan(sectorAlignedMemoryHll1.AsValidSpan());
+                var srcMergeBuffer = SpanByteAndMemory.FromPinnedSpan(sectorAlignedMemoryHll1.AsValidSpan());
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -146,24 +144,28 @@ namespace Garnet.server
                     var sbSrcHLL = srcMergeBuffer.SpanByte;
                     var sbDstHLL = dstMergeBuffer.SpanByte;
 
-                    var srcHLL = sbSrcHLL.ToPointer();
-                    var dstHLL = sbDstHLL.ToPointer();
+                    var srcHLLPtr = sbSrcHLL.ToPointer();
+                    var dstHLLPtr = sbDstHLL.ToPointer();
 
                     if (!isFirst)
                     {
                         isFirst = true;
                         if (i == input.parseState.Count - 1)
-                            count = HyperLogLog.DefaultHLL.Count(srcMergeBuffer.SpanByte.ToPointer());
+                        {
+                            count = HyperLogLog.DefaultHLL.Count(sbSrcHLL.ToPointer());
+                        }
                         else
-                            Buffer.MemoryCopy(srcHLL, dstHLL, sbSrcHLL.Length, sbSrcHLL.Length);
+                        {
+                            Buffer.MemoryCopy(srcHLLPtr, dstHLLPtr, sbSrcHLL.Length, sbSrcHLL.Length);
+                        }
                         continue;
                     }
 
-                    HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
+                    HyperLogLog.DefaultHLL.TryMerge(srcHLLPtr, dstHLLPtr, sbDstHLL.Length);
 
                     if (i == input.parseState.Count - 1)
                     {
-                        count = HyperLogLog.DefaultHLL.Count(dstHLL);
+                        count = HyperLogLog.DefaultHLL.Count(dstHLLPtr);
                     }
                 }
             }
@@ -209,8 +211,8 @@ namespace Garnet.server
 
             try
             {
-                sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
+                sectorAlignedMemoryHll1 ??= SectorAlignedMemory.Allocate(hllBufferSize, sectorAlignedMemoryPoolAlignment);
+                var readBufferPtr = sectorAlignedMemoryHll1.GetValidPointer();
 
                 var dstKey = input.parseState.GetArgSliceByRef(0).SpanByte;
 
@@ -220,7 +222,7 @@ namespace Garnet.server
 
                     var currInput = new RawStringInput(RespCommand.PFMERGE);
 
-                    var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
+                    var mergeBuffer = SpanByteAndMemory.FromPinnedSpan(sectorAlignedMemoryHll1.AsValidSpan());
                     var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
 
                     var status = GET(ref srcKey, ref currInput, ref mergeBuffer, ref currLockableContext);
@@ -228,7 +230,7 @@ namespace Garnet.server
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
                     // Invalid Type
-                    if (*(long*)readBuffer == -1)
+                    if (*(long*)readBufferPtr == -1)
                     {
                         error = true;
                         break;

@@ -49,9 +49,9 @@ namespace Garnet.common
         public Stream Read(string path)
         {
             using var device = GetDevice(path);
-            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var pool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
             ReadInto(device, pool, 0, out var buffer, MaxConfigFileSizeAligned);
-            pool.Free();
+            pool.Dispose();
 
             // Remove trailing zeros
             int lastIndex = Array.FindLastIndex(buffer, b => b != 0);
@@ -63,43 +63,43 @@ namespace Garnet.common
         {
             using var device = GetDevice(path);
             var bytesToWrite = GetBytesToWrite(data, device);
-            var pool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var pool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
 
             // Get a sector-aligned buffer from the pool and copy _buffer into it.
             var buffer = pool.Get((int)bytesToWrite);
             fixed (byte* bufferRaw = data)
             {
-                Buffer.MemoryCopy(bufferRaw, buffer.aligned_pointer, data.Length, data.Length);
+                Buffer.MemoryCopy(bufferRaw, buffer.BufferPtr, data.Length, data.Length);
             }
 
             // Write to the device and wait for the device to signal the semaphore that the write is complete.
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)buffer.aligned_pointer, 0, (uint)bytesToWrite, IOCallback, semaphore);
+            device.WriteAsync((IntPtr)buffer.BufferPtr, 0, (uint)bytesToWrite, IOCallback, semaphore);
             semaphore.Wait();
 
             // Free the sector-aligned buffer
             buffer.Return();
-            pool.Free();
+            pool.Dispose();
         }
 
         protected abstract IDevice GetDevice(string path);
 
         protected abstract long GetBytesToWrite(byte[] bytes, IDevice device);
 
-        protected static unsafe void ReadInto(IDevice device, SectorAlignedBufferPool pool, ulong address, out byte[] buffer, int size, ILogger logger = null)
+        protected static unsafe void ReadInto(IDevice device, SectorAlignedMemoryPool pool, ulong address, out byte[] buffer, int size, ILogger logger = null)
         {
             using var semaphore = new SemaphoreSlim(0);
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
                 (uint)numBytesToRead, IOCallback, semaphore);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 

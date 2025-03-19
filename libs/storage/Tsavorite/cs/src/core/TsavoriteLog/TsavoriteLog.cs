@@ -2794,7 +2794,7 @@ namespace Tsavorite.core
                 else
                 {
                     int requiredBytes = headerSize + length;
-                    if (ctx.record.available_bytes >= requiredBytes)
+                    if (ctx.record.AvailableBytes >= requiredBytes)
                     {
                         ctx.completedRead.Release();
                     }
@@ -2820,7 +2820,7 @@ namespace Tsavorite.core
             }
             else
             {
-                if (ctx.record.available_bytes < headerSize)
+                if (ctx.record.AvailableBytes < headerSize)
                 {
                     logger?.LogDebug("No record header present at address: {address}", ctx.logicalAddress);
                     ctx.record.Return();

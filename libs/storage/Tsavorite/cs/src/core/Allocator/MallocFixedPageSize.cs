@@ -357,7 +357,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    result.mem = new SectorAlignedMemory((int)writeSize, (int)device.SectorSize);
+                    result.mem = SectorAlignedMemory.Allocate((int)writeSize, device.SectorSize);
                     bool prot = false;
                     if (!epoch.ThisInstanceProtected())
                     {
@@ -365,17 +365,17 @@ namespace Tsavorite.core
                         epoch.Resume();
                     }
 
-                    Buffer.MemoryCopy((void*)pointers[i], result.mem.aligned_pointer, writeSize, writeSize);
+                    Buffer.MemoryCopy((void*)pointers[i], result.mem.BufferPtr, writeSize, writeSize);
                     int j = 0;
                     if (i == 0) j += AllocateChunkSize * RecordSize;
                     for (; j < writeSize; j += sizeof(HashBucket))
                     {
-                        skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
+                        skipReadCache((HashBucket*)(result.mem.BufferPtr + j));
                     }
 
                     if (prot) epoch.Suspend();
 
-                    device.WriteAsync((IntPtr)result.mem.aligned_pointer, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                    device.WriteAsync((IntPtr)result.mem.BufferPtr, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
                 }
                 numBytesWritten += writeSize;
             }

@@ -149,7 +149,7 @@ namespace Tsavorite.core
 
         #region Contained classes and related
         /// <summary>Buffer pool</summary>
-        internal SectorAlignedBufferPool bufferPool;
+        internal SectorAlignedMemoryPool bufferPool;
 
         /// <summary>This hlog is an instance of a Read cache</summary>
         protected readonly bool IsReadCache = false;
@@ -375,7 +375,7 @@ namespace Tsavorite.core
 
             if (ownedEpoch)
                 epoch.Dispose();
-            bufferPool.Free();
+            bufferPool.Dispose();
 
             FlushEvent.Dispose();
             notifyFlushedUntilAddressSemaphore?.Dispose();
@@ -660,7 +660,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
 
-            bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
+            bufferPool ??= new SectorAlignedMemoryPool(recordSize: 1, sectorSize);
 
             if (BufferSize > 0)
             {
@@ -1412,15 +1412,15 @@ namespace Tsavorite.core
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
             var record = bufferPool.Get((int)alignedReadLength);
-            record.valid_offset = (int)(fileOffset - alignedFileOffset);
-            record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
-            record.required_bytes = numBytes;
+            record.ValidOffset = (int)(fileOffset - alignedFileOffset);
+            record.AvailableBytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            record.RequiredBytes = numBytes;
 
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>);
             asyncResult.context = context;
             asyncResult.context.record = record;
             device.ReadAsync(alignedFileOffset,
-                        (IntPtr)asyncResult.context.record.aligned_pointer,
+                        (IntPtr)asyncResult.context.record.BufferPtr,
                         alignedReadLength,
                         callback,
                         asyncResult);
@@ -1442,12 +1442,12 @@ namespace Tsavorite.core
             alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
 
             context.record = bufferPool.Get((int)alignedReadLength);
-            context.record.valid_offset = (int)(fileOffset - alignedFileOffset);
-            context.record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
-            context.record.required_bytes = numBytes;
+            context.record.ValidOffset = (int)(fileOffset - alignedFileOffset);
+            context.record.AvailableBytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            context.record.RequiredBytes = numBytes;
 
             device.ReadAsync(alignedFileOffset,
-                        (IntPtr)context.record.aligned_pointer,
+                        (IntPtr)context.record.BufferPtr,
                         alignedReadLength,
                         callback,
                         context);
@@ -1718,8 +1718,8 @@ namespace Tsavorite.core
             try
             {
                 var record = ctx.record.GetValidPointer();
-                int requiredBytes = _wrapper.GetRequiredRecordSize((long)record, ctx.record.available_bytes);
-                if (ctx.record.available_bytes >= requiredBytes)
+                int requiredBytes = _wrapper.GetRequiredRecordSize((long)record, ctx.record.AvailableBytes);
+                if (ctx.record.AvailableBytes >= requiredBytes)
                 {
                     Debug.Assert(!_wrapper.GetInfoFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
 
