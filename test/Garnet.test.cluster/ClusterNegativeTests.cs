@@ -12,12 +12,18 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
+#if DEBUG
+using Garnet.common;
+#endif
+
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
     public class ClusterNegativeTests
     {
         ClusterTestContext context;
+
+        readonly int timeout = (int)TimeSpan.FromSeconds(15).TotalSeconds;
 
         readonly Dictionary<string, LogLevel> monitorTests = [];
 
@@ -142,5 +148,38 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("+OK\r\n", resp);
             }
         }
+
+#if DEBUG
+        //[Test, Order(23)]
+        public void ClusterExceptionAtReplicaAofSyncStart([Values] bool enableDisklessSync)
+        {
+            ExceptionScenarioHelper.EnableException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: enableDisklessSync, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            // Ensure node is known
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+            ClassicAssert.AreEqual("Debug scenario triggered FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS", resp);
+
+            var role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
+            ClassicAssert.AreEqual("master", role.Value);
+
+            resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+            ClassicAssert.AreEqual("Debug scenario triggered FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS", resp);
+
+            ExceptionScenarioHelper.DisableException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+        }
+#endif
     }
 }

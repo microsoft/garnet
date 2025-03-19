@@ -1879,10 +1879,10 @@ namespace Garnet.test.cluster
             }
         }
 
-        public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, ILogger logger = null)
+        public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
-            return ClusterReplicate(replicaNodeIndex, primaryId, logger: logger);
+            return ClusterReplicate(replicaNodeIndex, primaryId, failEx: failEx, logger: logger);
         }
 
         public string ClusterReplicate(int sourceNodeIndex, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)
@@ -1893,7 +1893,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                List<object> args = async ? ["replicate", primaryNodeId, "async"] : ["replicate", primaryNodeId];
+                List<object> args = async ? ["replicate", primaryNodeId, "async"] : ["replicate", primaryNodeId, "sync"];
                 var result = (string)server.Execute("cluster", args);
                 ClassicAssert.AreEqual("OK", result);
                 return result;
