@@ -38,6 +38,13 @@ namespace Garnet.server
         /// </summary>
         internal int StackTop { get; private set; }
 
+        /// <summary>
+        /// If execution has left this wrapper in a dangerous (but not illegal) state, this will be set.
+        /// 
+        /// At the next convenient point, this <see cref="LuaStateWrapper"/> should be disposed and recreated.
+        /// </summary>
+        internal bool NeedsDispose { get; private set; }
+
         internal unsafe LuaStateWrapper(LuaMemoryManagementMode memMode, int? memLimitBytes, ILogger logger)
         {
             // As an emergency thing, we need a logger (any logger) if Lua is going to panic
@@ -179,25 +186,14 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryPushBuffer(ReadOnlySpan<byte> buffer)
         {
-            // See: https://www.lua.org/source/5.4/lobject.h.html#TString
-            const int AllocationOverheadBytes = 1 + 1 + 8 + 8; // 2 bytes, 1 "int", 1 pointer
-
             AssertLuaStackNotFull();
 
-            // Technically Lua will fail if buffer is too big, but "too big" is UInt32.MaxValue or UInt64.MaxValue
-            // neither of which ReadOnlySpan<byte> can reach
-
-            var maximumAllocationSize = AllocationOverheadBytes + buffer.Length;
-
-            if (!ProbeAllocate(maximumAllocationSize))
-            {
-                return false;
-            }
+            EnterInfallibleAllocationRegion();
 
             NativeMethods.PushBuffer(state, buffer);
             UpdateStackTop(1);
 
-            return true;
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -372,16 +368,18 @@ namespace Garnet.server
         /// 
         /// Note this will CRASH if there is insufficient memory to create the ref.
         /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
-        /// 
-        /// TODO: Can this be removed?
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int UnsafeRef()
+        internal bool TryRef(out int ret)
         {
-            var ret = NativeMethods.Ref(state, (int)LuaRegistry.Index);
+            AssertLuaStackNotEmpty();
+
+            EnterInfallibleAllocationRegion();
+
+            ret = NativeMethods.Ref(state, (int)LuaRegistry.Index);
             UpdateStackTop(-1);
 
-            return ret;
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -401,42 +399,14 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryCreateTable(int numArr, int numRec)
         {
-            // Bytes needed just from creating a Table
-            // see: https://www.lua.org/source/5.4/lobject.h.html#Table
-            const int AllocationOverheadBytes =
-                8 + 1 + 1 +     // CommonHeader: 1 pointer, 2 bytes
-                1 + 1 +         // Table: 2 bytes
-                8 + 8 + 8 + 8 + // Table: 1 "int", 3 pointers
-                8 + 8;          // Table: 2 pointers
-
-            // Bytes for each record
-            // see: https://www.lua.org/source/5.4/lobject.h.html#Node
-            const int NodeBytes =
-                8 +     // Value union: equivalent to 1 pointer
-                1 +     // TValuefields: 1 byte
-                1 + 8 + // NodeKey: 1 byte, 1 "int"
-                8;      // Value union: equivalent to 1 pointer
-
-            // Bytes for each array value
-            // see: https://www.lua.org/source/5.4/lobject.h.html#TValue
-            const int ValueBytes = 8 + 1; // TValuefields, 1 pointer (from Value union) & 1 byte
-
-            // Extra padding since we're probing _once_ but Lua will actually do up-to-three allocations
-            const int PaddingBytes = NodeBytes + ValueBytes;
-
             AssertLuaStackNotFull();
 
-            var neededBytes = AllocationOverheadBytes + (numArr * ValueBytes) + (numRec * NodeBytes) + PaddingBytes;
-
-            if (!ProbeAllocate(neededBytes))
-            {
-                return false;
-            }
+            EnterInfallibleAllocationRegion();
 
             NativeMethods.CreateTable(state, numArr, numRec);
             UpdateStackTop(1);
 
-            return true;
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -458,19 +428,18 @@ namespace Garnet.server
         /// This should be used for all SetGlobals into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// 
-        /// Note this will CRASH if there is insufficient memory to create or update the global.
-        /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
-        /// 
-        /// TODO: Can this be removed?
         /// </summary>
-        internal void SetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
+        internal bool TrySetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
         {
             AssertLuaStackNotEmpty();
+
+            EnterInfallibleAllocationRegion();
 
             NativeMethods.SetGlobal(state, nullTerminatedGlobalName);
 
             UpdateStackTop(-1);
+
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -536,32 +505,18 @@ namespace Garnet.server
         /// Call to convert a number on the stack to a string in the same slot.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly bool TryNumberToString(int stackIndex, out ReadOnlySpan<byte> str)
+        internal bool TryNumberToString(int stackIndex, out ReadOnlySpan<byte> str)
         {
-            // See: https://www.lua.org/source/5.4/lobject.h.html#TString
-            const int AllocationOverheadBytes = 1 + 1 + 8 + 8; // 2 bytes, 1 "int", 1 pointer
-
-            // See: https://www.lua.org/source/5.4/lobject.c.html#MAXNUMBER2STR
-            const int MaxNumberToString = 44;
-
-            // Worst case, a number can will turn into a 44-character string
-            // So probe for that before attempting any conversion
-            const int ProbeBytes = AllocationOverheadBytes + MaxNumberToString;
-
             AssertLuaStackIndexInBounds(stackIndex);
 
             Debug.Assert(Type(stackIndex) is LuaType.Number, "Called with non-number");
 
-            if (!ProbeAllocate(ProbeBytes))
-            {
-                str = default;
-                return false;
-            }
+            EnterInfallibleAllocationRegion();
 
             var convRes = NativeMethods.CheckBuffer(state, stackIndex, out str);
             Debug.Assert(convRes, "Conversion failed, this should not happen");
 
-            return true;
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -627,18 +582,17 @@ namespace Garnet.server
 
         /// <summary>
         /// Call to register a function in the Lua global namespace.
-        /// 
-        /// Note this will CRASH if there is insufficient memory to create or update the global.
-        /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
-        /// 
-        /// TODO: Can this be removed?
         /// </summary>
-        internal unsafe void Register(ReadOnlySpan<byte> nullTerminatedName, delegate* unmanaged[Cdecl]<nint, int> function)
+        internal unsafe bool TryRegister(ReadOnlySpan<byte> nullTerminatedName, delegate* unmanaged[Cdecl]<nint, int> function)
         {
             PushCFunction(function);
 
+            EnterInfallibleAllocationRegion();
+
             NativeMethods.SetGlobal(state, nullTerminatedName);
             UpdateStackTop(-1);
+
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -767,25 +721,43 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Checks to see if an allocation of a given size would succeed, given the current <see cref="ILuaAllocator"/>.
+        /// Enter a region where allocation calls against the <see cref="customAllocator"/> cannot fail.
+        /// 
+        /// Must be paired with a call to <see cref="TryExitInfallibleAllocationRegion"/>, which indicates if
+        /// an OOM should be raised.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private readonly bool ProbeAllocate(int numBytes)
+        private readonly void EnterInfallibleAllocationRegion()
+        {
+            if (customAllocator == null)
+            {
+                return;
+            }
+
+            customAllocator.EnterInfallibleAllocationRegion();
+        }
+
+        /// <summary>
+        /// Exit a previously entered infallible allocation region.
+        /// 
+        /// If an allocation occurred that SHOULD have failed, false is returned.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryExitInfallibleAllocationRegion()
         {
             if (customAllocator == null)
             {
                 return true;
             }
 
-            var hasSpace = customAllocator.ProbeAllocate(numBytes);
-            if (!hasSpace)
-            {
-                NativeMethods.GC(state, LuaGC.Collect);
+            var ret = customAllocator.TryExitInfallibleAllocationRegion();
 
-                hasSpace = customAllocator.ProbeAllocate(numBytes);
+            if (ret)
+            {
+                NeedsDispose = true;
             }
 
-            return hasSpace;
+            return ret;
         }
 
         // Conditional compilation checks

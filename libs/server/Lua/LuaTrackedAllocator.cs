@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -18,21 +20,30 @@ namespace Garnet.server
 
         private int allocatedBytes;
 
+        private bool isInfallible;
+        private object infallibleAllocations;
+
         internal LuaTrackedAllocator(int? limitBytes)
         {
             this.limitBytes = limitBytes;
         }
 
         /// <inheritdoc/>
-        public bool ProbeAllocate(int sizeBytes)
+        public void EnterInfallibleAllocationRegion()
         {
-            if (limitBytes == null)
-            {
-                return true;
-            }
+            Debug.Assert(!isInfallible, "Cannot recursively enter an infallible region");
 
-            var space = limitBytes.Value - allocatedBytes;
-            return space >= sizeBytes;
+            isInfallible = true;
+        }
+
+        /// <inheritdoc/>
+        public bool TryExitInfallibleAllocationRegion()
+        {
+            Debug.Assert(isInfallible, "Cannot exit an infallible region that hasn't been entered");
+
+            isInfallible = false;
+
+            return infallibleAllocations == null;
         }
 
         /// <inheritdoc/>
@@ -42,6 +53,12 @@ namespace Garnet.server
             {
                 if (allocatedBytes + sizeBytes > limitBytes)
                 {
+                    if (isInfallible)
+                    {
+                        failed = false;
+                        return ref InfallibleAllocate(sizeBytes);
+                    }
+
                     failed = true;
                     return ref Unsafe.NullRef<byte>();
                 }
@@ -63,6 +80,12 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Free(ref byte start, int sizeBytes)
         {
+            if (infallibleAllocations != null && IsInfallibleAllocation(ref start))
+            {
+                // Just ignore these
+                return;
+            }
+
             NativeMemory.Free(Unsafe.AsPointer(ref start));
 
             if (sizeBytes > 0)
@@ -84,10 +107,28 @@ namespace Garnet.server
                 return ref start;
             }
 
+            if (infallibleAllocations != null && IsInfallibleAllocation(ref start))
+            {
+                failed = false;
+                ref var ret = ref InfallibleAllocate(newSizeBytes);
+                MemoryMarshal.CreateReadOnlySpan(ref start, Math.Min(newSizeBytes, oldSizeBytes)).CopyTo(MemoryMarshal.CreateSpan(ref ret, newSizeBytes));
+
+                return ref ret;
+            }
+
             if (limitBytes != null)
             {
                 if (allocatedBytes + delta > limitBytes)
                 {
+                    if (isInfallible)
+                    {
+                        failed = false;
+                        ref var ret = ref InfallibleAllocate(newSizeBytes);
+                        MemoryMarshal.CreateReadOnlySpan(ref start, Math.Min(newSizeBytes, oldSizeBytes)).CopyTo(MemoryMarshal.CreateSpan(ref ret, newSizeBytes));
+
+                        return ref ret;
+                    }
+
                     failed = true;
                     return ref Unsafe.NullRef<byte>();
                 }
@@ -108,6 +149,56 @@ namespace Garnet.server
 
             var ptr = NativeMemory.Realloc(Unsafe.AsPointer(ref start), (nuint)newSizeBytes);
             return ref Unsafe.AsRef<byte>(ptr);
+        }
+
+        /// <summary>
+        /// Allocate a new pinned byte[] and root it in <see cref="infallibleAllocations"/>.
+        /// </summary>
+        private ref byte InfallibleAllocate(int sizeBytes)
+        {
+            var ret = GC.AllocateUninitializedArray<byte>(sizeBytes, pinned: true);
+            if (infallibleAllocations == null)
+            {
+                infallibleAllocations = ret;
+            }
+            else if (infallibleAllocations is byte[] firstAlloc)
+            {
+                var container = new List<byte[]>() { firstAlloc, ret };
+                infallibleAllocations = container;
+            }
+            else
+            {
+                var container = (List<byte[]>)infallibleAllocations;
+                container.Add(ret);
+            }
+
+            return ref MemoryMarshal.GetArrayDataReference(ret);
+        }
+
+        /// <summary>
+        /// Returns true if <paramref name="byteStart"/> points into an infallible allocations.
+        /// </summary>
+        private bool IsInfallibleAllocation(ref byte byteStart)
+        {
+            if (infallibleAllocations is byte[] arr)
+            {
+                ref var arrStart = ref MemoryMarshal.GetArrayDataReference(arr);
+                return Unsafe.AreSame(ref arrStart, ref byteStart);
+            }
+            else
+            {
+                var container = (List<byte[]>)infallibleAllocations;
+                foreach (var containedArr in container)
+                {
+                    ref var arrStart = ref MemoryMarshal.GetArrayDataReference(containedArr);
+                    if (Unsafe.AreSame(ref arrStart, ref byteStart))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
     }
 }

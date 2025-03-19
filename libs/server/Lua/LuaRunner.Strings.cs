@@ -254,12 +254,12 @@ namespace Garnet.server
             /// </summary>
             private static int ConstantStringToRegistry(ref LuaStateWrapper state, ReadOnlySpan<byte> str)
             {
-                if (!state.TryPushBuffer(str))
+                if (!state.TryPushBuffer(str) || !state.TryRef(out var ret))
                 {
                     throw new GarnetException("Insufficient space in Lua VM for constant string");
                 }
 
-                return state.UnsafeRef();
+                return ret;
             }
         }
     }

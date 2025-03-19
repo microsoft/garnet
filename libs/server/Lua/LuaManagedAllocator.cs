@@ -26,8 +26,15 @@ namespace Garnet.server
         private readonly List<LuaLimitedManagedAllocator> subAllocators = [];
         public LuaManagedAllocator() { }
 
+
         /// <inheritdoc/>
-        public bool ProbeAllocate(int sizeBytes)
+        public void EnterInfallibleAllocationRegion()
+        {
+            // Allocations cannot fail, don't bother tracking
+        }
+
+        /// <inheritdoc/>
+        public bool TryExitInfallibleAllocationRegion()
         => true;
 
         /// <inheritdoc/>

@@ -3099,7 +3099,14 @@ namespace Garnet.server
 
                 Debug.Assert(state.Type(2) == LuaType.Function, "Unexpected type returned from load_sandboxed");
 
-                functionRegistryIndex = state.UnsafeRef();
+                if(!state.TryRef(out functionRegistryIndex))
+                {
+                    // Uh-oh, couldn't save the function under the registry
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.LUA_out_of_memory, ref resp.BufferCur, resp.BufferEnd))
+                        resp.SendAndReset();
+
+                    return 0;
+                }
             }
             else
             {

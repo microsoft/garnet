@@ -185,6 +185,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Attempt to remove the script with the given hash from the cache.
+        /// </summary>
+        internal void Remove(ScriptHashKey key)
+        {
+            if (scriptCache.Remove(key, out var runner))
+            {
+                runner.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Clear the session script cache
         /// </summary>
         public void Clear()

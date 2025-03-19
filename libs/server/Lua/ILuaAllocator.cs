@@ -16,9 +16,19 @@ namespace Garnet.server
     internal interface ILuaAllocator
     {
         /// <summary>
-        /// Returns true if a call to <see cref="AllocateNew(int, out bool)"/> with this size would succeed.
+        /// Enter a region where allocations cannot fail.
+        /// 
+        /// Must be paired with a call to <see cref="TryExitInfallibleAllocationRegion"/>, which indicates if
+        /// an OOM should be raised.
         /// </summary>
-        bool ProbeAllocate(int sizeBytes);
+        void EnterInfallibleAllocationRegion();
+
+        /// <summary>
+        /// Exit a previously entered infallible allocation region.
+        /// 
+        /// If an allocation occurred that SHOULD have failed, false is returned.
+        /// </summary>
+        bool TryExitInfallibleAllocationRegion();
 
         /// <summary>
         /// Allocate a new chunk of memory of at least <paramref name="sizeBytes"/> size.

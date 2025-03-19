@@ -144,7 +144,7 @@ namespace Garnet.server
                 curHead = origin + len;
             }
         }
-                
+
         private static (int Start, ulong[] ByteMask) NoScriptDetails = InitializeNoScriptDetails();
 
         // References into Registry on the Lua side
@@ -194,6 +194,13 @@ namespace Garnet.server
         int keysArrCapacity, argvArrCapacity;
 
         /// <summary>
+        /// If an invocation ran into an error that has left the <see cref="LuaRunner"/> in a bad (but legal) state, 
+        /// returns true indicating the <see cref="LuaRunner"/> should be recreated at the next convenience.
+        /// </summary>
+        public bool NeedsDispose
+        => state.NeedsDispose;
+
+        /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
         public unsafe LuaRunner(
@@ -241,18 +248,16 @@ namespace Garnet.server
 
             state = new LuaStateWrapper(memMode, memLimitBytes, this.logger);
 
-            if (!state.TryCreateTable(InitialKeysCapacity, 0))
+            if (!state.TryCreateTable(InitialKeysCapacity, 0) || !state.TrySetGlobal("KEYS\0"u8))
             {
                 throw new GarnetException("Insufficient space in Lua VM for KEYS");
             }
-            state.SetGlobal("KEYS\0"u8);
             keysArrCapacity = InitialKeysCapacity;
 
-            if (!state.TryCreateTable(InitialArgvCapacity, 0))
+            if (!state.TryCreateTable(InitialArgvCapacity, 0) || !state.TrySetGlobal("ARGV\0"u8))
             {
                 throw new GarnetException("Insufficient space in Lua VM for ARGV");
             }
-            state.SetGlobal("ARGV\0"u8);
             argvArrCapacity = InitialArgvCapacity;
 
             delegate* unmanaged[Cdecl]<nint, int> garnetCall;
@@ -273,42 +278,40 @@ namespace Garnet.server
                 garnetCall = &LuaRunnerTrampolines.GarnetCallNoSession;
             }
 
-            // Lua 5.4 does not provide these functions, but 5.1 does - so implement tehm
-            state.Register("garnet_atan2\0"u8, &LuaRunnerTrampolines.Atan2);
-            state.Register("garnet_cosh\0"u8, &LuaRunnerTrampolines.Cosh);
-            state.Register("garnet_frexp\0"u8, &LuaRunnerTrampolines.Frexp);
-            state.Register("garnet_ldexp\0"u8, &LuaRunnerTrampolines.Ldexp);
-            state.Register("garnet_log10\0"u8, &LuaRunnerTrampolines.Log10);
-            state.Register("garnet_pow\0"u8, &LuaRunnerTrampolines.Pow);
-            state.Register("garnet_sinh\0"u8, &LuaRunnerTrampolines.Sinh);
-            state.Register("garnet_tanh\0"u8, &LuaRunnerTrampolines.Tanh);
-            state.Register("garnet_maxn\0"u8, &LuaRunnerTrampolines.Maxn);
-            state.Register("garnet_loadstring\0"u8, &LuaRunnerTrampolines.LoadString);
+            // Lua 5.4 does not provide these functions, but 5.1 does - so implement them
+            Register(ref state, "garnet_atan2\0"u8, &LuaRunnerTrampolines.Atan2);
+            Register(ref state, "garnet_cosh\0"u8, &LuaRunnerTrampolines.Cosh);
+            Register(ref state, "garnet_frexp\0"u8, &LuaRunnerTrampolines.Frexp);
+            Register(ref state, "garnet_ldexp\0"u8, &LuaRunnerTrampolines.Ldexp);
+            Register(ref state, "garnet_log10\0"u8, &LuaRunnerTrampolines.Log10);
+            Register(ref state, "garnet_pow\0"u8, &LuaRunnerTrampolines.Pow);
+            Register(ref state, "garnet_sinh\0"u8, &LuaRunnerTrampolines.Sinh);
+            Register(ref state, "garnet_tanh\0"u8, &LuaRunnerTrampolines.Tanh);
+            Register(ref state, "garnet_maxn\0"u8, &LuaRunnerTrampolines.Maxn);
+            Register(ref state, "garnet_loadstring\0"u8, &LuaRunnerTrampolines.LoadString);
 
             // Things provided as Lua libraries, which we actually implement in .NET
-            state.Register("garnet_cjson_encode\0"u8, &LuaRunnerTrampolines.CJsonEncode);
-            state.Register("garnet_cjson_decode\0"u8, &LuaRunnerTrampolines.CJsonDecode);
-            state.Register("garnet_bit_tobit\0"u8, &LuaRunnerTrampolines.BitToBit);
-            state.Register("garnet_bit_tohex\0"u8, &LuaRunnerTrampolines.BitToHex);
+            Register(ref state, "garnet_cjson_encode\0"u8, &LuaRunnerTrampolines.CJsonEncode);
+            Register(ref state, "garnet_cjson_decode\0"u8, &LuaRunnerTrampolines.CJsonDecode);
+            Register(ref state, "garnet_bit_tobit\0"u8, &LuaRunnerTrampolines.BitToBit);
+            Register(ref state, "garnet_bit_tohex\0"u8, &LuaRunnerTrampolines.BitToHex);
             // garnet_bitop implements bnot, bor, band, xor, etc. but isn't directly exposed
-            state.Register("garnet_bitop\0"u8, &LuaRunnerTrampolines.Bitop);
-            state.Register("garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
-            state.Register("garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
-            state.Register("garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
-            state.Register("garnet_call\0"u8, garnetCall);
-            state.Register("garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
-            state.Register("garnet_log\0"u8, &LuaRunnerTrampolines.Log);
-            state.Register("garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
-            state.Register("garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
-            state.Register("garnet_unpack_trampoline\0"u8, &LuaRunnerTrampolines.UnpackTrampoline);
+            Register(ref state, "garnet_bitop\0"u8, &LuaRunnerTrampolines.Bitop);
+            Register(ref state, "garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
+            Register(ref state, "garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
+            Register(ref state, "garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
+            Register(ref state, "garnet_call\0"u8, garnetCall);
+            Register(ref state, "garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
+            Register(ref state, "garnet_log\0"u8, &LuaRunnerTrampolines.Log);
+            Register(ref state, "garnet_acl_check_cmd\0"u8, &LuaRunnerTrampolines.AclCheckCommand);
+            Register(ref state, "garnet_setresp\0"u8, &LuaRunnerTrampolines.SetResp);
+            Register(ref state, "garnet_unpack_trampoline\0"u8, &LuaRunnerTrampolines.UnpackTrampoline);
 
             var redisVersionBytes = Encoding.UTF8.GetBytes(redisVersion);
-            if (!state.TryPushBuffer(redisVersionBytes))
+            if (!state.TryPushBuffer(redisVersionBytes) || !state.TrySetGlobal("garnet_REDIS_VERSION\0"u8))
             {
                 throw new GarnetException("Insufficient space in Lua VM for redis version global");
             }
-
-            state.SetGlobal("garnet_REDIS_VERSION\0"u8);
 
             var redisVersionParsed = Version.Parse(redisVersion);
             var redisVersionNum =
@@ -316,7 +319,10 @@ namespace Garnet.server
                 ((byte)redisVersionParsed.Minor << 8) |
                 ((byte)redisVersionParsed.Build << 0);
             state.PushInteger(redisVersionNum);
-            state.SetGlobal("garnet_REDIS_VERSION_NUM\0"u8);
+            if (!state.TrySetGlobal("garnet_REDIS_VERSION_NUM\0"u8))
+            {
+                throw new GarnetException("Insufficient space in Lua VM for redis version number global");
+            }
 
             var loadRes = state.LoadBuffer(PrepareLoaderBlockBytes(allowedFunctions).Span);
             if (loadRes != LuaStatus.OK)
@@ -357,21 +363,42 @@ namespace Garnet.server
             }
 
             state.GetGlobal(LuaType.Table, "sandbox_env\0"u8);
-            sandboxEnvRegistryIndex = state.UnsafeRef();
+            if (!state.TryRef(out sandboxEnvRegistryIndex))
+            {
+                throw new GarnetException("Insufficient space in VM for sandbox_env ref");
+            }
 
             state.GetGlobal(LuaType.Function, "load_sandboxed\0"u8);
-            loadSandboxedRegistryIndex = state.UnsafeRef();
+            if (!state.TryRef(out loadSandboxedRegistryIndex))
+            {
+                throw new GarnetException("Insufficient space in VM for load_sandboxed ref");
+            }
 
             state.GetGlobal(LuaType.Function, "reset_keys_and_argv\0"u8);
-            resetKeysAndArgvRegistryIndex = state.UnsafeRef();
+            if (!state.TryRef(out resetKeysAndArgvRegistryIndex))
+            {
+                throw new GarnetException("Insufficient space in VM for reset_keys_and_argv ref");
+            }
 
             state.GetGlobal(LuaType.Function, "request_timeout\0"u8);
-            requestTimeoutRegsitryIndex = state.UnsafeRef();
+            if (!state.TryRef(out requestTimeoutRegsitryIndex))
+            {
+                throw new GarnetException("Insufficient space in VM for request_timeout ref");
+            }
 
             // Load all the constant strings into the VM
             constStrs = new(ref state);
 
             state.ExpectLuaStackEmpty();
+
+            // Attempt to register a function under the given name, throwing an exception if that fails
+            static void Register(ref LuaStateWrapper state, ReadOnlySpan<byte> name, delegate* unmanaged[Cdecl]<nint, int> function)
+            {
+                if (!state.TryRegister(name, function))
+                {
+                    throw new GarnetException($"Insufficient space in VM for {Encoding.UTF8.GetString(name[..^1])} global");
+                }
+            }
         }
 
         /// <summary>
@@ -1744,7 +1771,7 @@ namespace Garnet.server
                         else
                         {
                             // Force double to string for RESP2
-                            if(!runner.state.TryNumberToString(curTop + 1, out _))
+                            if (!runner.state.TryNumberToString(curTop + 1, out _))
                             {
                                 // Fail the whole serialization
                                 errConstStrIndex = runner.constStrs.OutOfMemory;
