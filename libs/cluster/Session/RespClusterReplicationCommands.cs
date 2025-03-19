@@ -59,7 +59,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var background = false;
+            var background = true;
             var nodeId = parseState.GetString(0);
 
             if (parseState.Count > 1)
@@ -371,9 +371,19 @@ namespace Garnet.cluster
                 primaryReplicaId,
                 entry,
                 beginAddress,
-                tailAddress);
-            while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
-                SendAndReset();
+                tailAddress,
+                out var errorMessage);
+
+            if (errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -402,7 +412,7 @@ namespace Garnet.cluster
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
                 _ = clusterProvider.replicationManager.TryAttachSync(syncMetadata, out errorMessage);
             else
-                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata);
+                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata, out errorMessage);
 
             if (!errorMessage.IsEmpty)
             {
