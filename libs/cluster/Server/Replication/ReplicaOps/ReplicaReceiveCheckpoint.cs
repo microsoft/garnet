@@ -311,10 +311,12 @@ namespace Garnet.cluster
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
             long beginAddress,
-            long recoveredReplicationOffset)
+            long recoveredReplicationOffset,
+            out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
+                errorMessage = [];
                 UpdateLastPrimarySyncTime();
 
                 logger?.LogInformation("Replica Recover MainStore: {storeVersion}>[{sIndexToken} {sHlogToken}]" +
@@ -369,6 +371,12 @@ namespace Garnet.cluster
                 TryUpdateMyPrimaryReplId(primaryReplicationId);
 
                 return ReplicationOffset;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(BeginReplicaRecover)}");
+                errorMessage = Encoding.ASCII.GetBytes(ex.Message);
+                return -1;
             }
             finally
             {

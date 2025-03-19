@@ -131,10 +131,11 @@ namespace Garnet.cluster
             return true;
         }
 
-        public long ReplicaRecoverDiskless(SyncMetadata primarySyncMetadata)
+        public long ReplicaRecoverDiskless(SyncMetadata primarySyncMetadata, out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
+                errorMessage = [];
                 logger?.LogSyncMetadata(LogLevel.Trace, nameof(ReplicaRecoverDiskless), primarySyncMetadata);
 
                 var aofBeginAddress = primarySyncMetadata.currentAofBeginAddress;
@@ -161,6 +162,12 @@ namespace Garnet.cluster
 
                 ReplicationOffset = replicationOffset;
                 return ReplicationOffset;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(ReplicaRecoverDiskless)}");
+                errorMessage = Encoding.ASCII.GetBytes(ex.Message);
+                return -1;
             }
             finally
             {
