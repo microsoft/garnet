@@ -165,7 +165,7 @@ namespace Garnet.server
                     }
                     catch (Exception ex)
                     {
-                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary
+                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary.
                         logger?.LogError(ex, "Error creating and registering network handler");
                         _ = Interlocked.Decrement(ref activeHandlerCount);
                         handler?.Dispose();
@@ -179,7 +179,8 @@ namespace Garnet.server
                     }
                     catch (Exception ex)
                     {
-                        // The handler will be disposed (and totalConnectionsDisposed incremented) when removed from the activeHandlers dictionary
+                        // The handler will be disposed, activeHandlerCount decremented, and totalConnectionsDisposed incremented, when removed from the activeHandlers dictionary
+                        // as part of socket exception handling in TcpNetworkHandlerBase.Start(), which will call NetworkHandler.DisposeImpl().
                         logger?.LogError(ex, "Error calling Start on network handler");
                         return true;
                     }
