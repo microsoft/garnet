@@ -267,6 +267,8 @@ namespace Tsavorite.core
 #if CHECK_FOR_LEAKS
             Interlocked.Increment(ref totalGets);
 #endif
+            numRecords = Math.Max(numRecords, 1);
+
             // How many sectors do we need?
             var sectorsRequired = (numRecords * recordSize + (sectorSize - 1)) / sectorSize;
             var level = Level(sectorsRequired);
