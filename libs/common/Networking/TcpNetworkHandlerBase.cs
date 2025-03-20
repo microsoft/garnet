@@ -63,7 +63,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
-            if (token == default) token = cancellationTokenSource.Token;
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             ExceptionScenarioHelper.TriggerException(ExceptionScenario.Network_After_TcpNetworkHandlerBase_Start_Server);
             base.Start(tlsOptions, remoteEndpointName, token);
@@ -72,7 +72,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public override async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
-            if (token == default) token = cancellationTokenSource.Token;
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             ExceptionScenarioHelper.TriggerException(ExceptionScenario.Network_After_TcpNetworkHandlerBase_Start_Server);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
@@ -81,7 +81,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Start(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
-            if (token == default) token = cancellationTokenSource.Token;
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             base.Start(tlsOptions, remoteEndpointName, token);
         }
@@ -89,7 +89,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public override async Task StartAsync(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
-            if (token == default) token = cancellationTokenSource.Token;
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
