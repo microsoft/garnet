@@ -165,7 +165,7 @@ namespace Garnet.server
                     }
                     catch (Exception ex)
                     {
-                        // We need to decrement the active handler cound and dispose because the handler was not added to the activeHandlers dictionary
+                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary
                         logger?.LogError(ex, "Error creating and registering network handler");
                         _ = Interlocked.Decrement(ref activeHandlerCount);
                         handler?.Dispose();
