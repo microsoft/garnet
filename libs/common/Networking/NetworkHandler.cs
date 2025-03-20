@@ -618,7 +618,7 @@ namespace Garnet.networking
             if (Interlocked.Increment(ref disposeCount) != 1)
             {
                 logger?.LogTrace("NetworkHandler.Dispose called multiple times");
-                throw new Exception("NetworkHandler.Dispose called multiple times");
+                return;
             }
 
             cancellationTokenSource?.Cancel();
