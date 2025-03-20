@@ -56,7 +56,6 @@ namespace Embedded.server
                         // Dispose the embedded handler (also disposes resources)
                         handler.Dispose();
                     }
-                    return handler;
                 }
                 else
                 {
