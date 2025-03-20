@@ -156,6 +156,8 @@ namespace Tsavorite.core
 
             // Index of page within the circular buffer
             var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+
+            Debug.Assert(IsAllocated(pageIndex));
             return (long)(pointers[pageIndex] + offset);
         }
 
