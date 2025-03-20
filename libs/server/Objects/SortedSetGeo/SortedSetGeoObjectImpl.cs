@@ -181,9 +181,13 @@ namespace Garnet.server
                 var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
 
                 // Read units
-                var units = input.parseState.Count > 2
-                    ? input.parseState.GetArgSliceByRef(2).ReadOnlySpan
-                    : "M"u8;
+                var units = GeoDistanceUnitType.M;
+
+                if (input.parseState.Count > 2)
+                {
+                    var validUnit = input.parseState.TryGetGeoDistanceUnit(2, out units);
+                    //Debug.Assert(validUnit);
+                }
 
                 if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
                 {
@@ -192,8 +196,7 @@ namespace Garnet.server
 
                     var distance = server.GeoHash.Distance(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
 
-                    var distanceValue = (units.Length == 1 && AsciiUtils.ToUpper(units[0]) == (byte)'M') ?
-                        distance : server.GeoHash.ConvertMetersToUnits(distance, units);
+                    var distanceValue = server.GeoHash.ConvertMetersToUnits(distance, units);
 
                     while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

@@ -355,6 +355,33 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Parse geo distance unit from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="value">Parsed value</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetGeoDistanceUnit(this SessionParseState parseState, int idx, out GeoDistanceUnitType value)
+        {
+            value = default;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("M"u8))
+                value = GeoDistanceUnitType.M;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("KM"u8))
+                value = GeoDistanceUnitType.KM;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("MI"u8))
+                value = GeoDistanceUnitType.MI;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("FT"u8))
+                value = GeoDistanceUnitType.FT;
+            else
+                return false;
+
+            return true;
+        }
+
         /// <summary>
         /// Tries to extract keys from the key specifications in the given RespCommandsInfo.
         /// </summary>

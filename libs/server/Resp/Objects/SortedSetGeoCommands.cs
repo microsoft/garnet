@@ -158,10 +158,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
-            var searchOpts = new GeoSearchOptions()
-            {
-                unit = "M"u8
-            };
+            var searchOpts = new GeoSearchOptions();
 
             int sourceIdx = 0, destIdx = -1;
             switch (command)
@@ -265,7 +262,12 @@ namespace Garnet.server
                 }
 
                 searchOpts.searchType = GeoSearchType.ByRadius;
-                searchOpts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                if (!input.parseState.TryGetGeoDistanceUnit(currTokenIdx++, out searchOpts.unit))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
 
             // Read the options
@@ -362,7 +364,12 @@ namespace Garnet.server
                         }
 
                         searchOpts.searchType = GeoSearchType.ByRadius;
-                        searchOpts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                        if (!input.parseState.TryGetGeoDistanceUnit(currTokenIdx++, out searchOpts.unit))
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         continue;
                     }
 
@@ -373,6 +380,7 @@ namespace Garnet.server
                             errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
                             break;
                         }
+                        searchOpts.searchType = GeoSearchType.ByBox;
 
                         if (input.parseState.Count - currTokenIdx < 3)
                         {
@@ -381,23 +389,33 @@ namespace Garnet.server
                         }
 
                         // Read width, height
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.boxWidth) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out var height))
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.boxWidth))
                         {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_WIDTH;
                             break;
                         }
+
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out var height))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_HEIGHT;
+                            break;
+                        }
+
                         searchOpts.boxHeight = height;
 
                         if (searchOpts.boxWidth < 0 || searchOpts.boxHeight < 0)
                         {
-                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE;
+                            errorMessage = CmdStrings.RESP_ERR_HEIGHT_OR_WIDTH_NEGATIVE;
                             break;
                         }
 
                         // Read units
-                        searchOpts.searchType = GeoSearchType.ByBox;
-                        searchOpts.unit = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                        if (!input.parseState.TryGetGeoDistanceUnit(currTokenIdx++, out searchOpts.unit))
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         continue;
                     }
                 }

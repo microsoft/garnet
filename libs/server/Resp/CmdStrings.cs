@@ -233,7 +233,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_ASYNC_PROTOCOL_CHANGE => "ERR protocol change is not allowed with pending async operations"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_FLOAT => "ERR min or max is not a float"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT => "ERR unsupported unit provided. please use M, KM, FT, MI"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_HEIGHT => "ERR need numeric height"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_HEIGHT_OR_WIDTH_NEGATIVE => "ERR height or width cannot be negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_RADIUS => "ERR need numeric radius"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_WIDTH => "ERR need numeric width"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_STRING => "ERR min or max not valid string range item"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_NEGATIVE => "ERR timeout is negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;

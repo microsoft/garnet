@@ -1,26 +1,29 @@
-﻿using System;
-
-namespace Garnet.server
+﻿namespace Garnet.server
 {
     /// <summary>
-    /// Type of GeoSearch
+    /// Distance Unit for GeoSearch
     /// </summary>
-    internal enum GeoSearchType : byte
+    public enum GeoDistanceUnitType : byte
     {
         /// <summary>
-        /// No defined order.
+        /// Meters
         /// </summary>
-        Undefined = 0,
+        M = 0,
 
         /// <summary>
-        /// Search inside circular area
+        /// Kilometers
         /// </summary>
-        ByRadius,
+        KM,
 
         /// <summary>
-        /// Search inside an axis-aligned rectangle
+        /// Miles
         /// </summary>
-        ByBox
+        MI,
+
+        /// <summary>
+        /// Foot
+        /// </summary>
+        FT
     }
 
     /// <summary>
@@ -63,13 +66,34 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Type of GeoSearch
+    /// </summary>
+    internal enum GeoSearchType : byte
+    {
+        /// <summary>
+        /// No defined order.
+        /// </summary>
+        Undefined = 0,
+
+        /// <summary>
+        /// Search inside circular area
+        /// </summary>
+        ByRadius,
+
+        /// <summary>
+        /// Search inside an axis-aligned rectangle
+        /// </summary>
+        ByBox
+    }
+
+    /// <summary>
     /// Small struct to store options for GEOSEARCH command
     /// </summary>
     public ref struct GeoSearchOptions
     {
         internal bool readOnly;
         internal GeoSearchType searchType;
-        internal ReadOnlySpan<byte> unit;
+        internal GeoDistanceUnitType unit;
         internal double radius;
         internal double boxWidth;
         internal double boxHeight

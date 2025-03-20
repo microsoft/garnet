@@ -742,7 +742,7 @@ namespace Garnet.test
             expectedResponse = "-ERR STORE option in GEORADIUSBYMEMBER is not compatible with WITHDIST, WITHHASH and WITHCOORD options\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("GEORADIUS_RO Sicily 15 37 100 km STORE a");
+            response = lightClientRequest.SendCommand("GEORADIUS_RO Sicily 15 37 100 km STORE a COUNT 5");
             expectedResponse = "-ERR syntax error\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
@@ -754,8 +754,20 @@ namespace Garnet.test
             expectedResponse = "-ERR need numeric radius\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            response = lightClientRequest.SendCommand("GEORADIUSBYMEMBER Sicily member 50 NM");
+            expectedResponse = "-ERR unsupported unit provided. please use M, KM, FT, MI\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             response = lightClientRequest.SendCommand("GEOSEARCHSTORE bar foo FROMMEMBER nx BYRADIUS 1 FT ANY COUNT 1");
             expectedResponse = "-ERR syntax error\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYBOX wide tall mi");
+            expectedResponse = "-ERR need numeric width\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYBOX 12345 -12345 KM");
+            expectedResponse = "-ERR height or width cannot be negative\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYRADIUS 0 m");

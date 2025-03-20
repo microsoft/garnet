@@ -6,8 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
 
-using Garnet.common;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -331,44 +329,32 @@ namespace Garnet.server
             return (latError, longError);
         }
 
-        public static double ConvertValueToMeters(double value, ReadOnlySpan<byte> units)
+        /// <summary>
+        /// Helper to convert kilometers, feet, or miles to meters.
+        /// </summary>
+        public static double ConvertValueToMeters(double value, GeoDistanceUnitType unit)
         {
-            if (units.EqualsUpperCaseSpanIgnoringCase("KM"u8))
+            return unit switch
             {
-                return value / 0.001;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("FT"u8))
-            {
-                return value / 3.28084;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("MI"u8))
-            {
-                return value / 0.000621371;
-            }
-
-            return value;
+                GeoDistanceUnitType.KM => value / 0.001,
+                GeoDistanceUnitType.FT => value / 3.28084,
+                GeoDistanceUnitType.MI => value / 0.000621371,
+                _ => value
+            };
         }
-
 
         /// <summary>
         /// Helper to convert meters to kilometers, feet, or miles
         /// </summary>
-        public static double ConvertMetersToUnits(double value, ReadOnlySpan<byte> units)
+        public static double ConvertMetersToUnits(double value, GeoDistanceUnitType unit)
         {
-            if (units.EqualsUpperCaseSpanIgnoringCase("KM"u8))
+            return unit switch
             {
-                return value * 0.001;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("FT"u8))
-            {
-                return value * 3.28084;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("MI"u8))
-            {
-                return value * 0.000621371;
-            }
-
-            return value;
+                GeoDistanceUnitType.KM => value * 0.001,
+                GeoDistanceUnitType.FT => value * 3.28084,
+                GeoDistanceUnitType.MI => value * 0.000621371,
+                _ => value
+            };
         }
     }
 }
