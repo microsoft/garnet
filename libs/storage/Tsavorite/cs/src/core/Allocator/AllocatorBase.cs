@@ -1420,7 +1420,7 @@ namespace Tsavorite.core
             asyncResult.context = context;
             asyncResult.context.record = record;
             device.ReadAsync(alignedFileOffset,
-                        (IntPtr)asyncResult.context.record.BufferPtr,
+                        (IntPtr)asyncResult.context.record.Pointer,
                         alignedReadLength,
                         callback,
                         asyncResult);
@@ -1447,7 +1447,7 @@ namespace Tsavorite.core
             context.record.RequiredBytes = numBytes;
 
             device.ReadAsync(alignedFileOffset,
-                        (IntPtr)context.record.BufferPtr,
+                        (IntPtr)context.record.Pointer,
                         alignedReadLength,
                         callback,
                         context);

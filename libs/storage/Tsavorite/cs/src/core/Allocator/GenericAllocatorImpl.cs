@@ -347,7 +347,7 @@ namespace Tsavorite.core
                         {
                             handle = new CountdownEvent(1)
                         };
-                        device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.BufferPtr + aligned_start,
+                        device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.Pointer + aligned_start,
                             (uint)sectorSize, AsyncReadPageCallback, result);
                         result.handle.Wait();
                     }
@@ -356,7 +356,7 @@ namespace Tsavorite.core
                         // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
                         Debug.Assert(numBytesToWrite <= buffer.Length);
 
-                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.BufferPtr + start,
+                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.Pointer + start,
                             numBytesToWrite - start, numBytesToWrite - start);
                     }
                 }
@@ -367,7 +367,7 @@ namespace Tsavorite.core
                         // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
                         Debug.Assert(numBytesToWrite <= buffer.Length);
 
-                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.BufferPtr + aligned_start,
+                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.Pointer + aligned_start,
                             numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
                     }
                 }
@@ -388,7 +388,7 @@ namespace Tsavorite.core
 
                 for (int i = start / RecordSize; i < end / RecordSize; i++)
                 {
-                    byte* recordPtr = buffer.BufferPtr + i * RecordSize;
+                    byte* recordPtr = buffer.Pointer + i * RecordSize;
 
                     // Retrieve reference to record struct
                     ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(recordPtr);
@@ -472,7 +472,7 @@ namespace Tsavorite.core
                             _objBuffer = bufferPool.Get(memoryStreamTotalLength);
 
                             fixed (void* src_ = ms.GetBuffer())
-                                Buffer.MemoryCopy(src_, _objBuffer.BufferPtr, memoryStreamTotalLength, memoryStreamActualLength);
+                                Buffer.MemoryCopy(src_, _objBuffer.Pointer, memoryStreamTotalLength, memoryStreamActualLength);
                         }
 
                         // Each address we calculated above is now an offset to objAddr; convert to the actual address.
@@ -496,7 +496,7 @@ namespace Tsavorite.core
                             asyncResult.done = new AutoResetEvent(false);
                             Debug.Assert(memoryStreamTotalLength > 0);
                             objlogDevice.WriteAsync(
-                                (IntPtr)_objBuffer.BufferPtr,
+                                (IntPtr)_objBuffer.Pointer,
                                 (int)(alignedDestinationAddress >> LogSegmentSizeBits),
                                 (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback<TContext>, asyncResult);
 
@@ -514,7 +514,7 @@ namespace Tsavorite.core
 
                                 asyncResult.freeBuffer2 = _objBuffer;
                                 objlogDevice.WriteAsync(
-                                    (IntPtr)_objBuffer.BufferPtr,
+                                    (IntPtr)_objBuffer.Pointer,
                                     (int)(alignedDestinationAddress >> LogSegmentSizeBits),
                                     (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
                             }
@@ -534,7 +534,7 @@ namespace Tsavorite.core
                 var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
 
                 // Finally write the hlog page
-                device.WriteAsync((IntPtr)buffer.BufferPtr + aligned_start, alignedDestinationAddress + (ulong)aligned_start,
+                device.WriteAsync((IntPtr)buffer.Pointer + aligned_start, alignedDestinationAddress + (ulong)aligned_start,
                     alignedNumBytesToWrite, callback, asyncResult);
             }
             finally
@@ -563,7 +563,7 @@ namespace Tsavorite.core
 
             if (!(KeyHasObjects() || ValueHasObjects()))
             {
-                device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.BufferPtr,
+                device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.Pointer,
                     aligned_read_length, callback, asyncResult);
                 return;
             }
@@ -577,7 +577,7 @@ namespace Tsavorite.core
             }
             asyncResult.objlogDevice = objlogDevice;
 
-            device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.BufferPtr,
+            device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.Pointer,
                     aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
 
@@ -620,7 +620,7 @@ namespace Tsavorite.core
             // Deserialize all objects until untilptr
             if (result.resumePtr < result.untilPtr)
             {
-                UnmanagedMemoryStream ms = new(result.freeBuffer2.BufferPtr, result.freeBuffer2.Length);
+                UnmanagedMemoryStream ms = new(result.freeBuffer2.Pointer, result.freeBuffer2.Length);
                 Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
                 ms.Dispose();
 
@@ -656,7 +656,7 @@ namespace Tsavorite.core
             result.objlogDevice.ReadAsync(
                 (int)((result.page - result.offset) >> (LogSegmentSizeBits - LogPageSizeBits)),
                 (ulong)startptr,
-                (IntPtr)objBuffer.BufferPtr, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
+                (IntPtr)objBuffer.Pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
         }
 
         /// <summary>
@@ -688,7 +688,7 @@ namespace Tsavorite.core
             objectLogDevice.ReadAsync(
                 (int)(context.logicalAddress >> LogSegmentSizeBits),
                 alignedFileOffset,
-                (IntPtr)asyncResult.context.objBuffer.BufferPtr,
+                (IntPtr)asyncResult.context.objBuffer.Pointer,
                 alignedReadLength,
                 callback,
                 asyncResult);
@@ -942,7 +942,7 @@ namespace Tsavorite.core
             }
 
             // Parse the key and value objects
-            var ms = new UnmanagedMemoryStream(ctx.objBuffer.BufferPtr, ctx.objBuffer.Length);
+            var ms = new UnmanagedMemoryStream(ctx.objBuffer.Pointer, ctx.objBuffer.Length);
             _ = ms.Seek(ctx.objBuffer.ValidOffset, SeekOrigin.Begin);
 
             if (KeyHasObjects())

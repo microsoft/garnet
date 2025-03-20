@@ -69,12 +69,12 @@ namespace Garnet.common
             var buffer = pool.Get((int)bytesToWrite);
             fixed (byte* bufferRaw = data)
             {
-                Buffer.MemoryCopy(bufferRaw, buffer.BufferPtr, data.Length, data.Length);
+                Buffer.MemoryCopy(bufferRaw, buffer.Pointer, data.Length, data.Length);
             }
 
             // Write to the device and wait for the device to signal the semaphore that the write is complete.
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)buffer.BufferPtr, 0, (uint)bytesToWrite, IOCallback, semaphore);
+            device.WriteAsync((IntPtr)buffer.Pointer, 0, (uint)bytesToWrite, IOCallback, semaphore);
             semaphore.Wait();
 
             // Free the sector-aligned buffer
@@ -93,13 +93,13 @@ namespace Garnet.common
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
+            device.ReadAsync(address, (IntPtr)pbuffer.Pointer,
                 (uint)numBytesToRead, IOCallback, semaphore);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.Pointer, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 

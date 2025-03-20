@@ -461,13 +461,13 @@ namespace Tsavorite.core
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
+            device.ReadAsync(address, (IntPtr)pbuffer.Pointer,
                 (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.Pointer, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 
@@ -489,10 +489,10 @@ namespace Tsavorite.core
             var pbuffer = bufferPool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.Pointer, size, size);
             }
 
-            device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, IOCallback, null);
+            device.WriteAsync((IntPtr)pbuffer.Pointer, address, (uint)numBytesToWrite, IOCallback, null);
             semaphore.Wait();
 
             pbuffer.Return();

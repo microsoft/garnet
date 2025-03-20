@@ -536,9 +536,9 @@ namespace Garnet.cluster
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
             if (segmentId == -1)
-                device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(address, (IntPtr)pbuffer.Pointer, (uint)numBytesToRead, IOCallback, null);
             else
-                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.BufferPtr, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.Pointer, (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
             return (pbuffer, (int)numBytesToRead);
         }

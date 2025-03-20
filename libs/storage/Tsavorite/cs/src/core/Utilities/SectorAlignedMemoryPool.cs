@@ -27,7 +27,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Pointer to the memory.
         /// </summary>
-        public byte* BufferPtr { get; private set; }
+        public byte* Pointer { get; private set; }
 
         /// <summary>
         /// Length of the memory.
@@ -102,7 +102,7 @@ namespace Tsavorite.core
         /// </summary>
         private SectorAlignedMemory(byte* buffer, int length)
         {
-            BufferPtr = buffer;
+            Pointer = buffer;
             Length = length;
             // Assume ctor is called for allocation and leave Free unset
         }
@@ -119,22 +119,22 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Frees the underlying unmanaged memory and sets <see cref="BufferPtr"/> to <see langword="null"/>
+        /// Frees the underlying unmanaged memory and sets <see cref="Pointer"/> to <see langword="null"/>
         /// </summary>
         public void Dispose()
         {
-            if (BufferPtr is not null)
+            if (Pointer is not null)
             {
-                NativeMemory.AlignedFree(BufferPtr);
+                NativeMemory.AlignedFree(Pointer);
                 GC.RemoveMemoryPressure(Length);
-                BufferPtr = null;
+                Pointer = null;
             }
         }
 
         /// <summary>
         /// Clear the underlying buffer.
         /// </summary>
-        public void Clear() => NativeMemory.Clear(BufferPtr, (nuint)Length);
+        public void Clear() => NativeMemory.Clear(Pointer, (nuint)Length);
 
         /// <summary>
         /// Return to the pool
@@ -146,20 +146,20 @@ namespace Tsavorite.core
         /// Get valid pointer
         /// </summary>
         /// <returns></returns>
-        public byte* GetValidPointer() => BufferPtr + ValidOffset;
+        public byte* GetValidPointer() => Pointer + ValidOffset;
 
         /// <summary>
         /// Gets a span over the allocated memory.
         /// </summary>
-        public Span<byte> AsSpan() => new(BufferPtr, Length);
+        public Span<byte> AsSpan() => new(Pointer, Length);
 
         /// <summary>
         /// Gets a valid span which is calculated using <see cref="ValidOffset"/>
         /// </summary>
-        public Span<byte> AsValidSpan() => new(BufferPtr + ValidOffset, Length - ValidOffset);
+        public Span<byte> AsValidSpan() => new(Pointer + ValidOffset, Length - ValidOffset);
 
         /// <inheritdoc/>
-        public override string ToString() => $"{(nuint)BufferPtr} {ValidOffset} {RequiredBytes} {AvailableBytes} {Free}";
+        public override string ToString() => $"{(nuint)Pointer} {ValidOffset} {RequiredBytes} {AvailableBytes} {Free}";
 
         /// <summary>
         /// Allocates memory aligned to a specified sector size and returns a new <see cref="SectorAlignedMemory"/> wrapping it.

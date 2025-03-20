@@ -125,15 +125,15 @@ namespace Tsavorite.core
                             prot = true;
                             epoch.Resume();
                         }
-                        Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.BufferPtr, chunkSize, chunkSize);
+                        Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.Pointer, chunkSize, chunkSize);
                         for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
                         {
-                            skipReadCache((HashBucket*)(result.mem.BufferPtr + j));
+                            skipReadCache((HashBucket*)(result.mem.Pointer + j));
                         }
                         if (prot)
                             epoch.Suspend();
 
-                        device.WriteAsync((IntPtr)result.mem.BufferPtr, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
+                        device.WriteAsync((IntPtr)result.mem.Pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                     }
                     if (throttleCheckpointFlushDelayMs >= 0)
                     {

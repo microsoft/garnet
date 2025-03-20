@@ -365,17 +365,17 @@ namespace Tsavorite.core
                         epoch.Resume();
                     }
 
-                    Buffer.MemoryCopy((void*)pointers[i], result.mem.BufferPtr, writeSize, writeSize);
+                    Buffer.MemoryCopy((void*)pointers[i], result.mem.Pointer, writeSize, writeSize);
                     int j = 0;
                     if (i == 0) j += AllocateChunkSize * RecordSize;
                     for (; j < writeSize; j += sizeof(HashBucket))
                     {
-                        skipReadCache((HashBucket*)(result.mem.BufferPtr + j));
+                        skipReadCache((HashBucket*)(result.mem.Pointer + j));
                     }
 
                     if (prot) epoch.Suspend();
 
-                    device.WriteAsync((IntPtr)result.mem.BufferPtr, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                    device.WriteAsync((IntPtr)result.mem.Pointer, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
                 }
                 numBytesWritten += writeSize;
             }

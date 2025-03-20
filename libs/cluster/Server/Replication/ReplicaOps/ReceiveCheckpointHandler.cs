@@ -75,7 +75,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void WriteInto(IDevice device, ulong address, ReadOnlySpan<byte> buffer, int size, int segmentId = -1)
+        private void WriteInto(IDevice device, ulong address, ReadOnlySpan<byte> buffer, int size, int segmentId = -1)
         {
             if (writeCheckpointBufferPool == null)
                 writeCheckpointBufferPool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
@@ -84,17 +84,14 @@ namespace Garnet.cluster
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = writeCheckpointBufferPool.Get((int)numBytesToWrite);
-            fixed (byte* bufferRaw = buffer)
-            {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
-            }
+            buffer.Slice(0, size).CopyTo(pbuffer.AsSpan());
 
             if (writeCheckpointSemaphore == null) writeCheckpointSemaphore = new(0);
 
             if (segmentId == -1)
-                device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, IOCallback, null);
+                device.WriteAsync((IntPtr)pbuffer.Pointer, address, (uint)numBytesToWrite, IOCallback, null);
             else
-                device.WriteAsync((IntPtr)pbuffer.BufferPtr, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
+                device.WriteAsync((IntPtr)pbuffer.Pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
             writeCheckpointSemaphore.Wait();
 
             pbuffer.Return();

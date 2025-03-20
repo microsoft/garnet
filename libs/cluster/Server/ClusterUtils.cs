@@ -47,10 +47,10 @@ namespace Garnet.cluster
             var pbuffer = pool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = _buffer)
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.BufferPtr, size, size);
+                Buffer.MemoryCopy(bufferRaw, pbuffer.Pointer, size, size);
             }
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)pbuffer.BufferPtr, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
+            device.WriteAsync((IntPtr)pbuffer.Pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
             semaphore.Wait();
 
             pbuffer.Return();
@@ -73,13 +73,13 @@ namespace Garnet.cluster
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.BufferPtr,
+            device.ReadAsync(address, (IntPtr)pbuffer.Pointer,
                 (uint)numBytesToRead, logger == null ? IOCallback : logger.IOCallback, semaphore);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
             fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.BufferPtr, bufferRaw, numBytesToRead, numBytesToRead);
+                Buffer.MemoryCopy(pbuffer.Pointer, bufferRaw, numBytesToRead, numBytesToRead);
             pbuffer.Return();
         }
 

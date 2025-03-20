@@ -317,7 +317,7 @@ namespace Tsavorite.core
             long dataStartAddress = tailAddress + HeaderSize;
             maxEntryLength = (int)(pageEndAddress - dataStartAddress);
             int offset = (int)(dataStartAddress & PageSizeMask);
-            physicalAddress = (long)buffer.BufferPtr + offset;
+            physicalAddress = (long)buffer.Pointer + offset;
         }
 
         /// <summary>
@@ -330,7 +330,7 @@ namespace Tsavorite.core
             if (entryLength > 0)
             {
                 int offset = (int)(tailAddress & PageSizeMask);
-                SetBlockHeader(entryLength, type, buffer.BufferPtr + offset);
+                SetBlockHeader(entryLength, type, buffer.Pointer + offset);
 
                 long oldTailAddress = tailAddress;
                 tailAddress += HeaderSize + entryLength;
@@ -364,7 +364,7 @@ namespace Tsavorite.core
             var asyncResult = new PageAsyncFlushResult<Empty> { count = 1, freeBuffer1 = buffer };
             var alignedBlockSize = Align(tailAddress - pageStartAddress);
             Interlocked.Increment(ref issuedFlush);
-            deltaLogDevice.WriteAsync((IntPtr)buffer.BufferPtr + startOffset,
+            deltaLogDevice.WriteAsync((IntPtr)buffer.Pointer + startOffset,
                         (ulong)pageStartAddress,
                         (uint)alignedBlockSize, AsyncFlushPageToDeviceCallback, asyncResult);
             flushedUntilAddress = tailAddress;

@@ -206,8 +206,8 @@ namespace Tsavorite.core
 
                         unsafe
                         {
-                            Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.BufferPtr, recordSize, recordSize);
-                            currentPhysicalAddress = (long)memory.BufferPtr;
+                            Buffer.MemoryCopy((byte*)currentPhysicalAddress, memory.Pointer, recordSize, recordSize);
+                            currentPhysicalAddress = (long)memory.Pointer;
                         }
                     }
                     finally
