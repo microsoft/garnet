@@ -270,7 +270,7 @@ namespace Tsavorite.core
             numRecords = Math.Max(numRecords, 1);
 
             // How many sectors do we need?
-            var sectorsRequired = (sectorSize + (numRecords * recordSize + (sectorSize - 1))) / sectorSize;
+            var sectorsRequired = (numRecords * recordSize + (sectorSize - 1)) / sectorSize;
             var level = Level(sectorsRequired);
             if (queue[level] == null)
             {
