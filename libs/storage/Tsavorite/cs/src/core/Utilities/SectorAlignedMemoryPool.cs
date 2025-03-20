@@ -185,8 +185,8 @@ namespace Tsavorite.core
         /// <returns>Returns a pool owned SectorAlignedMemory instance wrapping the allocated memory.</returns>
         internal static SectorAlignedMemory Allocate(int byteCount, uint alignment, SectorAlignedMemoryPool pool, int level)
         {
-            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment);
-            NativeMemory.Clear(memoryPtr, (uint)byteCount);
+            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount + alignment, alignment);
+            NativeMemory.Clear(memoryPtr, (uint)byteCount + alignment);
             GC.AddMemoryPressure(byteCount);
             return new SectorAlignedMemory(memoryPtr, byteCount, pool, level);
         }
