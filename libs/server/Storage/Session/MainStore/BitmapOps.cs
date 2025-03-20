@@ -137,30 +137,26 @@ namespace Garnet.server
                     minBitmapLen = Math.Min(len, minBitmapLen);
                 }
 
-                #region performBitop
-                // Allocate result buffers
-
-                // We need to store the bitmap length as 32-bit integer before the destination bitmap buffer.
-                // We request for additional alignment amount of space to keep the destination bitmap buffer aligned.
-                var requiredOutputLength = maxBitmapLen + sectorAlignedMemoryPoolAlignment;
-
-                var bufferSize = (int)Math.Max(bitmapBufferSize, BitOperations.RoundUpToPowerOf2((uint)maxBitmapLen));
-                if (sectorAlignedMemoryBitmap == null || requiredOutputLength > bitmapBufferSize)
-                {
-                    bitmapBufferSize = bufferSize;
-
-                    sectorAlignedMemoryBitmap?.Dispose();
-                    sectorAlignedMemoryBitmap = SectorAlignedMemory.Allocate(bitmapBufferSize, sectorAlignedMemoryPoolAlignment);
-                }
-
-                var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
-
                 // Check if at least one key is found and execute bitop
                 if (keysFound > 0)
                 {
+                    // We need to store the bitmap length as 32-bit integer before the destination bitmap buffer.
+                    // We request for additional alignment amount of space to keep the destination bitmap buffer aligned.
+                    var requiredOutputLength = maxBitmapLen + sectorAlignedMemoryPoolAlignment;
+
+                    var bufferSize = (int)Math.Max(bitmapBufferSize, BitOperations.RoundUpToPowerOf2((uint)maxBitmapLen));
+                    if (sectorAlignedMemoryBitmap == null || requiredOutputLength > bitmapBufferSize)
+                    {
+                        bitmapBufferSize = bufferSize;
+
+                        sectorAlignedMemoryBitmap?.Dispose();
+                        sectorAlignedMemoryBitmap = SectorAlignedMemory.Allocate(bitmapBufferSize, sectorAlignedMemoryPoolAlignment);
+                    }
+
+                    var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
+
                     //1. Multi-way bitmap merge
                     _ = BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, keysFound, minBitmapLen, (byte)bitOp);
-                    #endregion
 
                     if (maxBitmapLen > 0)
                     {
