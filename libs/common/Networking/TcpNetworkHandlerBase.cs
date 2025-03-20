@@ -182,9 +182,9 @@ namespace Garnet.common
 
         void Dispose(SocketAsyncEventArgs e)
         {
-            e?.AcceptSocket.Dispose();
+            e.AcceptSocket.Dispose();
             DisposeImpl();
-            e?.Dispose();
+            e.Dispose();
         }
 
         void RecvEventArgCompletedWithTLS(object sender, SocketAsyncEventArgs e) =>
