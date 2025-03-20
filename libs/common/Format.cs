@@ -36,12 +36,12 @@ namespace Garnet.common
         /// <summary>
         /// Parse address list string containing address separated by whitespace
         /// </summary>
-        /// <param name="addressList"></param>
-        /// <param name="port"></param>
-        /// <param name="endpoints"></param>
-        /// <param name="errorHostnameOrAddress"></param>
-        /// <param name="useForBind"></param>
-        /// <param name="logger"></param>
+        /// <param name="addressList">Space separated string of IP addresses</param>
+        /// <param name="port">Endpoint Port</param>
+        /// <param name="endpoints">List of endpoints generated from the input IPs</param>
+        /// <param name="errorHostnameOrAddress">Output error if any</param>
+        /// <param name="useForBind">Differentiate validation between use for --bind parsing or CLUSTER MEET</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if parse and address validation was successful, otherwise false</returns>
         public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress, bool useForBind = false, ILogger logger = null)
         {
@@ -54,7 +54,7 @@ namespace Garnet.common
                 return true;
             }
 
-            var addresses = addressList.Split(' ');
+            var addresses = addressList.Trim().Split(' ');
             var endpointList = new List<EndPoint>();
             // Validate addresses and create endpoints
             foreach (var singleAddressOrHostname in addresses)
