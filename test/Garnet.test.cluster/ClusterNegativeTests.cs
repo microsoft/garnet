@@ -171,13 +171,13 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
 
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            ClassicAssert.AreEqual("Debug scenario triggered FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS", resp);
+            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS}", resp);
 
             var role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
             ClassicAssert.AreEqual("master", role.Value);
 
             resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            ClassicAssert.AreEqual("Debug scenario triggered FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS", resp);
+            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS}", resp);
 
             ExceptionScenarioHelper.DisableException(ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
         }
