@@ -25,12 +25,12 @@ namespace Tsavorite.core
         private const int FreeBitMask = 1 << 31;
 
         /// <summary>
-        /// Pointer to the buffer
+        /// Pointer to the memory.
         /// </summary>
         public byte* BufferPtr { get; private set; }
 
         /// <summary>
-        /// Length of the buffer.
+        /// Length of the memory.
         /// </summary>
         public int Length { get; set; }
 
@@ -170,6 +170,7 @@ namespace Tsavorite.core
         public static SectorAlignedMemory Allocate(int byteCount, uint alignment)
         {
             var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment);
+            NativeMemory.Clear(memoryPtr, (uint)byteCount);
             GC.AddMemoryPressure(byteCount);
             return new SectorAlignedMemory(memoryPtr, byteCount);
         }
@@ -185,6 +186,7 @@ namespace Tsavorite.core
         internal static SectorAlignedMemory Allocate(int byteCount, uint alignment, SectorAlignedMemoryPool pool, int level)
         {
             var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment);
+            NativeMemory.Clear(memoryPtr, (uint)byteCount);
             GC.AddMemoryPressure(byteCount);
             return new SectorAlignedMemory(memoryPtr, byteCount, pool, level);
         }
@@ -221,25 +223,26 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Returns a memory buffer to the pool.
+        /// Returns a memory to the pool.
         /// </summary>
-        /// <param name="page"></param>
+        /// <param name="level">The level of the page in the pool.</param>
+        /// <param name="memory">The memory instance.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Return(int level, SectorAlignedMemory page)
+        public void Return(int level, SectorAlignedMemory memory)
         {
 #if CHECK_FOR_LEAKS
             Interlocked.Increment(ref totalReturns);
 #endif
 
-            page.AvailableBytes = 0;
-            page.RequiredBytes = 0;
-            page.ValidOffset = 0;
+            memory.AvailableBytes = 0;
+            memory.RequiredBytes = 0;
+            memory.ValidOffset = 0;
 
-            page.Clear();
-            page.Free = true;
+            memory.Clear();
+            memory.Free = true;
 
             Debug.Assert(queue[level] != null);
-            queue[level].Enqueue(page);
+            queue[level].Enqueue(memory);
         }
 
         /// <summary>

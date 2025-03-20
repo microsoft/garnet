@@ -33,6 +33,7 @@ namespace Tsavorite.core
 
             pointers[pageIndex] = (byte*)NativeMemory.AlignedAlloc((uint)pageSize, alignment: (uint)sectorSize);
             GC.AddMemoryPressure(pageSize);
+            Clear(pageIndex);
         }
 
         public void Clear(int pageIndex)
