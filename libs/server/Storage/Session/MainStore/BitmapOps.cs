@@ -140,8 +140,8 @@ namespace Garnet.server
                 #region performBitop
                 // Allocate result buffers
 
-                // We need to store the bitmap as 32-bit integer,
-                // but to keep the destination bitmap buffer aligned, we for ask whatever our alignment is.
+                // We need to store the bitmap length as 32-bit integer before the destination bitmap buffer.
+                // We request for additional alignment amount of space to keep the destination bitmap buffer aligned.
                 var requiredOutputLength = maxBitmapLen + sectorAlignedMemoryPoolAlignment;
 
                 var bufferSize = (int)Math.Max(bitmapBufferSize, BitOperations.RoundUpToPowerOf2((uint)maxBitmapLen));
