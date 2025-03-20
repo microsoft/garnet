@@ -174,7 +174,7 @@ namespace Tsavorite.core
         /// <summary>Delete in-memory portion of the log</summary>
         internal override void DeleteFromMemory()
         {
-            for (int i = 0; i < values.Length; i++)
+            for (int i = 0; i < values?.Length; i++)
             {
                 values[i] = null;
             }
