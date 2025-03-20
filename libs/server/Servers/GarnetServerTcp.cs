@@ -162,21 +162,29 @@ namespace Garnet.server
                         handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
-
-                        handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
-                        IncrementConnectionsReceived();
-                        return true;
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Error starting network handler");
-                        Interlocked.Decrement(ref activeHandlerCount);
+                        // We need to decrement the active handler cound and dispose because the handler was not added to the activeHandlers dictionary
+                        logger?.LogError(ex, "Error creating and registering network handler");
+                        _ = Interlocked.Decrement(ref activeHandlerCount);
                         handler?.Dispose();
+                    }
+
+                    try
+                    {
+                        IncrementConnectionsReceived();
+                        handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
+                    }
+                    catch (Exception ex)
+                    {
+                        // The handler will be disposed (and totalConnectionsDisposed incremented) when removed from the activeHandlers dictionary
+                        logger?.LogError(ex, "Error calling Start on network handler");
                     }
                 }
                 else
                 {
-                    Interlocked.Decrement(ref activeHandlerCount);
+                    _ = Interlocked.Decrement(ref activeHandlerCount);
                     e.AcceptSocket.Dispose();
                 }
             }
