@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -24,6 +25,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -40,6 +42,28 @@ namespace Garnet.test
         public long MemorySize;
         public long ReadCacheBeginAddress;
         public long ReadCacheTailAddress;
+    }
+
+    /// <summary>
+    /// Get all attributes that start with given prefix.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Parameter)]
+    public sealed class ValuesPrefixAttribute : NUnitAttribute, IParameterDataSource
+    {
+        readonly string prefix;
+
+        public ValuesPrefixAttribute(string prefix)
+        {
+            this.prefix = prefix;
+        }
+
+        public IEnumerable GetData(IParameterInfo parameter)
+        {
+            return new ValuesAttribute()
+                .GetData(parameter)
+                .Cast<object>()
+                .Where(e => e.ToString().StartsWith(prefix));
+        }
     }
 
     internal static class TestUtils
