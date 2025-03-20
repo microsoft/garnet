@@ -160,7 +160,7 @@ namespace Garnet.server
                     try
                     {
                         handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
-                        ExceptionScenarioHelper.TriggerException(ExceptionScenario.Network_After_GarnetServerTcp_Handler_Created);
+                        ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_GarnetServerTcp_Handler_Created);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
                     }

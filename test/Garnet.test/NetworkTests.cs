@@ -30,9 +30,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void NetworkExceptions([ValuesPrefix("Network")] ExceptionScenario exception)
+        public void NetworkExceptions([ValuesPrefix("Network")] ExceptionInjectionType exception)
         {
-            ExceptionScenarioHelper.EnableException(exception);
+            ExceptionInjectionHelper.EnableException(exception);
             try
             {
                 for (int i = 0; i < 3; i++)
@@ -57,7 +57,7 @@ namespace Garnet.test
             }
             finally
             {
-                ExceptionScenarioHelper.DisableException(exception);
+                ExceptionInjectionHelper.DisableException(exception);
             }
 
             // Finally, we should connect successfully
