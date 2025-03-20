@@ -13,8 +13,4 @@
     <ProjectReference Include="..\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
-  </ItemGroup>
-
 </Project>
