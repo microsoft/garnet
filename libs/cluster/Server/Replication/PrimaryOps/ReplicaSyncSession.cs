@@ -294,7 +294,7 @@ namespace Garnet.cluster
                 }
 
                 // Check what happens if we fail after recovery and start AOF stream
-                ExceptionScenarioHelper.TriggerException(ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);
 
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to

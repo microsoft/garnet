@@ -152,9 +152,9 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         [Test, Order(3)]
-        public void ClusterExceptionAtReplicaAofSyncStart([Values] bool enableDisklessSync)
+        public void ClusterExceptionInjectionAtPrimarySyncSession([Values] bool enableDisklessSync)
         {
-            ExceptionScenarioHelper.EnableException(ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);
 
             var primaryIndex = 0;
             var replicaIndex = 1;
@@ -171,15 +171,15 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
 
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS}", resp);
+            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start}", resp);
 
             var role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
             ClassicAssert.AreEqual("master", role.Value);
 
             resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS}", resp);
+            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start}", resp);
 
-            ExceptionScenarioHelper.DisableException(ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+            ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);
         }
 #endif
 
