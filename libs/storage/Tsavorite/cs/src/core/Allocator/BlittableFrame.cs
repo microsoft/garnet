@@ -31,7 +31,8 @@ namespace Tsavorite.core
             Debug.Assert(pageIndex < frameSize);
             Debug.Assert(!IsAllocated(pageIndex));
 
-            pointers[pageIndex] = (byte*)NativeMemory.AlignedAlloc((uint)pageSize, alignment: (uint)sectorSize);
+            pointers[pageIndex] = (byte*)NativeMemory.AlignedAlloc((uint)(pageSize + sectorSize), alignment: (uint)sectorSize); // TODO: Over allocation for diagnostics, fix and remove.
+            NativeMemory.Clear(pointers[pageIndex], (uint)(pageSize + sectorSize)); // TODO: Over allocation for diagnostics, fix and remove.
             GC.AddMemoryPressure(pageSize);
             Clear(pageIndex);
         }

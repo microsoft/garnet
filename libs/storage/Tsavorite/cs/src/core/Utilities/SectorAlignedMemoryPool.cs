@@ -169,8 +169,8 @@ namespace Tsavorite.core
         /// <returns>Returns a SectorAlignedMemory instance wrapping the allocated memory.</returns>
         public static SectorAlignedMemory Allocate(int byteCount, uint alignment)
         {
-            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount, alignment);
-            NativeMemory.Clear(memoryPtr, (uint)byteCount);
+            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)(byteCount + alignment), alignment); // TODO: Over allocation for diagnostics, fix and remove.
+            NativeMemory.Clear(memoryPtr, (uint)byteCount + alignment); // TODO: Over allocation for diagnostics, fix and remove.
             GC.AddMemoryPressure(byteCount);
             return new SectorAlignedMemory(memoryPtr, byteCount);
         }
@@ -185,8 +185,8 @@ namespace Tsavorite.core
         /// <returns>Returns a pool owned SectorAlignedMemory instance wrapping the allocated memory.</returns>
         internal static SectorAlignedMemory Allocate(int byteCount, uint alignment, SectorAlignedMemoryPool pool, int level)
         {
-            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount + alignment, alignment);
-            NativeMemory.Clear(memoryPtr, (uint)byteCount + alignment);
+            var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount + alignment, alignment); // TODO: Over allocation for diagnostics, fix and remove.
+            NativeMemory.Clear(memoryPtr, (uint)byteCount + alignment); // TODO: Over allocation for diagnostics, fix and remove.
             GC.AddMemoryPressure(byteCount);
             return new SectorAlignedMemory(memoryPtr, byteCount, pool, level);
         }
@@ -270,7 +270,7 @@ namespace Tsavorite.core
             numRecords = Math.Max(numRecords, 1);
 
             // How many sectors do we need?
-            var sectorsRequired = (numRecords * recordSize + (sectorSize - 1)) / sectorSize;
+            var sectorsRequired = (sectorSize + (numRecords * recordSize + (sectorSize - 1))) / sectorSize;
             var level = Level(sectorsRequired);
             if (queue[level] == null)
             {
