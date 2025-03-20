@@ -65,6 +65,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
+            var cmd = nameof(command);
 
             switch (command)
             {
@@ -81,43 +82,37 @@ namespace Garnet.server
 
             if (parseState.Count < paramsRequiredInCommand)
             {
-                return AbortWithWrongNumberOfArguments(nameof(command));
-            }
-
-            SortedSetOperation op;
-
-            switch (command)
-            {
-                case RespCommand.GEOHASH:
-                    op = SortedSetOperation.GEOHASH;
-                    break;
-                case RespCommand.GEODIST:
-                    op = SortedSetOperation.GEODIST;
-                    break;
-                case RespCommand.GEOPOS:
-                    op = SortedSetOperation.GEOPOS;
-                    break;
-                default:
-                    throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
+                return AbortWithWrongNumberOfArguments(cmd);
             }
 
             // Get the key for the Sorted Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            // Prepare input and call the storage layer
-            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op },
-                                        ref parseState, startIdx: 1);
-            var outputFooter = new GarnetObjectStoreOutput
-            {
-                SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr))
-            };
-            var status = storageApi.GeoCommands(sbKey, ref input, ref outputFooter);
+            var op =
+                command switch
+                {
+                    RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
+                    RespCommand.GEODIST => SortedSetOperation.GEODIST,
+                    RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
+                    RespCommand.GEOSEARCH => SortedSetOperation.GEOSEARCH,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
+
+            // Prepare input
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
+
+            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
-                    return true;
+                    break;
                 case GarnetStatus.NOTFOUND:
                     switch (op)
                     {
@@ -136,8 +131,8 @@ namespace Garnet.server
                             }
                             break;
                     }
-                    break;
 
+                    break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
@@ -147,10 +142,13 @@ namespace Garnet.server
             return true;
         }
 
-
         /// <summary>
         /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// GEOSEARCHSTORE: Store the the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// GEORADIUS: Return or store the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUS_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER: Return or store the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEORADIUSBYMEMBER_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
@@ -160,8 +158,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
-            var byRadius = false;
-            var byMember = false;
             var searchOpts = new GeoSearchOptions()
             {
                 unit = "M"u8
@@ -172,22 +168,16 @@ namespace Garnet.server
             {
                 case RespCommand.GEORADIUS:
                     paramsRequiredInCommand = 5;
-                    byRadius = true;
                     break;
                 case RespCommand.GEORADIUS_RO:
                     paramsRequiredInCommand = 5;
-                    byRadius = true;
                     searchOpts.readOnly = true;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                     paramsRequiredInCommand = 4;
-                    byMember = true;
-                    byRadius = true;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     paramsRequiredInCommand = 4;
-                    byMember = true;
-                    byRadius = true;
                     searchOpts.readOnly = true;
                     break;
                 case RespCommand.GEOSEARCH:
@@ -224,10 +214,11 @@ namespace Garnet.server
             var storeDist = false;
             var currTokenIdx = 0;
 
-            if (byRadius)
+            if (command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUS_RO ||
+                command == RespCommand.GEORADIUSBYMEMBER || command == RespCommand.GEORADIUSBYMEMBER_RO)
             {
                 // Read coordinates, note we already checked the number of arguments earlier.
-                if (byMember)
+                if (command == RespCommand.GEORADIUSBYMEMBER || command == RespCommand.GEORADIUSBYMEMBER_RO)
                 {
                     // From Member
                     searchOpts.fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
@@ -236,15 +227,20 @@ namespace Garnet.server
                 else
                 {
                     if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
-                        !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat) ||
-                        (searchOpts.lon < GeoHash.LongitudeMin) ||
+                        !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat))
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    if ((searchOpts.lon < GeoHash.LongitudeMin) ||
                         (searchOpts.lat < GeoHash.LatitudeMin) ||
                         (searchOpts.lon > GeoHash.LongitudeMax) ||
-                        (searchOpts.lat > GeoHash.LatitudeMax)
-                        )
+                        (searchOpts.lat > GeoHash.LatitudeMax))
                     {
-                        errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-
+                        errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrLonLat,
+                                                               searchOpts.lon, searchOpts.lat));
                         while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                             SendAndReset();
                         return true;
@@ -256,7 +252,7 @@ namespace Garnet.server
                 // Radius
                 if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.radius))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_RADIUS, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -278,7 +274,7 @@ namespace Garnet.server
                 // Read token
                 var tokenBytes = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
-                if (!byRadius)
+                if (command == RespCommand.GEOSEARCH || command == RespCommand.GEOSEARCHSTORE)
                 {
                     if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FROMMEMBER))
                     {
@@ -315,15 +311,23 @@ namespace Garnet.server
 
                         // Read coordinates
                         if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat) ||
-                            (searchOpts.lon < GeoHash.LongitudeMin) ||
-                            (searchOpts.lat < GeoHash.LatitudeMin) ||
-                            (searchOpts.lon > GeoHash.LongitudeMax) ||
-                            (searchOpts.lat > GeoHash.LatitudeMax)
+                            !input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat)
                            )
                         {
                             errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
                             break;
+                        }
+
+                        if ((searchOpts.lon < GeoHash.LongitudeMin) ||
+                            (searchOpts.lat < GeoHash.LatitudeMin) ||
+                            (searchOpts.lon > GeoHash.LongitudeMax) ||
+                            (searchOpts.lat > GeoHash.LatitudeMax))
+                        {
+                            errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrLonLat,
+                                                                   searchOpts.lon, searchOpts.lat));
+                            while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
                         }
 
                         searchOpts.origin = GeoOriginType.FromLonLat;
@@ -347,7 +351,7 @@ namespace Garnet.server
                         // Read radius and units
                         if (!input.parseState.TryGetDouble(currTokenIdx++, out searchOpts.radius))
                         {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_RADIUS;
                             break;
                         }
 
@@ -412,7 +416,7 @@ namespace Garnet.server
 
                 if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
-                    if (input.parseState.Count - currTokenIdx == 0)
+                    if (input.parseState.Count == currTokenIdx)
                     {
                         argNumError = true;
                         break;
@@ -426,23 +430,30 @@ namespace Garnet.server
 
                     if (countValue <= 0)
                     {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE;
+                        errorMessage = CmdStrings.RESP_ERR_COUNT_IS_NOT_POSITIVE;
                         break;
                     }
 
                     searchOpts.countValue = countValue;
-                    continue;
-                }
 
-                if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8))
-                {
-                    searchOpts.withCountAny = true;
+                    if (input.parseState.Count > currTokenIdx)
+                    {
+                        var peekArg = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                        if (peekArg.EqualsUpperCaseSpanIgnoringCase("ANY"u8))
+                        {
+                            searchOpts.withCountAny = true;
+                            currTokenIdx++;
+                            continue;
+                        }
+                    }
+
                     continue;
                 }
 
                 if (!searchOpts.readOnly)
                 {
-                    if (byRadius && tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
+                    if ((command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUSBYMEMBER)
+                        && tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
                     {
                         if (input.parseState.Count == currTokenIdx)
                         {
@@ -456,7 +467,7 @@ namespace Garnet.server
 
                     if (tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
                     {
-                        if (byRadius)
+                        if ((command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUSBYMEMBER))
                         {
                             if (input.parseState.Count == currTokenIdx)
                             {
@@ -507,13 +518,16 @@ namespace Garnet.server
 
             if (destIdx != -1)
             {
-                searchOpts.readOnly = false;
                 if ((searchOpts.withDist || searchOpts.withCoord || searchOpts.withHash))
                 {
                     errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrStoreCommand,
                                                            command.ToString()));
                 }
                 searchOpts.withDist = storeDist;
+            }
+            else
+            {
+                searchOpts.readOnly = true;
             }
 
             // Check if we encountered an error while checking the parse state
@@ -535,7 +549,8 @@ namespace Garnet.server
             if (destIdx != -1)
             {
                 var destinationKey = parseState.GetArgSliceByRef(destIdx);
-                status = storageApi.GeoSearchStore(sourceKey, destinationKey, searchOpts, ref input, ref output);
+                status = storageApi.GeoSearchStore(sourceKey, destinationKey,
+                                                   ref searchOpts, ref input, ref output);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -549,7 +564,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.GeoSearch(sourceKey, searchOpts, ref input, ref output);
+                status = storageApi.GeoSearch(sourceKey, ref searchOpts, ref input, ref output);
 
                 if (status == GarnetStatus.OK)
                 {

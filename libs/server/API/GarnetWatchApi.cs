@@ -217,11 +217,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus GeoSearch(ArgSlice key, GeoSearchOptions opts,
+        public GarnetStatus GeoSearch(ArgSlice key, ref GeoSearchOptions opts,
                                       ref ObjectInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.GeoSearch(key, opts, ref input, ref output);
+            return garnetApi.GeoSearch(key, ref opts, ref input, ref output);
         }
 
         /// <inheritdoc />

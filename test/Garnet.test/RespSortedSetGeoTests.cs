@@ -727,11 +727,11 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 15 37 BYBOX 400 400 km COUNT 0 ANY");
-            expectedResponse = "-ERR value is out of range, must be positive.\r\n";
+            expectedResponse = "-ERR COUNT must be > 0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 181 37 BYBOX 400 400 km COUNT 1 ANY");
-            expectedResponse = "-ERR value is not a valid float\r\n";
+            expectedResponse = "-ERR invalid longitude,latitude pair 181.000000,37.000000\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEORADIUS Sicily 15 37 100 km WITHCOORD STORE a");
@@ -750,11 +750,19 @@ namespace Garnet.test
             expectedResponse = "-ERR wrong number of arguments for 'GEORADIUS' command\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            response = lightClientRequest.SendCommand("GEORADIUSBYMEMBER Sicily member lotsa km");
+            expectedResponse = "-ERR need numeric radius\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEOSEARCHSTORE bar foo FROMMEMBER nx BYRADIUS 1 FT ANY COUNT 1");
+            expectedResponse = "-ERR syntax error\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             response = lightClientRequest.SendCommand("GEOSEARCH foo FROMMEMBER bar BYRADIUS 0 m");
             expectedResponse = "*0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 180 90 BYRADIUS 100 M COUNT 1 ANY");
+            response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMLONLAT 180 90 COUNT 1 ANY BYRADIUS 100 M");
             expectedResponse = "*0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }

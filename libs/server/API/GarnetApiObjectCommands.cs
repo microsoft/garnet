@@ -182,14 +182,14 @@ namespace Garnet.server
             => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus GeoSearch(ArgSlice key, GeoSearchOptions opts,
+        public GarnetStatus GeoSearch(ArgSlice key, ref GeoSearchOptions opts,
                                       ref ObjectInput input, ref SpanByteAndMemory output)
-            => storageSession.GeoSearch(key, opts, ref input, ref output, ref objectContext);
+            => storageSession.GeoSearch(key, ref opts, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, GeoSearchOptions opts,
+        public GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref GeoSearchOptions opts,
                                            ref ObjectInput input, ref SpanByteAndMemory output)
-            => storageSession.GeoSearchStore(key, destinationKey, opts, ref input, ref output, ref objectContext);
+            => storageSession.GeoSearchStore(key, destinationKey, ref opts, ref input, ref output, ref objectContext);
 
         #endregion
 

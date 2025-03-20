@@ -44,15 +44,21 @@ namespace Garnet.server
             => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
+        /// Geospatial search and return result..
         /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// GEORADIUS (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUS_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEORADIUSBYMEMBER_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
+        /// <param name="opts"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoSearch<TObjectContext>(ArgSlice key, GeoSearchOptions opts,
+        public GarnetStatus GeoSearch<TObjectContext>(ArgSlice key, ref GeoSearchOptions opts,
                                                       ref ObjectInput input,
                                                       ref SpanByteAndMemory output,
                                                       ref TObjectContext objectContext)
@@ -95,6 +101,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Geospatial search and store in destination key.
+        /// GEOSEARCHSTORE: Store the the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// GEORADIUS (write variant): Store the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER (write variant): Store the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
@@ -105,7 +114,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus GeoSearchStore<TObjectContext>(ArgSlice key, ArgSlice destination,
-                                                                  GeoSearchOptions opts,
+                                                                  ref GeoSearchOptions opts,
                                                                   ref ObjectInput input,
                                                                   ref SpanByteAndMemory output,
                                                                   ref TObjectContext objectContext)
@@ -132,7 +141,7 @@ namespace Garnet.server
             try
             {
                 SpanByteAndMemory searchOutMem = default;
-                var status = GeoSearch(key, opts, ref input, ref searchOutMem, ref objectStoreLockableContext);
+                var status = GeoSearch(key, ref opts, ref input, ref searchOutMem, ref objectStoreLockableContext);
 
                 if (status == GarnetStatus.WRONGTYPE)
                 {

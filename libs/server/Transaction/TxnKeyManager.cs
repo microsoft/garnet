@@ -210,10 +210,9 @@ namespace Garnet.server
             // While all other commands here start with GEOsomething key...
             if (command == RespCommand.GEOSEARCHSTORE)
             {
-                var destinationKey = respSession.parseState.GetArgSliceByRef(0);
+                var destinationKey = respSession.parseState.GetArgSliceByRef(idx++);
                 SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
                 SaveKeyArgSlice(destinationKey);
-                idx = 1;
             }
 
             // Either this is GEOSEARCHSTORE, and index 1 is sourcekey, or some other command and index 0 is sourcekey.

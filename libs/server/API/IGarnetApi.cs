@@ -530,7 +530,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, GeoSearchOptions opts,
+        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref GeoSearchOptions opts,
                                     ref ObjectInput input, ref SpanByteAndMemory output);
 
         /// <summary>
@@ -1432,7 +1432,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearch(ArgSlice key, GeoSearchOptions opts,
+        GarnetStatus GeoSearch(ArgSlice key, ref GeoSearchOptions opts,
                                ref ObjectInput input, ref SpanByteAndMemory output);
 
         #endregion
