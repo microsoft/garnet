@@ -160,14 +160,19 @@ namespace Garnet.server
                     try
                     {
                         handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+                        ExceptionScenarioHelper.TriggerException(ExceptionScenario.Network_After_GarnetServerTcp_Handler_Created);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
                     }
                     catch (Exception ex)
                     {
-                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary.
                         logger?.LogError(ex, "Error creating and registering network handler");
+
+                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary.
                         _ = Interlocked.Decrement(ref activeHandlerCount);
+                        // We did not start the handler, so we need to call DisposeResources() to clean up resources.
+                        handler?.DisposeResources();
+                        // Dispose the handler
                         handler?.Dispose();
                         return true;
                     }
@@ -179,9 +184,13 @@ namespace Garnet.server
                     }
                     catch (Exception ex)
                     {
-                        // The handler will be disposed, activeHandlerCount decremented, and totalConnectionsDisposed incremented, when removed from the activeHandlers dictionary
-                        // as part of socket exception handling in TcpNetworkHandlerBase.Start(), which will call NetworkHandler.DisposeImpl().
                         logger?.LogError(ex, "Error calling Start on network handler");
+
+                        // Dispose the socket if we get an exception while starting.
+                        // The resources will be disposed (including updating activeHandlerCount and totalConnectionsDisposed)
+                        // when the handler is removed from the activeHandlers dictionary as part of socket exception
+                        // handling in TcpNetworkHandlerBase.Start(), which will call NetworkHandler.DisposeImpl().
+                        handler.Dispose();
                         return true;
                     }
                 }

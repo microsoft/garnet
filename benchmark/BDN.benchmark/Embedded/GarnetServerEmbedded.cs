@@ -33,21 +33,34 @@ namespace Embedded.server
                         handler = new EmbeddedNetworkHandler(this, networkSender, networkSettings, networkPool, tlsOptions != null);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
-
-                        handler.Start(tlsOptions, remoteEndpointName);
-                        IncrementConnectionsReceived();
-                        return handler;
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Error starting network handler");
-                        Interlocked.Decrement(ref activeHandlerCount);
+                        logger?.LogError(ex, "Error creating and registering network handler");
+
+                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary.
+                        _ = Interlocked.Decrement(ref activeHandlerCount);
+                        // Dispose the embedded handler (also disposes resources)
                         handler?.Dispose();
                     }
+
+                    try
+                    {
+                        IncrementConnectionsReceived();
+                        handler.Start(tlsOptions, remoteEndpointName);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error calling Start on network handler");
+
+                        // Dispose the embedded handler (also disposes resources)
+                        handler.Dispose();
+                    }
+                    return handler;
                 }
                 else
                 {
-                    Interlocked.Decrement(ref activeHandlerCount);
+                    _ = Interlocked.Decrement(ref activeHandlerCount);
                 }
             }
             return handler;
