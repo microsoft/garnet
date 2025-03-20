@@ -169,6 +169,7 @@ namespace Garnet.server
                         logger?.LogError(ex, "Error creating and registering network handler");
                         _ = Interlocked.Decrement(ref activeHandlerCount);
                         handler?.Dispose();
+                        return true;
                     }
 
                     try
@@ -180,6 +181,7 @@ namespace Garnet.server
                     {
                         // The handler will be disposed (and totalConnectionsDisposed incremented) when removed from the activeHandlers dictionary
                         logger?.LogError(ex, "Error calling Start on network handler");
+                        return true;
                     }
                 }
                 else
