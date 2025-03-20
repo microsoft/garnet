@@ -12,7 +12,10 @@ namespace Garnet.common
     /// </summary>
     public enum ExceptionScenario
     {
-        FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS,
+        /// <summary>
+        /// Primary replication sync orchestration failure
+        /// </summary>
+        REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS,
     }
 
     /// <summary>

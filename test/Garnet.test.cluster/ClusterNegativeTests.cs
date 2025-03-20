@@ -154,7 +154,7 @@ namespace Garnet.test.cluster
         [Test, Order(3)]
         public void ClusterExceptionAtReplicaAofSyncStart([Values] bool enableDisklessSync)
         {
-            ExceptionScenarioHelper.EnableException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+            ExceptionScenarioHelper.EnableException(ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
 
             var primaryIndex = 0;
             var replicaIndex = 1;
@@ -179,7 +179,7 @@ namespace Garnet.test.cluster
             resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
             ClassicAssert.AreEqual("Debug scenario triggered FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS", resp);
 
-            ExceptionScenarioHelper.DisableException(ExceptionScenario.FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
+            ExceptionScenarioHelper.DisableException(ExceptionScenario.REPLICATION_FAIL_RIGHT_BEFORE_AOF_STREAM_STARTS);
         }
 #endif
 
