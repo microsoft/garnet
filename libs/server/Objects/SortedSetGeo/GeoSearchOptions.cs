@@ -124,7 +124,7 @@ namespace Garnet.server
         internal bool withDist;
         internal GeoOrder sort;
 
-        public static unsafe ReadOnlySpan<byte> Parse(RespCommand command, 
+        public static unsafe ReadOnlySpan<byte> Parse(RespCommand command,
                                                       ref GeoSearchOptions searchOpts,
                                                       ref ObjectInput input,
                                                       bool readOnly,
@@ -283,7 +283,7 @@ namespace Garnet.server
                     {
                         if (searchOpts.searchType != GeoSearchType.Undefined)
                         {
-                            return  CmdStrings.RESP_SYNTAX_ERROR;
+                            return CmdStrings.RESP_SYNTAX_ERROR;
                         }
                         searchOpts.searchType = GeoSearchType.ByBox;
 
