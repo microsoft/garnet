@@ -8,7 +8,17 @@ namespace Garnet.common
     /// </summary>
     public enum ExceptionInjectionType
     {
+        /// <summary>
+        /// Network failure after GarnetServerTcp handler created
+        /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,
-        Network_After_TcpNetworkHandlerBase_Start_Server
+        /// <summary>
+        /// Network failure after TcpNetworkHandlerBase start server
+        /// </summary>
+        Network_After_TcpNetworkHandlerBase_Start_Server,
+        /// <summary>
+        /// Primary replication sync orchestration failure right before background aof stream starts
+        /// </summary>
+        Replication_Fail_Before_Background_AOF_Stream_Task_Start
     }
 }
