@@ -154,13 +154,21 @@ namespace Garnet.server
             // Convert string into a span, using buffer for storage
             static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
             {
+                // Try to fit in the existing buffer
+                var into = buffer.FullBuffer();
+                if (Encoding.UTF8.TryGetBytes(raw, into, out var written))
+                {
+                    strBytes = into[..written];
+                    return;
+                }
+
                 var maxLen = Encoding.UTF8.GetMaxByteCount(raw.Length);
 
                 buffer.Reset();
                 var argSlice = buffer.CreateArgSlice(maxLen);
                 var span = argSlice.Span;
 
-                var written = Encoding.UTF8.GetBytes(raw, span);
+                written = Encoding.UTF8.GetBytes(raw, span);
                 strBytes = span[..written];
             }
         }
