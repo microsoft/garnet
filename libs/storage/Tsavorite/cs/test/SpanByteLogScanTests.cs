@@ -183,7 +183,7 @@ namespace Tsavorite.test.spanbyte
             ReadOptions readOptions = default;
             var readStatus = bContext.ReadAtAddress(store.hlogBase.HeadAddress, ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
-            
+
             var outputKeySpan = output.AsReadOnlySpan();
             var outputKeyOrdinal = int.Parse(outputKeySpan.Slice(0, outputKeySpan.IndexOf((byte)'_')));
             output.Memory.Dispose();
@@ -207,7 +207,7 @@ namespace Tsavorite.test.spanbyte
             var bContext = session.BasicContext;
 
             Random rng = new(101);
-            
+
             Span<byte> keySpan = stackalloc byte[8];
             Span<byte> valueSpan = stackalloc byte[128];
 
@@ -337,7 +337,7 @@ namespace Tsavorite.test.spanbyte
                         Span<byte> valueSpan = stackalloc byte[225];
 
                         _ = Utf8.TryWrite(keySpan, $"key_{rcuRecord:0000}", out int keyBytesWritten);
-                                                
+
                         valueSpan.Fill((byte)'v');
                         _ = Utf8.TryWrite(valueSpan, $"{rcuRecord:0000}_", out int valueBytesWritten);
 
@@ -345,7 +345,7 @@ namespace Tsavorite.test.spanbyte
                         var valueSpanByte = SpanByte.FromPinnedSpan(valueSpan); // Update the specified key with a longer value that requires RCU.
 
                         _ = bContext.Upsert(keySpanByte, valueSpanByte);
-                       
+
                     }).Wait();
 
                     // If we RCU before Scan arrives at the record, then we won't see it and the values will be off by one (higher).
