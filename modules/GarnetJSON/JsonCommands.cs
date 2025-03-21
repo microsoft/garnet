@@ -57,7 +57,7 @@ namespace GarnetJSON
             var value = GetNextArg(ref input, ref offset);
             var existOptions = ExistOptions.None;
 
-            if (parseState.Count is 4 && !input.TryGetExpireOption(ref offset, out existOptions))
+            if (parseState.Count is 4 && !input.TryGetExistOption(ref offset, out existOptions))
             {
                 return AbortWithSyntaxError(ref output);
             }

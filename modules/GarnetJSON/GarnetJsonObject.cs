@@ -213,12 +213,12 @@ namespace GarnetJSON
         {
             try
             {
+                errorMessage = default;
                 var pathStr = Encoding.UTF8.GetString(path);
 
                 if (pathStr.Length == 1 && pathStr[0] == '$')
                 {
                     rootNode = JsonNode.Parse(value);
-                    errorMessage = default;
                     return SetResult.Success;
                 }
 
@@ -236,7 +236,6 @@ namespace GarnetJSON
                 {
                     if (existOptions == ExistOptions.XX)
                     {
-                        errorMessage = default;
                         return SetResult.ConditionNotMet;
                     }
 
@@ -248,9 +247,8 @@ namespace GarnetJSON
 
                     // Find parent node using parent path
                     var parentNode = rootNode.SelectNodes(GetParentPath(pathStr, out var pathParentOffset)).FirstOrDefault();
-                    if (result is null)
+                    if (parentNode is null)
                     {
-                        errorMessage = default;
                         return SetResult.ConditionNotMet;
                     }
 
@@ -267,17 +265,14 @@ namespace GarnetJSON
                     }
                     else
                     {
-                        errorMessage = default;
                         return SetResult.ConditionNotMet;
                     }
 
-                    errorMessage = default;
                     return SetResult.Success;
                 }
 
                 if (existOptions == ExistOptions.NX)
                 {
-                    errorMessage = default;
                     return SetResult.ConditionNotMet;
                 }
 
@@ -294,7 +289,6 @@ namespace GarnetJSON
                     match?.ReplaceWith(valNode);
                 }
 
-                errorMessage = default;
                 return SetResult.Success;
             }
             catch (JsonException ex)

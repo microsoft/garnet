@@ -14,7 +14,7 @@ namespace Garnet.server.Custom
         /// <param name="offset">The current offset in the input arguments.</param>
         /// <param name="value">The parsed expire option if successful, otherwise <see cref="ExistOptions.None"/>.</param>
         /// <returns>True if the expire option was successfully parsed, otherwise false.</returns>
-        public static bool TryGetExpireOption(this ref ObjectInput input, scoped ref int offset, out ExistOptions value)
+        public static bool TryGetExistOption(this ref ObjectInput input, scoped ref int offset, out ExistOptions value)
         {
             value = ExistOptions.None;
             var existOptionStr = CustomCommandUtils.GetNextArg(ref input, ref offset);
