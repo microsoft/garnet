@@ -15,7 +15,7 @@ namespace Garnet.test
     {
         GarnetServer server;
         private TaskFactory taskFactory = new();
-        private static readonly Random random = new();
+        private static readonly Random random = Random.Shared;
 
         [SetUp]
         public void Setup()
@@ -51,7 +51,7 @@ namespace Garnet.test
             expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var btResponse = lcr.SendCommand($"{blockingCmd} {key2} 30", 3);
@@ -59,7 +59,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
