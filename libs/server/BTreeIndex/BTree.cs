@@ -50,29 +50,31 @@ namespace Garnet.server.BTreeIndex
         /// Frees the memory allocated for a node
         /// </summary>
         /// <param name="node">BTreeNode to free from memory</param>
-        private void Free(ref BTreeNode* node)
+        private void Free(ref BTreeNode* node, ref List<SectorAlignedMemory> freedHandles)
         {
-            // if (node == null || node->info == null)
             if (node == null)
-            {
                 return;
-            }
-
+            
+            // If this is an internal node, free all its children first
             if (node->info.type == BTreeNodeType.Internal)
             {
-                for (var i = 0; i <= node->info.count; i++)
+                for (int i = 0; i <= node->info.count; i++)
                 {
-                    var child = node->GetChild(i);
-                    Free(ref child);
-                    node->SetChild(i, child); // Update the child pointer in the parent node
+                    var child = node->data.children[i];
+                    if (child != null)
+                    {
+                        Free(ref child, ref freedHandles);
+                        node->data.children[i] = null;
+                    }
                 }
-
             }
-            node->Deallocate();
 
-            // free the pointer to the node 
-            // Marshal.FreeHGlobal((IntPtr)node);
-            node = null;
+        
+            if (node->memoryHandle != null)
+            {
+                node->memoryHandle.Return();
+                node->memoryHandle = null;
+            }
         }
 
         /// <summary>
@@ -82,7 +84,8 @@ namespace Garnet.server.BTreeIndex
         {
             if (root == null)
                 return;
-            Free(ref root);
+            List<SectorAlignedMemory> freedHandles = new List<SectorAlignedMemory>();
+            Free(ref root, ref freedHandles);
             root = null;
             head = null;
             tail = null;

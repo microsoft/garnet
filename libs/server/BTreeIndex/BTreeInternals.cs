@@ -257,31 +257,7 @@ namespace Garnet.server.BTreeIndex
 
         public void Deallocate()
         {
-            // if (memoryBlock != IntPtr.Zero)
-            // {
-            //     Marshal.FreeHGlobal(memoryBlock);
-            //     memoryBlock = IntPtr.Zero;
-
-            //     // After freeing the memory, explicitly set pointers to null to avoid dangling pointers.
-            //     // info = null;
-            //     keys = null;
-            //     data.values = null; // Only necessary if data.values or data.children was separately allocated
-            //     data.children = null;
-            // }
-
-            // info = null;
-            // keys = null;
-            // data.values = null;
-            // data.children = null;
-
-            if(memoryHandle.aligned_pointer != null)
-            {
-                keys = null;
-                data.values = null;
-                data.children = null;
-                info.next = null;
-                memoryHandle.Return();
-            }
+            
         }
     }
 

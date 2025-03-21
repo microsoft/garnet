@@ -70,18 +70,6 @@ class Program
         sw.Start();
         for (ulong i = 0; i < N; i++)
         {
-             if(i == 60374)
-            {
-                Console.WriteLine("here");
-            }
-            if(i == 43952)
-            {
-                Console.WriteLine("here");
-            }
-            if (i == 57315)
-            {
-                Console.WriteLine("here");
-            }
             tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(i + 1));
         }
         sw.Stop();
@@ -104,10 +92,6 @@ class Program
         sw.Start();
         for (ulong i = 0; i < N; i++)
         {
-            if(i==57315)
-            {
-                Console.WriteLine("here");
-            }
             var value = tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]));
             if (sanity)
             {
