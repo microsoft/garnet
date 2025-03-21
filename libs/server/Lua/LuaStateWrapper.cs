@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Garnet.common;
+using System.Threading;
 using KeraLua;
 using Microsoft.Extensions.Logging;
 
@@ -24,10 +24,9 @@ namespace Garnet.server
 
         private readonly ILuaAllocator customAllocator;
 
-        private SingleWriterMultiReaderLock hookLock;
-
         private GCHandle customAllocatorHandle;
 
+        private int stateUpdateLock;
         private nint state;
         private int curStackSize;
 
@@ -61,8 +60,6 @@ namespace Garnet.server
                     _ => throw new InvalidOperationException($"Unexpected mode/limit combination: {memMode}/{memLimitBytes}")
                 };
 
-            hookLock = new();
-
             if (customAllocator != null)
             {
                 customAllocatorHandle = GCHandle.Alloc(customAllocator, GCHandleType.Normal);
@@ -89,22 +86,20 @@ namespace Garnet.server
         public void Dispose()
         {
             // Synchronize with respect to hook'ing
-            hookLock.WriteLock();
-            try
+            while (Interlocked.CompareExchange(ref stateUpdateLock, 1, 0) != 0)
             {
-                // make sure we only close once
-                if (state != 0)
-                {
-
-                    NativeMethods.Close(state);
-                    state = 0;
-                }
-            }
-            finally
-            {
-                hookLock.WriteUnlock();
+                _ = Thread.Yield();
             }
 
+            // make sure we only close once
+            if (state != 0)
+            {
+
+                NativeMethods.Close(state);
+                state = 0;
+            }
+
+            _ = Interlocked.Exchange(ref stateUpdateLock, 0);
 
             if (customAllocatorHandle.IsAllocated)
             {
@@ -681,20 +676,21 @@ namespace Garnet.server
         /// </summary>
         internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         {
-            hookLock.ReadLock();
-            try
+            while (Interlocked.CompareExchange(ref stateUpdateLock, 1, 0) != 0)
             {
-                if (state == 0)
-                {
-                    return false;
-                }
+                _ = Thread.Yield();
+            }
 
-                NativeMethods.SetHook(state, hook, mask, count);
-            }
-            finally
+            if (state == 0)
             {
-                hookLock.ReadUnlock();
+                _ = Interlocked.Exchange(ref stateUpdateLock, 0);
+
+                return false;
             }
+
+            NativeMethods.SetHook(state, hook, mask, count);
+
+            _ = Interlocked.Exchange(ref stateUpdateLock, 0);
 
             return true;
         }
