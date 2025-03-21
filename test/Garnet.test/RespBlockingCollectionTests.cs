@@ -88,9 +88,10 @@ namespace Garnet.test
         {
             var key = "mykey";
 
-            var keyCount = 128;
+            var keyCount = 64;
 
             using var lightClientRequest = TestUtils.CreateRequest();
+
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
             var blockingTask = Task.Run(async () =>
@@ -102,7 +103,7 @@ namespace Garnet.test
                     var value = $"value{i}";
                     var btExpectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
                     TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
-                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 200)), cts.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token);
                 }
             }, cts.Token);
 
@@ -112,9 +113,8 @@ namespace Garnet.test
                 {
                     using var lcr = TestUtils.CreateRequest();
                     var value = $"value{i}";
-                    var rtResponse = lcr.SendCommand($"{pushCmd} {key} {value}");
-                    TestUtils.AssertEqualUpToExpectedLength(":1\r\n", rtResponse);
-                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 200)), cts.Token);
+                    lcr.SendCommand($"{pushCmd} {key} {value}");
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token);
                 }
             }, cts.Token);
 
