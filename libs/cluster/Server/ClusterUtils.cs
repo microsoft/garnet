@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,7 @@ namespace Garnet.cluster
                 body = writePad;
             else
                 ReadInto(device, pool, 0, out body, size + sizeof(int), logger);
-            return new Span<byte>(body)[sizeof(int)..].ToArray();
+            return body.AsSpan(sizeof(int)).ToArray();
         }
 
         /// <summary>
@@ -35,25 +36,19 @@ namespace Garnet.cluster
         public static unsafe void WriteInto(IDevice device, SectorAlignedMemoryPool pool, ulong address, byte[] buffer, int size = 0, ILogger logger = null)
         {
             if (size == 0) size = buffer.Length;
-            var _buffer = new byte[size + sizeof(int)];
-            var len = BitConverter.GetBytes(size);
-            Array.Copy(len, _buffer, len.Length);
-            Array.Copy(buffer, 0, _buffer, len.Length, size);
-            size += len.Length;
 
-            long numBytesToWrite = size;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            var lengthPrefixedSize = size + sizeof(int);
+            var sectorAlignedBuffer = pool.Get(lengthPrefixedSize);
+            var sectorAlignedBufferSpan = sectorAlignedBuffer.AsSpan();
 
-            var pbuffer = pool.Get((int)numBytesToWrite);
-            fixed (byte* bufferRaw = _buffer)
-            {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.Pointer, size, size);
-            }
+            BinaryPrimitives.WriteInt32LittleEndian(sectorAlignedBufferSpan, size);
+            buffer.AsSpan().CopyTo(sectorAlignedBufferSpan.Slice(sizeof(int)));
+
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)pbuffer.Pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
+            device.WriteAsync((IntPtr)sectorAlignedBuffer.Pointer, address, (uint)sectorAlignedBuffer.Length, logger == null ? IOCallback : logger.IOCallback, semaphore);
             semaphore.Wait();
 
-            pbuffer.Return();
+            sectorAlignedBuffer.Return();
         }
 
 
@@ -68,19 +63,15 @@ namespace Garnet.cluster
         /// <param name="logger"></param>
         private static unsafe void ReadInto(IDevice device, SectorAlignedMemoryPool pool, ulong address, out byte[] buffer, int size, ILogger logger = null)
         {
-            using var semaphore = new SemaphoreSlim(0);
-            long numBytesToRead = size;
-            numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            var sectorAlignedBuffer = pool.Get((int)size);
 
-            var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.Pointer,
-                (uint)numBytesToRead, logger == null ? IOCallback : logger.IOCallback, semaphore);
+            using var semaphore = new SemaphoreSlim(0);
+            device.ReadAsync(address, (IntPtr)sectorAlignedBuffer.Pointer, (uint)sectorAlignedBuffer.Length, logger == null ? IOCallback : logger.IOCallback, semaphore);
             semaphore.Wait();
 
-            buffer = new byte[numBytesToRead];
-            fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.Pointer, bufferRaw, numBytesToRead, numBytesToRead);
-            pbuffer.Return();
+            buffer = new byte[sectorAlignedBuffer.Length];
+            sectorAlignedBuffer.AsSpan().CopyTo(buffer);
+            sectorAlignedBuffer.Return();
         }
 
         private static void IOCallback(uint errorCode, uint numBytes, object context)

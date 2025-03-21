@@ -36,7 +36,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="path">Path to file</param>
         /// <param name="data">Data to write</param>
-        void Write(string path, byte[] data);
+        void Write(string path, ReadOnlySpan<byte> data);
     }
 
     /// <summary>
@@ -49,28 +49,24 @@ namespace Garnet.common
         public Stream Read(string path)
         {
             using var device = GetDevice(path);
-            var pool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
+            using var pool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
             ReadInto(device, pool, 0, out var buffer, MaxConfigFileSizeAligned);
-            pool.Dispose();
 
             // Remove trailing zeros
-            int lastIndex = Array.FindLastIndex(buffer, b => b != 0);
+            var lastIndex = buffer.AsSpan().LastIndexOfAnyExcept((byte)0);
             var stream = new MemoryStream(buffer, 0, lastIndex + 1);
             return stream;
         }
 
-        public unsafe void Write(string path, byte[] data)
+        public unsafe void Write(string path, ReadOnlySpan<byte> data)
         {
             using var device = GetDevice(path);
-            var bytesToWrite = GetBytesToWrite(data, device);
+            var bytesToWrite = GetBytesToWrite(data.Length, device);
             var pool = new SectorAlignedMemoryPool(1, (int)device.SectorSize);
 
             // Get a sector-aligned buffer from the pool and copy _buffer into it.
             var buffer = pool.Get((int)bytesToWrite);
-            fixed (byte* bufferRaw = data)
-            {
-                Buffer.MemoryCopy(bufferRaw, buffer.Pointer, data.Length, data.Length);
-            }
+            data.CopyTo(buffer.AsSpan());
 
             // Write to the device and wait for the device to signal the semaphore that the write is complete.
             using var semaphore = new SemaphoreSlim(0);
@@ -84,22 +80,21 @@ namespace Garnet.common
 
         protected abstract IDevice GetDevice(string path);
 
-        protected abstract long GetBytesToWrite(byte[] bytes, IDevice device);
+        protected abstract long GetBytesToWrite(int byteCount, IDevice device);
 
         protected static unsafe void ReadInto(IDevice device, SectorAlignedMemoryPool pool, ulong address, out byte[] buffer, int size, ILogger logger = null)
         {
-            using var semaphore = new SemaphoreSlim(0);
             long numBytesToRead = size;
-            numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.Pointer,
-                (uint)numBytesToRead, IOCallback, semaphore);
+
+            using var semaphore = new SemaphoreSlim(0);
+            device.ReadAsync(address, (IntPtr)pbuffer.Pointer, (uint)numBytesToRead, IOCallback, semaphore);
             semaphore.Wait();
 
             buffer = new byte[numBytesToRead];
-            fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.Pointer, bufferRaw, numBytesToRead, numBytesToRead);
+            pbuffer.AsSpan().CopyTo(buffer);
             pbuffer.Return();
         }
 
@@ -168,10 +163,10 @@ namespace Garnet.common
             return settingsDevice;
         }
 
-        protected override long GetBytesToWrite(byte[] bytes, IDevice device)
+        protected override long GetBytesToWrite(int byteCount, IDevice device)
         {
-            long numBytesToWrite = bytes.Length;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            // Round up to device sector size
+            var numBytesToWrite = (byteCount + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
             if (numBytesToWrite > MaxConfigFileSizeAligned)
                 throw new Exception($"Config file size {numBytesToWrite} is larger than the maximum allowed size {MaxConfigFileSizeAligned}");
             return numBytesToWrite;
@@ -202,10 +197,7 @@ namespace Garnet.common
             return settingsDevice;
         }
 
-        protected override long GetBytesToWrite(byte[] bytes, IDevice device)
-        {
-            return bytes.Length;
-        }
+        protected override long GetBytesToWrite(int byteCount, IDevice device) => byteCount;
     }
 
     /// <summary>
@@ -229,7 +221,7 @@ namespace Garnet.common
             return assembly.GetManifestResourceStream(resourceName);
         }
 
-        public void Write(string path, byte[] data)
+        public void Write(string path, ReadOnlySpan<byte> data)
         {
             var resourceName = assembly.GetManifestResourceNames()
                 .FirstOrDefault(rn => rn.EndsWith($".{path}"));
@@ -237,7 +229,7 @@ namespace Garnet.common
 
             using var stream = assembly.GetManifestResourceStream(resourceName);
             if (stream != null)
-                stream.Write(data, 0, data.Length);
+                stream.Write(data);
         }
     }
 }

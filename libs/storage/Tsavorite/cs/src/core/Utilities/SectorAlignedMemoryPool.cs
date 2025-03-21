@@ -55,8 +55,8 @@ namespace Tsavorite.core
         /// The level of this memory in the buffer pool.
         /// <list type="bullet">
         /// <item>
-        ///   If the memory is managed by a pool, this represents the in the memory pool, where 
-        ///   level <c>n</c> corresponds to a memory size of <c>sectorSize * 2^n</c>
+        ///   If the memory is managed by a pool, this represents the level 
+        ///   corresponds to a segment with size of <c>sectorSize * 2^level</c>
         /// </item>
         /// <item>
         ///   If the memory is not managed by a pool, this returns zero. 
@@ -119,7 +119,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Frees the underlying unmanaged memory and sets <see cref="Pointer"/> to <see langword="null"/>
+        /// Frees the underlying unmanaged memory
         /// </summary>
         public void Dispose()
         {
@@ -145,7 +145,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Get valid pointer
         /// </summary>
-        /// <returns></returns>
         public byte* GetValidPointer() => Pointer + ValidOffset;
 
         /// <summary>
@@ -162,11 +161,11 @@ namespace Tsavorite.core
         public override string ToString() => $"{(nuint)Pointer} {ValidOffset} {RequiredBytes} {AvailableBytes} {Free}";
 
         /// <summary>
-        /// Allocates memory aligned to a specified sector size and returns a new <see cref="SectorAlignedMemory"/> wrapping it.
+        /// Allocates unmanaged aligned memory.
         /// </summary>
-        /// <param name="byteCount">Specifies the total number of bytes to allocate for the memory.</param>
-        /// <param name="alignment">Defines the alignment size for the allocated memory.</param>
-        /// <returns>Returns a SectorAlignedMemory instance wrapping the allocated memory.</returns>
+        /// <param name="byteCount">The total number of bytes to allocate.</param>
+        /// <param name="alignment">The alignment size.</param>
+        /// <returns>Returns a <see cref="SectorAlignedMemory"/> instance wrapping the memory.</returns>
         public static SectorAlignedMemory Allocate(int byteCount, uint alignment)
         {
             var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)(byteCount + alignment), alignment); // TODO: Over allocation for diagnostics, fix and remove.
@@ -176,19 +175,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Allocates memory aligned to a specified boundary and returns a new <see cref="SectorAlignedMemory"/> wrapping it.
+        /// Allocates unmanaged aligned memory.
         /// </summary>
-        /// <param name="byteCount">Specifies the number of bytes to allocate for the memory.</param>
-        /// <param name="alignment">Defines the alignment boundary for the allocated memory.</param>
-        /// <param name="pool">Indicates the memory pool from which owns this memory.</param>
-        /// <param name="level">Represents the level of allocation within the memory pool.</param>
-        /// <returns>Returns a pool owned SectorAlignedMemory instance wrapping the allocated memory.</returns>
-        internal static SectorAlignedMemory Allocate(int byteCount, uint alignment, SectorAlignedMemoryPool pool, int level)
+        /// <param name="level">The level of the memory within the <paramref name="pool"/>.</param>
+        /// <param name="alignment">The alignment size.</param>
+        /// <param name="pool">The memory pool from which owns this memory.</param>
+        /// <returns>Returns a pool owned <see cref="SectorAlignedMemory"/> instance wrapping the memory.</returns>
+        internal static SectorAlignedMemory Allocate(int level, uint alignment, SectorAlignedMemoryPool pool)
         {
+            var byteCount = alignment * (1 << level);
             var memoryPtr = (byte*)NativeMemory.AlignedAlloc((uint)byteCount + alignment, alignment); // TODO: Over allocation for diagnostics, fix and remove.
             NativeMemory.Clear(memoryPtr, (uint)byteCount + alignment); // TODO: Over allocation for diagnostics, fix and remove.
             GC.AddMemoryPressure(byteCount);
-            return new SectorAlignedMemory(memoryPtr, byteCount, pool, level);
+            return new SectorAlignedMemory(memoryPtr, (int)byteCount, pool, level);
         }
     }
 
@@ -197,7 +196,7 @@ namespace Tsavorite.core
     /// <para/>
     /// Internally, it is organized as an array of concurrent queues where each concurrent
     /// queue represents a memory of size in particular range. <c>queue[level]</c> contains memory 
-    /// segments each of size <c>(2^level * sectorSize)</c>.
+    /// segments each of size <c>(sectorSize * 2^level)</c>.
     /// </summary>
     public sealed unsafe class SectorAlignedMemoryPool : IDisposable
     {
@@ -242,6 +241,7 @@ namespace Tsavorite.core
             memory.Free = true;
 
             Debug.Assert(queue[level] != null);
+            Debug.Assert(memory.pool == this);
             queue[level].Enqueue(memory);
         }
 
@@ -259,8 +259,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocates or retrieves a sector-aligned memory from the pool.
         /// </summary>
+        /// <remarks>
+        /// <paramref name="numRecords"/> is equivalent to requesting one record, returning smallest possible segment from the pool.
+        /// </remarks>
         /// <param name="numRecords">The number of records required.</param>    
-        /// <returns>A <see cref="SectorAlignedMemory"/> that is aligned to the <see cref="sectorSize"/>.</returns>
+        /// <returns>
+        /// A <see cref="SectorAlignedMemory"/> segment which length is the requested memory rounded up to nearest multiple of <c>sectorSize × 2^level</c> 
+        /// for some <c>level</c> between 0 and 32.
+        /// </returns>
+        /// <example>
+        /// <code>
+        /// using var pool = new SectorAlignedMemory(recordSize: 1, sectorSize: 512);
+        /// var buffer = pool.Get(1000);
+        /// Debug.Assert(buffer.Length == 1024);
+        /// buffer.Return();
+        /// </code>
+        /// </example>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe SectorAlignedMemory Get(int numRecords)
         {
@@ -284,12 +298,11 @@ namespace Tsavorite.core
                 return page;
             }
 
-            return SectorAlignedMemory.Allocate(
-                byteCount: sectorSize * (1 << level), (uint)sectorSize, pool: this, level);
+            return SectorAlignedMemory.Allocate(level, (uint)sectorSize, pool: this);
         }
 
         /// <summary>
-        /// Free all the pools unmanaged buffers
+        /// Free all the pools unmanaged buffers.
         /// </summary>
         public void Dispose()
         {
