@@ -134,7 +134,7 @@ namespace Garnet.test
 
             // No import path, include command line args
             // Check that all invalid options flagged
-            args = ["--bind", "1.1.1.257", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
+            args = ["--bind", "1.1.1.257 127.0.0.1 -::1", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
             ClassicAssert.IsFalse(exitGracefully);
