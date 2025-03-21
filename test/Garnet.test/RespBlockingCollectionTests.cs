@@ -14,7 +14,6 @@ namespace Garnet.test
     public class RespBlockingCollectionTests
     {
         GarnetServer server;
-        private TaskFactory taskFactory = new();
         private static readonly Random random = Random.Shared;
 
         [SetUp]
@@ -94,7 +93,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
-            var blockingTask = taskFactory.StartNew(async () =>
+            var blockingTask = Task.Run(async () =>
             {
                 for (var i = 0; i < keyCount; i++)
                 {
@@ -107,7 +106,7 @@ namespace Garnet.test
                 }
             }, cts.Token);
 
-            var releasingTask = taskFactory.StartNew(async () =>
+            var releasingTask = Task.Run(async () =>
             {
                 for (var i = 0; i < keyCount; i++)
                 {
@@ -152,7 +151,7 @@ namespace Garnet.test
             expectedResponse = $"*1\r\n${value1.Length}\r\n{value1}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var btResponse = lcr.SendCommand($"BLMOVE {srcKey2} {dstKey2} {OperationDirection.Left} {OperationDirection.Right} 0");
@@ -160,7 +159,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -225,7 +224,7 @@ namespace Garnet.test
             var value1 = "myval";
             var value2 = "myval2";
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommands($"{blockingCmd} {key} 30", $"LPUSH {key} {value1}", 3, 1);
@@ -241,7 +240,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -290,7 +289,7 @@ namespace Garnet.test
             expectedResponse = $"*1\r\n${value1.Length}\r\n{value1}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var btResponse = lcr.SendCommand($"BRPOPLPUSH {srcKey2} {dstKey2} 0");
@@ -298,7 +297,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -370,7 +369,7 @@ namespace Garnet.test
             var key = "blockingkey";
             var value = "testvalue";
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT");
@@ -378,7 +377,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -396,7 +395,7 @@ namespace Garnet.test
             var key = "countkey";
             var values = new[] { "value1", "value2", "value3", "value4" };
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT COUNT 3");
@@ -404,7 +403,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -484,7 +483,7 @@ namespace Garnet.test
             var value = "testvalue";
             var score = 1.5;
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BZMPOP 30 1 {key} MIN COUNT 2");
@@ -492,7 +491,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -542,7 +541,7 @@ namespace Garnet.test
             var value = "testvalue";
             var score = 2.5;
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"{command} {key} 30");
@@ -550,7 +549,7 @@ namespace Garnet.test
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
