@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -14,6 +15,7 @@ namespace Garnet.test
     {
         GarnetServer server;
         private TaskFactory taskFactory = new();
+        private static readonly Random random = new();
 
         [SetUp]
         public void Setup()
@@ -76,6 +78,50 @@ namespace Garnet.test
 
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase("BRPOP", "LPUSH", 0)]
+        [TestCase("BRPOP", "LPUSH", 0.5)]
+        [TestCase("BLPOP", "RPUSH", 0)]
+        [TestCase("BLPOP", "RPUSH", 0.5)]
+        public void MultiListBlockingPopTestSE(string blockingCmd, string pushCmd, double timeout)
+        {
+            var key = "mykey";
+
+            var keyCount = 128;
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+            var blockingTask = taskFactory.StartNew(async () =>
+            {
+                for (var i = 0; i < keyCount; i++)
+                {
+                    using var lcr = TestUtils.CreateRequest();
+                    var btResponse = lcr.SendCommand($"{blockingCmd} {key} {timeout}", 3);
+                    var value = $"value{i}";
+                    var btExpectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+                    TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(1200, 1500)), cts.Token);
+                }
+            }, cts.Token);
+
+            var releasingTask = taskFactory.StartNew(async () =>
+            {
+                for (var i = 0; i < keyCount; i++)
+                {
+                    using var lcr = TestUtils.CreateRequest();
+                    var value = $"value{i}";
+                    var rtResponse = lcr.SendCommand($"{pushCmd} {key} {value}");
+                    TestUtils.AssertEqualUpToExpectedLength(":1\r\n", rtResponse);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 200)), cts.Token);
+                }
+            }, cts.Token);
+
+            // Wait for all tasks to finish
+            if (!Task.WhenAll(blockingTask, releasingTask).Wait(TimeSpan.FromSeconds(60), cts.Token))
+                Assert.Fail("Items not retrieved in allotted time.");
         }
 
         [Test]
@@ -525,6 +571,18 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand($"{command} nonexistentkey 1");
             var expectedResponse = "$-1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        private (string, string)[] GenerateDataset(int keyCount)
+        {
+            var data = new (string, string)[keyCount];
+
+            for (var keyId = 0; keyId < keyCount; keyId++)
+            {
+                data[keyId] = ($"key{keyId}", $"val{keyId}");
+            }
+
+            return data;
         }
     }
 }
