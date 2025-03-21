@@ -171,13 +171,13 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
 
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start}", resp);
+            ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start}", resp);
 
             var role = context.clusterTestUtils.RoleCommand(replicaIndex, logger: context.logger);
             ClassicAssert.AreEqual("master", role.Value);
 
             resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            ClassicAssert.AreEqual($"Debug scenario triggered {ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start}", resp);
+            ClassicAssert.AreEqual($"Exception injection triggered {ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start}", resp);
 
             ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);
         }
