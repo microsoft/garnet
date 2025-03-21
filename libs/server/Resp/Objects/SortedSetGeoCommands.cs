@@ -94,7 +94,6 @@ namespace Garnet.server
                     RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
                     RespCommand.GEODIST => SortedSetOperation.GEODIST,
                     RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
-                    RespCommand.GEOSEARCH => SortedSetOperation.GEOSEARCH,
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
@@ -201,10 +200,10 @@ namespace Garnet.server
             var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet)
             {
                 SortedSetOp = SortedSetOperation.GEOSEARCH
-            }, ref parseState, startIdx: sourceIdx + 1);
+            }, ref parseState, startIdx: sourceIdx + 1, arg1: (int)command);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var errorMessage = GeoSearchOptions.Parse(command, ref searchOpts, ref input, readOnly, out var destIdx);
+            var errorMessage = GeoSearchOptions.Parse(command, ref searchOpts, ref input, out var destIdx, readOnly);
             if (!errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
@@ -231,7 +230,11 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.GeoSearch(sourceKey, ref searchOpts, ref input, ref output);
+                var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+                status = storageApi.GeoCommands(sourceKey.ToArray(), ref input, ref outputFooter);
+
+                output = outputFooter.SpanByteAndMemory;
 
                 if (status == GarnetStatus.OK)
                 {

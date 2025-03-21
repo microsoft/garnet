@@ -270,7 +270,7 @@ namespace Garnet.server
 
         internal void GeoSearch(ref ObjectInput input,
                                 ref SpanByteAndMemory output,
-                                GeoSearchOptions opts,
+                                ref GeoSearchOptions opts,
                                 bool readOnly)
         {
             var isMemory = false;

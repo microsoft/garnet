@@ -1423,18 +1423,6 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
-
-        /// <summary>
-        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="opts"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <returns></returns>
-        GarnetStatus GeoSearch(ArgSlice key, ref GeoSearchOptions opts,
-                               ref ObjectInput input, ref SpanByteAndMemory output);
-
         #endregion
 
         #region List Methods

@@ -127,8 +127,8 @@ namespace Garnet.server
         public static unsafe ReadOnlySpan<byte> Parse(RespCommand command,
                                                       ref GeoSearchOptions searchOpts,
                                                       ref ObjectInput input,
-                                                      bool readOnly,
-                                                      out int destIdx)
+                                                      out int destIdx,
+                                                      bool readOnly)
         {
             destIdx = command == RespCommand.GEOSEARCHSTORE ? 0 : -1;
 
