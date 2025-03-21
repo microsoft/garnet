@@ -47,7 +47,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    if (acquiredLock) clusterProvider.replicationManager.CompleteRecovery(RecoveryStatus.NoRecovery);
+                    if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
                 }
             }
             else

@@ -200,7 +200,7 @@ namespace Garnet.cluster
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
-                clusterProvider.replicationManager.CompleteRecovery(RecoveryStatus.NoRecovery);
+                clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
             }
             FlushConfig();
             return true;

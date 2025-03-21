@@ -248,9 +248,9 @@ namespace Garnet.cluster
         /// Release recovery and checkpoint locks
         /// </summary>
         /// <param name="nextRecoveryStatus"></param>
-        public void CompleteRecovery(RecoveryStatus nextRecoveryStatus)
+        public void EndRecovery(RecoveryStatus nextRecoveryStatus)
         {
-            logger?.LogTrace("{method} [{currentRecoveryStatus},{nextRecoveryStatus}]", nameof(CompleteRecovery), currentRecoveryStatus, nextRecoveryStatus);
+            logger?.LogTrace("{method} [{currentRecoveryStatus},{nextRecoveryStatus}]", nameof(EndRecovery), currentRecoveryStatus, nextRecoveryStatus);
 
             try
             {

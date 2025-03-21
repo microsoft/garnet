@@ -134,7 +134,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    CompleteRecovery(RecoveryStatus.NoRecovery);
+                    EndRecovery(RecoveryStatus.NoRecovery);
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
                 }
@@ -183,7 +183,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                CompleteRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
+                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
             }
         }
     }

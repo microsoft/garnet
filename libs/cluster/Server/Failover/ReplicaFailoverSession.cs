@@ -180,7 +180,7 @@ namespace Garnet.cluster
             finally
             {
                 // Disable recovering as now this node has become a primary or failed in its attempt earlier
-                if (acquiredLock) clusterProvider.replicationManager.CompleteRecovery(RecoveryStatus.NoRecovery);
+                if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
             }
 
             return true;
