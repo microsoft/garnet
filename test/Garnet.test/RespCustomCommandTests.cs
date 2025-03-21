@@ -682,7 +682,7 @@ namespace Garnet.test
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             // Register sample custom command on object 2
-            var jsonFactory = new JsonObjectFactory();
+            var jsonFactory = new GarnetJsonObjectFactory();
             server.Register.NewCommand("JSON.SET", CommandType.ReadModifyWrite, jsonFactory, new JsonSET());
             server.Register.NewCommand("JSON.GET", CommandType.Read, jsonFactory, new JsonGET());
 
@@ -709,7 +709,7 @@ namespace Garnet.test
             // Test custom commands of object 2
             db.Execute("JSON.SET", "k1", "$", "{\"f1\": {\"a\":1}, \"f2\":{\"a\":2}}");
             var result = db.Execute("JSON.GET", "k1");
-            ClassicAssert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
+            ClassicAssert.AreEqual("{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}", result.ToString());
         }
 
         [Test]

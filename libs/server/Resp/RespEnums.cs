@@ -16,7 +16,7 @@ namespace Garnet.server
         WithETag,
     }
 
-    internal enum ExistOptions : byte
+    public enum ExistOptions : byte
     {
         None,
         NX,
