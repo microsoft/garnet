@@ -277,7 +277,8 @@ namespace Garnet.server.BTreeIndex
         public ulong totalFastInserts;       // cumulative number of fast inserts to the index
         public long numKeys;                // number of keys currently indexed
         public ulong numValidKeys;           //  number of keys that are not tombstoned 
-
+        public ulong numAllocates;
+        public ulong numDeallocates;
         public BTreeStats()
         {
             depth = 0;
@@ -288,6 +289,20 @@ namespace Garnet.server.BTreeIndex
             totalFastInserts = 0;
             numKeys = 0;
             numValidKeys = 0;
+            numAllocates = 0;
+            numDeallocates = 0;
+        }
+
+        public void printStats()
+        {
+            Console.WriteLine($"Depth: {depth}");
+            Console.WriteLine($"Number of leaf nodes: {numLeafNodes}");
+            Console.WriteLine($"Number of internal nodes: {numInternalNodes}");
+            Console.WriteLine($"Total inserts: {totalInserts}");
+            Console.WriteLine($"Total deletes: {totalDeletes}");
+            Console.WriteLine($"Total fast inserts: {totalFastInserts}");
+            Console.WriteLine($"Number of keys: {numKeys}");
+            Console.WriteLine($"Number of valid keys: {numValidKeys}");
         }
     }
 }

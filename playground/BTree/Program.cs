@@ -34,7 +34,7 @@ class Program
         // return;
         var tree = new BTree(4096);
 
-        ulong N = 60500;
+        ulong N = 60376;
         bool verbose = false;
         bool sanity = false;
         if (args.Length > 0)
@@ -188,6 +188,8 @@ class Program
         // print all times collected in a csv format 
         Console.WriteLine(insertion_time + ", " + query_time + ", " + range_query_times[0] + ", " + range_query_times[1] + ", " + range_query_times[2] + ", " + deleteTime);
         tree.Deallocate();
+        Console.WriteLine("Num allocates = " + tree.stats.numAllocates);
+        Console.WriteLine("Num deallocates = " + tree.stats.numDeallocates);
         Console.WriteLine("All checks passed");
     }
 }

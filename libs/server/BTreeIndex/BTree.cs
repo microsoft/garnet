@@ -17,11 +17,11 @@ namespace Garnet.server.BTreeIndex
         byte* tailMinKey;
         public static readonly int MAX_TREE_DEPTH = 10; // maximum allowed depth of the tree
         static int DEFAULT_SPLIT_LEAF_POSITION = (BTreeNode.LEAF_CAPACITY + 1) / 2; // position at which leaf node is split
-        static int SPLIT_LEAF_POSITION = BTreeNode.LEAF_CAPACITY; // position at which leaf node is split
-        static int SPLIT_INTERNAL_POSITION = BTreeNode.INTERNAL_CAPACITY; // position at which internal node is split
+        static int SPLIT_LEAF_POSITION = BTreeNode.LEAF_CAPACITY - 1; // position at which leaf node is split
+        static int SPLIT_INTERNAL_POSITION = BTreeNode.INTERNAL_CAPACITY- 1; // position at which internal node is split
 
         BTreeNode*[] rootToTailLeaf; // array of nodes from root to tail leaf
-        BTreeStats stats; // statistics about the tree
+        public BTreeStats stats; // statistics about the tree
 
         SectorAlignedBufferPool bufferPool;
 
@@ -32,6 +32,7 @@ namespace Garnet.server.BTreeIndex
         {
             bufferPool = new SectorAlignedBufferPool(1, (int)sectorSize);
             var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            stats.numAllocates = 1;
             var memory = (IntPtr)memoryBlock.aligned_pointer;
             root = (BTreeNode*)memory;
             // root->memoryHandle = memoryBlock;
@@ -73,6 +74,7 @@ namespace Garnet.server.BTreeIndex
             if (node->memoryHandle != null)
             {
                 node->memoryHandle.Return();
+                stats.numDeallocates++;
                 node->memoryHandle = null;
             }
         }
@@ -89,6 +91,7 @@ namespace Garnet.server.BTreeIndex
             root = null;
             head = null;
             tail = null;
+            stats.printStats();
             // Marshal.FreeHGlobal((IntPtr)root);
             // Marshal.FreeHGlobal((IntPtr)head);
             // Marshal.FreeHGlobal((IntPtr)tail);

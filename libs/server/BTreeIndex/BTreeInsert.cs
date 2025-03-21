@@ -17,7 +17,7 @@ namespace Garnet.server.BTreeIndex
             stats.numKeys++;
             stats.numValidKeys++;
             leaf = tail;
-            return InsertToLeafNode(ref leaf, ref rootToTailLeaf, key, value);
+            return InsertToLeafNode(ref leaf, ref rootToTailLeaf, key, value,true);
         }
         public bool InsertToLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, bool appendToLeaf = false)
         {
@@ -63,7 +63,20 @@ namespace Garnet.server.BTreeIndex
 
         public bool SplitLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, int index)
         {
-            var newLeaf = CreateNewLeafNode(ref leaf);
+            // var newLeaf = CreateNewLeafNode(ref leaf);
+            var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            stats.numAllocates++;
+            var memory = (IntPtr)memoryBlock.aligned_pointer;
+            BTreeNode* newLeaf = (BTreeNode*)memory;
+            // newLeaf->memoryHandle = memoryBlock;
+            newLeaf->Initialize(BTreeNodeType.Leaf, memoryBlock);
+
+            leaf->info.count = SPLIT_LEAF_POSITION;
+            newLeaf->info.previous = leaf;
+            newLeaf->info.next = leaf->info.next;
+            newLeaf->info.count = BTreeNode.LEAF_CAPACITY + 1 - SPLIT_LEAF_POSITION;
+            leaf->info.next = newLeaf;
+            stats.numLeafNodes++;
 
             // scan the keys from splitLeafPos to get the number of valid keys in the new leaf 
             uint newLeafValidCount = 0;
@@ -74,8 +87,8 @@ namespace Garnet.server.BTreeIndex
                     newLeafValidCount++;
                 }
             }
-            // leaf->info.validCount -= newLeafValidCount;
-            // newLeaf->info.validCount = newLeafValidCount;
+            leaf->info.validCount -= newLeafValidCount;
+            newLeaf->info.validCount = newLeafValidCount;
 
             // newLeaf->SetKey(0, key);
             // newLeaf->SetValue(0, value);
@@ -113,6 +126,7 @@ namespace Garnet.server.BTreeIndex
             {
                 tail = newLeaf;
                 tailMinKey = newLeaf->GetKey(0);
+                rootToTailLeaf[0] = newLeaf;
                 // validCount in internal nodes of the index excludes the validCount of the tail leaf node (optimizing for performance to avoid traversal)
                 // thus, when we split the tail leaf, we push up the validCount of the leaf that we split to the internal node
                 validCount = leaf->info.validCount;
@@ -121,21 +135,23 @@ namespace Garnet.server.BTreeIndex
             // update the parent node with the new key
             PushUpKeyInInternalNode(ref nodesTraversed, newLeaf->GetKey(0), ref newLeaf, SPLIT_INTERNAL_POSITION, validCount);
             return true;
-        }
+        } 
 
         public BTreeNode* CreateNewLeafNode(ref BTreeNode* leafToSplit)
         {
             // BTreeNode* newLeaf = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
             // newLeaf->memoryBlock = (IntPtr)newLeaf;
             var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            stats.numAllocates++;
             var memory = (IntPtr)memoryBlock.aligned_pointer;
             BTreeNode* newLeaf = (BTreeNode*)memory;
             // newLeaf->memoryHandle = memoryBlock;
             newLeaf->Initialize(BTreeNodeType.Leaf, memoryBlock);
+
             leafToSplit->info.count = SPLIT_LEAF_POSITION;
             newLeaf->info.previous = leafToSplit;
             newLeaf->info.next = leafToSplit->info.next;
-            newLeaf->info.count = BTreeNode.LEAF_CAPACITY - SPLIT_LEAF_POSITION;
+            newLeaf->info.count = BTreeNode.LEAF_CAPACITY + 1 - SPLIT_LEAF_POSITION;
             leafToSplit->info.next = newLeaf;
             stats.numLeafNodes++;
             return newLeaf;
@@ -211,13 +227,14 @@ namespace Garnet.server.BTreeIndex
         {
             // BTreeNode* newNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode));
             var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            stats.numAllocates++;
             var memory = (IntPtr)memoryBlock.aligned_pointer;
             BTreeNode* newNode = (BTreeNode*)memory;
             // newNode->memoryHandle = memoryBlock;
             newNode->Initialize(BTreeNodeType.Internal, memoryBlock);
             stats.numInternalNodes++;
             node->info.count = splitPos;
-            newNode->info.count = (BTreeNode.INTERNAL_CAPACITY - splitPos);
+            newNode->info.count = BTreeNode.INTERNAL_CAPACITY - splitPos;
             newNode->info.next = node->info.next;
             newNode->info.previous = node;
             node->info.next = newNode;
@@ -293,6 +310,7 @@ namespace Garnet.server.BTreeIndex
         {
             // BTreeNode* leftNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
             var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            stats.numAllocates++;
             var memory = (IntPtr)memoryBlock.aligned_pointer;
             BTreeNode* newRoot = (BTreeNode*)memory;
             // leftNode->memoryHandle = memoryBlock;
@@ -312,7 +330,6 @@ namespace Garnet.server.BTreeIndex
                 newRoot->info.validCount += newlySplitNode->info.validCount;
             }
             newRoot->info.next = newRoot->info.previous = null;
-
             root = newRoot;
             rootToTailLeaf[stats.depth] = newRoot;
             stats.depth++;
