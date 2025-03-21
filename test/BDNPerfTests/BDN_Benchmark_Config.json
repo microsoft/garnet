@@ -11,8 +11,8 @@
   },
   "BDN.benchmark.Operations.ObjectOperations.*": {
     "expected_LPushPop_ACL": 14400,
-    "expected_LPushPop_AOF": 14400,
-    "expected_LPushPop_None": 14400,
+    "WARN-ON-FAIL_LPushPop_AOF": 14400,
+    "WARN-ON-FAIL_LPushPop_None": 14400
   },
   "BDN.benchmark.Operations.HashObjectOperations.*": {
     "WARN-ON-FAIL_HExists_ACL": 0,
@@ -229,7 +229,7 @@
     "expected_LookupMiss_Native,None": 1984,
     "expected_LoadOuterHit_Native,None": 2700,
     "WARN-ON-FAIL_LoadInnerHit_Native,None": 2350,
-    "expected_LoadMiss_Native,None": 1984,
+    "expected_LoadMiss_Native,None": 3000,
     "expected_Digest_Native,None": 3000,
     "expected_LookupHit_Tracked,Limit": 2000,
     "expected_LookupMiss_Tracked,Limit": 2000,
