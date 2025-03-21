@@ -155,54 +155,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Try to
-        /// </summary>
-        /// <param name="address"></param>
-        /// <param name="port"></param>
-        /// <param name="logger"></param>
-        /// <returns></returns>
-        public static async Task<IPEndPoint> TryValidateAndConnectAddress2(string address, int port, ILogger logger = null)
-        {
-            IPEndPoint endpoint = null;
-            if (!IPAddress.TryParse(address, out var ipAddress))
-            {
-                // Try to identify reachable IP address from hostname
-                var hostEntry = Dns.GetHostEntry(address);
-                foreach (var entry in hostEntry.AddressList)
-                {
-                    endpoint = new IPEndPoint(entry, port);
-                    var IsListening = await IsReachable(endpoint);
-                    if (IsListening) break;
-                }
-            }
-            else
-            {
-                // If address is valid create endpoint
-                endpoint = new IPEndPoint(ipAddress, port);
-            }
-
-            async Task<bool> IsReachable(IPEndPoint endpoint)
-            {
-                using (var tcpClient = new TcpClient())
-                {
-                    try
-                    {
-                        await tcpClient.ConnectAsync(endpoint.Address, endpoint.Port);
-                        logger?.LogTrace("Reachable {ip} {port}", endpoint.Address, endpoint.Port);
-                        return true;
-                    }
-                    catch
-                    {
-                        logger?.LogTrace("Unreachable {ip} {port}", endpoint.Address, endpoint.Port);
-                        return false;
-                    }
-                }
-            }
-
-            return endpoint;
-        }
-
-        /// <summary>
         /// Parse address (hostname) and port to endpoint
         /// </summary>
         /// <param name="address"></param>
