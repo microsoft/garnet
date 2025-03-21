@@ -505,7 +505,7 @@ namespace Garnet.test
             var result = db.StringSet(input, When.NotExists);
             ClassicAssert.IsTrue(result);
 
-            var value = db.StringGet(input.Select(e => e.Key).ToArray());
+            var value = db.StringGet([.. input.Select(e => e.Key)]);
             ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
@@ -568,35 +568,35 @@ namespace Garnet.test
             // Set keys
             var response = lightClientRequest.SendCommand("MSETNX key1 5 key2 6");
             var expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // MSETNX command should fail since key exists
             response = lightClientRequest.SendCommand("MSETNX key3 7 key1 8");
             expectedResponse = ":0\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify values
             response = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "$1\r\n5\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GET key2");
             expectedResponse = "$1\r\n6\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Should not be set even though it was 'before' existing key1.
             response = lightClientRequest.SendCommand("GET key3");
             expectedResponse = "$-1\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HSET key4 first 1");
             expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // MSETNX command should fail since key exists even if it's an object.
             response = lightClientRequest.SendCommand("MSETNX key3 7 key4 8");
             expectedResponse = ":0\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1460,8 +1460,7 @@ namespace Garnet.test
         private string GetRandomString(int len)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string(Enumerable.Repeat(chars, len)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
+            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[r.Next(s.Length)])]);
         }
 
         [Test]
@@ -4706,17 +4705,17 @@ namespace Garnet.test
             // Set key
             var response = lightClientRequest.SendCommand("SETNX key1 2");
             var expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Setnx command should fail since key exists
             response = lightClientRequest.SendCommand("SETNX key1 3");
             expectedResponse = ":0\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Be sure key wasn't modified
             response = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "$1\r\n2\r\n";
-            ClassicAssert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
         #endregion
 

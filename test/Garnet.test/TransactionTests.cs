@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -50,6 +48,27 @@ namespace Garnet.test
 
             tran.StringSetAsync("mykey1", value1);
             tran.StringSetAsync("mykey2", value2);
+            bool committed = tran.Execute();
+
+            string string1 = db.StringGet("mykey1");
+            string string2 = db.StringGet("mykey2");
+
+            ClassicAssert.AreEqual(string1, value1);
+            ClassicAssert.AreEqual(string2, value2);
+        }
+
+        [Test]
+        public void TxnExecuteTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var tran = db.CreateTransaction();
+            string value1 = "abcdefg1";
+            string value2 = "abcdefg2";
+
+            tran.ExecuteAsync("SET", ["mykey1", value1]);
+            tran.ExecuteAsync("SET", ["mykey2", value2]);
             bool committed = tran.Execute();
 
             string string1 = db.StringGet("mykey1");
@@ -182,66 +201,61 @@ namespace Garnet.test
         public async Task SimpleWatchTest()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
 
-            res = lightClientRequest.SendCommand("SET key1 value1");
-            string expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var response = lightClientRequest.SendCommand("SET key1 value1");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("WATCH key1");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("WATCH key1");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("MULTI");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("GET key1");
+            response = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
-            res = lightClientRequest.SendCommand("SET key2 value2");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            response = lightClientRequest.SendCommand("SET key2 value2");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             await Task.Run(() => updateKey("key1", "value1_updated"));
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
             lightClientRequest.SendCommand("GET key1");
             lightClientRequest.SendCommand("SET key2 value2");
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*2\r\n$14\r\nvalue1_updated\r\n+OK\r\n";
-
-            ClassicAssert.AreEqual(
-                expectedResponse,
-                Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length)));
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
         public async Task WatchTestWithSetWithEtag()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
 
-            string expectedResponse = ":1\r\n";
-            res = lightClientRequest.SendCommand("SET key1 value1 WITHETAG");
-            var debug = res.AsSpan().Slice(0, expectedResponse.Length).ToArray();
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var expectedResponse = ":1\r\n";
+            var response = lightClientRequest.SendCommand("SET key1 value1 WITHETAG");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             expectedResponse = "+OK\r\n";
-            res = lightClientRequest.SendCommand("WATCH key1");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("WATCH key1");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("MULTI");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("GET key1");
+            response = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
-            res = lightClientRequest.SendCommand("SET key2 value2");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("SET key2 value2");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             await Task.Run(() =>
             {
@@ -250,9 +264,9 @@ namespace Garnet.test
                 lightClientRequestCopy.SendCommand(command);
             });
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
@@ -266,58 +280,54 @@ namespace Garnet.test
             lightClientRequest.SendCommand("SETIFMATCH key3 anotherVal 1");
             lightClientRequest.SendCommand("SET key3 arandomval WITHETAG");
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:1\r\n*2\r\n:1\r\n$6\r\nvalue2\r\n*2\r\n:1\r\n$-1\r\n*2\r\n:2\r\n$-1\r\n:3\r\n";
-            string response = Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length));
-            ClassicAssert.AreEqual(expectedResponse, response);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // check if we still have the appropriate etag on the key we had set
             var otherLighClientRequest = TestUtils.CreateRequest();
-            res = otherLighClientRequest.SendCommand("GETWITHETAG key1");
+            response = otherLighClientRequest.SendCommand("GETWITHETAG key1");
             expectedResponse = "*2\r\n:2\r\n$14\r\nvalue1_updated\r\n";
-            response = Encoding.ASCII.GetString(res.AsSpan().Slice(0, expectedResponse.Length));
-            ClassicAssert.AreEqual(response, expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
         public async Task WatchNonExistentKey()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
 
-            string expectedResponse = "+OK\r\n";
+            var expectedResponse = "+OK\r\n";
+            var response = lightClientRequest.SendCommand("SET key2 value2");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("SET key2 value2");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("WATCH key1");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("WATCH key1");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("MULTI");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
-
-            res = lightClientRequest.SendCommand("GET key2");
+            response = lightClientRequest.SendCommand("GET key2");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
-            res = lightClientRequest.SendCommand("SET key3 value3");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("SET key3 value3");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             await Task.Run(() => updateKey("key1", "value1"));
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
             lightClientRequest.SendCommand("GET key1");
             lightClientRequest.SendCommand("SET key2 value2");
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*2\r\n$6\r\nvalue1\r\n+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
-
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -332,48 +342,46 @@ namespace Garnet.test
             }
 
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
-
 
             // this key should be in the disk
-            res = lightClientRequest.SendCommand("WATCH key1");
-            string expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var response = lightClientRequest.SendCommand("WATCH key1");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            response = lightClientRequest.SendCommand("MULTI");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("GET key900");
+            response = lightClientRequest.SendCommand("GET key900");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
-            res = lightClientRequest.SendCommand("SET key901 value901_updated");
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("SET key901 value901_updated");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             await Task.Run(() => updateKey("key1", "value1_updated"));
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
             lightClientRequest.SendCommand("GET key900");
             lightClientRequest.SendCommand("SET key901 value901_updated");
-            res = lightClientRequest.SendCommand("EXEC");
-
-            var buffer_str = System.Text.Encoding.Default.GetString(res);
+            response = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*2\r\n$8\r\nvalue900\r\n+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         private static void updateKey(string key, string value)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            string command = $"SET {key} {value}";
-            byte[] res = lightClientRequest.SendCommand(command);
-            string expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var command = $"SET {key} {value}";
+            var response = lightClientRequest.SendCommand(command);
+
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }
 }

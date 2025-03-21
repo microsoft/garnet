@@ -1,17 +1,18 @@
 ARG TAG=ltsc2022
-FROM mcr.microsoft.com/dotnet/sdk:8.0-nanoserver-$TAG AS build
+FROM mcr.microsoft.com/dotnet/sdk:9.0-nanoserver-$TAG AS build
 
-WORKDIR /source
+ENV NUGET_PACKAGES=/src/pkg
+
+WORKDIR /src
 
 # Copy files
 COPY . .
-WORKDIR /source/main/GarnetServer
+WORKDIR /src/main/GarnetServer
 
-RUN dotnet restore
-RUN dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
-
-# Copy and publish app and libraries
-RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+# Restore, build, and publish
+RUN dotnet restore && \
+    dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false && \
+    dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-$TAG AS runtime

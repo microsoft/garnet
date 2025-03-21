@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31808.319
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -112,6 +112,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "modules", "modules", "{D8A9CE6E-91B9-4B84-B44A-2BCF1161A793}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GarnetJSON", "modules\GarnetJSON\GarnetJSON.csproj", "{1A5DF817-D0DD-4F0B-AE3A-C9CD0E03C9D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ETag", "samples\ETag\ETag.csproj", "{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -337,6 +339,14 @@ Global
 		{1A5DF817-D0DD-4F0B-AE3A-C9CD0E03C9D5}.Release|Any CPU.Build.0 = Release|Any CPU
 		{1A5DF817-D0DD-4F0B-AE3A-C9CD0E03C9D5}.Release|x64.ActiveCfg = Release|Any CPU
 		{1A5DF817-D0DD-4F0B-AE3A-C9CD0E03C9D5}.Release|x64.Build.0 = Release|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Debug|x64.Build.0 = Debug|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Release|x64.ActiveCfg = Release|Any CPU
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -371,6 +381,7 @@ Global
 		{DF2DD03E-87EE-482A-9FBA-6C8FBC23BDC5} = {697766CD-2046-46D9-958A-0FD3B46C98D4}
 		{A48412B4-FD60-467E-A5D9-F155CAB4F907} = {147FCE31-EC09-4C90-8E4D-37CA87ED18C3}
 		{D4C9A1A0-7053-F072-21F5-4E0C5827136D} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
+		{4FBA1587-BAFC-49F8-803A-D1CF431A26F5} = {7068BB97-1958-4060-B5F1-859464592E56}
 		{1A5DF817-D0DD-4F0B-AE3A-C9CD0E03C9D5} = {D8A9CE6E-91B9-4B84-B44A-2BCF1161A793}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution

@@ -31,6 +31,7 @@ namespace Garnet.server
         readonly int? memoryLimitBytes;
         readonly LuaTimeoutManager timeoutManager;
         readonly LuaLoggingMode logMode;
+        readonly HashSet<string> allowedFunctions;
 
         LuaRunner timeoutRunningScript;
         LuaTimeoutManager.Registration timeoutRegistration;
@@ -57,6 +58,7 @@ namespace Garnet.server
             memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
             memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
             logMode = storeWrapper.serverOptions.LuaOptions.LogMode;
+            allowedFunctions = storeWrapper.serverOptions.LuaOptions.AllowedFunctions;
         }
 
         public void Dispose()
@@ -138,7 +140,7 @@ namespace Garnet.server
             {
                 var sourceOnHeap = source.ToArray();
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))

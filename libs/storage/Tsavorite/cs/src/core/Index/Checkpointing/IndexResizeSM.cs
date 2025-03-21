@@ -11,7 +11,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructs a new IndexResizeStateMachine
         /// </summary>
-        public IndexResizeSM(int targetVersion = -1, params IStateMachineTask[] tasks) : base(targetVersion, tasks)
+        public IndexResizeSM(params IStateMachineTask[] tasks) : base(tasks)
         {
         }
 
