@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
@@ -15,20 +15,18 @@ namespace Tsavorite.test
         //      Span<int> valueSpan = stackalloc int[numElem];
         //      for (var ii = 0; ii < numElem; ++ii) valueSpan[ii] = someInt;
         //      var valueSpanByte = valueSpan.AsSpanByte();
+        //
+        // This method is supported only on platforms that support misaligned memory access or when the memory block is aligned by other means.
+
         public static SpanByte AsSpanByte<T>(this Span<T> span) where T : unmanaged
-            => new SpanByte(span.Length * sizeof(T), (IntPtr)Unsafe.AsPointer(ref span[0]));
+            => AsSpanByte((ReadOnlySpan<T>)span);
 
         public static SpanByte AsSpanByte<T>(this ReadOnlySpan<T> span) where T : unmanaged
-        {
-            fixed (T* ptr = span)
-            {
-                return new SpanByte(span.Length * sizeof(T), (IntPtr)ptr);
-            }
-        }
+            => SpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(span));
 
         public static Span<T> AsSpan<T>(this ref SpanByte sb) where T : unmanaged
-            => new Span<T>(sb.MetadataSize + sb.ToPointer(), (sb.Length - sb.MetadataSize) / sizeof(T));
-
+            => MemoryMarshal.Cast<byte, T>(sb.AsSpan());
+        
         internal static T[] ToArray<T>(this ref SpanByte spanByte) where T : unmanaged
             => AsSpan<T>(ref spanByte).ToArray();
     }
