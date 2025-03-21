@@ -208,6 +208,11 @@ namespace Garnet.test
         [Test]
         public void ImportExportConfigAzure()
         {
+            if (!TestUtils.IsRunningAzureTests)
+            {
+                Assert.Ignore("Azure tests are disabled.");
+            }
+
             var AzureTestDirectory = $"{TestContext.CurrentContext.Test.MethodName.ToLowerInvariant()}";
             var configPath = $"{AzureTestDirectory}/test1.config";
             var AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
