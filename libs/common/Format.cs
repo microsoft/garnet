@@ -85,6 +85,9 @@ namespace Garnet.common
             if (string.IsNullOrEmpty(singleAddressOrHostname) || string.IsNullOrWhiteSpace(singleAddressOrHostname))
                 return [new IPEndPoint(IPAddress.Any, port)];
 
+            if (singleAddressOrHostname[0] == '-')
+                singleAddressOrHostname = singleAddressOrHostname.Substring(1);
+
             if (singleAddressOrHostname.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
                 return [new IPEndPoint(IPAddress.Loopback, port)];
 
