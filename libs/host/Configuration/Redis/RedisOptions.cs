@@ -24,8 +24,8 @@ namespace Garnet
 Specify your passphrase in the tls-key-file-pass option (or via the cert-password command line argument), if applicable. 
 Specify your subject name via the cert-subject-name command line argument, if applicable.";
 
-        [RedisOption("bind", nameof(Options.Address), BindWarning, typeof(ArrayToFirstItemTransformer<string>))]
-        public Option<string[]> Bind { get; set; }
+        [RedisOption("bind", nameof(Options.Address), BindWarning)]
+        public Option<string> Bind { get; set; }
 
         [RedisOption("enable-debug-command", nameof(Options.EnableDebugCommand))]
         public Option<RedisConnectionProtectionOption> EnableDebugCommand { get; set; }
