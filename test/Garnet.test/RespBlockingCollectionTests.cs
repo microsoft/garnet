@@ -103,7 +103,7 @@ namespace Garnet.test
                     var value = $"value{i}";
                     var btExpectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
                     TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
-                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(1200, 1500)), cts.Token);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 200)), cts.Token);
                 }
             }, cts.Token);
 
