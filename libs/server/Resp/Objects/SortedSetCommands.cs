@@ -1867,11 +1867,11 @@ namespace Garnet.server
             var membersParseState = parseState.Slice(3, numMembers);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
-            var input = new ObjectInput(header, ref membersParseState);
+            var input = new ObjectInput(header, ref membersParseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+            var status = storageApi.SortedSetTimeToLive(key, ref input, ref outputFooter);
 
             switch (status)
             {

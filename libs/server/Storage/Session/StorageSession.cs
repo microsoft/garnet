@@ -90,7 +90,7 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            _zcollectTaskLock.WriteLock();
+            _zcollectTaskLock.CloseLock();
 
             sectorAlignedMemoryBitmap?.Dispose();
             basicContext.Session.Dispose();

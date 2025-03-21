@@ -186,8 +186,8 @@ namespace Garnet.server
             => storageSession.SortedSetPersist(key, members, out results, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetTimeToLive(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn)

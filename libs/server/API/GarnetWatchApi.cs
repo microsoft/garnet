@@ -244,10 +244,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+            return garnetApi.SortedSetTimeToLive(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />

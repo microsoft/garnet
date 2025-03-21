@@ -1469,12 +1469,10 @@ namespace Garnet.server
         /// Returns the time to live for a sorted set members.
         /// </summary>
         /// <param name="key">The key of the sorted set.</param>
-        /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
-        /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="outputFooter">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus SortedSetTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the time to live for a sorted set members.
