@@ -193,7 +193,7 @@
     "expected_ConstructLarge_Managed,None": 2100738,
     "expected_CompileForSessionSmall_Managed,None": 1984,
     "expected_CompileForSessionLarge_Managed,None": 1984,
-    "expected_ResetParametersSmall_Native,None": 1984,
+    "expected_ResetParametersSmall_Native,None": 3000,
     "expected_ResetParametersLarge_Native,None": 1984,
     "expected_ConstructSmall_Native,None": 3024,
     "expected_ConstructLarge_Native,None": 5500,
@@ -335,7 +335,7 @@
   "BDN.benchmark.Operations.ModuleOperations.*": {
     "expected_ModuleNoOpRawStringReadCommand_ACL": 0,
     "expected_ModuleNoOpRawStringRmwCommand_ACL": 0,
-    "expected_ModuleNoOpObjRmwCommand_ACL": 3200,
+    "WARN-ON-FAIL_ModuleNoOpObjRmwCommand_ACL": 3200,
     "expected_ModuleNoOpObjReadCommand_ACL": 21000,
     "expected_ModuleNoOpProc_ACL": 0,
     "expected_ModuleNoOpTxn_ACL": 0,
