@@ -721,7 +721,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task MultiEndpointTest()
+        public async Task MultiTcpSocketTest()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             var hostname = TestUtils.GetHostName();
