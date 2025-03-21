@@ -572,17 +572,5 @@ namespace Garnet.test
             var expectedResponse = "$-1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
-        private (string, string)[] GenerateDataset(int keyCount)
-        {
-            var data = new (string, string)[keyCount];
-
-            for (var keyId = 0; keyId < keyCount; keyId++)
-            {
-                data[keyId] = ($"key{keyId}", $"val{keyId}");
-            }
-
-            return data;
-        }
     }
 }
