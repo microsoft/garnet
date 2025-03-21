@@ -40,10 +40,9 @@ namespace Garnet.common
         /// <param name="port">Endpoint Port</param>
         /// <param name="endpoints">List of endpoints generated from the input IPs</param>
         /// <param name="errorHostnameOrAddress">Output error if any</param>
-        /// <param name="useForBind">Differentiate validation between use for --bind parsing or CLUSTER MEET</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if parse and address validation was successful, otherwise false</returns>
-        public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress, bool useForBind = false, ILogger logger = null)
+        public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress, ILogger logger = null)
         {
             endpoints = null;
             errorHostnameOrAddress = null;
@@ -59,7 +58,7 @@ namespace Garnet.common
             // Validate addresses and create endpoints
             foreach (var singleAddressOrHostname in addresses)
             {
-                var e = TryCreateEndpoint(singleAddressOrHostname, port, useForBind, logger).Result;
+                var e = TryCreateEndpoint(singleAddressOrHostname, port, tryConnect: false, logger).Result;
                 if(e == null)
                 {
                     endpoints = null;
@@ -77,11 +76,11 @@ namespace Garnet.common
         /// Try to create an endpoint from address and port
         /// </summary>
         /// <param name="singleAddressOrHostname">This could be an address or a hostname that the method tries to resolve</param>
-        /// <param name="port"></param>
-        /// <param name="useForBind">Binding does not poll connection because is supposed to be called from the server side</param>
-        /// <param name="logger"></param>
+        /// <param name="port">Port number to use for the endpoints</param>
+        /// <param name="tryConnect">Whether to try to connect to the created endpoints to ensure that it is reachable</param>
+        /// <param name="logger">Logger</param>
         /// <returns></returns>
-        public static async Task<EndPoint[]> TryCreateEndpoint(string singleAddressOrHostname, int port, bool useForBind = false, ILogger logger = null)
+        public static async Task<EndPoint[]> TryCreateEndpoint(string singleAddressOrHostname, int port, bool tryConnect = false, ILogger logger = null)
         {
             if (string.IsNullOrEmpty(singleAddressOrHostname) || string.IsNullOrWhiteSpace(singleAddressOrHostname))
                 return [new IPEndPoint(IPAddress.Any, port)];
@@ -102,12 +101,12 @@ namespace Garnet.common
                     return null;
                 }
 
-                if (useForBind)
+                if (tryConnect)
                 {
                     foreach (var entry in ipAddresses)
                     {
                         var endpoint = new IPEndPoint(entry, port);
-                        var IsListening = await IsReachable(endpoint);
+                        var IsListening = await TryConnect(endpoint);
                         if (IsListening) return [endpoint];
                     }
                 }
@@ -133,7 +132,7 @@ namespace Garnet.common
 
             return null;
 
-            async Task<bool> IsReachable(IPEndPoint endpoint)
+            async Task<bool> TryConnect(IPEndPoint endpoint)
             {
                 using (var tcpClient = new TcpClient())
                 {

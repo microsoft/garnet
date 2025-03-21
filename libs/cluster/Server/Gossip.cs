@@ -161,7 +161,7 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    var endpoints = await Format.TryCreateEndpoint(address, port, useForBind: true, logger: logger);
+                    var endpoints = await Format.TryCreateEndpoint(address, port, tryConnect: true, logger: logger);
                     if (endpoints == null)
                     {
                         logger?.LogError("Invalid CLUSTER MEET endpoint!");
