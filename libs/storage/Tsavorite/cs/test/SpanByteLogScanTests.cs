@@ -3,7 +3,7 @@
 
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
+using System.Text.Unicode;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -96,7 +96,7 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             const long PageSize = 1L << PageSizeBits;
 
@@ -105,17 +105,20 @@ namespace Tsavorite.test.spanbyte
 
             Random rng = new(101);
 
+            Span<byte> keySpan = stackalloc byte[8];
+            Span<byte> valueSpan = stackalloc byte[128];
+
+            valueSpan.Fill((byte)'v');
+
             for (int i = 0; i < TotalRecords; i++)
             {
-                var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
-                var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
-                var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
+                _ = Utf8.TryWrite(keySpan, $"key_{i:0000}", out _);
+                _ = Utf8.TryWrite(valueSpan, $"{i:0000}_", out int valueBytesWritten);
 
-                fixed (byte* keyPtr = key)
-                fixed (byte* valuePtr = value)
-                {
-                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
-                }
+                var keySpanByte = SpanByte.FromPinnedSpan(keySpan);
+                var valueSpanByte = SpanByte.FromPinnedSpan(valueSpan.Slice(0, rng.Next(valueBytesWritten + 1, valueSpan.Length))); // Make the record lengths random
+
+                _ = bContext.Upsert(keySpanByte, valueSpanByte);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store);
@@ -149,17 +152,15 @@ namespace Tsavorite.test.spanbyte
             ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 2");
 
             // Add another totalRecords, with keys incremented by totalRecords to remain distinct, and verify we see all keys.
-            for (int i = 0; i < TotalRecords; i++)
+            for (int i = TotalRecords; i < TotalRecords * 2; i++)
             {
-                var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
-                var key = MemoryMarshal.Cast<char, byte>($"key_{i + TotalRecords}".AsSpan());
-                var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i + TotalRecords}".AsSpan());
+                _ = Utf8.TryWrite(keySpan, $"key_{i:0000}", out _);
+                _ = Utf8.TryWrite(valueSpan, $"{i:0000}_", out int valueBytesWritten);
 
-                fixed (byte* keyPtr = key)
-                fixed (byte* valuePtr = value)
-                {
-                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
-                }
+                var keySpanByte = SpanByte.FromPinnedSpan(keySpan);
+                var valueSpanByte = SpanByte.FromPinnedSpan(valueSpan.Slice(0, rng.Next(valueBytesWritten + 1, valueSpan.Length))); // Make the record lengths random
+
+                _ = bContext.Upsert(keySpanByte, valueSpanByte);
             }
             scanCursorFuncs.Initialize(verifyKeys);
             ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 2");
@@ -182,12 +183,13 @@ namespace Tsavorite.test.spanbyte
             ReadOptions readOptions = default;
             var readStatus = bContext.ReadAtAddress(store.hlogBase.HeadAddress, ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
-            var keyString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-            var keyOrdinal = int.Parse(keyString.Substring(keyString.IndexOf('_') + 1));
+            
+            var outputKeySpan = output.AsReadOnlySpan();
+            var outputKeyOrdinal = int.Parse(outputKeySpan.Slice(0, outputKeySpan.IndexOf((byte)'_')));
             output.Memory.Dispose();
 
             scanCursorFuncs.Initialize(verifyKeys);
-            scanCursorFuncs.numRecords = keyOrdinal;
+            scanCursorFuncs.numRecords = outputKeyOrdinal;
             cursor = store.Log.HeadAddress + 1;
             do
             {
@@ -199,24 +201,27 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void SpanByteScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public void SpanByteScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(101);
+            
+            Span<byte> keySpan = stackalloc byte[8];
+            Span<byte> valueSpan = stackalloc byte[128];
+
+            valueSpan.Fill((byte)'v');
 
             for (int i = 0; i < TotalRecords; i++)
             {
-                var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
-                var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
-                var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
+                _ = Utf8.TryWrite(keySpan, $"key_{i:0000}", out _);
+                _ = Utf8.TryWrite(valueSpan, $"{i:0000}_", out int valueBytesWritten);
 
-                fixed (byte* keyPtr = key)
-                fixed (byte* valuePtr = value)
-                {
-                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
-                }
+                var keySpanByte = SpanByte.FromPinnedSpan(keySpan);
+                var valueSpanByte = SpanByte.FromPinnedSpan(valueSpan.Slice(0, rng.Next(valueBytesWritten + 1, valueSpan.Length))); // Make the record lengths random
+
+                _ = bContext.Upsert(keySpanByte, valueSpanByte);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store);
@@ -240,24 +245,27 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void SpanByteScanCursorWithRCUTest([Values(RCULocation.RCUBefore, RCULocation.RCUAfter)] RCULocation rcuLocation, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public void SpanByteScanCursorWithRCUTest([Values(RCULocation.RCUBefore, RCULocation.RCUAfter)] RCULocation rcuLocation, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
 
             Random rng = new(101);
 
+            Span<byte> keySpan = stackalloc byte[8];
+            Span<byte> valueSpan = stackalloc byte[128];
+
+            valueSpan.Fill((byte)'v');
+
             for (int i = 0; i < TotalRecords; i++)
             {
-                var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
-                var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
-                var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
+                _ = Utf8.TryWrite(keySpan, $"key_{i:0000}", out _);
+                _ = Utf8.TryWrite(valueSpan, $"{i:0000}_", out int valueBytesWritten);
 
-                fixed (byte* keyPtr = key)
-                fixed (byte* valuePtr = value)
-                {
-                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
-                }
+                var keySpanByte = SpanByte.FromPinnedSpan(keySpan);
+                var valueSpanByte = SpanByte.FromPinnedSpan(valueSpan.Slice(0, rng.Next(valueBytesWritten + 1, valueSpan.Length))); // Make the record lengths random
+
+                _ = bContext.Upsert(keySpanByte, valueSpanByte);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store)
@@ -314,7 +322,7 @@ namespace Tsavorite.test.spanbyte
                 this.filter = filter;
             }
 
-            unsafe void CheckForRCU()
+            void CheckForRCU()
             {
                 if (rcuLocation == RCULocation.RCUBefore && rcuRecord == numRecords + 1
                     || rcuLocation == RCULocation.RCUAfter && rcuRecord == numRecords - 1)
@@ -325,15 +333,19 @@ namespace Tsavorite.test.spanbyte
                         using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
                         var bContext = session.BasicContext;
 
-                        var valueFill = new string('x', 220);   // Update the specified key with a longer value that requires RCU.
-                        var key = MemoryMarshal.Cast<char, byte>($"key_{rcuRecord}".AsSpan());
-                        var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{rcuRecord}".AsSpan());
+                        Span<byte> keySpan = stackalloc byte[8];
+                        Span<byte> valueSpan = stackalloc byte[225];
 
-                        fixed (byte* keyPtr = key)
-                        fixed (byte* valuePtr = value)
-                        {
-                            _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
-                        }
+                        _ = Utf8.TryWrite(keySpan, $"key_{rcuRecord:0000}", out int keyBytesWritten);
+                                                
+                        valueSpan.Fill((byte)'v');
+                        _ = Utf8.TryWrite(valueSpan, $"{rcuRecord:0000}_", out int valueBytesWritten);
+
+                        var keySpanByte = SpanByte.FromPinnedSpan(keySpan);
+                        var valueSpanByte = SpanByte.FromPinnedSpan(valueSpan); // Update the specified key with a longer value that requires RCU.
+
+                        _ = bContext.Upsert(keySpanByte, valueSpanByte);
+                       
                     }).Wait();
 
                     // If we RCU before Scan arrives at the record, then we won't see it and the values will be off by one (higher).
@@ -345,8 +357,8 @@ namespace Tsavorite.test.spanbyte
 
             public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
-                var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
-                var kfield1 = int.Parse(keyString.Substring(keyString.IndexOf('_') + 1));
+                var keySpan = key.AsReadOnlySpan();
+                var kfield1 = int.Parse(keySpan.Slice(keySpan.IndexOf((byte)'_') + 1));
 
                 cursorRecordResult = filter(kfield1) ? CursorRecordResult.Accept : CursorRecordResult.Skip;
                 if (cursorRecordResult != CursorRecordResult.Accept)
@@ -383,8 +395,7 @@ namespace Tsavorite.test.spanbyte
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-
-        public unsafe void SpanByteJumpToBeginAddressTest()
+        public void SpanByteJumpToBeginAddressTest()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
@@ -404,6 +415,9 @@ namespace Tsavorite.test.spanbyte
 
             const int numRecords = 200;
             const int numTailRecords = 10;
+
+            Span<byte> keyValueSpan = stackalloc byte[8];
+
             long shiftBeginAddressTo = 0;
             int shiftToKey = 0;
             for (int i = 0; i < numRecords; i++)
@@ -414,14 +428,12 @@ namespace Tsavorite.test.spanbyte
                     shiftToKey = i;
                 }
 
-                var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
-                var value = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
+                _ = i.TryFormat(keyValueSpan, out int keyValueBytesWritten);
 
-                fixed (byte* keyPtr = key)
-                fixed (byte* valuePtr = value)
-                {
-                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
-                }
+                var keySpanByte = SpanByte.FromPinnedSpan(keyValueSpan.Slice(0, keyValueBytesWritten));
+                var valueSpanByte = SpanByte.FromPinnedSpan(keyValueSpan.Slice(0, keyValueBytesWritten));
+
+                _ = bContext.Upsert(keySpanByte, valueSpanByte);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
@@ -429,8 +441,8 @@ namespace Tsavorite.test.spanbyte
             for (int i = 0; i < 100; ++i)
             {
                 ClassicAssert.IsTrue(iter.GetNext(out var recordInfo));
-                ClassicAssert.AreEqual(i, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
-                ClassicAssert.AreEqual(i, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
+                ClassicAssert.AreEqual(i, int.Parse(iter.GetKey().AsReadOnlySpan()));
+                ClassicAssert.AreEqual(i, int.Parse(iter.GetValue().AsReadOnlySpan()));
             }
 
             store.Log.ShiftBeginAddress(shiftBeginAddressTo);
@@ -441,8 +453,8 @@ namespace Tsavorite.test.spanbyte
                 if (i == 0)
                     ClassicAssert.AreEqual(store.Log.BeginAddress, iter.CurrentAddress);
                 var expectedKey = numRecords - numTailRecords + i;
-                ClassicAssert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
-                ClassicAssert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
+                ClassicAssert.AreEqual(expectedKey, int.Parse(iter.GetKey().AsReadOnlySpan()));
+                ClassicAssert.AreEqual(expectedKey, int.Parse(iter.GetValue().AsReadOnlySpan()));
             }
         }
 
