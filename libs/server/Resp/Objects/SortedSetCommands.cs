@@ -1551,7 +1551,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
+            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout) || (timeout < 0))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
             }
@@ -1609,8 +1609,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
             }
 
+            if (timeout < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+            }
+
             // Read count of keys
-            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys) || (numKeys <= 0))
             {
                 return AbortWithErrorMessage(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
             }
@@ -1682,7 +1687,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(result.Items.Length, ref dcurr, dend))
                 SendAndReset();
 
-            for (var i = 0; i < result.Items.Length; i += 2)
+            for (var i = 0; i < result.Items.Length; ++i)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
