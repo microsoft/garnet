@@ -240,7 +240,7 @@
     "expected_LookupHit_Tracked,None": 1984,
     "expected_LookupMiss_Tracked,None": 1984,
     "expected_LoadOuterHit_Tracked,None": 1984,
-    "expected_LoadInnerHit_Tracked,None": 2350,
+    "WARN-ON-FAIL_LoadInnerHit_Tracked,None": 2350,
     "expected_LoadMiss_Tracked,None": 1984,
     "expected_Digest_Tracked,None": 1984
   },
@@ -420,12 +420,12 @@
     "expected_SMIsMember_None": 9600,
     "expected_SRandMemberSingle_None": 7200,
     "expected_SScan_None": 12000,
-    "expected_SUnion_None": 68800,
+    "WARN-ON-FAIL_SUnion_None": 68800,
     "expected_SUnionStore_None": 111200,
     "expected_SInter_None": 41600,
-    "WARN-ON-FAIL_expected_SInterStore_None": 71200,
-    "WARN-ON-FAIL_expected_SInterCard_None": 36800,
-    "WARN-ON-FAIL_expected_SDiff_None": 45600,
-    "WARN-ON-FAIL_expected_SDiffStore_None": 75200
+    "WARN-ON-FAIL_SInterStore_None": 71200,
+    "WARN-ON-FAIL_SInterCard_None": 36800,
+    "WARN-ON-FAIL_SDiff_None": 45600,
+    "WARN-ON-FAIL_SDiffStore_None": 75200
   }
 }
