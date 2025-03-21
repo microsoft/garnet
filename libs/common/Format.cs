@@ -54,7 +54,7 @@ namespace Garnet.common
                 return true;
             }
 
-            var addresses = addressList.Trim().Split(' ');
+            var addresses = addressList.Trim().Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
             var endpointList = new List<EndPoint>();
             // Validate addresses and create endpoints
             foreach (var singleAddressOrHostname in addresses)
