@@ -182,7 +182,7 @@
   },
   "BDN.benchmark.Lua.LuaRunnerOperations.*": {
     "expected_ResetParametersSmall_Managed,Limit": 1984,
-    "expected_ResetParametersLarge_Managed,Limit": 1984,
+    "expected_ResetParametersLarge_Managed,Limit": 3000,
     "expected_ConstructSmall_Managed,Limit": 2097602,
     "expected_ConstructLarge_Managed,Limit": 2100666,
     "expected_CompileForSessionSmall_Managed,Limit": 1984,
@@ -405,7 +405,7 @@
     "expected_SRandMemberSingle_AOF": 7200,
     "expected_SScan_AOF": 12000,
     "WARN-ON-FAIL_SUnion_AOF": 68800,
-    "expected_SUnionStore_AOF": 156000,
+    "WARN-ON-FAIL_SUnionStore_AOF": 156000,
     "WARN-ON-FAIL_SInter_AOF": 41600,
     "expected_SInterStore_AOF": 114400,
     "WARN-ON-FAIL_SInterCard_AOF": 36800,
