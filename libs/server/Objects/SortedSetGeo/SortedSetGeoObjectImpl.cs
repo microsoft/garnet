@@ -270,7 +270,8 @@ namespace Garnet.server
 
         internal void GeoSearch(ref ObjectInput input,
                                 ref SpanByteAndMemory output,
-                                GeoSearchOptions opts)
+                                GeoSearchOptions opts,
+                                bool readOnly)
         {
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -415,7 +416,7 @@ namespace Garnet.server
 
                         if (opts.withHash)
                         {
-                            if (opts.readOnly)
+                            if (readOnly)
                             {
                                 while (!RespWriteUtils.TryWriteInt64(item.GeoHash, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

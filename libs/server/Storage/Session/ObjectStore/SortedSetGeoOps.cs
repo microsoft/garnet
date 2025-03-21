@@ -85,7 +85,7 @@ namespace Garnet.server
                         return GarnetStatus.WRONGTYPE;
                     }
 
-                    firstSortedSet.GeoSearch(ref input, ref output, opts);
+                    firstSortedSet.GeoSearch(ref input, ref output, opts, true);
 
                     return GarnetStatus.OK;
                 }
@@ -141,7 +141,19 @@ namespace Garnet.server
             try
             {
                 SpanByteAndMemory searchOutMem = default;
-                var status = GeoSearch(key, ref opts, ref input, ref searchOutMem, ref objectStoreLockableContext);
+
+                var status = GET(key.ToArray(), out var firstObj, ref objectStoreLockableContext);
+                if (status == GarnetStatus.OK)
+                {
+                    if (firstObj.GarnetObject is SortedSetObject firstSortedSet)
+                    {
+                        firstSortedSet.GeoSearch(ref input, ref searchOutMem, opts, false);
+                    }
+                    else
+                    {
+                        status = GarnetStatus.WRONGTYPE;
+                    }
+                }
 
                 if (status == GarnetStatus.WRONGTYPE)
                 {

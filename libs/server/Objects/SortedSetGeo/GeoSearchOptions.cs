@@ -91,7 +91,6 @@
     /// </summary>
     public ref struct GeoSearchOptions
     {
-        internal bool readOnly;
         internal GeoSearchType searchType;
         internal GeoDistanceUnitType unit;
         internal double radius;

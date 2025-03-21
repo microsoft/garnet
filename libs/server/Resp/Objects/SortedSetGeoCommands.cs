@@ -161,6 +161,7 @@ namespace Garnet.server
             var searchOpts = new GeoSearchOptions();
 
             int sourceIdx = 0, destIdx = -1;
+            bool readOnly = false;
             switch (command)
             {
                 case RespCommand.GEORADIUS:
@@ -168,18 +169,18 @@ namespace Garnet.server
                     break;
                 case RespCommand.GEORADIUS_RO:
                     paramsRequiredInCommand = 5;
-                    searchOpts.readOnly = true;
+                    readOnly = true;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                     paramsRequiredInCommand = 4;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     paramsRequiredInCommand = 4;
-                    searchOpts.readOnly = true;
+                    readOnly = true;
                     break;
                 case RespCommand.GEOSEARCH:
                     paramsRequiredInCommand = 6;
-                    searchOpts.readOnly = true;
+                    readOnly = true;
                     break;
                 case RespCommand.GEOSEARCHSTORE:
                     paramsRequiredInCommand = 7;
@@ -468,7 +469,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                if (!searchOpts.readOnly)
+                if (!readOnly)
                 {
                     if ((command == RespCommand.GEORADIUS || command == RespCommand.GEORADIUSBYMEMBER)
                         && tokenBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE))
@@ -545,7 +546,7 @@ namespace Garnet.server
             }
             else
             {
-                searchOpts.readOnly = true;
+                readOnly = true;
             }
 
             // Check if we encountered an error while checking the parse state
@@ -557,7 +558,7 @@ namespace Garnet.server
             }
 
             // On storing to ZSET, we need to use either dist or hash as score.
-            if (!searchOpts.readOnly && !searchOpts.withDist && !searchOpts.withHash)
+            if (!readOnly && !searchOpts.withDist && !searchOpts.withHash)
             {
                 searchOpts.withHash = true;
             }
