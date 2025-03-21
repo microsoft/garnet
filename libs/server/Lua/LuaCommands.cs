@@ -48,7 +48,7 @@ namespace Garnet.server
                 {
                     if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var source))
                     {
-                        if (!sessionScriptCache.TryLoad(this, source, scriptKey, out runner, out _, out var error))
+                        if (!sessionScriptCache.TryLoad(this, source, scriptKey, out runner, out _, out _, out _))
                         {
                             // TryLoad will have written an error out, it any
 
@@ -121,7 +121,7 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
             var scriptKey = new ScriptHashKey(digest);
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, out var runner, out _, out var error))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, out var runner, out _, out _, out var error))
             {
                 // TryLoad will have written any errors out
                 return true;
@@ -251,7 +251,7 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
-            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, new(digest), out _, out var digestOnHeap, out var error))
+            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, new(digest), out _, out var digestOnHeap, out var compiledSource, out var error))
             {
                 // TryLoad will write any errors out
 
@@ -260,11 +260,11 @@ namespace Garnet.server
                 {
                     var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
                     digest.CopyTo(newAlloc);
-                    _ = storeWrapper.storeScriptCache.TryAdd(new(newAlloc), source.ToArray());
+                    _ = storeWrapper.storeScriptCache.TryAdd(new(newAlloc), compiledSource);
                 }
                 else
                 {
-                    _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, source.ToArray());
+                    _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, compiledSource);
                 }
 
                 while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))

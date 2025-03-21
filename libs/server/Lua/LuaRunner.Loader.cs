@@ -3,8 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using KeraLua;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -19,7 +22,7 @@ namespace Garnet.server
         /// <summary>
         /// Lua code loaded into VM more or less immediately.
         /// 
-        /// Bits of this get replaced by <see cref="PrepareLoaderBlockBytes(HashSet{string})"/>.
+        /// Bits of this get replaced by <see cref="PrepareLoaderBlockBytes(HashSet{string}, ILogger)"/>.
         /// </summary>
         private const string LoaderBlock = @"
 -- disable for sandboxing purposes
@@ -317,7 +320,7 @@ function load_sandboxed(source)
     return err, rawFunc
 end
 ";
-        private static readonly HashSet<string> DefaultAllowedFunctions = [
+        internal static readonly HashSet<string> DefaultAllowedFunctions = [
             // Built ins
             "assert",
             "collectgarbage",
@@ -371,9 +374,9 @@ end
         private static LoaderBlockCache CachedLoaderBlock;
 
         /// <summary>
-        /// Modifies <see cref="LoaderBlock"/> to account for <paramref name="allowedFunctions"/>, and converts to bytes.
+        /// Modifies <see cref="LoaderBlock"/> to account for <paramref name="allowedFunctions"/>, and converts to ops for future loading.
         /// </summary>
-        private static ReadOnlyMemory<byte> PrepareLoaderBlockBytes(HashSet<string> allowedFunctions)
+        internal static ReadOnlyMemory<byte> PrepareLoaderBlockBytes(HashSet<string> allowedFunctions, ILogger logger)
         {
             // If nothing is explicitly allowed, fallback to our defaults
             if (allowedFunctions.Count == 0)
@@ -430,13 +433,87 @@ end
             var decl = replacement.ToString();
             var finalLoaderBlock = LoaderBlock.Replace("!!SANDBOX_ENV REPLACEMENT TARGET!!", decl);
 
+            // Compile bytecode is smaller and faster to load, so pay for the compilation once up front
+            byte[] asOps;
+            using (var compilingState = new LuaStateWrapper(LuaMemoryManagementMode.Native, null, logger))
+            {
+                // This is equivalent to:
+                // string.load(<loader block>, true)
+
+                compilingState.GetGlobal(LuaType.Table, "string\0"u8);
+                if (!compilingState.TryPushBuffer("dump"u8))
+                {
+                    throw new Exception("Loading string should not fail");
+                }
+                _ = compilingState.RawGet(LuaType.Function, 1);
+
+                compilingState.Remove(1);
+
+                if (compilingState.LoadString(Encoding.UTF8.GetBytes(finalLoaderBlock)) != LuaStatus.OK)
+                {
+                    throw new InvalidOperationException("Compiling function should not fail");
+                }
+
+                compilingState.PushBoolean(true);
+
+                if (compilingState.PCall(2, 1) != LuaStatus.OK)
+                {
+                    throw new InvalidOperationException("Dumping function should not fail");
+                }
+
+                compilingState.KnownStringToBuffer(1, out var ops);
+
+                asOps = ops.ToArray();
+            }
+
             // Save off for next caller
             //
             // Inherently race-y, but that's fine - worst case we do a little extra work
-            var newCache = new LoaderBlockCache(allowedFunctions, Encoding.UTF8.GetBytes(finalLoaderBlock));
+            var newCache = new LoaderBlockCache(allowedFunctions, asOps);
             CachedLoaderBlock = newCache;
 
             return newCache.LoaderBlockBytes;
+        }
+
+        /// <summary>
+        /// Take a chunk of Lua code and convert it to binary ops.
+        /// 
+        /// These ops are faster to load into a runtime than parsing the whole source file again.
+        /// </summary>
+        internal static byte[] CompileSource(ReadOnlySpan<byte> source)
+        {
+            // This is equivalent to calling 
+            //
+            // string.dump(<function equivalent to source>, true)
+            //
+            // Which gives us the opcode version of source on the stack
+
+            using var state = new LuaStateWrapper(LuaMemoryManagementMode.Native, null, null);
+
+            state.GetGlobal(LuaType.Table, "string\0"u8);
+            var pushRes = state.TryPushBuffer("dump"u8);
+            Debug.Assert(pushRes, "Pushing 'dump' should never fail");
+            _ = state.RawGet(LuaType.Function, 1);
+
+            state.Remove(1);
+
+            if (state.LoadString(source) != LuaStatus.OK)
+            {
+                // If we're going to fail, just keep the source as is - a future load attempt will fail it too
+                return source.ToArray();
+            }
+
+            state.PushBoolean(true);
+
+            if (state.PCall(2, 1) != LuaStatus.OK)
+            {
+                // If we're going to fail, just keep the source as is - a future load attempt will fail it too
+                return source.ToArray();
+            }
+
+            state.KnownStringToBuffer(1, out var ops);
+
+            return ops.ToArray();
         }
     }
 }
