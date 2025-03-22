@@ -13,14 +13,16 @@ namespace Garnet.server
         private Dictionary<byte[], StreamObject> streams;
         long defPageSize;
         long defMemorySize;
+        int safeTailRefreshFreqMs;
 
         SingleWriterMultiReaderLock _lock = new SingleWriterMultiReaderLock();
 
-        public StreamManager(long pageSize, long memorySize)
+        public StreamManager(long pageSize, long memorySize, int safeTailRefreshFreqMs)
         {
             streams = new Dictionary<byte[], StreamObject>(new ByteArrayComparer());
             defPageSize = pageSize;
             defMemorySize = memorySize;
+            this.safeTailRefreshFreqMs = safeTailRefreshFreqMs;
         }
 
         /// <summary>
@@ -73,7 +75,7 @@ namespace Garnet.server
                 if (!foundStream)
                 {
                     // stream was not found with this key so create a new one 
-                    StreamObject newStream = new StreamObject(null, defPageSize, defMemorySize);
+                    StreamObject newStream = new StreamObject(null, defPageSize, defMemorySize, safeTailRefreshFreqMs);
                     newStream.AddEntry(value, valueLength, idSlice, numPairs, ref output);
                     streams.TryAdd(key, newStream);
                     streamKey = key;

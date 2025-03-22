@@ -4860,6 +4860,35 @@
     "SubCommands": null
   },
   {
+    "Command": "XDEL",
+    "Name": "XDEL",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Stream, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "XLEN",
     "Name": "XLEN",
     "IsInternal": false,
@@ -4884,6 +4913,35 @@
         },
         "Notes": null,
         "Flags": "RO"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "XRANGE",
+    "Name": "XRANGE",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, Stream",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
       }
     ],
     "SubCommands": null

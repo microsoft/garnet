@@ -818,6 +818,8 @@ namespace Garnet.server
                 // Stream Commands
                 RespCommand.XADD => StreamAdd(),
                 RespCommand.XLEN => StreamLength(),
+                RespCommand.XDEL => StreamDelete(),
+                RespCommand.XRANGE => StreamRange(),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;

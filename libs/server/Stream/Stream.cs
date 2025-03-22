@@ -9,6 +9,7 @@ using System.Threading;
 using System.Diagnostics;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Buffers.Binary;
 
 namespace Garnet.server
 {
@@ -39,10 +40,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of the log used for the stream</param>
-        public StreamObject(string logDir, long pageSize, long memorySize)
+        public StreamObject(string logDir, long pageSize, long memorySize, int safeTailRefreshFreqMs)
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice("streamLogs/" + logDir + "/streamLog", preallocateFile: false);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize, SafeTailRefreshFrequencyMs = safeTailRefreshFreqMs});
             index = new BTree(device.SectorSize);
             totalEntriesAdded = 0;
             lastId = default;
@@ -335,7 +336,7 @@ namespace Garnet.server
             _lock.WriteLock();
             try
             {
-                // deleted = index.Delete((byte*)Unsafe.AsPointer(ref entryID.idBytes[0]));
+                deleted = index.Delete((byte*)Unsafe.AsPointer(ref entryID.idBytes[0]));
             }
             finally
             {
@@ -343,6 +344,195 @@ namespace Garnet.server
             }
             return deleted;
         }
+
+        public bool ParseCompleteStreamIDFromString(string idString, out StreamID id)
+        {
+            id = default;
+            string[] parts = idString.Split('-');
+            if (parts.Length != 2)
+            {
+                return false;
+            }
+            if (!ulong.TryParse(parts[0], out ulong timestamp))
+            {
+                return false;
+            }
+            if (!ulong.TryParse(parts[1], out ulong seq))
+            {
+                return false;
+            }
+
+            id.setMS(timestamp);
+            id.setSeq(seq);
+            return true;
+        }
+
+        public bool ParseStreamIDFromString(string idString, out StreamID id)
+        {
+            id = default;
+            if (idString == "-" || idString == "+")
+            {
+                return false;
+            }
+            if (!idString.Contains('-'))
+            {
+                if (!ulong.TryParse(idString, out id.ms))
+                {
+                    return false;
+                }
+                id.setSeq(0);
+                return true;
+            }
+            return ParseCompleteStreamIDFromString(idString, out id);
+        }
+
+        /// <summary>
+        /// Read entries from the stream from given range
+        /// </summary>
+        /// <param name="min">start of range</param>
+        /// <param name="max">end of range</param>
+        /// <param name="limit">threshold to scanning</param>
+        /// <param name="output"></param>
+        public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output)
+        {
+            _lock.ReadLock();
+            try
+            {
+                if (index.Count() == 0)
+                {
+                    return;
+                }
+
+                long startAddr, endAddr;
+                StreamID startID, endID;
+                if (min == "-")
+                {
+                    byte[] idBytes = index.First().Key;
+                    startID = new StreamID(idBytes);
+                }
+                else if (!ParseStreamIDFromString(min, out startID))
+                {
+                    return;
+                }
+                if (max == "+")
+                {
+                    byte[] idBytes = index.Last().Key;
+                    endID = new StreamID(idBytes);
+                }
+                else
+                {
+                    if (!ParseStreamIDFromString(max, out endID))
+                    {
+                        return;
+                    }
+                    //endID.seq = long.MaxValue;
+                    endID.setSeq(long.MaxValue);
+                }
+
+                int count = index.Get((byte*)Unsafe.AsPointer(ref startID.idBytes[0]), (byte*)Unsafe.AsPointer(ref endID.idBytes[0]), out Value startVal, out Value endVal, out var tombstones, limit);
+                startAddr = (long)startVal.address;
+                endAddr = (long)endVal.address + 1;
+
+                byte* ptr = output.SpanByte.ToPointer();
+                var curr = ptr;
+                var end = curr + output.Length;
+                MemoryHandle ptrHandle = default;
+                bool isMemory = false;
+                byte* tmpPtr = null;
+                int tmpSize = 0;
+                long readCount = 0;
+
+                try
+                {
+                    using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true))
+                    {
+
+                        // write length of how many entries we will print out 
+                        while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        byte* e;
+                        while (iter.GetNext(out var entry, out _, out long currentAddress, out long nextAddress))
+                        {
+
+                            var current = new Value((ulong)currentAddress);
+                            // check if any tombstone t.address matches current
+                            var tombstoneFound = false;
+                            foreach (var tombstone in tombstones)
+                            {
+                                if (tombstone.address == current.address)
+                                {
+                                    tombstoneFound = true;
+                                    break;
+                                }
+                            }
+                            if (tombstoneFound)
+                            {
+                                continue;
+                            }
+
+                            var entryBytes = entry.AsSpan();
+                            // check if the entry is actually one of the qualified keys 
+                            // parse ID for the entry which is the first 16 bytes
+                            var idBytes = entryBytes.Slice(0, 16);
+                            var ts = BinaryPrimitives.ReadInt64BigEndian(idBytes.Slice(0, sizeof(long)));
+                            var seq = BinaryPrimitives.ReadInt64BigEndian(idBytes.Slice(8));
+                            string idString = $"{ts}-{seq}";
+                            Span<byte> numPairsBytes = entryBytes.Slice(16, 4);
+                            int numPairs = BitConverter.ToInt32(numPairsBytes);
+                            Span<byte> value = entryBytes.Slice(20);
+
+                            // we can already write back the ID that we read 
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            if (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
+                            {
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+
+                            // print array length for the number of key-value pairs in the entry
+                            while (!RespWriteUtils.TryWriteArrayLength(numPairs, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                            // write key-value pairs
+                            fixed (byte* p = value)
+                            {
+                                e = p;
+                                int read = 0;
+                                read += (int)(e - p);
+                                while (value.Length - read >= 4)
+                                {
+                                    var orig = e;
+                                    if (!RespReadUtils.TryReadPtrWithLengthHeader(ref tmpPtr, ref tmpSize, ref e, e + entry.Length))
+                                    {
+                                        return;
+                                    }
+                                    var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
+                                    while (!RespWriteUtils.TryWriteBulkString(o, ref curr, end))
+                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                    read += (int)(e - orig);
+                                }
+                            }
+                            readCount++;
+                            if (limit != -1 && readCount == limit)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    if (isMemory) ptrHandle.Dispose();
+                    output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
 
         unsafe bool parseCompleteID(ArgSlice idSlice, out StreamID streamID)
         {
