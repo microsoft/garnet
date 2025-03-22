@@ -284,8 +284,9 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                        SendAndReset();
+
+                    WriteNull();
+
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
                 }
