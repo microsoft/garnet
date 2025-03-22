@@ -196,20 +196,20 @@ return returnValue
         public void ResetParametersSmall()
         {
             // First force up
-            paramsRunner.ResetParameters(1, 1);
+            _ = paramsRunner.TryResetParameters(1, 1, out _);
 
             // Then require a small amount of clearing (1 key, 1 arg)
-            paramsRunner.ResetParameters(0, 0);
+            _ = paramsRunner.TryResetParameters(0, 0, out _);
         }
 
         [Benchmark]
         public void ResetParametersLarge()
         {
             // First force up
-            paramsRunner.ResetParameters(10, 10);
+            _ = paramsRunner.TryResetParameters(10, 10, out _);
 
             // Then require a large amount of clearing (10 keys, 10 args)
-            paramsRunner.ResetParameters(0, 0);
+            _ = paramsRunner.TryResetParameters(0, 0, out _);
         }
 
         [Benchmark]

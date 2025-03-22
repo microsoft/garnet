@@ -34,13 +34,15 @@ namespace Garnet.server
             ref var digest = ref parseState.GetArgSliceByRef(0);
 
             var convertedToLower = false;
+
             LuaRunner runner = null;
+            ScriptHashKey scriptKey = default;
 
             // Length check is mandatory, as ScriptHashKey assumes correct length
             if (digest.length == SessionScriptCache.SHA1Len)
             {
             tryAgain:
-                var scriptKey = new ScriptHashKey(digest.Span);
+                scriptKey = new ScriptHashKey(digest.Span);
 
                 if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner))
                 {
@@ -77,8 +79,13 @@ namespace Garnet.server
             {
                 // We assume here that ExecuteScript does not raise exceptions
                 sessionScriptCache.StartRunningScript(runner);
-                ExecuteScript(count - 1, runner);
+                var res = TryExecuteScript(count - 1, runner);
                 sessionScriptCache.StopRunningScript();
+
+                if (!res)
+                {
+                    sessionScriptCache.Remove(scriptKey);
+                }
             }
 
             return true;
@@ -113,7 +120,8 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, new ScriptHashKey(digest), out var runner, out _, out var error))
+            var scriptKey = new ScriptHashKey(digest);
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, out var runner, out _, out var error))
             {
                 // TryLoad will have written any errors out
                 return true;
@@ -128,8 +136,13 @@ namespace Garnet.server
             {
                 // We assume here that ExecuteScript does not raise exceptions
                 sessionScriptCache.StartRunningScript(runner);
-                ExecuteScript(count - 1, runner);
+                var res = TryExecuteScript(count - 1, runner);
                 sessionScriptCache.StopRunningScript();
+
+                if (!res)
+                {
+                    sessionScriptCache.Remove(scriptKey);
+                }
             }
 
             return true;
@@ -281,18 +294,24 @@ namespace Garnet.server
 
         /// <summary>
         /// Invoke the execution of a server-side Lua script.
+        /// 
+        /// Returns false if the <see cref="LuaRunner"/> should be discarded rather than reused.
         /// </summary>
-        private void ExecuteScript(int count, LuaRunner scriptRunner)
+        private bool TryExecuteScript(int count, LuaRunner scriptRunner)
         {
             try
             {
                 scriptRunner.RunForSession(count, this);
+                return !scriptRunner.NeedsDispose;
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error executing Lua script");
                 while (!RespWriteUtils.TryWriteError("ERR " + ex.Message, ref dcurr, dend))
                     SendAndReset();
+
+                // Exceptions shouldn't happen, so if they did the runner is probably in a bad state
+                return false;
             }
         }
     }
