@@ -297,8 +297,8 @@ namespace Garnet.server
                         GeoPosition(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.GEOSEARCH:
-                        GeoSearchOptions searchOpts = default;
-                        GeoSearchOptions.Parse((RespCommand)input.arg1, ref searchOpts, ref input, out _, true);
+                        var command = (RespCommand)input.arg1;
+                        Debug.Assert(input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out _, out _));
                         GeoSearch(ref input, ref output.SpanByteAndMemory, ref searchOpts, true);
                         break;
                     case SortedSetOperation.ZRANGE:

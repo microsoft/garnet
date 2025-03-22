@@ -156,10 +156,8 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
-            var searchOpts = new GeoSearchOptions();
 
             int sourceIdx = 0;
-            bool readOnly = false;
             switch (command)
             {
                 case RespCommand.GEORADIUS:
@@ -167,18 +165,15 @@ namespace Garnet.server
                     break;
                 case RespCommand.GEORADIUS_RO:
                     paramsRequiredInCommand = 5;
-                    readOnly = true;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER:
                     paramsRequiredInCommand = 4;
                     break;
                 case RespCommand.GEORADIUSBYMEMBER_RO:
                     paramsRequiredInCommand = 4;
-                    readOnly = true;
                     break;
                 case RespCommand.GEOSEARCH:
                     paramsRequiredInCommand = 6;
-                    readOnly = true;
                     break;
                 case RespCommand.GEOSEARCHSTORE:
                     paramsRequiredInCommand = 7;
@@ -203,8 +198,7 @@ namespace Garnet.server
             }, ref parseState, startIdx: sourceIdx + 1, arg1: (int)command);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var errorMessage = GeoSearchOptions.Parse(command, ref searchOpts, ref input, out var destIdx, readOnly);
-            if (!errorMessage.IsEmpty)
+            if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
                 while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();

@@ -715,7 +715,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMMEMBER a BYRADIUS -1 km");
-            expectedResponse = "-ERR value is out of range, must be positive.\r\n";
+            expectedResponse = "-ERR radius cannot be negative\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCH Sicily FROMMEMBER nx BYRADIUS 1 KM");
