@@ -16,7 +16,7 @@ namespace Tsavorite.core
         public void GlobalBeforeEnteringState(SystemState nextState, StateMachineDriver stateMachineDriver);
 
         /// <summary>
-        /// Called after we move to nextState. Participant threads may be in previousState or nextState.
+        /// Called after we move to nextState. All participant threads will be in nextState.
         /// </summary>
         /// <param name="nextState"></param>
         /// <param name="stateMachineDriver"></param>

@@ -47,6 +47,13 @@ namespace Garnet.server
         private static partial LuaStatus luaL_loadbufferx(lua_State luaState, charptr_t buff, size_t sz, charptr_t name, charptr_t mode);
 
         /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#luaL_loadstring
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial LuaStatus luaL_loadstring(lua_State lua_State, charptr_t buff);
+
+        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#luaL_newstate
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -185,6 +192,13 @@ namespace Garnet.server
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
         private static partial int lua_next(lua_State luaState, int tableIndex);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_rotate
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+        private static partial void lua_rotate(lua_State luaState, int stackIndex, int n);
 
         // GC Transition suppressed - only do this after auditing the Lua method and confirming constant-ish, fast, runtime w/o allocations
 
@@ -383,7 +397,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Push given span to stack, and compiles it.
+        /// Push given span to stack, compiles it, and executes it.
         /// 
         /// Provided data is copied, and can be reused once this call returns.
         /// </summary>
@@ -392,6 +406,19 @@ namespace Garnet.server
             fixed (byte* ptr = str)
             {
                 return luaL_loadbufferx(luaState, (charptr_t)ptr, (size_t)str.Length, (charptr_t)UIntPtr.Zero, (charptr_t)UIntPtr.Zero);
+            }
+        }
+
+        /// <summary>
+        /// Push given span to stack, and compiles it.
+        /// 
+        /// Provided data is copied, and can be reused once this call returns.
+        /// </summary>
+        internal static unsafe LuaStatus LoadString(lua_State luaState, ReadOnlySpan<byte> str)
+        {
+            fixed (byte* ptr = str)
+            {
+                return luaL_loadstring(luaState, (charptr_t)ptr);
             }
         }
 
@@ -643,6 +670,15 @@ namespace Garnet.server
         /// </summary>
         internal static void SetTop(lua_State lua_State, int top)
         => lua_settop(lua_State, top);
+
+        /// <summary>
+        /// Rotates elements above (and including) <paramref name="stackIndex"/> in <paramref name="n"/> steps in
+        /// the direction of the top of the stack.
+        /// 
+        /// <paramref name="n"/> can be negative.
+        /// </summary>
+        internal static void Rotate(lua_State luaState, int stackIndex, int n)
+        => lua_rotate(luaState, stackIndex, n);
 
         /// <summary>
         /// Raise an error, using the top of the stack as an error item.

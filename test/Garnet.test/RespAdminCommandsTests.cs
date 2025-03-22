@@ -42,8 +42,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = "+PONG\r\n";
             var response = lightClientRequest.SendCommand("PING");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -52,8 +51,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = "$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommand("PING HELLO");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -62,8 +60,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.PING)}")}\r\n";
             var response = lightClientRequest.SendCommand("PING HELLO WORLD", 1);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -72,10 +69,8 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO", 1);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public void EchoWithMessagesReturnErrorTest()
@@ -83,11 +78,10 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO HELLO WORLD", 1);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             response = lightClientRequest.SendCommand("ECHO HELLO WORLD WORLD2", 1);
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -96,8 +90,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = "$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommand("ECHO HELLO", 1);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -107,10 +100,8 @@ namespace Garnet.test
             var wrongNumMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}");
             var expectedResponse = $"-{wrongNumMessage}\r\n$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommands("ECHO HELLO WORLD WORLD2", "ECHO HELLO", 1, 1);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public void TimeCommandTest()
@@ -119,10 +110,9 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = "*2\r\n$10\r\n1626282789\r\n$6\r\n621362\r\n";
             var response = lightClientRequest.SendCommand("TIME", 3);
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            var actualValue = Encoding.ASCII.GetString(response, 0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse.Length, actualValue.Length);
         }
-
 
         [Test]
         public void TimeWithReturnErrorTest()
@@ -130,8 +120,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.TIME))}\r\n";
             var response = lightClientRequest.SendCommand("TIME HELLO");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         #endregion
@@ -198,7 +187,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 db.ListLeftPush(key, ldata);
-                ldata = ldata.Select(x => x).Reverse().ToArray();
+                ldata = [.. ldata.Select(x => x).Reverse()];
                 returned_data_before_recovery = db.ListRange(key);
                 ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
 

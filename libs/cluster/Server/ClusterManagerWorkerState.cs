@@ -188,7 +188,7 @@ namespace Garnet.cluster
 
                 // Transition to recovering state
                 // Only one caller will succeed in becoming a replica for the provided node-id
-                if (!clusterProvider.replicationManager.StartRecovery())
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate))
                 {
                     logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK;
@@ -200,7 +200,7 @@ namespace Garnet.cluster
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
-                clusterProvider.replicationManager.SuspendRecovery();
+                clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
             }
             FlushConfig();
             return true;

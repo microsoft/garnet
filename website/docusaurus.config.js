@@ -149,7 +149,7 @@ const config = {
           style="color: white;">Terms of Use</a> |
           <a href="
           https://www.microsoft.com/trademarks"
-          style="color: white;">Trademarks</a> | © 2024
+          style="color: white;">Trademarks</a> | © 2025
           </p>`,
       },
       prism: {

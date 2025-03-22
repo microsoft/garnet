@@ -16,6 +16,7 @@ namespace Garnet.cluster
         readonly TimeSpan clusterTimeout = clusterProvider.serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(clusterProvider.serverOptions.ClusterTimeout);
         readonly ILogger logger = logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
+        public FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
 
         public void Dispose()
         {
@@ -47,6 +48,12 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Retrieve the status of the last failover
+        /// </summary>
+        /// <returns></returns>
+        public string GetLastFailoverStatus() => FailoverUtils.GetFailoverStatus(lastFailoverStatus);
+
+        /// <summary>
         /// Method used to initiate a background failover from a replica (CLUSTER FAILOVER command)
         /// </summary>
         /// <param name="option">Failover type option.</param>
@@ -57,6 +64,7 @@ namespace Garnet.cluster
             if (!failoverTaskLock.TryWriteLock())
                 return false;
 
+            lastFailoverStatus = FailoverStatus.BEGIN_FAILOVER;
             currentFailoverSession = new FailoverSession(
                 clusterProvider,
                 option,
@@ -66,7 +74,8 @@ namespace Garnet.cluster
                 logger: logger);
             _ = Task.Run(async () =>
             {
-                _ = await currentFailoverSession.BeginAsyncReplicaFailover();
+                var success = await currentFailoverSession.BeginAsyncReplicaFailover();
+                lastFailoverStatus = success ? FailoverStatus.FAILOVER_COMPLETED : FailoverStatus.FAILOVER_ABORTED;
                 Reset();
             });
             return true;

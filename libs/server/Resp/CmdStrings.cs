@@ -226,6 +226,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_FLOAT => "ERR min or max is not a float"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_STRING => "ERR min or max not valid string range item"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_NEGATIVE => "ERR timeout is negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
@@ -257,6 +258,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ETAG must be a numerical value greater than or equal to 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
 

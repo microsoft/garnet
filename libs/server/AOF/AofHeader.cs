@@ -12,7 +12,7 @@ namespace Garnet.server
         // * Layout, size, contents of this struct
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
-        const byte AofHeaderVersion = 1;
+        const byte AofHeaderVersion = 2;
 
         /// <summary>
         /// Version of AOF
@@ -44,6 +44,16 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(12)]
         public int sessionID;
+        /// <summary>
+        /// Unsafe truncate log (used with FLUSH command)
+        /// </summary>
+        [FieldOffset(1)]
+        public byte unsafeTruncateLog;
+        /// <summary>
+        /// Database ID (used with FLUSH command)
+        /// </summary>
+        [FieldOffset(3)]
+        public byte databaseId;
 
         public AofHeader()
         {
