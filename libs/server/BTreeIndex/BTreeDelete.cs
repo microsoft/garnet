@@ -20,14 +20,14 @@ namespace Garnet.server.BTreeIndex
 
             TraverseToLeaf(ref leaf, ref nodesTraversed, key);
             var index = leaf->LowerBound(key);
-            if (index >= leaf->info.count || BTreeNode.Compare(key, leaf->GetKey(index)) != 0)
+            if (index >= leaf->info->count || BTreeNode.Compare(key, leaf->GetKey(index)) != 0)
             {
                 return false;
             }
 
             // insert a tombstone for the delete 
             leaf->InsertTombstone(index);
-            leaf->info.validCount--;
+            leaf->info->validCount--;
             stats.numValidKeys--;
             return true;
         }

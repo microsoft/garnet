@@ -34,7 +34,8 @@ class Program
         // return;
         var tree = new BTree(4096);
 
-        ulong N = 60376;
+        // ulong N = 999994;
+        ulong N = 4000000;
         bool verbose = false;
         bool sanity = false;
         if (args.Length > 0)
@@ -71,6 +72,8 @@ class Program
         for (ulong i = 0; i < N; i++)
         {
             tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(i + 1));
+            var value = tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]));
+            Debug.Assert(value.address == i + 1);
         }
         sw.Stop();
         dur2 = sw.ElapsedTicks;
@@ -93,10 +96,7 @@ class Program
         for (ulong i = 0; i < N; i++)
         {
             var value = tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]));
-            if (sanity)
-            {
-                Debug.Assert(value.address == i + 1);
-            }
+            Debug.Assert(value.address == i + 1);
         }
         sw.Stop();
         long query_time = (long)(sw.ElapsedTicks * nanosecondsPerTick);

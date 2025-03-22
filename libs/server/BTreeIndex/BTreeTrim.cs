@@ -31,7 +31,7 @@ namespace Garnet.server.BTreeIndex
             for (var i = 0; i < index; i++)
             {
                 leaf->SetValueValid(i, false);
-                leaf->info.validCount--;
+                leaf->info->validCount--;
             }
 
             if (leaf == head)
@@ -42,7 +42,7 @@ namespace Garnet.server.BTreeIndex
             }
 
             // we will now traverse the leaf level of the tree and delete all preceding nodes 
-            BTreeNode* node = leaf->info.previous;
+            BTreeNode* node = leaf->info->previous;
 
             // # nodes to traverse in the subtree rooted at the leaf's parent (leaf is at nodesTraversed[0]). 
             // We subtract one since we delete preceding nodes.
@@ -51,15 +51,15 @@ namespace Garnet.server.BTreeIndex
 
             while (node != null)
             {
-                var count = node->info.count;
-                var validCount = node->info.validCount;
+                var count = node->info->count;
+                var validCount = node->info->validCount;
                 if (nodesToTraverseInSubtree >= 0)
                 {
                     deletedValidCount += validCount;
                     nodesToTraverseInSubtree--;
                 }
 
-                BTreeNode* prev = node->info.previous;
+                BTreeNode* prev = node->info->previous;
                 if (prev == null)
                 {
                     // should have reached the head, so do a sanity check 
@@ -80,7 +80,7 @@ namespace Garnet.server.BTreeIndex
                 // assign node to temp to continue
                 node = prev;
             }
-            leaf->info.previous = null;
+            leaf->info->previous = null;
             // set leaf as the new head 
             head = leaf;
 
@@ -98,12 +98,12 @@ namespace Garnet.server.BTreeIndex
                     Buffer.MemoryCopy(node->data.children + (slotOfKey - 1) + 1, node->data.children, ((slotOfKey - 1)) * sizeof(BTreeNode*), ((slotOfKey - 1)) * sizeof(BTreeNode*));
                 }
 
-                var prev_count = node->info.count;
+                var prev_count = node->info->count;
                 // update count in node 
-                node->info.count -= slotOfKey;
-                nodesTraversed[i]->info.validCount -= deletedValidCount;
+                node->info->count -= slotOfKey;
+                nodesTraversed[i]->info->validCount -= deletedValidCount;
 
-                if (prev_count > BTreeNode.INTERNAL_CAPACITY / 2 && node->info.count < BTreeNode.INTERNAL_CAPACITY / 2)
+                if (prev_count > BTreeNode.INTERNAL_CAPACITY / 2 && node->info->count < BTreeNode.INTERNAL_CAPACITY / 2)
                 {
                     // TODO: handle underflow... for now, simply track how many such nodes we may have 
                     underflowingNodes++;
@@ -113,13 +113,13 @@ namespace Garnet.server.BTreeIndex
                 deletedValidCount = 0;
 
                 // next, handle all preceding internal nodes
-                node = nodesTraversed[i]->info.previous;
+                node = nodesTraversed[i]->info->previous;
                 while (node != null)
                 {
-                    BTreeNode* temp = node->info.previous;
+                    BTreeNode* temp = node->info->previous;
                     if (nodesToTraverseInSubtree >= 0)
                     {
-                        deletedValidCount += node->info.validCount;
+                        deletedValidCount += node->info->validCount;
                         nodesToTraverseInSubtree--;
                     }
 
@@ -132,14 +132,14 @@ namespace Garnet.server.BTreeIndex
                     node = temp;
                 }
                 // set the previous of nodesTraversed[i] to null as it is the new head in the level 
-                nodesTraversed[i]->info.previous = null;
+                nodesTraversed[i]->info->previous = null;
 
                 // handle corner case where slotOfKey in the internal node points to the last child => after deletion, only one child remains. 
                 // in this case, delete all parent levels and re-assign root. 
                 if (i + 1 < stats.depth)
                 {
                     var nextSlot = internalSlots[i + 1];
-                    if (nextSlot == nodesTraversed[i + 1]->info.count)
+                    if (nextSlot == nodesTraversed[i + 1]->info->count)
                     {
                         BTreeNode* newRoot = nodesTraversed[i];
                         var orig_depth = stats.depth;
@@ -148,7 +148,7 @@ namespace Garnet.server.BTreeIndex
                             BTreeNode* curr = nodesTraversed[j];
                             while (curr != null)
                             {
-                                BTreeNode* pre = curr->info.previous;
+                                BTreeNode* pre = curr->info->previous;
                                 curr->Deallocate();
                                 Marshal.FreeHGlobal((IntPtr)curr);
                                 stats.numInternalNodes--;
@@ -194,14 +194,14 @@ namespace Garnet.server.BTreeIndex
             }
             while (depth > 0)
             {
-                if (current->info.type == BTreeNodeType.Internal)
+                if (current->info->type == BTreeNodeType.Internal)
                 {
-                    for (var i = current->info.count; i >= 0; i--)
+                    for (var i = current->info->count; i >= 0; i--)
                     {
                         // get the child node
                         BTreeNode* child = current->GetChild(i);
                         // if adding the child node's valid count wille exceed the length, we will continue on this child. Otherwise, we will keep this node and all its children to the right.
-                        if (currentValidCount + child->info.validCount >= length)
+                        if (currentValidCount + child->info->validCount >= length)
                         {
                             nodesTraversed[depth] = current;
                             internalSlots[depth] = i;
@@ -210,7 +210,7 @@ namespace Garnet.server.BTreeIndex
                         }
                         else
                         {
-                            currentValidCount += child->info.validCount;
+                            currentValidCount += child->info->validCount;
                         }
                     }
                 }
@@ -221,22 +221,22 @@ namespace Garnet.server.BTreeIndex
             headValidValue = current->GetValue(0);
             Buffer.MemoryCopy(current->GetKey(0), Unsafe.AsPointer(ref headValidKey[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
 
-            BTreeNode* leaf = current->info.previous;
+            BTreeNode* leaf = current->info->previous;
             // might have to make sure that we are in a leaf node 
-            Debug.Assert(leaf->info.type == BTreeNodeType.Leaf);
+            Debug.Assert(leaf->info->type == BTreeNodeType.Leaf);
 
             uint deletedValidCount = 0;
             var nodesToTraverseInSubtree = internalSlots[depth + 1] - 1;
             while (leaf != null)
             {
-                var count = leaf->info.count;
-                var validCount = leaf->info.validCount;
+                var count = leaf->info->count;
+                var validCount = leaf->info->validCount;
                 if (nodesToTraverseInSubtree >= 0)
                 {
                     deletedValidCount += validCount;
                     nodesToTraverseInSubtree--;
                 }
-                BTreeNode* prev = leaf->info.previous;
+                BTreeNode* prev = leaf->info->previous;
                 if (prev == null)
                 {
                     // should have reached the head, so do a sanity check 
@@ -257,7 +257,7 @@ namespace Garnet.server.BTreeIndex
                 // assign node to temp to continue
                 leaf = prev;
             }
-            current->info.previous = null;
+            current->info->previous = null;
             // set current as the new head
             head = current;
 
@@ -280,13 +280,13 @@ namespace Garnet.server.BTreeIndex
                     Buffer.MemoryCopy(inner->data.children + slotOfKey, inner->data.children, (slotOfKey) * sizeof(BTreeNode*), (slotOfKey) * sizeof(BTreeNode*));
                 }
 
-                var prev_count = inner->info.count;
+                var prev_count = inner->info->count;
                 // update count in node 
-                inner->info.count -= slotOfKey;
+                inner->info->count -= slotOfKey;
 
-                nodesTraversed[i]->info.validCount -= deletedValidCount;
+                nodesTraversed[i]->info->validCount -= deletedValidCount;
 
-                if (prev_count > BTreeNode.INTERNAL_CAPACITY / 2 && inner->info.count < BTreeNode.INTERNAL_CAPACITY / 2)
+                if (prev_count > BTreeNode.INTERNAL_CAPACITY / 2 && inner->info->count < BTreeNode.INTERNAL_CAPACITY / 2)
                 {
                     // TODO: handle underflow... for now, simply track how many such nodes we may have 
                     underflowingNodes++;
@@ -296,13 +296,13 @@ namespace Garnet.server.BTreeIndex
                 // subtract from parent's validCount for those we deleted
                 deletedValidCount = 0;
                 nodesToTraverseInSubtree = slotOfKey - 1;
-                inner = inner->info.previous;
+                inner = inner->info->previous;
                 while (inner != null && inner != root)
                 {
-                    BTreeNode* temp = inner->info.previous;
+                    BTreeNode* temp = inner->info->previous;
                     if (nodesToTraverseInSubtree >= 0)
                     {
-                        deletedValidCount += inner->info.validCount;
+                        deletedValidCount += inner->info->validCount;
                         nodesToTraverseInSubtree--;
                     }
                     inner->Deallocate();
@@ -310,14 +310,14 @@ namespace Garnet.server.BTreeIndex
                     stats.numInternalNodes--;
                     inner = temp;
                 }
-                nodesTraversed[i]->info.previous = null;
+                nodesTraversed[i]->info->previous = null;
 
                 // check the subsequent level in the tree
                 // if slotOfKey points to the last child, then all parent levels will be deleted
                 if (i + 1 < stats.depth)
                 {
                     var nextSlot = internalSlots[i + 1];
-                    if (nextSlot == nodesTraversed[i + 1]->info.count)
+                    if (nextSlot == nodesTraversed[i + 1]->info->count)
                     {
                         BTreeNode* newRoot = nodesTraversed[i];
                         var orig_depth = stats.depth;
@@ -326,7 +326,7 @@ namespace Garnet.server.BTreeIndex
                             BTreeNode* curr = nodesTraversed[j];
                             while (curr != null)
                             {
-                                BTreeNode* pre = curr->info.previous;
+                                BTreeNode* pre = curr->info->previous;
                                 curr->Deallocate();
                                 Marshal.FreeHGlobal((IntPtr)curr);
                                 stats.numInternalNodes--;

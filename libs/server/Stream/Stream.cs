@@ -331,7 +331,7 @@ namespace Garnet.server
             _lock.WriteLock();
             try
             {
-                deleted = index.Delete((byte*)Unsafe.AsPointer(ref entryID.idBytes[0]));
+                // deleted = index.Delete((byte*)Unsafe.AsPointer(ref entryID.idBytes[0]));
             }
             finally
             {

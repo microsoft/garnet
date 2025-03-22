@@ -14,7 +14,7 @@ namespace Garnet.server.BTreeIndex
                 node = child;
                 nodesTraversed[i] = child;
                 var slot = node->UpperBound(key);
-                if (slot != node->info.count)
+                if (slot != node->info->count)
                 {
                     leafMax = node->GetKey(slot);
                 }
@@ -36,7 +36,7 @@ namespace Garnet.server.BTreeIndex
                 nodesTraversed[i] = child;
                 var slot = node->UpperBound(key);
                 slots[i] = slot;
-                if (slot != node->info.count)
+                if (slot != node->info->count)
                 {
                     leafMax = node->GetKey(slot);
                 }

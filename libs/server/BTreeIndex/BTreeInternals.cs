@@ -66,50 +66,87 @@ namespace Garnet.server.BTreeIndex
 
     public unsafe struct BTreeNode
     {
-        public static int PAGE_SIZE = 4096;
-        public static int KEY_SIZE = 16; // key size in bytes.
         public static int HEADER_SIZE = sizeof(BTreeNode);
-        public static int METADATA_SIZE = sizeof(NodeInfo) + sizeof(SectorAlignedMemory);
-        public static int LEAF_CAPACITY = (PAGE_SIZE - HEADER_SIZE) / (KEY_SIZE + sizeof(Value));
-        public static int INTERNAL_CAPACITY = (PAGE_SIZE - HEADER_SIZE - sizeof(BTreeNode*)) / (KEY_SIZE + sizeof(IntPtr*));
+        public static int PAGE_SIZE = 4096; // This must be increased if you want to store the BTreeNode header in the block.
+        public static int KEY_SIZE = 16; // key size in bytes.
+        public static int METADATA_SIZE = sizeof(NodeInfo);
+        public static int LEAF_CAPACITY = (PAGE_SIZE - HEADER_SIZE - METADATA_SIZE) / (KEY_SIZE + sizeof(Value));
+        public static int INTERNAL_CAPACITY = (PAGE_SIZE - HEADER_SIZE - METADATA_SIZE - sizeof(BTreeNode*)) / (KEY_SIZE + sizeof(BTreeNode*));
 
-        public NodeInfo info;
+        public NodeInfo* info;
+        public NodeData data;
         public byte* keys;
-        public NodeData data; // data in the node
-        // public IntPtr memoryBlock; // pointer to the memory block
-        public SectorAlignedMemory memoryHandle;
+        // public SectorAlignedMemory memoryHandle;
+        public IntPtr* memoryHandle;
+        public static BTreeNode* Create(BTreeNodeType type, IntPtr* handle)
+        {
+            // Place the node header at the beginning of the block.
+            BTreeNode* node = (BTreeNode*)handle;
+            node->memoryHandle = handle;
+
+            // Define the start of the payload right after the header.
+            byte* payloadPtr = (byte*)(handle) + HEADER_SIZE;
+
+            // The NodeInfo will be stored at the start of the payload.
+            node->info = (NodeInfo*)payloadPtr;
+            node->info->type = type;
+            node->info->count = 0;
+            node->info->next = null;
+            node->info->previous = null;
+            node->info->validCount = 0;
+
+            // Data for keys follows the Nodeinfo->
+            byte* keysPtr = payloadPtr + METADATA_SIZE;
+            node->keys = keysPtr;
+
+            int capacity = (type == BTreeNodeType.Leaf) ? LEAF_CAPACITY : INTERNAL_CAPACITY;
+            int keysSize = capacity * KEY_SIZE;
+            byte* dataSectionPtr = keysPtr + keysSize;
+
+            // Set up NodeData in-place.
+            if (type == BTreeNodeType.Leaf)
+            {
+                node->data.values = (Value*)dataSectionPtr;
+            }
+            else
+            {
+                node->data.children = (BTreeNode**)dataSectionPtr;
+            }
+
+            return node;
+        }
 
         /// <summary>
         /// Allocates memory for a node
         /// </summary>
         /// <param name="type">type of node to allocate memory for</param>
-        public void Initialize(BTreeNodeType type, SectorAlignedMemory handle)
-        {
-            // assume this is called after memory has been allocated and memoryBlock is set (it is the first field)
-            // we are only assigning different parts of the memory to different fields
-            memoryHandle = handle;
-            var startAddr = (byte*)memoryHandle.aligned_pointer;
-            info.type = type;
-            info.count = 0;
-            info.next = null;
-            info.previous = null;
-            info.validCount = 0;
+        // public void Initialize(BTreeNodeType type, SectorAlignedMemory handle)
+        // {
+        //     // assume this is called after memory has been allocated and memoryBlock is set (it is the first field)
+        //     // we are only assigning different parts of the memory to different fields
+        //     // memoryHandle = handle;
+        //     var startAddr = (byte*)memoryHandle.aligned_pointer;
+        //     info->type = type;
+        //     info->count = 0;
+        //     info->next = null;
+        //     info->previous = null;
+        //     info->validCount = 0;
 
-            // var baseAddress = startAddr + sizeof(NodeInfo) + sizeof(SectorAlignedMemory);
-            var baseAddress = startAddr + HEADER_SIZE;
-            keys = (byte*)baseAddress;
+        //     // var baseAddress = startAddr + sizeof(NodeInfo) + sizeof(SectorAlignedMemory);
+        //     var baseAddress = startAddr + HEADER_SIZE;
+        //     keys = (byte*)baseAddress;
 
-            int capacity = type == BTreeNodeType.Leaf ? LEAF_CAPACITY : INTERNAL_CAPACITY;
-            byte* dataAddress = keys + (capacity * KEY_SIZE);
-            if (type == BTreeNodeType.Leaf)
-            {
-                data.values = (Value*)dataAddress;
-            }
-            else
-            {
-                data.children = (BTreeNode**)dataAddress;
-            }
-        }
+        //     int capacity = type == BTreeNodeType.Leaf ? LEAF_CAPACITY : INTERNAL_CAPACITY;
+        //     byte* dataAddress = keys + (capacity * KEY_SIZE);
+        //     if (type == BTreeNodeType.Leaf)
+        //     {
+        //         data.values = (Value*)dataAddress;
+        //     }
+        //     else
+        //     {
+        //         data.children = (BTreeNode**)dataAddress;
+        //     }
+        // }
  
         public byte* GetKey(int index)
         {
@@ -160,11 +197,11 @@ namespace Garnet.server.BTreeIndex
         /// <returns></returns>
         public int UpperBound(byte* key)
         {
-            if (info.count == 0)
+            if (info->count == 0)
             {
                 return 0;
             }
-            int left = 0, right = info.count - 1;
+            int left = 0, right = info->count - 1;
             while (left <= right)
             {
                 var mid = left + (right - left) / 2;
@@ -189,11 +226,11 @@ namespace Garnet.server.BTreeIndex
         /// <returns></returns>
         public int LowerBound(byte* key)
         {
-            if (info.count == 0)
+            if (info->count == 0)
             {
                 return 0;
             }
-            int left = 0, right = info.count - 1;
+            int left = 0, right = info->count - 1;
             while (left <= right)
             {
                 var mid = left + (right - left) / 2;
@@ -220,7 +257,7 @@ namespace Garnet.server.BTreeIndex
         /// </summary>
         public void UpgradeToInternal()
         {
-            info.type = BTreeNodeType.Internal;
+            info->type = BTreeNodeType.Internal;
             data.children = (BTreeNode**)(keys + (INTERNAL_CAPACITY * KEY_SIZE)); // should be keys + Internal capacity?
         }
 

@@ -22,7 +22,7 @@ namespace Garnet.server.BTreeIndex
             TraverseToLeaf(ref leaf, ref nodesTraversed, key);
 
             var index = leaf->LowerBound(key);
-            if (index < leaf->info.count && BTreeNode.Compare(key, leaf->GetKey(index)) == 0)
+            if (index < leaf->info->count && BTreeNode.Compare(key, leaf->GetKey(index)) == 0)
             {
                 var value = leaf->GetValue(index);
                 if (value.Valid)
@@ -91,12 +91,12 @@ namespace Garnet.server.BTreeIndex
                 if (reverse)
                 {
                     // we would like an inverse traversal 
-                    first = leaf == startLeaf ? startIndex : leaf->info.count - 1;
+                    first = leaf == startLeaf ? startIndex : leaf->info->count - 1;
                     last = leaf == endLeaf ? endIndex : 0;
                 }
                 else
                 {
-                    last = leaf == endLeaf ? endIndex : leaf->info.count - 1;
+                    last = leaf == endLeaf ? endIndex : leaf->info->count - 1;
                     first = leaf == startLeaf ? startIndex : 0;
                 }
 
@@ -153,7 +153,7 @@ namespace Garnet.server.BTreeIndex
                     break;
                 }
 
-                leaf = reverse ? leaf->info.previous : leaf->info.next;
+                leaf = reverse ? leaf->info->previous : leaf->info->next;
             }
             return count;
         }

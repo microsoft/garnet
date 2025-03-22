@@ -17,8 +17,8 @@ namespace Garnet.server.BTreeIndex
         byte* tailMinKey;
         public static readonly int MAX_TREE_DEPTH = 10; // maximum allowed depth of the tree
         static int DEFAULT_SPLIT_LEAF_POSITION = (BTreeNode.LEAF_CAPACITY + 1) / 2; // position at which leaf node is split
-        static int SPLIT_LEAF_POSITION = BTreeNode.LEAF_CAPACITY - 1; // position at which leaf node is split
-        static int SPLIT_INTERNAL_POSITION = BTreeNode.INTERNAL_CAPACITY- 1; // position at which internal node is split
+        static int SPLIT_LEAF_POSITION = BTreeNode.LEAF_CAPACITY; // position at which leaf node is split
+        static int SPLIT_INTERNAL_POSITION = BTreeNode.INTERNAL_CAPACITY; // position at which internal node is split
 
         BTreeNode*[] rootToTailLeaf; // array of nodes from root to tail leaf
         public BTreeStats stats; // statistics about the tree
@@ -30,16 +30,17 @@ namespace Garnet.server.BTreeIndex
         /// </summary>
         public BTree(uint sectorSize)
         {
-            bufferPool = new SectorAlignedBufferPool(1, (int)sectorSize);
-            var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            bufferPool = new SectorAlignedBufferPool(1, BTreeNode.PAGE_SIZE);
+            // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
+            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             stats.numAllocates = 1;
-            var memory = (IntPtr)memoryBlock.aligned_pointer;
-            root = (BTreeNode*)memory;
+            // root = (BTreeNode*)memory;
             // root->memoryHandle = memoryBlock;
-            root->Initialize(BTreeNodeType.Leaf, memoryBlock);
+            // root->Initialize(BTreeNodeType.Leaf, memoryBlock);
+            root = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
             head = tail = root;
-            root->info.next = root->info.previous = null;
-            root->info.count = 0;
+            root->info->next = root->info->previous = null;
+            root->info->count = 0;
             tailMinKey = null;
             rootToTailLeaf = new BTreeNode*[MAX_TREE_DEPTH];
             stats = new BTreeStats();
@@ -51,32 +52,39 @@ namespace Garnet.server.BTreeIndex
         /// Frees the memory allocated for a node
         /// </summary>
         /// <param name="node">BTreeNode to free from memory</param>
-        private void Free(ref BTreeNode* node, ref List<SectorAlignedMemory> freedHandles)
+        private void Free(ref BTreeNode* node)
         {
             if (node == null)
                 return;
             
             // If this is an internal node, free all its children first
-            if (node->info.type == BTreeNodeType.Internal)
+            if (node->info->type == BTreeNodeType.Internal)
             {
-                for (int i = 0; i <= node->info.count; i++)
+                for (int i = 0; i <= node->info->count; i++)
                 {
                     var child = node->data.children[i];
-                    if (child != null)
-                    {
-                        Free(ref child, ref freedHandles);
-                        node->data.children[i] = null;
-                    }
+                    Free(ref child);
+                    node->data.children[i] = null;
                 }
             }
 
-        
+            // Free the memory handle
             if (node->memoryHandle != null)
             {
-                node->memoryHandle.Return();
+                Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
                 stats.numDeallocates++;
-                node->memoryHandle = null;
+                node = null;
             }
+            
+            
+
+        
+            // if (node->memoryHandle != null)
+            // {
+            //     node->memoryHandle.Return();
+            //     stats.numDeallocates++;
+            //     node->memoryHandle = null;
+            // }
         }
 
         /// <summary>
@@ -86,12 +94,13 @@ namespace Garnet.server.BTreeIndex
         {
             if (root == null)
                 return;
-            List<SectorAlignedMemory> freedHandles = new List<SectorAlignedMemory>();
-            Free(ref root, ref freedHandles);
+            Free(ref root);
+            Console.WriteLine("free complete");
+            stats.printStats();
             root = null;
             head = null;
             tail = null;
-            stats.printStats();
+            
             // Marshal.FreeHGlobal((IntPtr)root);
             // Marshal.FreeHGlobal((IntPtr)head);
             // Marshal.FreeHGlobal((IntPtr)tail);
@@ -126,7 +135,7 @@ namespace Garnet.server.BTreeIndex
 
         public long GetValidCount(BTreeNode* node)
         {
-            return node->info.validCount;
+            return node->info->validCount;
         }
 
         /// <summary>
@@ -157,8 +166,8 @@ namespace Garnet.server.BTreeIndex
                 return default;
             }
             byte[] keyBytes = new byte[BTreeNode.KEY_SIZE];
-            Buffer.MemoryCopy(leaf->GetKey(leaf->info.count - 1), Unsafe.AsPointer(ref keyBytes[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
-            return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(leaf->info.count - 1));
+            Buffer.MemoryCopy(leaf->GetKey(leaf->info->count - 1), Unsafe.AsPointer(ref keyBytes[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
+            return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(leaf->info->count - 1));
         }
 
     }
