@@ -817,7 +817,7 @@ namespace Garnet.server
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
                 // Stream Commands
                 RespCommand.XADD => StreamAdd(),
-                // RespCommand.XLEN => StreamLength(),
+                RespCommand.XLEN => StreamLength(),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;
