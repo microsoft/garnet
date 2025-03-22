@@ -19,6 +19,11 @@ namespace Garnet.server
         NONE
     }
 
+    public enum XADDOpts
+    {
+        
+    }
+
     public class StreamObject : IDisposable
     {
         readonly IDevice device;
@@ -93,7 +98,6 @@ namespace Garnet.server
         /// <returns>StreamID generated</returns>
         public void GenerateNextID(ref StreamID id)
         {
-            // ulong timestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             ulong timestamp = (ulong)Stopwatch.GetTimestamp() / (ulong)(Stopwatch.Frequency / 1000);
 
             // if this is the first entry or timestamp is greater than last added entry 
@@ -118,16 +122,16 @@ namespace Garnet.server
                 return true;
             }
 
-            // we have to parse user-defined ID
-            // this can be of following formats: 
-            // 1. ts (seq = 0)
-            // 2. ts-* (auto-generate seq number)
-            // 3. ts-seq
+            // parse user-defined ID
+            // can be of following formats: 
+                // 1. ts (seq = 0)
+                // 2. ts-* (auto-generate seq number)
+                // 3. ts-seq
 
-            // check if last character is a *
+            // last character is a *
             if (*(idSlice.ptr + idSlice.length - 1) == '*')
             {
-                // this has to be of format ts-*, so check if '-' is the preceding character
+                // has to be of format ts-*,  check if '-' is the preceding character
                 if (*(idSlice.ptr + idSlice.length - 2) != '-')
                 {
                     return false;
@@ -168,7 +172,7 @@ namespace Garnet.server
                         break;
                     }
                 }
-                // if '-' is not found, it has to be of format ts
+                // if '-' is not found, format should be just ts
                 if (index == -1)
                 {
                     if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + idSlice.length))
@@ -241,56 +245,56 @@ namespace Garnet.server
             byte* tmpPtr = null;
             StreamID id = default;
             // take a lock to ensure thread safety
-            // _lock.WriteLock();
-            // try
-            // {
-            //     bool canParseID = parseIDString(idSlice, ref id);
-            //     if (!canParseID)
-            //     {
-            //         // while (!RespWriteUtils.WriteError("ERR Syntax", ref curr, end))
-            //         //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            //         return;
-            //     }
+            _lock.WriteLock();
+            try
+            {
+                bool canParseID = parseIDString(idSlice, ref id);
+                if (!canParseID)
+                {
+                    while (!RespWriteUtils.TryWriteError("ERR Syntax", ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
 
-            //     // add the entry to the log
-            //     {
-            //         bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
-            //         if (!enqueueInLog)
-            //         {
-            //             while (!RespWriteUtils.WriteError("ERR StreamAdd failed", ref curr, end))
-            //                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            //             return;
-            //         }
+                // add the entry to the log
+                {
+                    bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
+                    if (!enqueueInLog)
+                    {
+                        while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return;
+                    }
 
-            //         var streamValue = new Value((ulong)retAddress);
+                    var streamValue = new Value((ulong)retAddress);
 
-            //         bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
-            //         // bool added = true;
-            //         if (!added)
-            //         {
-            //             while (!RespWriteUtils.WriteError("ERR StreamAdd failed", ref curr, end))
-            //                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            //             return;
-            //         }
-            //         lastId.setMS(id.ms);
-            //         lastId.setSeq(id.seq);
+                    bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
+                    // bool added = true;
+                    if (!added)
+                    {
+                        while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return;
+                    }
+                    lastId.setMS(id.ms);
+                    lastId.setSeq(id.seq);
 
-            //         totalEntriesAdded++;
-            //         // write back the ID of the entry added
-            //         string idString = $"{id.getMS()}-{id.getSeq()}";
-            //         while (!RespWriteUtils.WriteSimpleString(idString, ref curr, end))
-            //             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            //     }
-            // }
-            // finally
-            // {
-            //     // log.Commit();
+                    totalEntriesAdded++;
+                    // write back the ID of the entry added
+                    string idString = $"{id.getMS()}-{id.getSeq()}";
+                    while (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+            finally
+            {
+                // log.Commit();
 
-            //     if (isMemory) ptrHandle.Dispose();
-            //     output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
-            //     _lock.WriteUnlock();
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
+                _lock.WriteUnlock();
 
-            // }
+            }
 
         }
 
@@ -372,8 +376,6 @@ namespace Garnet.server
             streamID.setSeq(seq);
             return true;
         }
-
-
 
         /// <inheritdoc/>
         public void Dispose()

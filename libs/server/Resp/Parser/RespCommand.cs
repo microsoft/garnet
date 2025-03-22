@@ -184,6 +184,10 @@ namespace Garnet.server
         SREM,
         SUNIONSTORE,
         UNLINK,
+        XADD,
+        XLEN,
+        XRANGE,
+        XDEL,
         ZADD,
         ZDIFFSTORE,
         ZINCRBY,
@@ -939,6 +943,21 @@ namespace Garnet.server
                                         }
                                         break;
 
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXADD\r\n"u8))
+                                        {
+                                            return RespCommand.XADD;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXLEN\r\n"u8))
+                                        {
+                                            return RespCommand.XLEN;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXDEL\r\n"u8))
+                                        {
+                                            return RespCommand.XDEL;
+                                        }
+                                        break;
+                                        
                                     case 'Z':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
                                         {

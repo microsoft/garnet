@@ -191,6 +191,11 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        /// <summary>
+        /// Stream cache for the session
+        /// </summary>
+        internal readonly SessionStreamCache sessionStreamCache;
+
         public RespServerSession(
             long id,
             INetworkSender networkSender,
@@ -249,6 +254,10 @@ namespace Garnet.server
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
             }
+
+            // grab stream manager from storeWrapper
+            this.streamManager = storeWrapper.streamManager;
+            sessionStreamCache = new SessionStreamCache();
         }
 
         internal void SetUserHandle(UserHandle userHandle)
@@ -806,6 +815,9 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
                 RespCommand.SDIFF => SetDiff(ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
+                // Stream Commands
+                RespCommand.XADD => StreamAdd(),
+                // RespCommand.XLEN => StreamLength(),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;

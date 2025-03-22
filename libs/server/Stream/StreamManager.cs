@@ -34,10 +34,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
-        /// Note: Can refactor some of this code to get rid of streamKey and lastStream params. 
         public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, byte* value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream)
         {
-            // create a copy as we need to store this key in the dictionary
+            // copy key store this key in the dictionary
             byte[] key = new byte[keySlice.Length];
             fixed (byte* keyPtr = key)
                 Buffer.MemoryCopy(keySlice.ptr, keyPtr, keySlice.Length, keySlice.Length);
@@ -69,7 +68,7 @@ namespace Garnet.server
             _lock.WriteLock();
             try
             {
-                // retry querying the dictionary to see if some other thread has created the stream
+                // retry to validate if some other thread has created the stream
                 foundStream = streams.TryGetValue(key, out stream);
                 if (!foundStream)
                 {
@@ -82,9 +81,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    // we found the stream but it was not the one that we have in cache, so update the cache
                     stream.AddEntry(value, valueLength, idSlice, numPairs, ref output);
-                    // update last accessed stream key 
                     lastStream = stream;
                     streamKey = key;
                 }

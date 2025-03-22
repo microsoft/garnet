@@ -187,6 +187,23 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write a long as a simple string
+        /// </summary>
+        // public static bool TryWriteLongAsSimpleString(long value, ref byte* curr, byte* end)
+        // {
+        //     // Simple strings are of the form "+cc\r\n"
+        //     var longLength = NumUtils.CountDigits(value);
+        //     var totalLen = 1 + longLength + 2;
+        //     if (totalLen > (int)(end - curr))
+        //         return false;
+
+        //     *curr++ = (byte)'+';
+        //     NumUtils.LongToBytes(value, longLength, ref curr);
+        //     WriteNewline(ref curr);
+        //     return true;
+        // }
+
+        /// <summary>
         /// Write simple string
         /// </summary>
         /// <param name="simpleString">An ASCII simple string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>

@@ -124,6 +124,8 @@ namespace Garnet.server
         /// </summary>
         public readonly int databaseNum = 1;
 
+        internal readonly StreamManager streamManager;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -212,6 +214,9 @@ namespace Garnet.server
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
             ctsCommit = new();
             run_id = Generator.CreateHexId();
+
+            // initialize stream manager
+            this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes());
         }
 
         /// <summary>

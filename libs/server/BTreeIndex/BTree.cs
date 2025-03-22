@@ -81,6 +81,30 @@ namespace Garnet.server.BTreeIndex
             // }
         }
 
+        public static void FreeNode(ref BTreeNode* node)
+        {
+            if (node == null)
+                return;
+            
+            // If this is an internal node, free all its children first
+            if (node->info->type == BTreeNodeType.Internal)
+            {
+                for (int i = 0; i <= node->info->count; i++)
+                {
+                    var child = node->data.children[i];
+                    FreeNode(ref child);
+                    node->data.children[i] = null;
+                }
+            }
+
+            // Free the memory handle
+            if (node->memoryHandle != null)
+            {
+                Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
+                node = null;
+            }
+        }
+
         /// <summary>
         /// Deallocates the memory allocated for the B+Tree
         /// </summary>
