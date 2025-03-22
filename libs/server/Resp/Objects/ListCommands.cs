@@ -407,8 +407,7 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
             else
             {
@@ -779,8 +778,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
 
                     break;
@@ -823,8 +821,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
 
                     break;
@@ -994,8 +991,7 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
                 return true;
             }
 

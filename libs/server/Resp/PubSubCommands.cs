@@ -284,8 +284,9 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                        SendAndReset();
+
+                    WriteNull();
+
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
                 }
@@ -357,6 +358,20 @@ namespace Garnet.server
                         numActiveChannels--;
 
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                if (channels.Count == 0)
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
+                        SendAndReset();
+
+                    WriteNull();
+
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                 }
 

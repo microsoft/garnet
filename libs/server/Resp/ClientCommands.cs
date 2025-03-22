@@ -501,8 +501,7 @@ namespace Garnet.server
 
             if (string.IsNullOrEmpty(this.clientName))
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
             else
             {
