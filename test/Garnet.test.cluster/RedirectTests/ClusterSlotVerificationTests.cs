@@ -118,6 +118,17 @@ namespace Garnet.test.cluster
                 new ZINTERSTORE(),
                 new ZUNION(),
                 new ZUNIONSTORE(),
+                new HEXPIRE(),
+                new ZEXPIRE(),
+                new ZPEXPIRE(),
+                new ZEXPIREAT(),
+                new ZPEXPIREAT(),
+                new ZTTL(),
+                new ZPTTL(),
+                new ZEXPIRETIME(),
+                new ZPEXPIRETIME(),
+                new ZPERSIST(),
+                new ZCOLLECT(),
                 new HSET(),
                 new HGET(),
                 new HGETALL(),
@@ -320,6 +331,16 @@ namespace Garnet.test.cluster
         [TestCase("ZINTERSTORE")]
         [TestCase("ZUNION")]
         [TestCase("ZUNIONSTORE")]
+        [TestCase("ZEXPIRE")]
+        [TestCase("ZPEXPIRE")]
+        [TestCase("ZEXPIREAT")]
+        [TestCase("ZPEXPIREAT")]
+        [TestCase("ZTTL")]
+        [TestCase("ZPTTL")]
+        [TestCase("ZEXPIRETIME")]
+        [TestCase("ZPEXPIRETIME")]
+        [TestCase("ZPERSIST")]
+        [TestCase("ZCOLLECT")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -486,6 +507,16 @@ namespace Garnet.test.cluster
         [TestCase("ZINTERSTORE")]
         [TestCase("ZUNION")]
         [TestCase("ZUNIONSTORE")]
+        [TestCase("ZEXPIRE")]
+        [TestCase("ZPEXPIRE")]
+        [TestCase("ZEXPIREAT")]
+        [TestCase("ZPEXPIREAT")]
+        [TestCase("ZTTL")]
+        [TestCase("ZPTTL")]
+        [TestCase("ZEXPIRETIME")]
+        [TestCase("ZPEXPIRETIME")]
+        [TestCase("ZPERSIST")]
+        [TestCase("ZCOLLECT")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -661,6 +692,16 @@ namespace Garnet.test.cluster
         [TestCase("ZINTERSTORE")]
         [TestCase("ZUNION")]
         [TestCase("ZUNIONSTORE")]
+        [TestCase("ZEXPIRE")]
+        [TestCase("ZPEXPIRE")]
+        [TestCase("ZEXPIREAT")]
+        [TestCase("ZPEXPIREAT")]
+        [TestCase("ZTTL")]
+        [TestCase("ZPTTL")]
+        [TestCase("ZEXPIRETIME")]
+        [TestCase("ZPEXPIRETIME")]
+        [TestCase("ZPERSIST")]
+        [TestCase("ZCOLLECT")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -825,6 +866,16 @@ namespace Garnet.test.cluster
         [TestCase("ZINTERSTORE")]
         [TestCase("ZUNION")]
         [TestCase("ZUNIONSTORE")]
+        [TestCase("ZEXPIRE")]
+        [TestCase("ZPEXPIRE")]
+        [TestCase("ZEXPIREAT")]
+        [TestCase("ZPEXPIREAT")]
+        [TestCase("ZTTL")]
+        [TestCase("ZPTTL")]
+        [TestCase("ZEXPIRETIME")]
+        [TestCase("ZPEXPIRETIME")]
+        [TestCase("ZPERSIST")]
+        [TestCase("ZCOLLECT")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -999,6 +1050,16 @@ namespace Garnet.test.cluster
         [TestCase("ZINTERSTORE")]
         [TestCase("ZUNION")]
         [TestCase("ZUNIONSTORE")]
+        [TestCase("ZEXPIRE")]
+        [TestCase("ZPEXPIRE")]
+        [TestCase("ZEXPIREAT")]
+        [TestCase("ZPEXPIREAT")]
+        [TestCase("ZTTL")]
+        [TestCase("ZPTTL")]
+        [TestCase("ZEXPIRETIME")]
+        [TestCase("ZPEXPIRETIME")]
+        [TestCase("ZPERSIST")]
+        [TestCase("ZCOLLECT")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]
@@ -1191,6 +1252,16 @@ namespace Garnet.test.cluster
         [TestCase("ZINTERSTORE")]
         [TestCase("ZUNION")]
         [TestCase("ZUNIONSTORE")]
+        [TestCase("ZEXPIRE")]
+        [TestCase("ZPEXPIRE")]
+        [TestCase("ZEXPIREAT")]
+        [TestCase("ZPEXPIREAT")]
+        [TestCase("ZTTL")]
+        [TestCase("ZPTTL")]
+        [TestCase("ZEXPIRETIME")]
+        [TestCase("ZPEXPIRETIME")]
+        [TestCase("ZPERSIST")]
+        [TestCase("ZCOLLECT")]
         [TestCase("HSET")]
         [TestCase("HGET")]
         [TestCase("HGETALL")]

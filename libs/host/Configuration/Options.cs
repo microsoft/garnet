@@ -237,9 +237,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("hcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand.")]
-        public int HashCollectFrequencySecs { get; set; }
+        [Option("expired-object-collection-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.")]
+        public int ExpiredObjectCollectionFrequencySecs { get; set; }
 
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
@@ -766,7 +767,7 @@ namespace Garnet
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
-                HashCollectFrequencySecs = HashCollectFrequencySecs,
+                ExpiredObjectCollectionFrequencySecs = ExpiredObjectCollectionFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,

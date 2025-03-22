@@ -4,8 +4,10 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -334,11 +336,93 @@ namespace Garnet.server
                         elements = new int[arraySize];
                         for (int i = 0; i < elements.Length; i++)
                         {
+                            if (*refPtr != ':')
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+                            refPtr++;
+
                             element = null;
                             if (RespReadUtils.TryReadInt32(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
                             {
                                 elements[i] = number;
                             }
+
+                            if (*(ushort*)refPtr != MemoryMarshal.Read<ushort>("\r\n"u8))
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+
+                            refPtr += 2;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
+            }
+
+            return elements;
+        }
+
+        /// <summary>
+        /// Converts an array of elements in RESP format to ArgSlice[] type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="error">A description of the error, if there is any</param>
+        /// <returns></returns>
+        unsafe long[] ProcessRespInt64ArrayOutput(GarnetObjectStoreOutput outputFooter, out string error)
+        {
+            long[] elements = default;
+            error = default;
+
+            // For reading the elements in the outputFooter
+            byte* element = null;
+
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                             outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        // Get the number of elements
+                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+
+                        // Create the argslice[]
+                        elements = new long[arraySize];
+                        for (int i = 0; i < elements.Length; i++)
+                        {
+                            if (*refPtr != ':')
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+                            refPtr++;
+
+                            element = null;
+                            if (RespReadUtils.TryReadInt64(ref refPtr, outputPtr + outputSpan.Length, out var number, out var _))
+                            {
+                                elements[i] = number;
+                            }
+
+                            if (*(ushort*)refPtr != MemoryMarshal.Read<ushort>("\r\n"u8))
+                            {
+                                RespParsingException.ThrowUnexpectedToken(*refPtr);
+                            }
+
+                            refPtr += 2;
                         }
                     }
                 }
