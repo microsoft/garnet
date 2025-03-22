@@ -50,8 +50,18 @@ namespace Garnet.cluster
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
-            if (opts.EndPoint is not IPEndPoint endpoint)
-                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented.");
+            IPEndPoint endpoint = null;
+            foreach (var endPoint in opts.EndPoints)
+            {
+                if (endPoint is IPEndPoint _endpoint)
+                {
+                    endpoint = _endpoint;
+                    break;
+                }
+            }
+
+            if (endpoint == null)
+                throw new GarnetException("No valid IPEndPoint found in endPoint list");
 
             var address = clusterProvider.storeWrapper.GetIp();
 
