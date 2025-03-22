@@ -224,11 +224,7 @@ namespace Garnet.server
             }
             else
             {
-                var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                status = storageApi.GeoCommands(sourceKey.ToArray(), ref input, ref outputFooter);
-
-                output = outputFooter.SpanByteAndMemory;
+                status = storageApi.GeoSearchReadOnly(sourceKey, ref searchOpts, ref input, ref output);
 
                 if (status == GarnetStatus.OK)
                 {

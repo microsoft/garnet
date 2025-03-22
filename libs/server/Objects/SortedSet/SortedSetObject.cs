@@ -296,12 +296,6 @@ namespace Garnet.server
                     case SortedSetOperation.GEOPOS:
                         GeoPosition(ref input, ref output.SpanByteAndMemory);
                         break;
-                    case SortedSetOperation.GEOSEARCH:
-                        var command = (RespCommand)input.arg1;
-                        var ret = input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out _, out _);
-                        Debug.Assert(ret);
-                        GeoSearch(ref input, ref output.SpanByteAndMemory, ref searchOpts, true);
-                        break;
                     case SortedSetOperation.ZRANGE:
                         SortedSetRange(ref input, ref output.SpanByteAndMemory);
                         break;
