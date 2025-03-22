@@ -144,19 +144,16 @@ class Program
             Console.WriteLine("Number of keys deleted = " + num_successfully_deleted);
             Console.WriteLine("Time for deletion = " + deleteTime + " ns");
         }
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 400].idBytes[0]));
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 300].idBytes[0]));
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 200].idBytes[0]));
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 100].idBytes[0]));
 
-        // // do a range query to check again 
-        // tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), out Value startVal1, out Value endVal1, out List<(byte[], Value)> tombstones);
-        // Console.WriteLine("list length = " + tombstones.Count);
-        // foreach (var item in tombstones)
-        // {
-        //     Console.WriteLine(item.Item2.value);
-        // }
-        // Console.WriteLine("Delete check passed ");
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 400].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 300].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 200].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 100].idBytes[0]));
+
+        // do a range query to check again 
+        tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), out Value startVal1, out Value endVal1, out List<Value> tombstones);
+        Debug.Assert(tombstones.Count == 4);    
+        Console.WriteLine("Delete check passed ");
 
         //tree.Trim((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out int overflows);
 
