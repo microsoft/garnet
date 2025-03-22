@@ -64,15 +64,11 @@ namespace Garnet.server.BTreeIndex
 
         public bool SplitLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, int index)
         {
-            // var newLeaf = CreateNewLeafNode(ref leaf);
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
             var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             stats.numAllocates++;
             BTreeNode* newLeaf = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
-            // newLeaf->memoryHandle = memoryBlock;
-            // newLeaf->Initialize(BTreeNodeType.Leaf, memoryBlock);
-            Debug.Assert(leaf!=null);
-
+    
             leaf->info->count = SPLIT_LEAF_POSITION;
             newLeaf->info->previous = leaf;
             newLeaf->info->next = leaf->info->next;
@@ -91,11 +87,6 @@ namespace Garnet.server.BTreeIndex
             }
             leaf->info->validCount -= newLeafValidCount;
             newLeaf->info->validCount = newLeafValidCount;
-
-            // newLeaf->SetKey(0, key);
-            // newLeaf->SetValue(0, value);
-            // newLeaf->info->count = 1;
-            // newLeaf->info->validCount = 1;
             // insert the new key to either the old node or the newly created node, based on the index
             if (index >= leaf->info->count)
             {
@@ -151,24 +142,10 @@ namespace Garnet.server.BTreeIndex
 
                 if (node->info->count < BTreeNode.INTERNAL_CAPACITY)
                 {
-                    // // TODO: potentially get rid of this as we will also only be appending to end of internal node due to sorted insertions
-                    // Buffer.MemoryCopy(node->keys + index * BTreeNode.KEY_SIZE, node->keys + ((index + 1) * BTreeNode.KEY_SIZE),
-                    // (node->info->count - index) * BTreeNode.KEY_SIZE, (node->info->count - index) * BTreeNode.KEY_SIZE);
-                    // // move all children 
-                    // for (var j = node->info->count; j > index; j--)
-                    // {
-                    //     node->SetChild(j + 1, node->GetChild(j));
-                    // }
-
-                    // node->SetKey(index, key);
-                    // node->SetChild(index + 1, child);
-                    // node->info->count++;
-                    // node->info->validCount += newValidCount;
-
                     // we can insert 
                     InsertToInternalNodeWithinCapacity(ref node, key, ref child, ref nodesTraversed, index, newValidCount);
 
-                    // insert does not cascade up, so update validCounts in the parent nodes
+                    // update validCounts in the parent nodes
                     for (var j = i + 1; j < stats.depth; j++)
                     {
                         nodesTraversed[j]->info->validCount += newValidCount;
@@ -207,13 +184,9 @@ namespace Garnet.server.BTreeIndex
 
         public BTreeNode* CreateInternalNode(ref BTreeNode* node, int splitPos)
         {
-            // BTreeNode* newNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode));
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
             var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             stats.numAllocates++;
-            // BTreeNode* newNode = (BTreeNode*)memory;
-            // // newNode->memoryHandle = memoryBlock;
-            // newNode->Initialize(BTreeNodeType.Internal, memoryBlock);
             BTreeNode* newNode = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
             stats.numInternalNodes++;
             node->info->count = splitPos;
@@ -238,23 +211,6 @@ namespace Garnet.server.BTreeIndex
                 }
             }
             newNode->info->validCount = newValidCount;
-
-            // we are inserting in sorted order, so child always goes to newNode
-            // Buffer.MemoryCopy(nodeToSplit->keys + (nodeToSplit->info->count + 1) * BTreeNode.KEY_SIZE, newNode->keys, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE);
-            // Buffer.MemoryCopy(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, newNode->keys + (index - nodeToSplit->info->count) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
-            // newNode->SetKey(index - nodeToSplit->info->count - 1, key);
-            // Buffer.MemoryCopy(nodeToSplit->data.children + 1 + nodeToSplit->info->count, newNode->data.children, (index - nodeToSplit->info->count) * sizeof(BTreeNode*), (index - nodeToSplit->info->count) * sizeof(BTreeNode*));
-            // Buffer.MemoryCopy(nodeToSplit->data.children + 1 + index, newNode->data.children + 1 + index - nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*), newNode->info->count * sizeof(BTreeNode*));
-            // newNode->SetChild(index - nodeToSplit->info->count, child);
-
-            // newNode->SetChild(0, nodeToSplit->GetChild(nodeToSplit->info->count)); // left child pointer of the new node part
-            // newNode->SetKey(0, key);
-            // newNode->SetChild(1, child);
-            // newNode->info->count = 1;
-            // // key = nodeToSplit->GetKey(nodeToSplit->info->count);
-            // key = newNode->GetKey(0);
-
-            // var childvalid = child->info->validCount;
 
             if (index > nodeToSplit->info->count)
             {
@@ -291,23 +247,18 @@ namespace Garnet.server.BTreeIndex
 
         public void CreateNewRoot(byte* key, BTreeNode* newlySplitNode)
         {
-            // BTreeNode* leftNode = (BTreeNode*)Marshal.AllocHGlobal(sizeof(BTreeNode)).ToPointer();
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
             var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             stats.numAllocates++;
-            // BTreeNode* newRoot = (BTreeNode*)memory;
-            // // leftNode->memoryHandle = memoryBlock;
-            // newRoot->Initialize(BTreeNodeType.Internal, memoryBlock);
             BTreeNode* newRoot = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
 
-            // Set the new root's key to the key being pushed up (key from newlySplitNode).
+            // Set the new root's key.
             newRoot->info->count = 1;
             newRoot->SetKey(0, key);
-            // Set its children: left child is the old root; right child is the newly split node.
+            // Set children: left child is the old root; right child is the newly split node.
             newRoot->SetChild(0, root);
             newRoot->SetChild(1, newlySplitNode);
 
-            // Update the valid count (if desired, handle validCount appropriately).
             newRoot->info->validCount = root->info->validCount;
             if (newlySplitNode != tail)
             {

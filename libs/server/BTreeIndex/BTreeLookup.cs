@@ -62,11 +62,11 @@ namespace Garnet.server.BTreeIndex
 
             if (reverse)
             {
-                // we find the first slot > start and subtract one index to get the start index
+                // find the first slot > start and subtract one index to get the start index
                 startIndex = startLeaf->UpperBound(start) - 1;
                 startVal = startLeaf->GetValue(startIndex);
 
-                // we find the first value greater than equal to key and that will be the last index 
+                // find the first value greater than equal to key and that will be the last index 
                 endIndex = endLeaf->LowerBound(end);
                 endVal = endLeaf->GetValue(endIndex);
             }
@@ -80,14 +80,13 @@ namespace Garnet.server.BTreeIndex
                 endVal = endLeaf->GetValue(endIndex);
             }
 
-
-            // now, we iterate over the leaves between startLeaf[startIndex] and endLeaf[endIndex] (inclusive) and collect all tombstones
+            // iterate over the leaves between startLeaf[startIndex] and endLeaf[endIndex] (inclusive) and collect all tombstones
             BTreeNode* leaf = startLeaf;
             uint numScanned = 0;
             while (leaf != null)
             {
                 int first, last;
-                bool breakOutOfOuterLoop = false;
+                bool scanComplete = false;
                 if (reverse)
                 {
                     // we would like an inverse traversal 
@@ -125,7 +124,7 @@ namespace Garnet.server.BTreeIndex
                             {
                                 endVal = value;
                             }
-                            breakOutOfOuterLoop = true;
+                            scanComplete = true;
                             break;
                         }
                     }
@@ -147,8 +146,8 @@ namespace Garnet.server.BTreeIndex
                         i++;
                     }
                 }
-                // if we have reached the endLeaf
-                if (leaf == endLeaf || breakOutOfOuterLoop)
+               
+                if (leaf == endLeaf || scanComplete)
                 {
                     break;
                 }

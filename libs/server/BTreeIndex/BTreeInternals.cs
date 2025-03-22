@@ -115,38 +115,6 @@ namespace Garnet.server.BTreeIndex
 
             return node;
         }
-
-        /// <summary>
-        /// Allocates memory for a node
-        /// </summary>
-        /// <param name="type">type of node to allocate memory for</param>
-        // public void Initialize(BTreeNodeType type, SectorAlignedMemory handle)
-        // {
-        //     // assume this is called after memory has been allocated and memoryBlock is set (it is the first field)
-        //     // we are only assigning different parts of the memory to different fields
-        //     // memoryHandle = handle;
-        //     var startAddr = (byte*)memoryHandle.aligned_pointer;
-        //     info->type = type;
-        //     info->count = 0;
-        //     info->next = null;
-        //     info->previous = null;
-        //     info->validCount = 0;
-
-        //     // var baseAddress = startAddr + sizeof(NodeInfo) + sizeof(SectorAlignedMemory);
-        //     var baseAddress = startAddr + HEADER_SIZE;
-        //     keys = (byte*)baseAddress;
-
-        //     int capacity = type == BTreeNodeType.Leaf ? LEAF_CAPACITY : INTERNAL_CAPACITY;
-        //     byte* dataAddress = keys + (capacity * KEY_SIZE);
-        //     if (type == BTreeNodeType.Leaf)
-        //     {
-        //         data.values = (Value*)dataAddress;
-        //     }
-        //     else
-        //     {
-        //         data.children = (BTreeNode**)dataAddress;
-        //     }
-        // }
  
         public byte* GetKey(int index)
         {
@@ -253,15 +221,6 @@ namespace Garnet.server.BTreeIndex
         }
 
         /// <summary>
-        /// Upgrades a leaf node to an internal node
-        /// </summary>
-        public void UpgradeToInternal()
-        {
-            info->type = BTreeNodeType.Internal;
-            data.children = (BTreeNode**)(keys + (INTERNAL_CAPACITY * KEY_SIZE)); // should be keys + Internal capacity?
-        }
-
-        /// <summary>
         /// Compares two keys
         /// </summary>
         /// <param name="key1"></param>
@@ -294,7 +253,7 @@ namespace Garnet.server.BTreeIndex
 
         public void Deallocate()
         {
-            
+            // memoryHandle.Dispose();
         }
     }
 
@@ -340,6 +299,8 @@ namespace Garnet.server.BTreeIndex
             Console.WriteLine($"Total fast inserts: {totalFastInserts}");
             Console.WriteLine($"Number of keys: {numKeys}");
             Console.WriteLine($"Number of valid keys: {numValidKeys}");
+            Console.WriteLine($"Number of allocates: {numAllocates}");
+            Console.WriteLine($"Number of deallocates: {numDeallocates}");
         }
     }
 }

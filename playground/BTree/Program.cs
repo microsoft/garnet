@@ -19,24 +19,9 @@ class Program
     }
     static unsafe void Main(string[] args)
     {
-        // // IntPtr memory = Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE);
-
-        // var pool = new SectorAlignedBufferPool(1, 4096);
-        // var memoryBlock = pool.Get(4096);
-        // var memory = (IntPtr)memoryBlock.aligned_pointer;
-        // SectorAlignedMemory* ptr = (SectorAlignedMemory*)memory;
-        // BTreeNode* node = (BTreeNode*)memory;
-        // // node->memoryHandle = memoryBlock;
-        // node->Initialize(BTreeNodeType.Leaf, memoryBlock);
-        // StreamID sample = new StreamID(1, 0);
-        // node->SetKey(0, (byte*)Unsafe.AsPointer(ref sample.idBytes[0]));
-        // // something(pool, ptr);
-        // return;
         var tree = new BTree(4096);
-
-        // ulong N = 999994;
-        ulong N = 4000000;
-        bool verbose = false;
+        ulong N = 400000;
+        bool verbose = true;
         bool sanity = false;
         if (args.Length > 0)
         {
@@ -123,7 +108,8 @@ class Program
                 endIdx = (ulong)(startIdx + (N * selectivity));
             } while (endIdx >= N);
             sw.Start();
-            // tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[startIdx].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[endIdx].idBytes[0]), out startVal[i], out endVal[i], out list[i]);
+            var count = tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[startIdx].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[endIdx].idBytes[0]), out startVal[i], out endVal[i], out list[i]);
+            Debug.Assert(count == (int)(endIdx - startIdx + 1));
             sw.Stop();
             range_query_times[i] = (long)(sw.ElapsedTicks * nanosecondsPerTick);
             if (verbose)
@@ -134,15 +120,6 @@ class Program
         }
         if (verbose)
             Console.WriteLine("Range query check passed ");
-
-        // tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 100].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]), out Value startValRev, out Value endValRev, out List<(byte[], Value)> listRev, true);
-        // Console.WriteLine("list length = " + listRev.Count);
-        // Console.WriteLine("startValRev = " + startValRev.value + "\t endValRev = " + endValRev.value);
-        // foreach (var item in listRev)
-        // {
-        //     Console.WriteLine(item.Item2.value);
-        // }
-        // Console.WriteLine("Range query reverse check passed ");
 
         // now let's delete some keys 
         sw.Reset();

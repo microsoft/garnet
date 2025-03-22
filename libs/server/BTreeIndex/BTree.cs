@@ -34,9 +34,6 @@ namespace Garnet.server.BTreeIndex
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
             var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             stats.numAllocates = 1;
-            // root = (BTreeNode*)memory;
-            // root->memoryHandle = memoryBlock;
-            // root->Initialize(BTreeNodeType.Leaf, memoryBlock);
             root = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
             head = tail = root;
             root->info->next = root->info->previous = null;
@@ -76,9 +73,6 @@ namespace Garnet.server.BTreeIndex
                 node = null;
             }
             
-            
-
-        
             // if (node->memoryHandle != null)
             // {
             //     node->memoryHandle.Return();
@@ -100,10 +94,6 @@ namespace Garnet.server.BTreeIndex
             root = null;
             head = null;
             tail = null;
-            
-            // Marshal.FreeHGlobal((IntPtr)root);
-            // Marshal.FreeHGlobal((IntPtr)head);
-            // Marshal.FreeHGlobal((IntPtr)tail);
         }
 
         /// <summary>
