@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -290,6 +291,8 @@ namespace Garnet.server
 
             storageApi.SET(ref key, ref value);
 
+            PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref parseState.GetArgSliceByRef(0), CmdStrings.set);
+            
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
@@ -338,7 +341,7 @@ namespace Garnet.server
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             storageApi.SETRANGE(key, ref input, ref output);
-
+            PublishKeyspaceNotification(KeyspaceNotificationType.String, ref key, CmdStrings.setrange);
             while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
@@ -763,6 +766,7 @@ namespace Garnet.server
                 case OperationError.SUCCESS:
                     while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
+                    PublishKeyspaceNotification(KeyspaceNotificationType.String, ref key, CmdStrings.incrby);
                     break;
                 case OperationError.INVALID_TYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -806,6 +810,7 @@ namespace Garnet.server
                 case OperationError.SUCCESS:
                     while (!RespWriteUtils.TryWriteBulkString(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
+                    PublishKeyspaceNotification(KeyspaceNotificationType.String, ref key, CmdStrings.incrbyfloat);
                     break;
                 case OperationError.INVALID_TYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr,
