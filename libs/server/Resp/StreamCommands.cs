@@ -107,18 +107,30 @@ namespace Garnet.server
 
             SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
+            bool success = false;
+
             // check if the stream exists in cache
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
                 cachedStream.ReadRange(startId, endId, count, ref _output);
+                success = true;
             }
             else
             {
-                streamManager.StreamRange(key, startId, endId, count, ref _output);
+                success = streamManager.StreamRange(key, startId, endId, count, ref _output);
+            }
+            if (success)
+            {
+                _ = ProcessOutputWithHeader(_output);
+            }
+            else{
+                 //return empty array
+                    while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
             }
 
-
-            _ = ProcessOutputWithHeader(_output);
+            // _ = ProcessOutputWithHeader(_output);
 
             return true;
         }

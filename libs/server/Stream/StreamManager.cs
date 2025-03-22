@@ -127,7 +127,7 @@ namespace Garnet.server
         /// <param name="end">end of range</param>
         /// <param name="count">threshold to limit scanning</param>
         /// <param name="output"></param>
-        public void StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output)
+        public unsafe bool StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output)
         {
             var key = keySlice.ToArray();
             if (streams != null && streams.Count > 0)
@@ -135,9 +135,11 @@ namespace Garnet.server
                 bool foundStream = streams.TryGetValue(key, out StreamObject stream);
                 if (foundStream)
                 {
-                    // stream.ReadRange(start, end, count, ref output);
+                    stream.ReadRange(start, end, count, ref output);
+                    return true;
                 }
             }
+            return false;
         }
 
         /// <summary>
