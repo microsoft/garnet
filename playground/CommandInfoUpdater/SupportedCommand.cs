@@ -304,6 +304,7 @@ namespace CommandInfoUpdater
             new("WATCHMS", RespCommand.WATCHMS),
             new("WATCHOS", RespCommand.WATCHOS),
             new("XADD", RespCommand.XADD),
+            new("XLEN", RespCommand.XLEN),
             new("ZADD", RespCommand.ZADD),
             new("ZCARD", RespCommand.ZCARD),
             new("ZCOUNT", RespCommand.ZCOUNT),
