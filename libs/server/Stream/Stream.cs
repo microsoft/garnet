@@ -56,54 +56,44 @@ namespace Garnet.server
         /// <param name="incrementedID">carries the incremented stream id</param>
         public void IncrementID(ref StreamID incrementedID)
         {
-            while (true)
+            var originalMs = lastId.getMS();
+            var originalSeq = lastId.getSeq();
+
+            if (originalMs == long.MaxValue)
             {
-                var originalMs = lastId.ms;
-                var originalSeq = lastId.seq;
-
-                if (originalMs == long.MaxValue)
-                {
-                    incrementedID = default;
-                    return;
-                }
-
-                var newMs = originalMs;
-                var newSeq = originalSeq + 1;
-
-                // if seq overflows, increment timestamp and reset seq
-                if (newSeq == 0)
-                {
-                    newMs = originalMs + 1;
-                    newSeq = 0;
-                }
-
-                // Use Interlocked.CompareExchange to ensure atomic update
-                var updatedMs = Interlocked.CompareExchange(ref lastId.ms, newMs, originalMs);
-                if (updatedMs == originalMs)
-                {
-                    // Successfully updated ms, now update seq
-                    Interlocked.Exchange(ref lastId.seq, newSeq);
-                    incrementedID.setMS(newMs);
-                    incrementedID.setSeq(newSeq);
-                    return;
-                }
-
-                // If we reach here, it means another thread has updated lastId.ms
-                // Retry the operation
+                incrementedID = default;
+                return;
             }
+
+            var newMs = originalMs;
+            var newSeq = originalSeq + 1;
+
+            // if seq overflows, increment timestamp and reset seq
+            if (newSeq == 0)
+            {
+                newMs += 1;
+                newSeq = 0;
+            }
+
+            incrementedID.setMS(newMs);
+            incrementedID.setSeq(newSeq);
+            
         }
 
         /// <summary>
         /// Generate the next stream ID
         /// </summary>
         /// <returns>StreamID generated</returns>
-        public void GenerateNextID(ref StreamID id)
+        public unsafe void GenerateNextID(ref StreamID id)
         {
             ulong timestamp = (ulong)Stopwatch.GetTimestamp() / (ulong)(Stopwatch.Frequency / 1000);
 
+            // read existing timestamp in big endian format
+            var lastTs = lastId.getMS();
             // if this is the first entry or timestamp is greater than last added entry 
-            if (totalEntriesAdded == 0 || timestamp > lastId.ms)
+            if (totalEntriesAdded == 0 || timestamp > lastTs)
             {
+                // this will write timestamp in big endian format 
                 id.setMS(timestamp);
                 id.setSeq(0);
                 return;
@@ -122,6 +112,8 @@ namespace Garnet.server
                 GenerateNextID(ref id);
                 return true;
             }
+
+            var lastIdDecodedTs = lastId.getMS();
 
             // parse user-defined ID
             // can be of following formats: 
@@ -145,13 +137,13 @@ namespace Garnet.server
                 {
                     return false;
                 }
-
-                // check if timestamp is greater than last added entry
-                if (totalEntriesAdded != 0 && timestamp < lastId.getMS())
+                
+                // check if timestamp is greater than last added entry's decoded ts
+                if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                 {
                     return false;
                 }
-                else if (totalEntriesAdded != 0 && timestamp == lastId.getMS())
+                else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                 {
                     IncrementID(ref id);
                 }
@@ -181,11 +173,11 @@ namespace Garnet.server
                         return false;
                     }
                     // check if timestamp is greater than last added entry
-                    if (totalEntriesAdded != 0 && timestamp < lastId.getMS())
+                    if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                     {
                         return false;
                     }
-                    else if (totalEntriesAdded != 0 && timestamp == lastId.getMS())
+                    else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                     {
                         IncrementID(ref id);
                     }
@@ -212,17 +204,19 @@ namespace Garnet.server
                         return false;
                     }
 
-                    if (totalEntriesAdded != 0 && timestamp < lastId.getMS())
+                    if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                     {
                         return false;
                     }
-                    else if (totalEntriesAdded != 0 && timestamp == lastId.getMS())
+                    else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                     {
-                        if (seq <= lastId.getSeq())
+                        if (seq <= lastId.seq)
                         {
                             return false;
                         }
                     }
+                    // use ID and seq given by user 
+                    // encode while storing
                     id.setMS(timestamp);
                     id.setSeq(seq);
                 }
@@ -277,11 +271,12 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         return;
                     }
-                    lastId.setMS(id.ms);
-                    lastId.setSeq(id.seq);
+                    // copy encoded ms and seq
+                    lastId.ms = (id.ms);
+                    lastId.seq = (id.seq);
 
                     totalEntriesAdded++;
-                    // write back the ID of the entry added
+                    // write back the decoded ID of the entry added
                     string idString = $"{id.getMS()}-{id.getSeq()}";
                     while (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -376,11 +371,13 @@ namespace Garnet.server
             }
             if (!idString.Contains('-'))
             {
-                if (!ulong.TryParse(idString, out id.ms))
+                
+                if (!ulong.TryParse(idString, out ulong ms))
                 {
                     return false;
                 }
-                id.setSeq(0);
+                id.setMS(ms);
+                id.setSeq(0);   
                 return true;
             }
             return ParseCompleteStreamIDFromString(idString, out id);
@@ -475,8 +472,10 @@ namespace Garnet.server
                             // check if the entry is actually one of the qualified keys 
                             // parse ID for the entry which is the first 16 bytes
                             var idBytes = entryBytes.Slice(0, 16);
-                            var ts = BinaryPrimitives.ReadInt64BigEndian(idBytes.Slice(0, sizeof(long)));
-                            var seq = BinaryPrimitives.ReadInt64BigEndian(idBytes.Slice(8));
+                            var ts = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(0, 8));
+                            var seq = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(8, 8));
+                            // var ts = BitConverter.ToUInt64(idBytes.Slice(0, 8));
+                            // var seq = BitConverter.ToUInt64(idBytes.Slice(8, 8));
                             string idString = $"{ts}-{seq}";
                             Span<byte> numPairsBytes = entryBytes.Slice(16, 4);
                             int numPairs = BitConverter.ToInt32(numPairsBytes);
@@ -561,7 +560,6 @@ namespace Garnet.server
             {
                 return false;
             }
-
             streamID.setMS(timestamp);
             streamID.setSeq(seq);
             return true;

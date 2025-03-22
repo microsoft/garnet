@@ -38,12 +38,12 @@ namespace Garnet.server
 
         public ulong getMS()
         {
-            return ms;
+            return BinaryPrimitives.ReadUInt64BigEndian(new Span<byte>(Unsafe.AsPointer(ref this.ms), 8));
         }
 
         public ulong getSeq()
         {
-            return seq;
+            return BinaryPrimitives.ReadUInt64BigEndian(new Span<byte>(Unsafe.AsPointer(ref this.seq), 8));
         }
 
         public unsafe StreamID(byte[] inputBytes)
