@@ -554,10 +554,6 @@ namespace Garnet.server
 
         #endregion
 
-        #region Stream Methods
-        // GarnetStatus StreamAdd(ArgSlice key, ref ObjectInput input);
-        #endregion
-
         #region Set Methods
 
         /// <summary>
@@ -1410,10 +1406,6 @@ namespace Garnet.server
         /// <returns>Operation status</returns>
         GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
 
-        #endregion
-
-        #region Stream Methods
-        // GarnetStatus StreamLength(ArgSlice key, out long count);
         #endregion
 
         #region Geospatial Methods
