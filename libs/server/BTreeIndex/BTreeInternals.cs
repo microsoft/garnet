@@ -61,9 +61,37 @@ namespace Garnet.server.BTreeIndex
         public int count;
         public BTreeNode* next;
         public BTreeNode* previous;
-        public uint validCount;
+        public uint validCount; // valid keys (non-tombstone keys) in the node.
     }
 
+    /// <summary>
+    /// Represents a node in the B+tree
+    /// Memory layout:
+    /// +-----------------------------------+
+    /// | BTreeNode (HEADER_SIZE bytes)     |
+    /// |   - NodeInfo* info                |
+    /// |   - NodeData data                 |
+    /// |   - byte* keys                    |
+    /// |   - IntPtr* memoryHandle          |
+    /// +-----------------------------------+
+    /// | NodeInfo (METADATA_SIZE bytes)    |
+    /// |   - BTreeNodeType type            |
+    /// |   - int count                     |
+    /// |   - BTreeNode* next               |
+    /// |   - BTreeNode* previous           |
+    /// |   - uint validCount               |
+    /// +-----------------------------------+
+    /// | Keys array: capacity * KEY_SIZE   |
+    /// +-----------------------------------+
+    /// | Data array: either Value[] (leaf) |
+    /// | or BTreeNode*[] (internal)        |
+    /// +-----------------------------------+
+    /// Expects an allocated block of memory (of size BTreeNode.PAGE_SIZE) to be passed as handle
+    /// Stores handle for deallocation
+    /// BTreeNode struct also contained within the 4KB block to allow pointers to created nodes to be passed around
+    /// as well as allow for on-demand allocation/deallocation.
+    /// NOTE: currently reverted to MemoryMarshal for allocation of handles due to undefined behavior with SectorAlignedMemory.
+    /// </summary>
     public unsafe struct BTreeNode
     {
         public static int HEADER_SIZE = sizeof(BTreeNode);

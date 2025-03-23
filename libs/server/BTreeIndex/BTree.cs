@@ -81,6 +81,10 @@ namespace Garnet.server.BTreeIndex
             // }
         }
 
+        /// <summary>
+        /// Frees the memory allocated for a node
+        /// </summary>
+        /// <param name="node"></param>
         public static void FreeNode(ref BTreeNode* node)
         {
             if (node == null)

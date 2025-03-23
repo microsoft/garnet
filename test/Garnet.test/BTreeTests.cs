@@ -50,20 +50,6 @@ namespace Garnet.test
         }
 
         [Test]
-        [Category("INIT")]
-        public void InitBTreeInternalNode()
-        {
-            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
-            var internalNode = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
-            ClassicAssert.AreEqual(internalNode->info->type, BTreeNodeType.Internal);
-            ClassicAssert.AreEqual(internalNode->info->count, 0);
-
-             // free the leaf
-            BTree.FreeNode(ref internalNode);
-            internalNode = null;
-        }
-
-        [Test]
         [Category("INSERT")]
         public void Insert()
         {

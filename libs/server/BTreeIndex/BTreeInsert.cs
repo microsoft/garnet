@@ -9,7 +9,12 @@ namespace Garnet.server.BTreeIndex
 {
     public unsafe partial class BTree
     {
-      
+        /// <summary>
+        /// Insert a key-value pair into the B+tree. Directly inserts into the tail leaf node. 
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <returns>true if insertion is successful</returns>
         public bool Insert(byte* key, Value value)
         {
             BTreeNode* leaf = null;

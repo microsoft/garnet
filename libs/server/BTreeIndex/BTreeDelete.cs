@@ -1,9 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-
-using System;
-
 namespace Garnet.server.BTreeIndex
 {
     public unsafe partial class BTree
@@ -12,7 +9,7 @@ namespace Garnet.server.BTreeIndex
         /// Delete a key from the B+tree
         /// </summary>
         /// <param name="key">key to delete</param>
-        /// <returns></returns>
+        /// <returns>true if key was tombstoned</returns>
         public bool Delete(byte* key)
         {
             BTreeNode* leaf = null;
