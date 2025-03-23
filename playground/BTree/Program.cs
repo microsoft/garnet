@@ -19,7 +19,7 @@ class Program
     }
     static unsafe void Main(string[] args)
     {
-        var tree = new BTree(4096);
+        var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
         ulong N = 400000;
         bool verbose = true;
         bool sanity = false;

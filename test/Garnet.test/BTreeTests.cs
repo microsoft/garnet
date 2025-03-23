@@ -53,7 +53,7 @@ namespace Garnet.test
         [Category("INSERT")]
         public void Insert()
         {
-            var tree = new BTree(4096);
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
             ClassicAssert.AreEqual(tree.FastInserts, 0);
             ClassicAssert.AreEqual(tree.LeafCount, 1);
             ClassicAssert.AreEqual(tree.InternalCount, 0);
@@ -70,7 +70,7 @@ namespace Garnet.test
         [Category("LOOKUP")]
         public void PointLookup()
         {
-            var tree = new BTree(4096);
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
 
             for (ulong i = 0; i < N; i++)
             {
@@ -109,7 +109,7 @@ namespace Garnet.test
         [Category("Delete")]
         public void Delete()
         {
-            var tree = new BTree(4096);
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
             for (ulong i = 0; i < N; i++)
             {
                 tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
