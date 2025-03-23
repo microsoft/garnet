@@ -261,7 +261,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
-
+        
+        // <summary>
+        /// Response strings for Stream commands
+        /// </summary>
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xadd' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XLEN_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xlen' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XRANGE_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xrange' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XDEL_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xdel' command"u8;
 
         /// <summary>
         /// Response string templates

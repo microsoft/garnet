@@ -17,6 +17,11 @@ namespace Garnet.server
         /// <returns></returns> 
         private unsafe bool StreamAdd()
         {
+            if (parseState.Count < 4)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_WRONG_NUM_ARGS);
+            }
+
             // Parse the stream key.
             var key = parseState.GetArgSliceByRef(0);
 
@@ -53,6 +58,10 @@ namespace Garnet.server
         /// <returns></returns>
         private bool StreamLength()
         {
+            if (parseState.Count != 1)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_XLEN_WRONG_NUM_ARGS);
+            }
             // parse the stream key. 
             var key = parseState.GetArgSliceByRef(0);
 
@@ -84,7 +93,7 @@ namespace Garnet.server
             // we expect at least 3 arguments
             if (parseState.Count < 3)
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_XRANGE_WRONG_NUM_ARGS);
             }
 
             // parse the stream key 
@@ -141,7 +150,7 @@ namespace Garnet.server
             // we expect at least 2 arguments
             if (parseState.Count < 2)
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_XDEL_WRONG_NUM_ARGS);
             }
 
             // parse the stream key
