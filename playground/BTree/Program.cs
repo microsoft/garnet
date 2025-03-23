@@ -155,10 +155,6 @@ class Program
         Debug.Assert(tombstones.Count == 4);    
         Console.WriteLine("Delete check passed ");
 
-        //tree.Trim((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out int overflows);
-
-        //tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[0].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[550].idBytes[0]), out Value startVal12, out Value endVal12, out List<(byte[], Value)> tombstones1);
-
         // print all times collected in a csv format 
         Console.WriteLine(insertion_time + ", " + query_time + ", " + range_query_times[0] + ", " + range_query_times[1] + ", " + range_query_times[2] + ", " + deleteTime);
         tree.Deallocate();

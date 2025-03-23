@@ -5,7 +5,6 @@ using System;
 using Tsavorite.core;
 using Garnet.server.BTreeIndex;
 using Garnet.common;
-using System.Threading;
 using System.Diagnostics;
 using System.Buffers;
 using System.Runtime.CompilerServices;
@@ -13,18 +12,6 @@ using System.Buffers.Binary;
 
 namespace Garnet.server
 {
-    public enum XTRIMOpts
-    {
-        MAXLEN,
-        MINID,
-        NONE
-    }
-
-    public enum XADDOpts
-    {
-        
-    }
-
     public class StreamObject : IDisposable
     {
         readonly IDevice device;

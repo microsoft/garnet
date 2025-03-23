@@ -60,7 +60,6 @@ namespace Garnet.test
 
              // free the leaf
             BTree.FreeNode(ref internalNode);
-            Marshal.FreeHGlobal((IntPtr)internalNode);
             internalNode = null;
         }
 

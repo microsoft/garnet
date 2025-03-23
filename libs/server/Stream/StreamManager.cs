@@ -168,33 +168,6 @@ namespace Garnet.server
             return false;
         }
 
-        /// <summary>
-        /// Trim a stream
-        /// </summary>
-        /// <param name="keySlice">key/name of stream</param>
-        /// <param name="trimValue">parameter to trim by</param>
-        /// <param name="optType">option to trim by (length or ID)</param>
-        /// <param name="validKeysRemoved"># valid keys removed</param>
-        /// <returns></returns>
-        public bool StreamTrim(ArgSlice keySlice, ArgSlice trimValue, XTRIMOpts optType, out ulong validKeysRemoved)
-        {
-            bool foundStream;
-            var key = keySlice.ToArray();
-            StreamObject stream;
-            validKeysRemoved = 0;
-            if (streams != null)
-            {
-                foundStream = streams.TryGetValue(key, out stream);
-
-                if (foundStream)
-                {
-                    // return stream.Trim(trimValue, optType, out validKeysRemoved);
-                }
-            }
-            // we return true if the stream does not exist (as Resp expects a 0 result)
-            return true;
-        }
-
         /// <inheritdoc/>
         public void Dispose()
         {
