@@ -12,7 +12,6 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    using Node = BTreeNode;
     using Value = Value;
 
     [TestFixture]
