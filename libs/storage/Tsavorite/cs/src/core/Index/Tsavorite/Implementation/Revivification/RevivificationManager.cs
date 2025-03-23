@@ -5,11 +5,11 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct RevivificationManager<TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    internal struct RevivificationManager<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal FreeRecordPool<TValue, TStoreFunctions, TAllocator> FreeRecordPool;
+        internal FreeRecordPool<TStoreFunctions, TAllocator> FreeRecordPool;
         internal readonly bool UseFreeRecordPool => FreeRecordPool is not null;
 
         internal RevivificationStats stats = new();
@@ -20,7 +20,7 @@ namespace Tsavorite.core
 
         internal double revivifiableFraction;
 
-        public RevivificationManager(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, RevivificationSettings revivSettings, LogSettings logSettings)
+        public RevivificationManager(TsavoriteKV<TStoreFunctions, TAllocator> store, RevivificationSettings revivSettings, LogSettings logSettings)
         {
             revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
                 ? logSettings.MutableFraction
@@ -35,7 +35,7 @@ namespace Tsavorite.core
             IsEnabled = true;
             if (revivSettings.FreeRecordBins?.Length > 0)
             {
-                FreeRecordPool = new FreeRecordPool<TValue, TStoreFunctions, TAllocator>(store, revivSettings);
+                FreeRecordPool = new FreeRecordPool<TStoreFunctions, TAllocator>(store, revivSettings);
                 restoreDeletedRecordsIfBinIsFull = revivSettings.RestoreDeletedRecordsIfBinIsFull;
                 useFreeRecordPoolForCTT = revivSettings.UseFreeRecordPoolForCopyToTail;
             }
@@ -47,7 +47,7 @@ namespace Tsavorite.core
 
         // Method redirectors
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd(long logicalAddress, ref LogRecord<TValue> logRecord, ref RevivificationStats revivStats)
+        public bool TryAdd(long logicalAddress, ref LogRecord logRecord, ref RevivificationStats revivStats)
             => UseFreeRecordPool && FreeRecordPool.TryAdd(logicalAddress, ref logRecord, ref revivStats);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -8,7 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions for <see cref="SpanByte"/> Value and Input; <see cref="SpanByteAndMemory"/> Output; and specified <typeparamref name="TContext"/>
     /// </summary>
-    public class SpanByteFunctions<TContext> : SessionFunctionsBase<SpanByte, SpanByte, SpanByteAndMemory, TContext>
+    public class SpanByteFunctions<TContext> : SessionFunctionsBase<SpanByte, SpanByteAndMemory, TContext>
     {
         private protected readonly MemoryPool<byte> memoryPool;
 

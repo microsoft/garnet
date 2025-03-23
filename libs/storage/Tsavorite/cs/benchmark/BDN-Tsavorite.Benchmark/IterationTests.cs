@@ -23,7 +23,7 @@ namespace BenchmarkDotNetTests
         [Params(true, false)]
         public bool FlushAndEvict;
 
-        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;
         string logDirectory;
 

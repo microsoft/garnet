@@ -128,7 +128,7 @@ namespace Tsavorite.test.Cancellation
 
         IDevice log;
         CancellationFunctions functions;
-        TsavoriteKV<SpanByte, IntStoreFunctions, IntAllocator> store;
+        TsavoriteKV<IntStoreFunctions, IntAllocator> store;
         ClientSession<SpanByte, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
         BasicContext<SpanByte, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
 

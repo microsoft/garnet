@@ -6,28 +6,28 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions;
+        IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions;
         long scannedUntilAddressCursor;
         long numberOfRecords;
 
-        class StreamingSnapshotSessionFunctions : SessionFunctionsBase<TValue, Empty, Empty, Empty>
+        class StreamingSnapshotSessionFunctions : SessionFunctionsBase<Empty, Empty, Empty>
         {
 
         }
 
-        class ScanPhase1Functions : IScanIteratorFunctions<TValue>
+        class ScanPhase1Functions : IScanIteratorFunctions
         {
-            readonly IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions;
+            readonly IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions;
             readonly Guid checkpointToken;
             readonly long currentVersion;
             readonly long nextVersion;
             public long numberOfRecords;
 
-            public ScanPhase1Functions(IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions, Guid checkpointToken, long currentVersion, long nextVersion)
+            public ScanPhase1Functions(IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions, Guid checkpointToken, long currentVersion, long nextVersion)
             {
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
                 this.checkpointToken = checkpointToken;
@@ -37,7 +37,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord<TValue>
+                where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept;
                 return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
@@ -45,7 +45,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord<TValue>
+                where TSourceLogRecord : ISourceLogRecord
                 => SingleReader(ref srcLogRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc />
@@ -82,12 +82,12 @@ namespace Tsavorite.core
             }
         }
 
-        class ScanPhase2Functions : IScanIteratorFunctions<TValue>
+        class ScanPhase2Functions : IScanIteratorFunctions
         {
-            readonly IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions;
+            readonly IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions;
             readonly long phase1NumberOfRecords;
 
-            public ScanPhase2Functions(IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions, long acceptedRecordCount)
+            public ScanPhase2Functions(IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions, long acceptedRecordCount)
             {
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
                 this.phase1NumberOfRecords = acceptedRecordCount;
@@ -95,7 +95,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord<TValue>
+                where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept;
                 return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
@@ -103,7 +103,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc />
             public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord<TValue>
+                where TSourceLogRecord : ISourceLogRecord
                 => SingleReader(ref srcLogRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc />

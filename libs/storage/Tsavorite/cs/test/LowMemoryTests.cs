@@ -16,7 +16,7 @@ namespace Tsavorite.test.LowMemory
     public class LowMemoryTests
     {
         IDevice log;
-        TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store1;
+        TsavoriteKV<LongStoreFunctions, LongAllocator> store1;
         const int NumOps = 2000;
 
         [SetUp]

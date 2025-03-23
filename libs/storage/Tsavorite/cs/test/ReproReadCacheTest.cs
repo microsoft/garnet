@@ -54,7 +54,7 @@ namespace Tsavorite.test.ReadCacheTests
         }
 
         IDevice log = default;
-        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
+        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
 
         [SetUp]
         public void Setup()

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -8,29 +9,28 @@ namespace Tsavorite.core
     /// <summary>
     /// Struct wrapper (for inlining) around the fixed-length Blittable allocator.
     /// </summary>
-    public struct ObjectAllocator<TValue, TStoreFunctions> : IAllocator<TValue, TStoreFunctions>
-        where TValue : class, IHeapObject
-        where TStoreFunctions : IStoreFunctions<TValue>
+    public struct ObjectAllocator<TStoreFunctions> : IAllocator<TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
-        private readonly ObjectAllocatorImpl<TValue, TStoreFunctions> _this;
+        private readonly ObjectAllocatorImpl<TStoreFunctions> _this;
 
         public ObjectAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
         {
             // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
-            _this = new(settings, storeFunctions, @this => new ObjectAllocator<TValue, TStoreFunctions>(@this));
+            _this = new(settings, storeFunctions, @this => new ObjectAllocator<TStoreFunctions>(@this));
         }
 
         internal ObjectAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
-            _this = (ObjectAllocatorImpl<TValue, TStoreFunctions>)@this;
+            _this = (ObjectAllocatorImpl<TStoreFunctions>)@this;
         }
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<TValue, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
-            => (AllocatorBase<TValue, TStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<TStoreFunctions>
+            => (AllocatorBase<TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
         public readonly bool IsFixedLength => true;
@@ -52,36 +52,42 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo) => ObjectAllocatorImpl<TValue, TStoreFunctions>.InitializeValue(physicalAddress, ref sizeInfo);
+        public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo) => ObjectAllocatorImpl<TStoreFunctions>.InitializeValue(physicalAddress, ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
-            where TVariableLengthInput : IVariableLengthInput<TValue, TInput>
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
              => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TInput input, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<TValue, TInput>
+        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetRMWInitialRecordSize(key, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, TValue value, ref TInput input, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<TValue, TInput>
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <summary>Get record size required for a new tombstone record</summary>
-        public readonly RecordSizeInfo GetDeleteRecordSize(SpanByte key) => _this.GetDeleteRecordSize(key);
+        public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>
         public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord<TValue> diskLogRecord, ref AsyncIOContext<TValue> ctx) => _this.DeserializeValue(ref diskLogRecord, ref ctx);
+        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord diskLogRecord, ref AsyncIOContext ctx) => _this.DeserializeValue(ref diskLogRecord, ref ctx);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -113,11 +119,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetKeyContainer(SpanByte key) => _this.GetKeyContainer(ref key);
+        public readonly IHeapContainer<ReadOnlySpan<byte>> GetKeyContainer(ReadOnlySpan<byte> key) => _this.GetKeyContainer(ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<TValue> GetValueContainer(TValue value) => new StandardHeapContainer<TValue>(ref value);
+        public readonly IHeapContainer<ReadOnlySpan<byte>> GetValueContainer(ReadOnlySpan<byte> value) => new StandardHeapContainer(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -128,15 +134,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
+        public readonly void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord<TValue> CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
+        public readonly LogRecord CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord<TValue> CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -147,10 +153,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
     }
 }

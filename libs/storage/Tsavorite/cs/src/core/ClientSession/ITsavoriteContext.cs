@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,17 +16,17 @@ namespace Tsavorite.core
         /// Obtain a code by which groups of keys will be sorted for Transactional locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
         /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(SpanByte)"/></returns>
-        long GetKeyHash(SpanByte key);
+        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{_byte_})"/></returns>
+        long GetKeyHash(ReadOnlySpan<byte> key);
     }
 
     /// <summary>
     /// Interface for Tsavorite operations
     /// </summary>
-    public interface ITsavoriteContext<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext
-        where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public interface ITsavoriteContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext
+        where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Indicates whether this context has been initialized.
@@ -33,9 +34,9 @@ namespace Tsavorite.core
         public bool IsNull { get; }
 
         /// <summary>
-        /// Obtain the underlying <see cref="ClientSession{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/>
+        /// Obtain the underlying <see cref="ClientSession{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/>
         /// </summary>
-        ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session { get; }
+        ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session { get; }
 
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.
@@ -54,7 +55,7 @@ namespace Tsavorite.core
         /// <param name="wait">Wait for all pending operations on session to complete</param>
         /// <param name="spinWaitForCommit">Spin-wait until ongoing commit/checkpoint, if any, completes</param>
         /// <returns>True if all pending operations have completed, false otherwise</returns>
-        bool CompletePendingWithOutputs(out CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
+        bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 
         /// <summary>
         /// Complete all pending synchronous Tsavorite operations.
@@ -68,7 +69,7 @@ namespace Tsavorite.core
         /// Async operations must be completed individually.
         /// </summary>
         /// <returns>Outputs completed by this operation</returns>
-        ValueTask<CompletedOutputIterator<TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default);
+        ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default);
 
         /// <summary>
         /// Read operation
@@ -77,29 +78,8 @@ namespace Tsavorite.core
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, ref TInput input, ref TOutput output, TContext userContext = default);
-
-        /// <summary>
-        /// Read operation
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
-        /// <param name="output">The location to place the retrieved value</param>
-        /// <param name="readOptions">Contains options controlling the Read operation</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Read operation
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
-        /// <param name="output">The location to place the retrieved value</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, TInput input, out TOutput output, TContext userContext = default);
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
+        Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default);
 
         /// <summary>
         /// Read operation
@@ -109,8 +89,8 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, TInput input, out TOutput output, ref ReadOptions readOptions, TContext userContext = default);
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
+        Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
 
         /// <summary>
         /// Read operation
@@ -118,8 +98,8 @@ namespace Tsavorite.core
         /// <param name="key">The key to look up</param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, ref TOutput output, TContext userContext = default);
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
+        Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default);
 
         /// <summary>
         /// Read operation
@@ -128,8 +108,8 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
+        Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default);
 
         /// <summary>
         /// Read operation
@@ -137,7 +117,7 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        public (Status status, TOutput output) Read(SpanByte key, TContext userContext = default);
+        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default);
 
         /// <summary>
         /// Read operation
@@ -146,7 +126,7 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        public (Status status, TOutput output) Read(SpanByte key, ref ReadOptions readOptions, TContext userContext = default);
+        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default);
 
         /// <summary>
         /// Read operation that accepts a <paramref name="recordMetadata"/> ref argument to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
@@ -165,8 +145,8 @@ namespace Tsavorite.core
         ///         </list>
         /// </param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation</returns>
-        Status Read(SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation</returns>
+        Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
         /// Read operation that accepts an address to lookup at, instead of a key.
@@ -177,7 +157,7 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation; this should store the key if it needs it</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation; this should store the key if it needs it</returns>
         Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
@@ -190,8 +170,8 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TValue, TContext}"/> implementation; this should store the key if it needs it</returns>
-        Status ReadAtAddress(long address, SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{TContext}"/> implementation; this should store the key if it needs it</returns>
+        Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -200,7 +180,7 @@ namespace Tsavorite.core
         /// <param name="desiredValue"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, TValue desiredValue, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -210,7 +190,7 @@ namespace Tsavorite.core
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, TValue desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -221,7 +201,7 @@ namespace Tsavorite.core
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -233,19 +213,7 @@ namespace Tsavorite.core
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
-
-        /// <summary>
-        /// Upsert operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="output"></param>
-        /// <param name="recordMetadata"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -258,7 +226,26 @@ namespace Tsavorite.core
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, TContext userContext = default);
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -269,7 +256,7 @@ namespace Tsavorite.core
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default);
 
         /// <summary>
         /// Upsert operation
@@ -281,7 +268,20 @@ namespace Tsavorite.core
         /// <param name="upsertOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Upsert(SpanByte key, TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
+        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default);
+
+        /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="desiredValue"></param>
+        /// <param name="output"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="recordMetadata"></param>
+        /// <param name="userContext"></param>
+        /// <returns></returns>
+        Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
         /// RMW operation
@@ -291,7 +291,7 @@ namespace Tsavorite.core
         /// <param name="output"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(SpanByte key, ref TInput input, ref TOutput output, TContext userContext = default);
+        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default);
 
         /// <summary>
         /// RMW operation
@@ -302,7 +302,7 @@ namespace Tsavorite.core
         /// <param name="rmwOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(SpanByte key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default);
+        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default);
 
         /// <summary>
         /// RMW operation
@@ -313,7 +313,7 @@ namespace Tsavorite.core
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(SpanByte key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default);
+        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
         /// RMW operation
@@ -325,28 +325,7 @@ namespace Tsavorite.core
         /// <param name="recordMetadata"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(SpanByte key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default);
-
-        /// <summary>
-        /// RMW operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status RMW(SpanByte key, TInput input, out TOutput output, TContext userContext = default);
-
-        /// <summary>
-        /// RMW operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="rmwOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status RMW(SpanByte key, TInput input, out TOutput output, ref RMWOptions rmwOptions, TContext userContext = default);
+        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
         /// RMW operation
@@ -355,7 +334,7 @@ namespace Tsavorite.core
         /// <param name="input"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(SpanByte key, ref TInput input, TContext userContext = default);
+        Status RMW(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default);
 
         /// <summary>
         /// RMW operation
@@ -365,26 +344,7 @@ namespace Tsavorite.core
         /// <param name="rmwOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status RMW(SpanByte key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default);
-
-        /// <summary>
-        /// RMW operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status RMW(SpanByte key, TInput input, TContext userContext = default);
-
-        /// <summary>
-        /// RMW operation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="rmwOptions"></param>
-        /// <param name="userContext"></param>
-        /// <returns></returns>
-        Status RMW(SpanByte key, TInput input, ref RMWOptions rmwOptions, TContext userContext = default);
+        Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default);
 
         /// <summary>
         /// Delete operation
@@ -392,7 +352,7 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Delete(SpanByte key, TContext userContext = default);
+        Status Delete(ReadOnlySpan<byte> key, TContext userContext = default);
 
         /// <summary>
         /// Delete operation
@@ -401,13 +361,13 @@ namespace Tsavorite.core
         /// <param name="deleteOptions"></param>
         /// <param name="userContext"></param>
         /// <returns></returns>
-        Status Delete(SpanByte key, ref DeleteOptions deleteOptions, TContext userContext = default);
+        Status Delete(ReadOnlySpan<byte> key, ref DeleteOptions deleteOptions, TContext userContext = default);
 
         /// <summary>
         /// Reset the modified bit of a record (for in memory records)
         /// </summary>
         /// <param name="key"></param>
-        void ResetModified(SpanByte key);
+        void ResetModified(ReadOnlySpan<byte> key);
 
         /// <summary>
         /// Refresh session epoch and handle checkpointing phases. Used only

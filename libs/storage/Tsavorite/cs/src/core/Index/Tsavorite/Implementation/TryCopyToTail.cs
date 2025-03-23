@@ -3,9 +3,9 @@
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
@@ -14,9 +14,9 @@ namespace Tsavorite.core
         /// <param name="srcLogRecord"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TValue, TStoreFunctions, TAllocator}"/> structures for this operation,
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="srcRecordInfo">if <paramref name="stackCtx"/>.<see cref="RecordSource{TValue, TStoreFunctions, TAllocator}.HasInMemorySrc"/>, the recordInfo to close, if transferring.</param>
+        /// <param name="srcRecordInfo">if <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/>, the recordInfo to close, if transferring.</param>
         /// <param name="sessionFunctions"></param>
         /// <param name="reason">The reason for this operation.</param>
         /// <returns>
@@ -26,10 +26,10 @@ namespace Tsavorite.core
         ///     </list>
         /// </returns>
         internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                    ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
+                                    ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
                                     ref RecordInfo srcRecordInfo, TSessionFunctionsWrapper sessionFunctions, WriteReason reason)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);

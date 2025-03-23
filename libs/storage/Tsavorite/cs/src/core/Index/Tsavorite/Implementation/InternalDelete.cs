@@ -1,14 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Delete operation. Replaces the value corresponding to 'key' with tombstone.
@@ -40,13 +41,13 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, long keyHash, ref TContext userContext,
+        internal OperationStatus InternalDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TContext userContext,
                             ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var latchOperation = LatchOperation.None;
 
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
@@ -55,7 +56,7 @@ namespace Tsavorite.core
             if (!FindTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out OperationStatus status))
                 return status;
 
-            LogRecord<TValue> srcLogRecord = default;
+            LogRecord srcLogRecord = default;
 
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
@@ -231,9 +232,9 @@ namespace Tsavorite.core
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalDelete if the compiler decides not to inline this.
-        private void CreatePendingDeleteContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        private void CreatePendingDeleteContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, TContext userContext,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.DELETE;
             if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(key);
@@ -242,7 +243,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
             // This is the same logic as Upsert; neither goes pending.
             return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status, ref latchOperation);
@@ -252,15 +253,15 @@ namespace Tsavorite.core
         /// Create a new tombstoned record for Delete
         /// </summary>
         /// <param name="key">The record Key</param>
-        /// <param name="srcLogRecord">The source record, if <paramref name="stackCtx"/>.<see cref="RecordSource{TValue, TStoreFunctions, TAllocator}.HasInMemorySrc"/> and
+        /// <param name="srcLogRecord">The source record, if <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/> and
         /// it is either too small or is in readonly region, or is in raadcache</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TValue, TStoreFunctions, TAllocator}"/> structures for this operation,
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref LogRecord<TValue> srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var sizeInfo = hlog.GetDeleteRecordSize(key);
             AllocateOptions allocOptions = new()

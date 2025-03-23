@@ -10,9 +10,9 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    // Allocator for SpanByte, possibly with a Blittable Key or Value.
-    internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
-        where TStoreFunctions : IStoreFunctions<SpanByte>
+    // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
+    internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
+        where TStoreFunctions : IStoreFunctions
     {
         /// <summary>Circular buffer definition, in parallel with <see cref="values"/></summary>
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
@@ -96,16 +96,13 @@ namespace Tsavorite.core
         int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
+        internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord<SpanByte>(physicalAddress, GetOverflowAllocator(logicalAddress));
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OverflowAllocator GetOverflowAllocator(long logicalAddress) => values[GetPageIndex(logicalAddress)];
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, GetOverflowAllocator(logicalAddress));
+        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, objectIdMap: null);
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
@@ -125,8 +122,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by RMW to determine the length of copy destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWModifiedFieldInfo(ref srcLogRecord, ref input) };
@@ -135,8 +132,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TInput input, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+        public RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by RMW to determine the length of initial destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetRMWInitialFieldInfo(key, ref input) };
@@ -145,8 +142,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, SpanByte value, ref TInput input, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
             var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(key, value, ref input) };
@@ -155,7 +152,17 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordSizeInfo GetDeleteRecordSize(SpanByte key)
+        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+        {
+            // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(key, value, ref input) };
+            PopulateRecordSizeInfo(ref sizeInfo);
+            return sizeInfo;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key)
         {
             // Used by Delete to determine the length of a new tombstone record. Does not require an ISessionFunctions method.
             var sizeInfo = new RecordSizeInfo()
@@ -189,7 +196,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal override void SerializeRecordToIteratorBuffer(ref LogRecord<SpanByte> logRecord, ref SectorAlignedMemory recordBuffer, out SpanByte valueObject)
+        internal override void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
         {
             var inlineRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
             if (inlineRecordSize > int.MaxValue)
@@ -200,24 +207,24 @@ namespace Tsavorite.core
             var value = logRecord.ValueSpan;
             *(int*)ptr = value.Length;
             ptr += SpanField.FieldLengthPrefixSize;
-            value.CopyTo(new SpanByte(value.Length, (IntPtr)ptr));
+            value.CopyTo(new Span<byte>(ptr, value.Length));
             ptr += value.Length;
 
             valueObject = default;
         }
 
         /// <inheritdoc/>
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord<SpanByte> diskLogRecord, (byte[] array, long offset) byteStream) { /* This allocator has no IHeapObject */ }
+        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream) { /* This allocator has no IHeapObject */ }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref LogRecord<SpanByte> logRecord, DisposeReason disposeReason)
+        internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             if (disposeReason != DisposeReason.Deleted)
                 _ = logRecord.FreeKeyOverflow();
             _ = logRecord.FreeValueOverflow();
         }
 
-        internal void DisposeRecord(ref DiskLogRecord<SpanByte> logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
+        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
 
         /// <summary>
         /// Dispose memory allocator
@@ -305,14 +312,14 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<SpanByte> context, SectorAlignedMemory result = default)
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
         }
 
-        internal IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => new SpanByteHeapContainer(key, bufferPool);
+        internal IHeapContainer<Span<byte>> GetKeyContainer(ref ReadOnlySpan<byte> key) => new SpanByteHeapContainer(key, bufferPool);
 
-        internal IHeapContainer<SpanByte> GetValueContainer(ref SpanByte value) => new SpanByteHeapContainer(value, bufferPool);
+        internal IHeapContainer<Span<byte>> GetValueContainer(ref Span<byte> value) => new SpanByteHeapContainer(value, bufferPool);
 
         internal static long[] GetSegmentOffsets() => null;
 
@@ -325,44 +332,44 @@ namespace Tsavorite.core
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
-        public override ITsavoriteScanIterator<SpanByte> Scan(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+        public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeSealedRecords)
-            => new RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeSealedRecords: includeSealedRecords, logger: logger);
+            => new RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeSealedRecords: includeSealedRecords, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode diskScanBufferingMode)
         {
-            using RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, logger: logger);
+            using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ScanCursorState<SpanByte> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
         {
-            using RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, logger: logger);
-            return ScanLookup<SpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress);
+            using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, logger: logger);
+            return ScanLookup<SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator> observer)
         {
-            using var iter = new RecordScanIterator<SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
+            using var iter = new RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
                     includeSealedRecords: false, assumeInMemory: true, logger: logger);
             observer?.OnNext(iter);
         }

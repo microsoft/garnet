@@ -43,7 +43,7 @@ namespace Tsavorite.benchmark
         readonly FixedLengthKey[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByte, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
+        readonly TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -139,7 +139,7 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
+            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
             Input input = default;
             Output output = default;
 
@@ -229,7 +229,7 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
+            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
             Input input = default;
             Output output = default;
 
@@ -419,7 +419,7 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
+            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
 
             try
             {
@@ -465,7 +465,7 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsSpanByte(), value = valueStruct.AsSpanByte();
+            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;

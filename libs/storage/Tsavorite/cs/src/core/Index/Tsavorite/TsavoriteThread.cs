@@ -7,13 +7,13 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             epoch.ProtectAndDrain();
 
@@ -53,8 +53,8 @@ namespace Tsavorite.core
         }
 
         internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false,
-                                                                                     CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs = null)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                                                                                     CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs = null)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             while (true)
             {
@@ -74,20 +74,20 @@ namespace Tsavorite.core
 
         #region Complete Pending Requests
         internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                                                                             CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                                                                                             CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             _ = hlogBase.TryComplete();
 
             if (sessionFunctions.Ctx.readyResponses.Count == 0) return;
 
-            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext<TValue> request))
+            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext request))
                 InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
         }
 
-        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TValue> request,
-                                                                                            CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
+                                                                                            CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Get and Remove this request.id pending dictionary if it is there.
             if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
@@ -106,16 +106,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TValue> request,
-                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext<TValue> newRequest)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal unsafe Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext request,
+                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
-            DiskLogRecord<TValue> diskLogRecord = new((long)request.record.GetValidPointer());
+            DiskLogRecord diskLogRecord = new((long)request.record.GetValidPointer());
             if (pendingContext.IsNoKey && pendingContext.key == default)
                 pendingContext.key = hlog.GetKeyContainer(diskLogRecord.Key);
             var key = pendingContext.key.Get();

@@ -6,22 +6,22 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// A list of <see cref="CompletedOutputIterator{TValue, TInput, TOutput, TContext}"/> for completed outputs from a pending operation.
+    /// A list of <see cref="CompletedOutputIterator{TInput, TOutput, TContext}"/> for completed outputs from a pending operation.
     /// </summary>
     /// <remarks>The session holds this list and returns an enumeration to the caller of an appropriate CompletePending overload. The session will handle
     /// disposing and clearing this list, but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
-    public sealed class CompletedOutputIterator<TValue, TInput, TOutput, TContext> : IDisposable
+    public sealed class CompletedOutputIterator<TInput, TOutput, TContext> : IDisposable
     {
         internal const int kInitialAlloc = 32;
         internal const int kReallocMultuple = 2;
-        internal CompletedOutput<TValue, TInput, TOutput, TContext>[] vector = new CompletedOutput<TValue, TInput, TOutput, TContext>[kInitialAlloc];
+        internal CompletedOutput<TInput, TOutput, TContext>[] vector = new CompletedOutput<TInput, TOutput, TContext>[kInitialAlloc];
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
         {
             // Note: vector is never null
             if (maxIndex >= vector.Length - 1)
@@ -52,7 +52,7 @@ namespace Tsavorite.core
         /// <exception cref="IndexOutOfRangeException"> if there is no current element, either because Next() has not been called or it has advanced
         ///     past the last element of the array
         /// </exception>
-        public ref CompletedOutput<TValue, TInput, TOutput, TContext> Current => ref vector[currentIndex];
+        public ref CompletedOutput<TInput, TOutput, TContext> Current => ref vector[currentIndex];
 
         /// <inheritdoc/>
         public void Dispose()
@@ -69,15 +69,15 @@ namespace Tsavorite.core
     /// <remarks>The session holds a list of these that it returns to the caller of an appropriate CompletePending overload. The session will handle disposing
     /// and clearing, and will manage Dispose(), but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
-    public struct CompletedOutput<TValue, TInput, TOutput, TContext>
+    public struct CompletedOutput<TInput, TOutput, TContext>
     {
-        private IHeapContainer<SpanByte> keyContainer;
+        private IHeapContainer<ReadOnlySpan<byte>> keyContainer;
         private IHeapContainer<TInput> inputContainer;
 
         /// <summary>
         /// The key for this pending operation.
         /// </summary>
-        public SpanByte Key => keyContainer.Get();
+        public ReadOnlySpan<byte> Key => keyContainer.Get();
 
         /// <summary>
         /// The input for this pending operation.
@@ -104,9 +104,9 @@ namespace Tsavorite.core
         /// </summary>
         public Status Status;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             keyContainer = pendingContext.key;

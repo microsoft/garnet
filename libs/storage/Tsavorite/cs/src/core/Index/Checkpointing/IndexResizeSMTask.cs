@@ -8,14 +8,14 @@ namespace Tsavorite.core
     /// <summary>
     /// Resizes an index
     /// </summary>
-    internal sealed class IndexResizeSMTask<TValue, TStoreFunctions, TAllocator> : IStateMachineTask
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    internal sealed class IndexResizeSMTask<TStoreFunctions, TAllocator> : IStateMachineTask
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        readonly TsavoriteKV<TValue, TStoreFunctions, TAllocator> store;
+        readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         long lastVersion;
 
-        public IndexResizeSMTask(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
+        public IndexResizeSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store)
         {
             this.store = store;
         }

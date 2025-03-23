@@ -29,7 +29,7 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+            var store = new TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
                 {
                     IndexSize = 1L << 13,
@@ -96,7 +96,7 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+            var store = new TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
                 {
                     IndexSize = 1L << 13,

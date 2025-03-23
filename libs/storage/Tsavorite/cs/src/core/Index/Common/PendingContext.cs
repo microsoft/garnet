@@ -6,17 +6,17 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord<TValue>
+        internal struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord
         {
             // User provided information
             internal OperationType type;
             internal RecordInfo recordInfo;
-            internal IHeapContainer<SpanByte> key;
-            internal IHeapContainer<TValue> value;
+            internal IHeapContainer<ReadOnlySpan<byte>> key;
+            internal IHeapContainer<ReadOnlySpan<byte>> valueSpan;
             internal IHeapContainer<TInput> input;
             internal TOutput output;
             internal TContext userContext;
@@ -52,7 +52,7 @@ namespace Tsavorite.core
             // Address of the initial entry in the hash chain upon start of Internal(RUMD).
             internal long InitialEntryAddress;
 
-            internal ScanCursorState<TValue> scanCursorState;
+            internal ScanCursorState scanCursorState;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(long keyHash) => this.keyHash = keyHash;
@@ -90,8 +90,8 @@ namespace Tsavorite.core
             {
                 key?.Dispose();
                 key = default;
-                value?.Dispose();
-                value = default;
+                valueSpan?.Dispose();
+                valueSpan = default;
                 input?.Dispose();
                 input = default;
             }
@@ -108,16 +108,16 @@ namespace Tsavorite.core
             public readonly bool IsSet => !recordInfo.IsNull;
 
             /// <inheritdoc/>
-            public readonly SpanByte Key => key.Get();
+            public readonly ReadOnlySpan<byte> Key => key.Get();
 
             /// <inheritdoc/>
-            public readonly unsafe SpanByte ValueSpan => ValueIsObject ? throw new TsavoriteException("Cannot use ValueSpan on an Object value") : Unsafe.As<TValue, SpanByte>(ref value.Get());
+            public readonly unsafe Span<byte> ValueSpan => ValueIsObject ? throw new TsavoriteException("Cannot use ValueSpan on an Object value") : Unsafe.As<Span<byte>>(ref valueSpan.Get());
 
             /// <inheritdoc/>
-            public readonly TValue ValueObject => value.Get();
+            public readonly IHeapObject ValueObject => valueObject;
 
             /// <inheritdoc/>
-            public readonly TValue GetReadOnlyValue() => value.Get();
+            public readonly IHeapObject GetReadOnlyValue() => value.Get();
 
             /// <inheritdoc/>
             public readonly long ETag => recordInfo.HasETag ? eTag : LogRecord.NoETag;
@@ -126,10 +126,10 @@ namespace Tsavorite.core
             public readonly long Expiration => recordInfo.HasExpiration ? expiration : 0;
 
             /// <inheritdoc/>
-            public readonly void ClearValueObject(Action<TValue> disposer) { }  // Not relevant for PendingContext
+            public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for PendingContext
 
             /// <inheritdoc/>
-            public readonly LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");
+            public readonly LogRecord AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -5,12 +5,12 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Interface for hybrid log memory allocator struct wrapper callbacks for inlining performance-path callbacks from 
-    /// <see cref="AllocatorBase{TValue, TStoreFunctions, TAllocatorCallbacks}"/>
+    /// <see cref="AllocatorBase{TStoreFunctions, TAllocatorCallbacks}"/>
     /// to the fully derived allocator, including both record accessors and Scan calls.
     /// </summary>
     /// <remarks>This interface does not currently appear in type constraints, but the organization may prove useful.</remarks>
-    public interface IAllocatorCallbacks<TValue, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<TValue>
+    public interface IAllocatorCallbacks<TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions
     {
         /// <summary>Get start logical address on <paramref name="page"/></summary>
         long GetStartLogicalAddress(long page);
@@ -41,13 +41,7 @@ namespace Tsavorite.core
         /// <summary>Number of extra overflow pages allocated</summary>
         int OverflowPageCount { get; }
 
-        /// <summary>Deserialize the value, if this is <see cref="ObjectAllocator{TValue, TStoreFunctions}"/></summary>
-        unsafe void DeserializeValueObject(ref DiskLogRecord<TValue> diskLogRecord, ref AsyncIOContext<TValue> ctx);
-
-        /// <summary>Get heap container for pending key</summary>
-        IHeapContainer<SpanByte> GetKeyContainer(SpanByte key);
-
-        /// <summary>Get heap container for pending value</summary>
-        IHeapContainer<TValue> GetValueContainer(TValue value);
+        /// <summary>Deserialize the value, if this is <see cref="ObjectAllocator{TStoreFunctions}"/></summary>
+        unsafe void DeserializeValueObject(ref DiskLogRecord diskLogRecord, ref AsyncIOContext ctx);
     }
 }

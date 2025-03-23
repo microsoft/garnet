@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnostics.Windows.Configs;
@@ -14,7 +15,7 @@ using Tsavorite.core;
 namespace BenchmarkDotNetTests
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     [InliningDiagnoser(logFailuresOnly: true, allowedNamespaces: ["Tsavorite.core"])]
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
@@ -23,7 +24,7 @@ namespace BenchmarkDotNetTests
         [Params(1_000_000)]
         public int NumRecords;
 
-        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         IDevice logDevice;
         string logDirectory;
 
@@ -37,7 +38,7 @@ namespace BenchmarkDotNetTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = logDevice
-            }, StoreFunctions<SpanByte>.Create()
+            }, StoreFunctions.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -47,17 +48,14 @@ namespace BenchmarkDotNetTests
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var keySpanByte = SpanByte.FromPinnedSpan(keyVec);
-
-            Span<byte> valueVec = stackalloc byte[sizeof(long)];
-            var valueSpanByte = SpanByte.FromPinnedSpan(valueVec);
+            Span<byte> keySpan = stackalloc byte[sizeof(long)];
+            Span<byte> valueSpan = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                *(long*)keySpanByte.ToPointer() = ii;
-                *(long*)valueSpanByte.ToPointer() = ii + NumRecords;
-                _ = bContext.Upsert(keySpanByte, valueSpanByte);
+                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
+                MemoryMarshal.Cast<byte, long>(valueSpan)[0] = ii + NumRecords;
+                _ = bContext.Upsert(keySpan, valueSpan);
             }
         }
 
@@ -88,17 +86,14 @@ namespace BenchmarkDotNetTests
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var keySpanByte = SpanByte.FromPinnedSpan(keyVec);
-
-            Span<byte> valueVec = stackalloc byte[sizeof(long)];
-            var valueSpanByte = SpanByte.FromPinnedSpan(valueVec);
+            Span<byte> keySpan = stackalloc byte[sizeof(long)];
+            Span<byte> valueSpan = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                *(long*)keySpanByte.ToPointer() = ii;
-                *(long*)valueSpanByte.ToPointer() = ii + NumRecords * 2;
-                _ = bContext.Upsert(keySpanByte, valueSpanByte);
+                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
+                MemoryMarshal.Cast<byte, long>(valueSpan)[0] = ii + NumRecords * 2;
+                _ = bContext.Upsert(keySpan, valueSpan);
             }
         }
 
@@ -108,17 +103,14 @@ namespace BenchmarkDotNetTests
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var keySpanByte = SpanByte.FromPinnedSpan(keyVec);
-
-            Span<byte> inputVec = stackalloc byte[sizeof(long)];
-            var inputSpanByte = SpanByte.FromPinnedSpan(inputVec);
+            Span<byte> keySpan = stackalloc byte[sizeof(long)];
+            Span<byte> inputSpan = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                *(long*)keySpanByte.ToPointer() = ii;
-                *(long*)inputSpanByte.ToPointer() = ii + NumRecords * 3;
-                _ = bContext.RMW(keySpanByte, inputSpanByte);
+                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
+                MemoryMarshal.Cast<byte, long>(inputSpan)[0] = ii + NumRecords * 3;
+                _ = bContext.RMW(keySpan, inputSpan);
             }
 
             _ = bContext.CompletePending();
@@ -130,13 +122,12 @@ namespace BenchmarkDotNetTests
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var keySpanByte = SpanByte.FromPinnedSpan(keyVec);
+            Span<byte> keySpan = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                *(long*)keySpanByte.ToPointer() = ii;
-                _ = bContext.Read(keySpanByte);
+                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
+                _ = bContext.Read(keySpan);
             }
             _ = bContext.CompletePending();
         }

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,21 +11,21 @@ namespace Tsavorite.core
     /// <summary>
     /// Basic Tsavorite Context implementation.
     /// </summary>
-    public readonly struct BasicContext<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
-        : ITsavoriteContext<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
-        where TFunctions : ISessionFunctions<TValue, TInput, TOutput, TContext>
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public readonly struct BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+        : ITsavoriteContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+        where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        readonly ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession;
-        internal readonly SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
+        readonly ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession;
+        internal readonly SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
-        private TsavoriteKV<TValue, TStoreFunctions, TAllocator> store => clientSession.store;
+        private TsavoriteKV<TStoreFunctions, TAllocator> store => clientSession.store;
 
-        internal BasicContext(ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
+        internal BasicContext(ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
             this.clientSession = clientSession;
             sessionFunctions = new(clientSession);
@@ -43,17 +44,17 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
+        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(SpanByte key) => clientSession.store.GetKeyHash(key);
+        public long GetKeyHash(ReadOnlySpan<byte> key) => clientSession.store.GetKeyHash(key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
             => clientSession.CompletePending(sessionFunctions, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => clientSession.CompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
@@ -61,12 +62,12 @@ namespace Tsavorite.core
             => clientSession.CompletePendingAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+        public ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
             => clientSession.CompletePendingWithOutputsAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, ref TInput input, ref TOutput output, TContext userContext = default)
+        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
@@ -81,28 +82,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
             => Read(key, ref input, ref output, ref readOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, TInput input, out TOutput output, TContext userContext = default)
-        {
-            output = default;
-            return Read(key, ref input, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, TInput input, out TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-        {
-            output = default;
-            return Read(key, ref input, ref output, ref readOptions, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, ref TOutput output, TContext userContext = default)
+        public Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default)
         {
             TInput input = default;
             return Read(key, ref input, ref output, userContext);
@@ -110,7 +95,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        public Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
         {
             TInput input = default;
             return Read(key, ref input, ref output, ref readOptions, userContext);
@@ -118,7 +103,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, TOutput output) Read(SpanByte key, TContext userContext = default)
+        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default)
         {
             TInput input = default;
             TOutput output = default;
@@ -127,7 +112,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, TOutput output) Read(SpanByte key, ref ReadOptions readOptions, TContext userContext = default)
+        public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default)
         {
             TInput input = default;
             TOutput output = default;
@@ -136,7 +121,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
@@ -166,7 +151,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress(long address, SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
@@ -181,7 +166,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, TValue desiredValue, TContext userContext = default)
+        public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
         {
             TInput input = default;
             TOutput output = default;
@@ -190,7 +175,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, TValue desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
         {
             TInput input = default;
             TOutput output = default;
@@ -199,22 +184,22 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default)
+        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
             => Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             => Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Upsert(SpanByte key, long keyHash, ref TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default)
+        private Status Upsert(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, desiredValue, ref output, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, srcObjectValue: default, ref output, userContext, sessionFunctions);
             }
             finally
             {
@@ -224,22 +209,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, ref TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Upsert(SpanByte key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
+            var keyHash = upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, srcObjectValue: default, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -249,30 +225,79 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(key, ref input, desiredValue, ref output, userContext);
+        public Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, TContext userContext = default)
+        {
+            TInput input = default;
+            TOutput output = default;
+            return Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(SpanByte key, TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(key, ref input, desiredValue, ref output, ref upsertOptions, userContext);
+        public Status Upsert(ReadOnlySpan<byte> key, IHeapObject desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        {
+            TInput input = default;
+            TOutput output = default;
+            return Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, ref TInput input, ref TOutput output, TContext userContext = default)
+        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+            => Upsert(key, store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            => Upsert(key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, desiredValue, ref output, userContext);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private Status Upsert(ReadOnlySpan<byte> key, long keyHash, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: desiredValue, ref output, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            var keyHash = upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
             => RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
+        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
             => RMW(key, rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
-        public Status RMW(SpanByte key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
             => RMW(key, store.storeFunctions.GetKeyHashCode64(key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
-        public Status RMW(SpanByte key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var keyHash = rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
             return RMW(key, keyHash, ref input, ref output, out recordMetadata, userContext);
@@ -280,7 +305,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status RMW(SpanByte key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        private Status RMW(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
@@ -295,23 +320,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, TInput input, out TOutput output, TContext userContext = default)
-        {
-            output = default;
-            return RMW(key, ref input, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, TInput input, out TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-        {
-            output = default;
-            return RMW(key, ref input, ref output, ref rmwOptions, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, ref TInput input, TContext userContext = default)
+        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default)
         {
             TOutput output = default;
             return RMW(key, ref input, ref output, userContext);
@@ -319,7 +328,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+        public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
         {
             TOutput output = default;
             return RMW(key, ref input, ref output, ref rmwOptions, userContext);
@@ -327,32 +336,22 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, TInput input, TContext userContext = default)
-            => RMW(key, ref input, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(SpanByte key, TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(key, ref input, ref rmwOptions, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(SpanByte key, TContext userContext = default)
+        public Status Delete(ReadOnlySpan<byte> key, TContext userContext = default)
             => Delete(key, store.storeFunctions.GetKeyHashCode64(key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(SpanByte key, ref DeleteOptions deleteOptions, TContext userContext = default)
+        public Status Delete(ReadOnlySpan<byte> key, ref DeleteOptions deleteOptions, TContext userContext = default)
             => Delete(key, deleteOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status Delete(SpanByte key, long keyHash, TContext userContext = default)
+        private Status Delete(ReadOnlySpan<byte> key, long keyHash, TContext userContext = default)
         {
             UnsafeResumeThread();
             try
             {
-                return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
+                return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
             }
             finally
             {
@@ -362,11 +361,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(SpanByte key) => clientSession.ResetModified(sessionFunctions, key);
+        public void ResetModified(ReadOnlySpan<byte> key) => clientSession.ResetModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(SpanByte key) => clientSession.IsModified(sessionFunctions, key);
+        internal bool IsModified(ReadOnlySpan<byte> key) => clientSession.IsModified(sessionFunctions, key);
 
         /// <inheritdoc/>
         public void Refresh() => clientSession.Refresh(sessionFunctions);
@@ -383,13 +382,13 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, long currentAddress, long untilAddress)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+            where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
             try
             {
-                return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions,
-                        BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
+                return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions,
+                        BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
                     sessionFunctions, ref srcLogRecord, ref input, ref output, currentAddress, untilAddress);
             }
             finally
@@ -407,13 +406,13 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState<TValue> scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress, long maxAddress)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress, long maxAddress)
+            where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
             try
             {
-                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
+                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
                         sessionFunctions, scanCursorState, ref srcLogRecord, currentAddress, untilAddress, maxAddress);
             }
             finally
@@ -429,12 +428,12 @@ namespace Tsavorite.core
         /// <param name="logicalAddress">Logical address of record, if found</param>
         /// <param name="fromAddress">Look until this address; if less than HeadAddress, then HeadAddress is used</param>
         /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(SpanByte key, out long logicalAddress, long fromAddress = -1)   // TODO: remove when we remove tempkv/tempdb in iterators
+        internal Status ContainsKeyInMemory(ReadOnlySpan<byte> key, out long logicalAddress, long fromAddress = -1)   // TODO: remove when we remove tempkv/tempdb in iterators
         {
             UnsafeResumeThread();
             try
             {
-                return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                         key, sessionFunctions, out logicalAddress, fromAddress);
             }
             finally

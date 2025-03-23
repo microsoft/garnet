@@ -1,13 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    // Allocator for SpanByte Keys and Values.
-    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<SpanByte, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<SpanByte>
+    // Allocator for ReadOnlySpan<byte> Keys and Span<byte> Values.
+    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly SpanByteAllocatorImpl<TStoreFunctions> _this;
@@ -25,9 +26,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<SpanByte, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<SpanByte, TStoreFunctions>
-            => (AllocatorBase<SpanByte, TStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<TStoreFunctions>
+            => (AllocatorBase<TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
         public readonly bool IsFixedLength => false;
@@ -54,31 +55,37 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
              => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(SpanByte key, ref TInput input, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetRMWInitialRecordSize(key, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(SpanByte key, SpanByte value, ref TInput input, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <summary>Get record size required for a new tombstone record</summary>
-        public readonly RecordSizeInfo GetDeleteRecordSize(SpanByte key) => _this.GetDeleteRecordSize(key);
+        public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>
         public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord<SpanByte> diskLogRecord, ref AsyncIOContext<SpanByte> ctx) { }
+        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord diskLogRecord, ref AsyncIOContext ctx) { }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -110,11 +117,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetKeyContainer(SpanByte key) => _this.GetKeyContainer(ref key);
+        public readonly IHeapContainer<ReadOnlySpan<byte>> GetKeyContainer(ReadOnlySpan<byte> key) => _this.GetKeyContainer(ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetValueContainer(SpanByte value) => _this.GetValueContainer(ref value);
+        public readonly IHeapContainer<ReadOnlySpan<byte>> GetValueContainer(ReadOnlySpan<byte> value) => _this.GetValueContainer(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -126,15 +133,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<SpanByte> logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
+        public readonly void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord<SpanByte> CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
+        public readonly LogRecord CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord<SpanByte> CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -144,10 +151,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref LogRecord<SpanByte> logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref DiskLogRecord<SpanByte> logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
     }
 }

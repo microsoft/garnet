@@ -9,10 +9,10 @@ using System.Threading;
 namespace Tsavorite.core
 {
     // This is unused; just allows things to build. TsavoriteAof does not do key comparisons or value operations; it is just a memory allocator.
-    using AofStoreFunctions = StoreFunctions<AofValue, SpanByteComparer, DefaultRecordDisposer<AofValue>>;
+    using AofStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>Simple log allocator used by TsavoriteAof</summary>
-    public sealed unsafe class AofAllocatorImpl : AllocatorBase<AofValue, AofStoreFunctions, AofAllocator>
+    public sealed unsafe class AofAllocatorImpl : AllocatorBase<AofStoreFunctions, AofAllocator>
     {
         // Circular buffer definition
         private readonly byte[][] values;
@@ -63,9 +63,9 @@ namespace Tsavorite.core
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
-        internal override void SerializeRecordToIteratorBuffer(ref LogRecord<AofValue> logRecord, ref SectorAlignedMemory recordBuffer, out AofValue valueObject) => throw new TsavoriteException("AofAllocator Scan methods should not be used");
+        internal override void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject) => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord<AofValue> diskLogRecord, (byte[] array, long offset) byteStream)
+        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream)
         {
             // Do nothing; we don't create a HeapObject for AofAllocator
         }
@@ -171,7 +171,7 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<AofValue> context, SectorAlignedMemory result = default)
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
             => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");
 
         internal static void PopulatePage(byte* src, int required_bytes, long destinationPage)
@@ -180,32 +180,32 @@ namespace Tsavorite.core
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
-        public override ITsavoriteScanIterator<AofValue> Scan(TsavoriteKV<AofValue, AofStoreFunctions, AofAllocator> store,
+        public override ITsavoriteScanIterator Scan(TsavoriteKV<AofStoreFunctions, AofAllocator> store,
                 long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeSealedRecords)
             => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<AofValue, AofStoreFunctions, AofAllocator> store,
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<AofStoreFunctions, AofAllocator> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode diskScanBufferingMode)
             => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<AofValue, AofStoreFunctions, AofAllocator> store,
-                ScanCursorState<AofValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<AofStoreFunctions, AofAllocator> store,
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
             => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<AofValue, AofStoreFunctions, AofAllocator> store, SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<AofStoreFunctions, AofAllocator> store, ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
             => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<AofValue>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator> observer)
             => throw new TsavoriteException("AofAllocator Scan methods should not be used");
 
         /// <summary>

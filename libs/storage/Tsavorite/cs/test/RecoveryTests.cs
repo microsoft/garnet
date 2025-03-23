@@ -370,7 +370,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         static int GetRandomLength(Random r) => r.Next(StackAllocMax) + 1;  // +1 to remain in range 1..StackAllocMax
 
-        private unsafe void Populate(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
+        private unsafe void Populate(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
@@ -452,13 +452,13 @@ namespace Tsavorite.test.recovery.sumstore
             }
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store, bool isAsync)
         {
             await Recover(store, isAsync);
             Read(store);
         }
 
-        private static void Read(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
+        private static void Read(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;

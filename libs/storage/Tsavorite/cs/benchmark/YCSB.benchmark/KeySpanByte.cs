@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
@@ -18,6 +18,6 @@ namespace Tsavorite.benchmark
         // Only call this for stack-based structs, not the ones in the *_keys vectors
         public override string ToString() => "{ " + value + " }";
 
-        public unsafe SpanByte AsSpanByte() => new(sizeof(long), (nint)Unsafe.AsPointer(ref this));
+        public unsafe ReadOnlySpan<byte> AsReadOnlySpan() => new(Unsafe.AsPointer(ref this), sizeof(long));
     }
 }

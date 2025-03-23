@@ -1,20 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
+                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
                                     out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (sessionFunctions.TryLockEphemeralExclusive(ref stackCtx))
             {
@@ -27,8 +28,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (stackCtx.recSrc.HasEphemeralXLock)
                 sessionFunctions.UnlockEphemeralExclusive(ref stackCtx);
@@ -36,9 +37,9 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
+                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
                                     out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (sessionFunctions.TryLockEphemeralShared(ref stackCtx))
             {
@@ -51,15 +52,15 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (stackCtx.recSrc.HasEphemeralSLock)
                 sessionFunctions.UnlockEphemeralShared(ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void LockForScan(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, SpanByte key)
+        internal void LockForScan(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ReadOnlySpan<byte> key)
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
@@ -74,7 +75,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockForScan(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+        internal void UnlockForScan(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             if (stackCtx.recSrc.HasEphemeralSLock)
             {

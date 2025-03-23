@@ -15,14 +15,14 @@ namespace Tsavorite.core
     /// <summary>
     /// The Tsavorite Key/Value store class
     /// </summary>
-    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase, IDisposable
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase, IDisposable
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         internal readonly TAllocator hlog;
-        internal readonly AllocatorBase<TValue, TStoreFunctions, TAllocator> hlogBase;
+        internal readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         internal readonly TAllocator readcache;
-        internal readonly AllocatorBase<TValue, TStoreFunctions, TAllocator> readCacheBase;
+        internal readonly AllocatorBase<TStoreFunctions, TAllocator> readCacheBase;
 
         internal readonly TStoreFunctions storeFunctions;
 
@@ -57,20 +57,20 @@ namespace Tsavorite.core
         /// <summary>
         /// Hybrid log used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<TValue, TStoreFunctions, TAllocator> Log { get; }
+        public LogAccessor<TStoreFunctions, TAllocator> Log { get; }
 
         /// <summary>
         /// Read cache used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<TValue, TStoreFunctions, TAllocator> ReadCache { get; }
+        public LogAccessor<TStoreFunctions, TAllocator> ReadCache { get; }
 
         int maxSessionID;
 
-        internal readonly OverflowBucketLockTable<TValue, TStoreFunctions, TAllocator> LockTable;
+        internal readonly OverflowBucketLockTable<TStoreFunctions, TAllocator> LockTable;
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
-        internal RevivificationManager<TValue, TStoreFunctions, TAllocator> RevivificationManager;
+        internal RevivificationManager<TStoreFunctions, TAllocator> RevivificationManager;
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
@@ -147,7 +147,7 @@ namespace Tsavorite.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
-            LockTable = new OverflowBucketLockTable<TValue, TStoreFunctions, TAllocator>(this);
+            LockTable = new OverflowBucketLockTable<TStoreFunctions, TAllocator>(this);
             RevivificationManager = new(this, kvSettings.RevivificationSettings, logSettings);
 
             stateMachineDriver = kvSettings.StateMachineDriver ?? new(epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
@@ -163,7 +163,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(SpanByte key) => storeFunctions.GetKeyHashCode64(key);
+        public long GetKeyHash(ReadOnlySpan<byte> key) => storeFunctions.GetKeyHashCode64(key);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -176,7 +176,7 @@ namespace Tsavorite.core
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions = null)
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
 
@@ -209,7 +209,7 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
-            CancellationToken cancellationToken = default, IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions = null)
+            CancellationToken cancellationToken = default, IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions = null)
         {
             var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, streamingSnapshotIteratorFunctions);
 
@@ -260,7 +260,7 @@ namespace Tsavorite.core
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
-            IStreamingSnapshotIteratorFunctions<TValue> streamingSnapshotIteratorFunctions = null)
+            IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
 
@@ -454,8 +454,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
@@ -471,9 +471,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
@@ -490,24 +490,24 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             return ContextReadAtAddress(address, key: default, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
             return ContextReadAtAddress(address, key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, SpanByte key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus internalStatus;
             do
@@ -520,14 +520,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, long keyHash, ref TInput input, TValue value, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(key, keyHash, ref input, value, ref output, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
@@ -535,15 +536,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, long keyHash, ref TInput input, TValue value, ref TOutput output, out RecordMetadata recordMetadata,
-                                                                            TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(key, keyHash, ref input, value, ref output, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
@@ -552,9 +553,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
+        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
                                                                           TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
@@ -569,8 +570,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SpanByte key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
@@ -592,7 +593,7 @@ namespace Tsavorite.core
             if (epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
-            var indexResizeTask = new IndexResizeSMTask<TValue, TStoreFunctions, TAllocator>(this);
+            var indexResizeTask = new IndexResizeSMTask<TStoreFunctions, TAllocator>(this);
             var indexResizeSM = new IndexResizeSM(indexResizeTask);
             return await stateMachineDriver.RunAsync(indexResizeSM);
         }

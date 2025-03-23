@@ -1,14 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// if reset is true it simply resets the modified bit for the key
@@ -18,7 +19,7 @@ namespace Tsavorite.core
         /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalModifiedBitOperation(SpanByte key, out RecordInfo modifiedInfo, bool reset = true)
+        internal OperationStatus InternalModifiedBitOperation(ReadOnlySpan<byte> key, out RecordInfo modifiedInfo, bool reset = true)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 

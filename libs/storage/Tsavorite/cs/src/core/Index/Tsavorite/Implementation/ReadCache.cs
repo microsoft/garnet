@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
@@ -8,12 +9,12 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     // Partial file for readcache functions
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FindInReadCache(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
+        internal bool FindInReadCache(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
@@ -80,7 +81,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             if (stackCtx.recSrc.LatestLogicalAddress < readCacheBase.HeadAddress)
             {
@@ -94,7 +95,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool SpliceIntoHashChainAtReadCacheBoundary(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
+        private bool SpliceIntoHashChainAtReadCacheBoundary(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
             Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.ClosedUntilAddress,
@@ -108,7 +109,7 @@ namespace Tsavorite.core
 
         // Skip over all readcache records in this key's chain, advancing stackCtx.recSrc to the first non-readcache record we encounter.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SkipReadCache(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out bool didRefresh)
+        internal void SkipReadCache(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out bool didRefresh)
         {
             Debug.Assert(UseReadCache, "Should not call SkipReadCache if !UseReadCache");
             didRefresh = false;
@@ -175,7 +176,7 @@ namespace Tsavorite.core
 
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool EnsureNoNewMainLogRecordWasSpliced(SpanByte key, RecordSource<TValue, TStoreFunctions, TAllocator> recSrc, long highestSearchedAddress, ref OperationStatus failStatus)
+        private bool EnsureNoNewMainLogRecordWasSpliced(ReadOnlySpan<byte> key, RecordSource<TStoreFunctions, TAllocator> recSrc, long highestSearchedAddress, ref OperationStatus failStatus)
         {
             var success = true;
             var lowest_rcri = LogRecord.GetInfo(recSrc.LowestReadCachePhysicalAddress);
@@ -206,7 +207,7 @@ namespace Tsavorite.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCheckTailAfterSplice(SpanByte key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
+        private void ReadCacheCheckTailAfterSplice(ReadOnlySpan<byte> key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCheckTailAfterSplice if !UseReadCache");
 
@@ -245,7 +246,7 @@ namespace Tsavorite.core
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)
             {
-                var logRecord = new LogRecord<TValue>(readcache.GetPhysicalAddress(rcLogicalAddress));
+                var logRecord = new LogRecord(readcache.GetPhysicalAddress(rcLogicalAddress));
                 var (_, rcAllocatedSize) = logRecord.GetInlineRecordSizes();
                 var rcRecordInfo = logRecord.Info;
 

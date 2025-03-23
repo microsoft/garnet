@@ -10,12 +10,30 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    /// <summary>A non-Generic form of the in-memory <see cref="DiskLogRecord{TValue}"/> that provides access to <see cref="RecordInfo"/>.
-    /// Useful in quick recordInfo-testing operations</summary>
-    public unsafe struct DiskLogRecord
+    /// <summary>The record on the disk: header, optional fields, key, value</summary>
+    /// <remarks>The space is laid out as:
+    ///     <list>
+    ///     <item>[RecordInfo][SerializedRecordLength][ETag?][Expiration?][key Span][value Span]</item>
+    ///     </list>
+    /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
+    /// </remarks>
+    public unsafe struct DiskLogRecord : ISourceLogRecord
     {
         /// <summary>The length of the serialized data.</summary>
         internal const int SerializedRecordLengthSize = sizeof(long);
+
+        /// <summary>The physicalAddress in the log.</summary>
+        internal readonly long physicalAddress;
+
+        /// <summary>The deserialized ValueObject if this is a disk record for the Object Store.</summary>
+        internal IHeapObject valueObject;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal DiskLogRecord(long physicalAddress)
+        {
+            this.physicalAddress = physicalAddress;
+            InfoRef.ClearBitsForDiskImages();
+        }
 
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -28,29 +46,6 @@ namespace Tsavorite.core
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long GetSerializedLength(long physicalAddress) => *(long*)(physicalAddress + RecordInfo.GetLength());
-    }
-
-    /// <summary>The record on the disk: header, optional fields, key, value</summary>
-    /// <remarks>The space is laid out as:
-    ///     <list>
-    ///     <item>[RecordInfo][SerializedRecordLength][ETag?][Expiration?][key SpanByte][value SpanByte]</item>
-    ///     </list>
-    /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
-    /// </remarks>
-    public unsafe struct DiskLogRecord<TValue> : ISourceLogRecord<TValue>
-    {
-        /// <summary>The physicalAddress in the log.</summary>
-        internal readonly long physicalAddress;
-
-        /// <summary>The deserialized ValueObject if this is a disk record for the Object Store.</summary>
-        internal TValue valueObject;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(long physicalAddress)
-        {
-            this.physicalAddress = physicalAddress;
-            InfoRef.ClearBitsForDiskImages();
-        }
 
         #region IReadOnlyRecord
         /// <inheritdoc/>
@@ -59,7 +54,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(Info.ValueIsObject == valueObject is IHeapObject, $"Mismatch between Info.ValueIsObject ({Info.ValueIsObject}) and valueObject is IHeapObject {valueObject is IHeapObject}");
+                Debug.Assert(Info.ValueIsObject == valueObject is not null, $"Mismatch between Info.ValueIsObject ({Info.ValueIsObject}) and valueObject is not null {valueObject is not null}");
                 return Info.ValueIsObject;
             }
         }
@@ -71,22 +66,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
         /// <inheritdoc/>
-        public readonly SpanByte Key => SpanByte.FromLengthPrefixedPinnedPointer((byte*)KeyAddress);
+        public readonly ReadOnlySpan<byte> Key => SpanByte.FromLengthPrefixedPinnedPointer((byte*)KeyAddress);
         /// <inheritdoc/>
-        public readonly SpanByte ValueSpan => ValueIsObject ? throw new TsavoriteException("DiskLogRecord with ValueIsObject does not support SpanByte values") : SpanByte.FromLengthPrefixedPinnedPointer((byte*)ValueAddress);
+        public readonly Span<byte> ValueSpan => ValueIsObject ? throw new TsavoriteException("DiskLogRecord with ValueIsObject does not support Span<byte> values") : SpanByte.FromLengthPrefixedPinnedPointer((byte*)ValueAddress);
         /// <inheritdoc/>
-        public readonly TValue ValueObject => ValueIsObject ? valueObject : throw new TsavoriteException("This DiskLogRecord has a non-object Value");
+        public readonly IHeapObject ValueObject => ValueIsObject ? valueObject : throw new TsavoriteException("This DiskLogRecord has a Span Value");
         
-        /// <inheritdoc/>
-        public TValue GetReadOnlyValue()
-        {
-            if (ValueIsObject)
-                return valueObject;
-
-            var sb = ValueSpan;
-            return Unsafe.As<SpanByte, TValue>(ref sb);
-        }
-
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : LogRecord.NoETag;
 
@@ -94,10 +79,11 @@ namespace Tsavorite.core
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
         /// <inheritdoc/>
-        public readonly void ClearValueObject(Action<TValue> disposer) { }  // Nothing done here; we dispose the object in the pending operation completion
+        public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Nothing done here; we dispose the object in the pending operation completion
 
         /// <inheritdoc/>
-        public readonly LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
+        public readonly LogRecord AsLogRecord() => throw new TsavoriteException("DiskLogRecord cannot be converted to AsLogRecord");
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
@@ -110,9 +96,9 @@ namespace Tsavorite.core
             };
         #endregion //IReadOnlyRecord
 
-        public readonly long SerializedRecordLength => DiskLogRecord.GetSerializedLength(physicalAddress);
+        public readonly long SerializedRecordLength => GetSerializedLength(physicalAddress);
 
-        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize + ETagLen + ExpirationLen;
+        readonly long KeyAddress => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize + ETagLen + ExpirationLen;
 
         internal readonly long ValueAddress => KeyAddress + SpanField.GetTotalSizeOfInlineField(KeyAddress);
 
@@ -122,23 +108,23 @@ namespace Tsavorite.core
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
 
-        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + DiskLogRecord.SerializedRecordLengthSize;
+        private readonly long GetETagAddress() => physicalAddress + RecordInfo.GetLength() + SerializedRecordLengthSize;
         private readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
 
         /// <summary>The initial size to IO from disk when reading a record. If we don't get the full record, at least we'll get the SerializedRecordLength
         /// and can read the full record using that.</summary>
         public static int GetEstimatedIOSize(int sectorSize, bool isObjectAllocator) => 
             RoundUp(RecordInfo.GetLength()
-                + DiskLogRecord.SerializedRecordLengthSize                          // Total record length on disk; used in IO
+                + SerializedRecordLengthSize                          // Total record length on disk; used in IO
                 + LogRecord.ETagSize + LogRecord.ExpirationSize                     // Optionals, included in the estimate
                 + sizeof(int) + (1 << LogSettings.kDefaultMaxInlineKeySizeBits)     // Key; length prefix is an int
                 + sizeof(long) + (1 << LogSettings.kDefaultMaxInlineValueSizeBits)  // Value; length prefix is a long as it may be an object
                 + (isObjectAllocator ? sectorSize : 0)                              // Additional read for object value; TODO adjust this for balance between wasted initial IO and reduction in secondary IO
             , sectorSize);
 
-        internal static SpanByte GetContextRecordKey(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).Key;
+        internal static ReadOnlySpan<byte> GetContextRecordKey(ref AsyncIOContext ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).Key;
 
-        internal static SpanByte GetContextRecordValue(ref AsyncIOContext<TValue> ctx) => new DiskLogRecord<TValue>((long)ctx.record.GetValidPointer()).ValueSpan;
+        internal static ReadOnlySpan<byte> GetContextRecordValue(ref AsyncIOContext ctx) => new DiskLogRecord((long)ctx.record.GetValidPointer()).ValueSpan;
 
         /// <inheritdoc/>
         public override readonly string ToString()

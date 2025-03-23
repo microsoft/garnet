@@ -11,63 +11,12 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    /// <summary>A non-Generic form of the in-memory <see cref="LogRecord{TValue}"/> that provides access to <see cref="RecordInfo"/> and Key only.
-    /// Useful in quick recordInfo-testing and key-matching operations</summary>
-    public unsafe partial struct LogRecord(long physicalAddress)
-    {
-        /// <summary>The physicalAddress in the log.</summary>
-        internal readonly long physicalAddress = physicalAddress;
-
-        /// <summary>Number of bytes required to store an ETag</summary>
-        public const int ETagSize = sizeof(long);
-        /// <summary>Invalid ETag, and also the pre-incremented value</summary>
-        public const int NoETag = 0;
-        /// <summary>Number of bytes required to store an Expiration</summary>
-        public const int ExpirationSize = sizeof(long);
-        /// <summary>Number of bytes required to store the FillerLen</summary>
-        internal const int FillerLengthSize = sizeof(int);
-
-        /// <summary>A ref to the record header</summary>
-        public readonly ref RecordInfo InfoRef => ref GetInfoRef(physicalAddress);
-        /// <summary>Fast access returning a copy of the record header</summary>
-        public readonly RecordInfo Info => GetInfoRef(physicalAddress);
-        /// <summary>Fast access to the record Key</summary>
-        public readonly SpanByte Key => GetKey(physicalAddress);
-
-        /// <summary>A ref to the record header</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
-
-        /// <summary>Fast access returning a copy of the record header</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
-
-        /// <summary>The address of the key</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetKeyAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
-
-        /// <summary>The key Span</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte GetKey(long physicalAddress) => SpanField.AsSpanByte(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsInline);
-
-        // All Key information is independent of TValue, which means we can navigate to the ValueAddress since we know KeyAddress and size.
-        // However, any further Value operations requires knowledge of TValue, including valueIsObject.
-
-        /// <summary>The address of the value.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetValueAddress(long physicalAddress)
-        {
-            var keyAddress = GetKeyAddress(physicalAddress);
-            return keyAddress + SpanField.GetInlineTotalSizeOfKey(keyAddress, GetInfo(physicalAddress).KeyIsInline);
-        }
-    }
-
     /// <summary>The in-memory record on the log: header, key, value, and optional fields
     ///     until some other things have been done that will allow clean separation.
     /// </summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][SpanByte key][Value (SpanByte or ObjectId)][ETag?][Expiration?][FillerLen?][Filler bytes]
+    ///     <item>[RecordInfo][Span key][Value (Span or ObjectId)][ETag?][Expiration?][FillerLen?][Filler bytes]
     ///         <br>Where Value Span is one of:</br>
     ///         <list type="bullet">
     ///             <item>ObjectId: If this is a object record, this is the ID into the <see cref="ObjectIdMap"/></item>
@@ -78,16 +27,22 @@ namespace Tsavorite.core
     /// This lets us get to the key without intermediate computations to account for the optional fields.
     /// Some methods have both member and static versions for ease of access and possibly performance gains.
     /// </remarks>
-    public unsafe struct LogRecord<TValue> : ISourceLogRecord<TValue>
+    public unsafe partial struct LogRecord : ISourceLogRecord
     {
         /// <summary>The physicalAddress in the log.</summary>
         internal readonly long physicalAddress;
 
-        /// <summary>The overflow allocator for Keys and, if SpanByteAllocator, Values.</summary>
-        internal readonly OverflowAllocator overflowAllocator;
-
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
-        internal readonly ObjectIdMap<TValue> objectIdMap;
+        internal readonly ObjectIdMap objectIdMap;
+
+        /// <summary>Number of bytes required to store an ETag</summary>
+        public const int ETagSize = sizeof(long);
+        /// <summary>Invalid ETag, and also the pre-incremented value</summary>
+        public const int NoETag = 0;
+        /// <summary>Number of bytes required to store an Expiration</summary>
+        public const int ExpirationSize = sizeof(long);
+        /// <summary>Number of bytes required to store the FillerLen</summary>
+        internal const int FillerLengthSize = sizeof(int);
 
         /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
@@ -96,18 +51,11 @@ namespace Tsavorite.core
 
         /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator, ObjectIdMap<TValue> objectIdMap)
+        internal LogRecord(long physicalAddress, ObjectIdMap objectIdMap)
             : this(physicalAddress)
         {
-            this.overflowAllocator = overflowAllocator;
             this.objectIdMap = objectIdMap;
         }
-
-        /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, OverflowAllocator overflowAllocator)
-            : this(physicalAddress)
-            => this.overflowAllocator = overflowAllocator;
 
         #region ISourceLogRecord
         /// <inheritdoc/>
@@ -128,39 +76,33 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly RecordInfo Info => GetInfoRef(physicalAddress);
         /// <inheritdoc/>
-        public readonly SpanByte Key => GetKey(physicalAddress);
+        public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress);
 
         /// <inheritdoc/>
-        public readonly SpanByte ValueSpan
+        public readonly Span<byte> ValueSpan
         {
             get
             {
                 Debug.Assert(!ValueIsObject || Info.ValueIsInline, "ValueSpan is not valid for non-inline Object log records");
-                return SpanField.AsSpanByte(ValueAddress, Info.ValueIsInline);
+                return SpanField.AsSpan(ValueAddress, Info.ValueIsInline);
             }
         }
 
         /// <inheritdoc/>
-        public readonly TValue ValueObject
+        public readonly IHeapObject ValueObject
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(ValueIsObject, "ValueObject is not valid for String log records");
-                Debug.Assert(!Info.ValueIsInline, "ValueObject is not valid for inline Object values");
-                return (Info.ValueIsInline || *ValueObjectIdAddress == ObjectIdMap.InvalidObjectId) ? default : objectIdMap.Get(ValueObjectId);
+                Debug.Assert(ValueIsObject, "ValueObject is not valid for Span values");
+                if (Info.ValueIsInline)
+                    return default;
+                var objectId = *ValueObjectIdAddress;
+                if (objectId == ObjectIdMap.InvalidObjectId)
+                    return default;
+                var heapObj = objectIdMap.Get(objectId);
+                return Unsafe.As<object, IHeapObject>(ref heapObj);
             }
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly TValue GetReadOnlyValue()
-        {
-            if (ValueIsObject)
-                return objectIdMap.Get(ValueObjectId);
-
-            var sb = ValueSpan;
-            return Unsafe.As<SpanByte, TValue>(ref sb);
         }
 
         /// <inheritdoc/>
@@ -171,7 +113,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #pragma warning disable IDE0251 // Make member 'readonly': not doing so because it modifies internal state
-        public void ClearValueObject(Action<TValue> disposer)
+        public void ClearValueObject(Action<IHeapObject> disposer)
 #pragma warning restore IDE0251
         {
             Debug.Assert(ValueIsObject, "ClearValueObject() is not valid for String log records");
@@ -185,7 +127,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord<TValue> AsLogRecord() => this;
+        public readonly LogRecord AsLogRecord() => this;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -208,18 +150,25 @@ namespace Tsavorite.core
         public static RecordInfo GetInfo(long physicalAddress) => LogRecord.GetInfo(physicalAddress);
 
         /// <summary>The address of the key</summary>
-        internal readonly long KeyAddress => LogRecord.GetKeyAddress(physicalAddress);
+        internal readonly long KeyAddress => GetKeyAddress(physicalAddress);
         /// <summary>The address of the key</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetKeyAddress(long physicalAddress) => LogRecord.GetKeyAddress(physicalAddress);
+        internal static long GetKeyAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
 
         /// <summary>A <see cref="SpanField"/> representing the record Key</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte GetKey(long physicalAddress) => LogRecord.GetKey(physicalAddress);
+        public static ReadOnlySpan<byte> GetKey(long physicalAddress) => SpanField.AsSpan(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsInline);
 
         /// <summary>The address of the value</summary>
-        internal readonly long ValueAddress => LogRecord.GetValueAddress(physicalAddress);
+        internal readonly long ValueAddress => GetValueAddress(physicalAddress);
+        /// <summary>The address of the value.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long GetValueAddress(long physicalAddress)
+        {
+            var keyAddress = GetKeyAddress(physicalAddress);
+            return keyAddress + SpanField.GetInlineTotalSizeOfKey(keyAddress, GetInfo(physicalAddress).KeyIsInline);
+        }
 
         internal readonly int* ValueObjectIdAddress => (int*)ValueAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -314,7 +263,7 @@ namespace Tsavorite.core
                 // Both are out-of-line, so reallocate in place if needed. Object records will do what they need to after this call returns;
                 // we're only here to set up inline lengths, and that hasn't changed here.
                 if (newDataLength != BlockHeader.GetUserSize(SpanField.GetOverflowPointer(valueAddress)))
-                    _ = SpanField.ReallocateOverflow(valueAddress, newDataLength, overflowAllocator);
+                    _ = SpanField.ReallocateOverflow(valueAddress, newDataLength, objectIdMap);
                 goto Done;
             }
             else if (Info.ValueIsObject && sizeInfo.ValueIsObject)
@@ -337,11 +286,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = SpanField.ConvertInlineToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                            _ = SpanField.ConvertInlineToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = SpanField.ConvertInlineToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                            _ = SpanField.ConvertInlineToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap);
                     }
                     else
                     {
@@ -369,11 +318,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = SpanField.ConvertOverflowToInline(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                            _ = SpanField.ConvertOverflowToInline(ref InfoRef, valueAddress, newDataLength, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = SpanField.ConvertOverflowToInline(ref InfoRef, valueAddress, newDataLength, overflowAllocator);
+                            _ = SpanField.ConvertOverflowToInline(ref InfoRef, valueAddress, newDataLength, objectIdMap);
                     }
                     else
                     {
@@ -382,11 +331,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, overflowAllocator, objectIdMap);
+                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, overflowAllocator, objectIdMap);
+                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap, objectIdMap);
                     }
                 }
                 else
@@ -411,11 +360,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator, objectIdMap);
+                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, overflowAllocator, objectIdMap);
+                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap, objectIdMap);
                     }
                 }
             }
@@ -427,14 +376,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpan(SpanByte value, ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueSpan(Span<byte> value, ref RecordSizeInfo sizeInfo)
         {
             RecordSizeInfo.AssertValueDataLength(value.Length, ref sizeInfo);
 
             if (!TrySetValueLength(ref sizeInfo))
                 return false;
 
-            value.CopyTo(SpanField.AsSpanByte(ValueAddress, Info.ValueIsInline));
+            value.CopyTo(SpanField.AsSpan(ValueAddress, Info.ValueIsInline));
             return true;
         }
 
@@ -443,7 +392,7 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
-        public bool TrySetValueObject(TValue value, ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueObject(IHeapObject value, ref RecordSizeInfo sizeInfo)
 #pragma warning restore IDE0251
         {
             return TrySetValueLength(ref sizeInfo) && TrySetValueObject(value);
@@ -456,7 +405,7 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
-        public bool TrySetValueObject(TValue value)
+        public bool TrySetValueObject(IHeapObject value)
 #pragma warning restore IDE0251
         {
             Debug.Assert(ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
@@ -726,15 +675,14 @@ namespace Tsavorite.core
         /// Copy the entire record values: Value and optionals (ETag, Expiration)
         /// </summary>
         public bool TryCopyRecordValues<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+            where TSourceLogRecord : ISourceLogRecord
         {
             // This assumes the Key has been set and is not changed
-            var srcRecordInfo = srcLogRecord.Info;
             if (!srcLogRecord.ValueIsObject)
             {
                 if (!TrySetValueLength(ref sizeInfo))
                     return false;
-                srcLogRecord.ValueSpan.AsReadOnlySpan().CopyTo(ValueSpan.AsSpan());
+                srcLogRecord.ValueSpan.CopyTo(ValueSpan);
             }
             else
             {
@@ -749,7 +697,7 @@ namespace Tsavorite.core
         /// Copy the record optional values (ETag, Expiration)
         /// </summary>
         public bool TryCopyRecordOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var srcRecordInfo = srcLogRecord.Info;
 
@@ -778,7 +726,7 @@ namespace Tsavorite.core
         {
             if (!Info.KeyIsOverflow)
                 return false;
-            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, KeyAddress, overflowAllocator, isKey: true);
+            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, KeyAddress, objectIdMap, isKey: true);
             return true;
         }
 
@@ -787,7 +735,7 @@ namespace Tsavorite.core
         {
             if (!Info.ValueIsOverflow)
                 return false;
-            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, ValueAddress, overflowAllocator, isKey: false);
+            SpanField.FreeOverflowAndConvertToInline(ref InfoRef, ValueAddress, objectIdMap, isKey: false);
             return true;
         }
 

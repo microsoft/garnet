@@ -152,7 +152,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         TransactionalUnsafeFunctions functions;
         TransactionalUnsafeComparer comparer;
 
-        private TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store;
+        private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private ClientSession<SpanByte, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
         private BasicContext<SpanByte, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
         private IDevice log;
@@ -241,7 +241,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
         void PrepareRecordLocation(FlushMode recordLocation) => PrepareRecordLocation(store, recordLocation);
 
-        static void PrepareRecordLocation(TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store, FlushMode recordLocation)
+        static void PrepareRecordLocation(TsavoriteKV<LongStoreFunctions, LongAllocator> store, FlushMode recordLocation)
         {
             if (recordLocation == FlushMode.ReadOnly)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);

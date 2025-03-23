@@ -19,7 +19,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class SpanByteIterationTests
     {
-        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
 
         // Note: We always set value.length to 2, which includes both VLValue members; we are not exercising the "Variable Length" aspect here.

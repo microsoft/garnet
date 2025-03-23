@@ -9,14 +9,14 @@ namespace Tsavorite.core
     /// <summary>
     /// This task performs an index checkpoint.
     /// </summary>
-    internal sealed class IndexCheckpointSMTask<TValue, TStoreFunctions, TAllocator> : IStateMachineTask
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    internal sealed class IndexCheckpointSMTask<TStoreFunctions, TAllocator> : IStateMachineTask
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        readonly TsavoriteKV<TValue, TStoreFunctions, TAllocator> store;
+        readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         readonly Guid guid;
 
-        public IndexCheckpointSMTask(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public IndexCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
             this.guid = guid;

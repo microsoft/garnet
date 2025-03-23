@@ -31,7 +31,7 @@ namespace Tsavorite.test.spanbyte
             try
             {
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog1.log"), deleteOnClose: true);
-                using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                using var store = new TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                     new()
                     {
                         IndexSize = 1L << 13,
@@ -95,7 +95,7 @@ namespace Tsavorite.test.spanbyte
             try
             {
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-                using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                using var store = new TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                     new()
                     {
                         IndexSize = 1L << 16,
@@ -218,7 +218,7 @@ namespace Tsavorite.test.spanbyte
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "vl-iter.log"), deleteOnClose: true);
-            using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+            using var store = new TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
                 new()
                 {
                     IndexSize = 1L << 13,

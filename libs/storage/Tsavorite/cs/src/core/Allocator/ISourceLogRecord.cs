@@ -6,9 +6,9 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
-    public interface ISourceLogRecord<TValue>
+    public interface ISourceLogRecord
     {
-        /// <summary>Whether this is a record for an object or a SpanByte value</summary>
+        /// <summary>Whether this is a record for an object or a Span{byte} value</summary>
         bool ValueIsObject { get; }
 
         /// <summary>A ref to the record header</summary>
@@ -27,17 +27,14 @@ namespace Tsavorite.core
         ///     </list>
         /// </summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
-        SpanByte Key { get; }
+        ReadOnlySpan<byte> Key { get; }
 
-        /// <summary>The value <see cref="SpanByte"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
-        /// <remarks>Not a ref return as it cannot be changed</remarks>
-        SpanByte ValueSpan { get; }
+        /// <summary>The value <see cref="Span{_byte_}"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
+        /// <remarks>Not a ref return as it cannot be changed directly; use LogRecord.TrySetValueSpan(Span{_byte_}, ref RecordSizeInfo) instead.</remarks>
+        Span<byte> ValueSpan { get; }
 
-        /// <summary>The value object, if this is an Object LogRecord; an exception is thrown if it is a String LogRecord.</summary>
-        TValue ValueObject { get; }
-
-        /// <summary>Get a copy of the value; useful when the generic type is needed.</summary>
-        TValue GetReadOnlyValue();
+        /// <summary>The value object, if the value in this record is an IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
+        IHeapObject ValueObject { get; }
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }
@@ -47,11 +44,11 @@ namespace Tsavorite.core
 
         /// <summary>If requested by CopyUpdater, the source ValueObject will be cleared immediately (to manage object size tracking most effectively).</summary>
         /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
-        void ClearValueObject(Action<TValue> disposer);
+        void ClearValueObject(Action<IHeapObject> disposer);
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord{TValue}"/> to a <see cref="LogRecord{TValue}"/> type.
-        /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord{TValue}"/>.</summary>
-        LogRecord<TValue> AsLogRecord();
+        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
+        /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord"/>.</summary>
+        LogRecord AsLogRecord();
 
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();

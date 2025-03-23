@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Equality comparer for <see cref="SpanByte"/>
+    /// Equality comparer for <see cref="ReadOnlySpan{_byte_}"/>
     /// </summary>
     public struct SpanByteComparer : IKeyComparer
     {
@@ -18,36 +18,30 @@ namespace Tsavorite.core
         public static readonly SpanByteComparer Instance = new();
 
         /// <inheritdoc />
-        public readonly unsafe long GetHashCode64(SpanByte spanByte) => StaticGetHashCode64(spanByte);
+        public readonly unsafe long GetHashCode64(ReadOnlySpan<byte> key) => StaticGetHashCode64(key);
 
         /// <summary>
         /// Get 64-bit hash code
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long StaticGetHashCode64(SpanByte spanByte)
+        public static unsafe long StaticGetHashCode64(ReadOnlySpan<byte> key)
         {
-            if (spanByte.Serialized)
+            fixed (byte* ptr = key) // TODO avoid this pin for perf
             {
-                var ptr = (byte*)Unsafe.AsPointer(ref spanByte);
-                return Utility.HashBytes(ptr + sizeof(int), spanByte.Length);
-            }
-            else
-            {
-                var ptr = (byte*)spanByte.Pointer;
-                return Utility.HashBytes(ptr, spanByte.Length);
+                return Utility.HashBytes(ptr, key.Length);
             }
         }
 
         /// <inheritdoc />
-        public readonly unsafe bool Equals(SpanByte k1, SpanByte k2) => StaticEquals(k1, k2);
+        public readonly unsafe bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => StaticEquals(k1, k2);
 
         /// <summary>
         /// Equality comparison
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool StaticEquals(SpanByte k1, SpanByte k2)
+        public static unsafe bool StaticEquals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2)
         {
-            return k1.AsReadOnlySpan().SequenceEqual(k2.AsReadOnlySpan());
+            return k1.SequenceEqual(k2);
         }
     }
 }

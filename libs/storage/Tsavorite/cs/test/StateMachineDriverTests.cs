@@ -42,12 +42,12 @@ namespace Tsavorite.test.recovery
             DeleteDirectory(MethodTestDir, true);
         }
 
-        protected abstract void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store);
+        protected abstract void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store);
 
         public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, long indexSize, bool useTimingFuzzing)
         {
             // Create the original store
-            using var store1 = new TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator>(new()
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
@@ -111,7 +111,7 @@ namespace Tsavorite.test.recovery
                 }
 
                 // Recover new store from the checkpoint
-                using var store2 = new TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator>(new()
+                using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
                 {
                     IndexSize = indexSize,
                     LogDevice = log,
@@ -159,7 +159,7 @@ namespace Tsavorite.test.recovery
         public async ValueTask DoGrowIndexVersionSwitchEquivalenceCheck(long indexSize, bool useTimingFuzzing)
         {
             // Create the original store
-            using var store1 = new TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator>(new()
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
@@ -263,7 +263,7 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store)
+        protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store)
         {
             using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
             var bc = s.BasicContext;
@@ -318,7 +318,7 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store)
+        protected override void OperationThread(int thread_id, bool useTimingFuzzing, TsavoriteKV<LongStoreFunctions, LongAllocator> store)
         {
             using var s = store.NewSession<long, long, Empty, SumFunctions>(new SumFunctions(thread_id, useTimingFuzzing));
             var lc = s.TransactionalContext;

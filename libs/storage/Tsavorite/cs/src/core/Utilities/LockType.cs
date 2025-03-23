@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -30,7 +32,7 @@ namespace Tsavorite.core
     public interface ITransactionalKey
     {
         /// <summary>
-        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash(SpanByte)"/>
+        /// The hash code for a specific key, obtained from <see cref="ITsavoriteContext.GetKeyHash(ReadOnlySpan{_byte_})"/>
         /// </summary>
         public long KeyHash { get; }
 
@@ -48,7 +50,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The key that is acquiring or releasing a lock
         /// </summary>
-        public SpanByte Key;
+        public ReadOnlySpan<byte> Key;
 
         #region ITransactionalKey
         /// <inheritdoc/>
@@ -61,7 +63,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthTransactionalKeyStruct(SpanByte key, LockType lockType, ITsavoriteContext context)
+        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, LockType lockType, ITsavoriteContext context)
         {
             Key = key;
             LockType = lockType;
@@ -71,7 +73,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthTransactionalKeyStruct(SpanByte key, long keyHash, LockType lockType, ITransactionalContext context)
+        public FixedLengthTransactionalKeyStruct(ReadOnlySpan<byte> key, long keyHash, LockType lockType, ITransactionalContext context)
         {
             Key = key;
             KeyHash = keyHash;

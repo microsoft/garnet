@@ -9,14 +9,14 @@ namespace Tsavorite.core
     /// <summary>
     /// The interface to define functions on the TsavoriteKV store itself (rather than a session).
     /// </summary>
-    public interface IStoreFunctions<TValue>
+    public interface IStoreFunctions
     {
         #region Key Comparer
         /// <summary>Get a 64-bit hash code for a key</summary>
-        long GetKeyHashCode64(SpanByte key);
+        long GetKeyHashCode64(ReadOnlySpan<byte> key);
 
         /// <summary>Compare two keys for equality</summary>
-        bool KeysEqual(SpanByte k1, SpanByte k2);
+        bool KeysEqual(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
         #endregion Key Comparer
 
         #region Value Serializer
@@ -25,23 +25,23 @@ namespace Tsavorite.core
 
         /// <summary>Instatiate a ValueSerializer and begin Value serialization to the given stream.</summary>
         /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
-        IObjectSerializer<TValue> BeginSerializeValue(Stream stream);
+        IObjectSerializer<IHeapObject> BeginSerializeValue(Stream stream);
 
         /// <summary>Instatiate a ValueSerializer and begin Value deserialization from the given stream.</summary>
         /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
-        IObjectSerializer<TValue> BeginDeserializeValue(Stream stream);
+        IObjectSerializer<IHeapObject> BeginDeserializeValue(Stream stream);
         #endregion Value Serializer
 
         #region Record Disposer
         /// <summary>
-        /// If true, <see cref="DisposeValueObject(TValue, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
+        /// If true, <see cref="DisposeValueObject(IHeapObject, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
         /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
         /// do any needed disposal there.
         /// </summary>
         bool DisposeOnPageEviction { get; }
 
         /// <summary>Dispose the Value of a record, if necessary.</summary>
-        void DisposeValueObject(TValue valueObject, DisposeReason reason);
+        void DisposeValueObject(IHeapObject valueObject, DisposeReason reason);
         #endregion Record Disposer
 
         #region Checkpoint Completion

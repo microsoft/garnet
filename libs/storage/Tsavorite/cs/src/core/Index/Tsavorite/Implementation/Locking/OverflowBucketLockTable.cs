@@ -7,17 +7,17 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct OverflowBucketLockTable<TValue, TStoreFunctions, TAllocator> : ILockTable
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    internal struct OverflowBucketLockTable<TStoreFunctions, TAllocator> : ILockTable
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        private readonly TsavoriteKV<TValue, TStoreFunctions, TAllocator> store;
+        private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
 
         internal readonly long NumBuckets => store.state[store.resizeInfo.version].size_mask + 1;
 
         public readonly bool IsEnabled => store is not null;
 
-        internal OverflowBucketLockTable(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store) => this.store = store;
+        internal OverflowBucketLockTable(TsavoriteKV<TStoreFunctions, TAllocator> store) => this.store = store;
 
         internal readonly long GetSize() => store.state[store.resizeInfo.version].size_mask;
 

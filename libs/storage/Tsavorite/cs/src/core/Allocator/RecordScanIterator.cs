@@ -12,18 +12,18 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class RecordScanIterator<TValue, TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator<TValue>, IPushScanIterator<TValue>
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public sealed class RecordScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        private readonly TsavoriteKV<TValue, TStoreFunctions, TAllocator> store;
-        private readonly AllocatorBase<TValue, TStoreFunctions, TAllocator> hlogBase;
+        private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
+        private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         private readonly BlittableFrame frame;  // TODO remove GenericFrame
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
 
-        private DiskLogRecord<TValue> diskLogRecord;
+        private DiskLogRecord diskLogRecord;
 
         /// <summary>
         /// Constructor
@@ -38,7 +38,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal RecordScanIterator(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, AllocatorBase<TValue, TStoreFunctions, TAllocator> hlogBase,
+        internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, 
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeSealedRecords = false, bool assumeInMemory = false, ILogger logger = null)
@@ -54,7 +54,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal RecordScanIterator(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, AllocatorBase<TValue, TStoreFunctions, TAllocator> hlogBase,
+        internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddress(0) : beginAddress, hlogBase.GetTailAddress(), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
@@ -169,7 +169,7 @@ namespace Tsavorite.core
                 var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset, out long allocatedSize);
 
                 // If record did not fit on the page its recordInfo will be Null; skip to the next page if so.
-                var recordInfo = LogRecord<TValue>.GetInfo(physicalAddress);
+                var recordInfo = LogRecord.GetInfo(physicalAddress);
 
                 if (recordInfo.IsNull)
                 {
@@ -187,7 +187,7 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                TValue valueObject = default;
+                IHeapObject valueObject = default;
                 if (currentAddress >= headAddress || assumeInMemory)
                 {
                     // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
@@ -198,11 +198,11 @@ namespace Tsavorite.core
                     // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
                     // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
                     // Lock to ensure no value tearing while copying to temp storage.
-                    OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = default;
+                    OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                     try
                     {
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, LogRecord<TValue>.GetKey(physicalAddress));
+                            store.LockForScan(ref stackCtx, LogRecord.GetKey(physicalAddress));
 
                         hlogBase.SerializeRecordToIteratorBuffer(ref logRecord, ref recordBuffer, out valueObject);
                     }
@@ -238,7 +238,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator<TValue>.BeginGetPrevInMemory(SpanByte key, out LogRecord<TValue> logRecord, out bool continueOnDisk)
+        bool IPushScanIterator.BeginGetPrevInMemory(ReadOnlySpan<byte> key, out LogRecord logRecord, out bool continueOnDisk)
         {
             while (true)
             {
@@ -269,7 +269,7 @@ namespace Tsavorite.core
             }
         }
 
-        void IPushScanIterator<TValue>.EndGetPrevInMemory() => epoch?.Suspend();
+        void IPushScanIterator.EndGetPrevInMemory() => epoch?.Suspend();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset, out long allocatedSize)
@@ -282,16 +282,9 @@ namespace Tsavorite.core
             }
 
             long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
-            allocatedSize = new DiskLogRecord<TValue>(physicalAddress).SerializedRecordLength;
+            allocatedSize = new DiskLogRecord(physicalAddress).SerializedRecordLength;
             return physicalAddress;
         }
-
-        /// <summary>
-        /// Get next record in iterator
-        /// </summary>
-        /// <returns></returns>
-        public bool GetNext(out RecordInfo recordInfo, out SpanByte key, out SpanByte value)
-            => throw new NotSupportedException("Use GetNext(out RecordInfo) to retrieve references to key/value");
 
         #region ISourceLogRecord
         /// <inheritdoc/>
@@ -305,16 +298,13 @@ namespace Tsavorite.core
         public bool IsSet => diskLogRecord.IsSet;
 
         /// <inheritdoc/>
-        public SpanByte Key => diskLogRecord.Key;
+        public ReadOnlySpan<byte> Key => diskLogRecord.Key;
 
         /// <inheritdoc/>
-        public SpanByte ValueSpan => diskLogRecord.ValueSpan;
+        public Span<byte> ValueSpan => diskLogRecord.ValueSpan;
 
         /// <inheritdoc/>
-        public TValue ValueObject => diskLogRecord.ValueObject;
-
-        /// <inheritdoc/>
-        public TValue GetReadOnlyValue() => diskLogRecord.GetReadOnlyValue();
+        public IHeapObject ValueObject => diskLogRecord.ValueObject;
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;
@@ -323,10 +313,10 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueObject(Action<TValue> disposer) { }  // Not relevant for iterators
+        public void ClearValueObject(Action disposer) { }  // Not relevant for iterators
 
         /// <inheritdoc/>
-        public LogRecord<TValue> AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
+        public LogRecord AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -91,25 +91,25 @@ namespace Tsavorite.test.Revivification
                 Action = RMWAction.Default,
             };
 
-        internal static FreeRecordPool<TValue, TStoreFunctions, TAllocator> CreateSingleBinFreeRecordPool<TValue, TStoreFunctions, TAllocator>(
-                TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, RevivificationBin binDef)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static FreeRecordPool<TStoreFunctions, TAllocator> CreateSingleBinFreeRecordPool<TStoreFunctions, TAllocator>(
+                TsavoriteKV<TStoreFunctions, TAllocator> store, RevivificationBin binDef)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => new(store, new RevivificationSettings() { FreeRecordBins = [binDef] });
 
-        internal static bool HasRecords<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static bool HasRecords<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => HasRecords(store.RevivificationManager.FreeRecordPool);
 
-        internal static bool HasRecords<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static bool HasRecords<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, FreeRecordPool<TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => HasRecords(pool ?? store.RevivificationManager.FreeRecordPool);
 
-        internal static bool HasRecords<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static bool HasRecords<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             if (pool is not null)
             {
@@ -122,10 +122,10 @@ namespace Tsavorite.test.Revivification
             return false;
         }
 
-        internal static FreeRecordPool<TValue, TStoreFunctions, TAllocator> SwapFreeRecordPool<TValue, TStoreFunctions, TAllocator>(
-                TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, FreeRecordPool<TValue, TStoreFunctions, TAllocator> inPool)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static FreeRecordPool<TStoreFunctions, TAllocator> SwapFreeRecordPool<TStoreFunctions, TAllocator>(
+                TsavoriteKV<TStoreFunctions, TAllocator> store, FreeRecordPool<TStoreFunctions, TAllocator> inPool)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             var pool = store.RevivificationManager.FreeRecordPool;
             store.RevivificationManager.FreeRecordPool = inPool;
@@ -134,45 +134,45 @@ namespace Tsavorite.test.Revivification
 
         internal const int DefaultRecordWaitTimeoutMs = 2000;
 
-        internal static bool GetBinIndex<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool, int recordSize, out int binIndex)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static bool GetBinIndex<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool, int recordSize, out int binIndex)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.GetBinIndex(recordSize, out binIndex);
 
-        internal static int GetBinCount<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static int GetBinCount<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.bins.Length;
 
-        internal static int GetRecordCount<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool, int binIndex)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static int GetRecordCount<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool, int binIndex)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.bins[binIndex].recordCount;
 
-        internal static int GetMaxRecordSize<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool, int binIndex)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static int GetMaxRecordSize<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool, int binIndex)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.bins[binIndex].maxRecordSize;
 
-        internal static unsafe bool IsSet<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordIndex)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static unsafe bool IsSet<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool, int binIndex, int recordIndex)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.bins[binIndex].records[recordIndex].IsSet;
 
-        internal static bool TryTakeFromBin<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool, int binIndex, ref RecordSizeInfo sizeInfo, long minAddress,
-                TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static bool TryTakeFromBin<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool, int binIndex, ref RecordSizeInfo sizeInfo, long minAddress,
+                TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.bins[binIndex].TryTake(ref sizeInfo, minAddress, store, out address, ref revivStats);
 
-        internal static int GetSegmentStart<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordSize)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static int GetSegmentStart<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool, int binIndex, int recordSize)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => pool.bins[binIndex].GetSegmentStart(recordSize);
 
-        internal static void WaitForRecords<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, bool want, FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool = default)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static void WaitForRecords<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, bool want, FreeRecordPool<TStoreFunctions, TAllocator> pool = default)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             pool ??= store.RevivificationManager.FreeRecordPool;
 
@@ -191,14 +191,14 @@ namespace Tsavorite.test.Revivification
             }
         }
 
-        internal static unsafe int GetFreeRecordCount<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static unsafe int GetFreeRecordCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => GetFreeRecordCount(store.RevivificationManager.FreeRecordPool);
 
-        internal static unsafe int GetFreeRecordCount<TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TValue, TStoreFunctions, TAllocator> pool)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static unsafe int GetFreeRecordCount<TStoreFunctions, TAllocator>(FreeRecordPool<TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             // This returns the count of all records, not just the free ones.
             var count = 0;
@@ -216,24 +216,24 @@ namespace Tsavorite.test.Revivification
             return count;
         }
 
-        internal static void AssertElidable<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, SpanByte key)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static void AssertElidable<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
             ClassicAssert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
             var recordInfo = LogRecord.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
             ClassicAssert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }
 
-        internal static int GetRevivifiableRecordCount<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, int numRecords)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static int GetRevivifiableRecordCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => (int)(numRecords * store.RevivificationManager.revivifiableFraction);
 
-        internal static int GetMinRevivifiableKey<TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, int numRecords)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static int GetMinRevivifiableKey<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => numRecords - GetRevivifiableRecordCount(store, numRecords);
     }
 
@@ -249,7 +249,7 @@ namespace Tsavorite.test.Revivification
 
         RevivificationFixedLenFunctions functions;
 
-        private TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store;
+        private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private ClientSession<SpanByte, long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator> session;
         private BasicContext<SpanByte, long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator> bContext;
         private IDevice log;
@@ -466,7 +466,7 @@ namespace Tsavorite.test.Revivification
 
         internal class RevivificationSpanByteFunctions : SpanByteFunctions<Empty>
         {
-            private readonly TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+            private readonly TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
             // Must be set after session is created
             internal ClientSession<SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
@@ -479,7 +479,7 @@ namespace Tsavorite.test.Revivification
 
             internal bool readCcCalled, rmwCcCalled;
 
-            internal RevivificationSpanByteFunctions(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
+            internal RevivificationSpanByteFunctions(TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
             {
                 this.store = store;
             }
@@ -649,7 +649,7 @@ namespace Tsavorite.test.Revivification
         RevivificationSpanByteFunctions functions;
         RevivificationSpanByteComparer comparer;
 
-        private TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private ClientSession<SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
         private BasicContext<SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
         private IDevice log;
@@ -1706,7 +1706,7 @@ namespace Tsavorite.test.Revivification
         RevivificationStressFunctions functions;
         RevivificationSpanByteComparer comparer;
 
-        private TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private ClientSession<SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
         private BasicContext<SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
         private IDevice log;

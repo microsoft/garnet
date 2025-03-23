@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -16,15 +17,15 @@ namespace Tsavorite.benchmark
         public override string ToString() => "{ " + value + " }";
 
         // Only call this for stack-based structs, not the ones in the *_keys vectors
-        public unsafe SpanByte AsSpanByte() => new(sizeof(long), (nint)Unsafe.AsPointer(ref this));
+        public unsafe ReadOnlySpan<byte> AsReadOnlySpan() => new(Unsafe.AsPointer(ref this), sizeof(long));
 
         public struct Comparer : IKeyComparer
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public readonly long GetHashCode64(SpanByte key) => Utility.GetHashCode(key.AsRef<FixedLengthKey>().value);
+            public readonly long GetHashCode64(ReadOnlySpan<byte> key) => Utility.GetHashCode(key.AsReadOnlyRef<FixedLengthKey>().value);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool Equals(SpanByte key1, SpanByte key2) => key1.AsRef<FixedLengthKey>().value == key2.AsRef<FixedLengthKey>().value;
+            public bool Equals(ReadOnlySpan<byte> key1, ReadOnlySpan<byte>key2) => key1.AsReadOnlyRef<FixedLengthKey>().value == key2.AsReadOnlyRef<FixedLengthKey>().value;
         }
     }
 }

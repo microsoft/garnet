@@ -92,7 +92,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Initialize an inline field with the length necessary for the eventual overflow pointer, but don't set the field to overflow yet to avoid needing null-pointer checks.
-        /// <see cref="LogRecord{TValue}.TrySetValueLength(ref RecordSizeInfo)"/> will handle converting to overflow and allocating.
+        /// <see cref="LogRecord.TrySetValueLength(ref RecordSizeInfo)"/> will handle converting to overflow and allocating.
         /// </summary>
         /// <param name="fieldAddress"></param>
         internal static void InitializeInlineForOverflowField(long fieldAddress) => GetInlineLengthRef(fieldAddress) = OverflowInlineSize - FieldLengthPrefixSize;
@@ -100,7 +100,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Obtain a <see cref="Span{_byte_}"/> referencing the inline or overflow data and the datasize for this field.
         /// </summary>
-        /// <remarks>Note: SpanByte.CopyTo(<see cref="Span{_byte_}"/> destSpan) will assume that destSpan is a serialized SpanByte space, and will write length to the first sizeof(int) bytes of the span data</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static Span<byte> AsSpan(long fieldAddress, bool isInline)
         {
@@ -108,19 +107,6 @@ namespace Tsavorite.core
                 return new((byte*)GetInlineDataAddress(fieldAddress), GetInlineLengthRef(fieldAddress));
             var dataAddress = (byte*)GetOverflowPointer(fieldAddress);
             return new(dataAddress, BlockHeader.GetUserSize((long)dataAddress));
-        }
-
-        /// <summary>
-        /// Obtain a <see cref="SpanByte"/> referencing the inline or overflow data and the datasize for this field.
-        /// </summary>
-        /// <remarks>Note: returns non-serialized as it is not passed by ref</remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static SpanByte AsSpanByte(long fieldAddress, bool isInline)
-        {
-            if (isInline)
-                return new(GetInlineLengthRef(fieldAddress), (IntPtr)GetInlineDataAddress(fieldAddress));
-            var dataAddress = (byte*)GetOverflowPointer(fieldAddress);
-            return new(BlockHeader.GetUserSize((long)dataAddress), (IntPtr)dataAddress);
         }
 
         /// <summary>
@@ -183,7 +169,7 @@ namespace Tsavorite.core
         /// prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ConvertObjectIdToOverflow<TValue>(ref RecordInfo recordInfo, long fieldAddress, int newLength, OverflowAllocator allocator, ObjectIdMap<TValue> objectIdMap)
+        internal static byte* ConvertObjectIdToOverflow(ref RecordInfo recordInfo, long fieldAddress, int newLength, OverflowAllocator allocator, ObjectIdMap objectIdMap)
         {
             byte* newPtr = allocator.Allocate(newLength, zeroInit: false);
             objectIdMap.Free(ref GetObjectIdRef(fieldAddress));
@@ -205,7 +191,7 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertInlineToObjectId<TValue>(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap<TValue> objectIdMap)
+        internal static int ConvertInlineToObjectId(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap)
         {
             // Here we do not copy the data; we assume the caller will have already created an object that has converted from inline format to object format.
             var objectId = objectIdMap.Allocate();
@@ -230,7 +216,7 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertOverflowToObjectId<TValue>(ref RecordInfo recordInfo, long fieldAddress, OverflowAllocator allocator, ObjectIdMap<TValue> objectIdMap)
+        internal static int ConvertOverflowToObjectId(ref RecordInfo recordInfo, long fieldAddress, OverflowAllocator allocator, ObjectIdMap objectIdMap)
         {
             var oldPtr = (byte*)GetOverflowPointer(fieldAddress);
             SetOverflowPointer(fieldAddress, IntPtr.Zero);
@@ -308,7 +294,7 @@ namespace Tsavorite.core
         /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ConvertObjectIdToInline<TValue>(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap<TValue> objectIdMap)
+        internal static byte* ConvertObjectIdToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
         {
             ref int objIdRef = ref GetObjectIdRef(fieldAddress);
             objectIdMap.Free(objIdRef);

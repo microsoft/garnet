@@ -31,7 +31,7 @@ namespace Tsavorite.benchmark
         readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        readonly TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -174,7 +174,7 @@ namespace Tsavorite.benchmark
                         unsafe
                         {
                             var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
-                            var key = keyStruct.AsSpanByte();
+                            var key = keyStruct.AsReadOnlySpan();
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
                             {
@@ -268,7 +268,7 @@ namespace Tsavorite.benchmark
                     unsafe
                     {
                         var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
-                        var key = keyStruct.AsSpanByte();
+                        var key = keyStruct.AsReadOnlySpan();
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
@@ -434,7 +434,7 @@ namespace Tsavorite.benchmark
 
             // The key vectors are not pinned, so copy to the stack
             KeySpanByte keyStruct = default;
-            var _key = keyStruct.AsSpanByte();
+            var _key = keyStruct.AsReadOnlySpan();
 
             Span<byte> value = stackalloc byte[kValueSize];
             var _value = SpanByte.FromPinnedSpan(value);
@@ -482,7 +482,7 @@ namespace Tsavorite.benchmark
 
             // The key vectors are not pinned, so copy to the stack
             KeySpanByte keyStruct = default;
-            var _key = keyStruct.AsSpanByte();
+            var _key = keyStruct.AsReadOnlySpan();
 
             Span<byte> value = stackalloc byte[kValueSize];
             var _value = SpanByte.FromPinnedSpan(value);
@@ -501,7 +501,7 @@ namespace Tsavorite.benchmark
                     }
 
                     keyStruct = init_keys_[idx];
-                    bContext.Upsert(keyStruct.AsSpanByte(), _value, Empty.Default);
+                    bContext.Upsert(keyStruct.AsReadOnlySpan(), _value, Empty.Default);
                 }
             }
 

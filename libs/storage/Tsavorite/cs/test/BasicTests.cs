@@ -24,7 +24,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class BasicTests
     {
-        private TsavoriteKV<SpanByte, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private ClientSession<SpanByte, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
         private BasicContext<SpanByte, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
         private IDevice log;
@@ -700,7 +700,7 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator>(
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,
@@ -741,7 +741,7 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator>(
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,
@@ -850,7 +850,7 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator>(
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,

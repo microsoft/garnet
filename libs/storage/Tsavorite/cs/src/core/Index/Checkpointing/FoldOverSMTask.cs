@@ -10,11 +10,11 @@ namespace Tsavorite.core
     /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
     /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    internal sealed class FoldOverSMTask<TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    internal sealed class FoldOverSMTask<TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        public FoldOverSMTask(TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public FoldOverSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
         }

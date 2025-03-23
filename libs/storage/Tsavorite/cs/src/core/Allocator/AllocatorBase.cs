@@ -14,9 +14,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract partial class AllocatorBase<TValue, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public abstract partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>The epoch we are operating with</summary>
         protected readonly LightEpoch epoch;
@@ -170,13 +170,13 @@ namespace Tsavorite.core
         private readonly ErrorList errorList = new();
 
         /// <summary>Observer for records entering read-only region</summary>
-        internal IObserver<ITsavoriteScanIterator<TValue>> OnReadOnlyObserver;
+        internal IObserver<ITsavoriteScanIterator> OnReadOnlyObserver;
 
         /// <summary>Observer for records getting evicted from memory (page closed)</summary>
-        internal IObserver<ITsavoriteScanIterator<TValue>> OnEvictionObserver;
+        internal IObserver<ITsavoriteScanIterator> OnEvictionObserver;
 
         /// <summary>Observer for records brought into memory by deserializing pages</summary>
-        internal IObserver<ITsavoriteScanIterator<TValue>> OnDeserializationObserver;
+        internal IObserver<ITsavoriteScanIterator> OnDeserializationObserver;
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent FlushEvent;
@@ -186,18 +186,18 @@ namespace Tsavorite.core
         #endregion
 
         #region Abstract and virtual methods
-        /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>'s record buffer.</summary>
-        internal abstract void SerializeRecordToIteratorBuffer(ref LogRecord<TValue> logRecord, ref SectorAlignedMemory recordBuffer, out TValue valueObject);
+        /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator{TStoreFunctions, TAllocator}"/>'s record buffer.</summary>
+        internal abstract void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject);
 
-        /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator{TValue, TStoreFunctions, TAllocator}"/>,
-        /// if this is the <see cref="ObjectAllocator{TValue, TStoreFunctions}"/>.</summary>
-        internal abstract void DeserializeFromDiskBuffer(ref DiskLogRecord<TValue> diskLogRecord, (byte[] array, long offset) byteStream);
+        /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator{TStoreFunctions, TAllocator}"/>,
+        /// if this is the <see cref="ObjectAllocator{TStoreFunctions}"/>.</summary>
+        internal abstract void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream);
 
         /// <summary>Initialize fully derived allocator</summary>
         public abstract void Initialize();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private protected unsafe byte* SerializeCommonRecordFieldsToBuffer(LogRecord<TValue> logRecord, ref SectorAlignedMemory recordBuffer, int inlineRecordSize)
+        private protected unsafe byte* SerializeCommonRecordFieldsToBuffer(LogRecord logRecord, ref SectorAlignedMemory recordBuffer, int inlineRecordSize)
         {
             bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
             var ptr = recordBuffer.GetValidPointer();
@@ -223,7 +223,7 @@ namespace Tsavorite.core
             var key = logRecord.Key;
             *(int*)ptr = key.Length;
             ptr += SpanField.FieldLengthPrefixSize;
-            key.CopyTo(new SpanByte(key.Length, (IntPtr)ptr));
+            key.CopyTo(new Span<byte>(ptr, key.Length));
             ptr += key.Length;
             return ptr;
         }
@@ -242,7 +242,7 @@ namespace Tsavorite.core
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
 
         /// <summary>Read objects to memory (async)</summary>
-        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TValue> context, SectorAlignedMemory result = default);
+        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default);
 
         /// <summary>Read page from device (async)</summary>
         protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
@@ -437,7 +437,7 @@ namespace Tsavorite.core
         public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SerializeKey(SpanByte key, long logicalAddress, ref LogRecord<TValue> logRecord, int maxInlineKeySize, OverflowAllocator overflowAllocator)
+        internal unsafe void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize, ObjectIdMap objectIdMap)
         {
             byte* keyPtr;
             if (key.Length <= maxInlineKeySize)
@@ -446,8 +446,8 @@ namespace Tsavorite.core
                 keyPtr = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             }
             else
-                keyPtr = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, overflowAllocator);
-            key.AsReadOnlySpan().CopyTo(new Span<byte>(keyPtr, key.Length));
+                keyPtr = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
+            key.CopyTo(new Span<byte>(keyPtr, key.Length));
         }
 
         #endregion LogRecord functions
@@ -493,7 +493,7 @@ namespace Tsavorite.core
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
 
                                 // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref LogRecord<TValue>.GetInfoRef(destination);
+                                ref var destInfo = ref LogRecord.GetInfoRef(destination);
                                 destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
@@ -1477,7 +1477,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Invoked by users to obtain a record from disk. It uses sector aligned memory to read the record efficiently into memory.</summary>
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<TValue> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1490,7 +1490,7 @@ namespace Tsavorite.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TValue>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
             asyncResult.context = context;
             asyncResult.context.record = record;
             device.ReadAsync(alignedFileOffset,
@@ -1766,7 +1766,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<TValue> context, SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1839,12 +1839,12 @@ namespace Tsavorite.core
             if (errorCode != 0)
                 logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext<TValue>>)context;
+            var result = (AsyncGetFromDiskResult<AsyncIOContext>)context;
             var ctx = result.context;
             try
             {
                 var record = ctx.record.GetValidPointer();
-                var diskLogRecord = new DiskLogRecord<TValue>((long)record);
+                var diskLogRecord = new DiskLogRecord((long)record);
                 if ((int)diskLogRecord.SerializedRecordLength > int.MaxValue)
                     throw new TsavoriteException("Records exceeding 2GB are not yet supported");        // TODO: Convert to support 'long' lengths
                 int requiredBytes = (int)diskLogRecord.SerializedRecordLength;

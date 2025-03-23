@@ -1,15 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         private enum LatchDestination
         {
@@ -19,9 +20,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static LogRecord<TValue> WriteNewRecordInfo(SpanByte key, AllocatorBase<TValue, TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress, bool inNewVersion, long previousAddress)
+        static LogRecord WriteNewRecordInfo(ReadOnlySpan<byte> key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress, bool inNewVersion, long previousAddress)
         {
-            ref var recordInfo = ref LogRecord<TValue>.GetInfoRef(physicalAddress);
+            ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             log._wrapper.SerializeKey(key, logicalAddress, ref logRecord);
@@ -29,10 +30,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void DisposeRecord(ref LogRecord<TValue> logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
+        void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DisposeRecord(ref DiskLogRecord<TValue> logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
+        internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => hlog.DisposeRecord(ref logRecord, disposeReason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)
@@ -77,7 +78,7 @@ namespace Tsavorite.core
             // If the record is in memory, check if it has the new version bit set
             if (entry.Address < hlogBase.HeadAddress)
                 return false;
-            return LogRecord<TValue>.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
+            return LogRecord.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
         }
 
         // Can only elide the record if it is the tail of the tag chain (i.e. is the record in the hash bucket entry) and its
@@ -85,8 +86,8 @@ namespace Tsavorite.core
         // Also, it cannot be elided if it is frozen due to checkpointing.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call CanElide() for readcache records");
             return stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlogBase.BeginAddress
@@ -97,8 +98,8 @@ namespace Tsavorite.core
         // if it is a new record.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
             return sessionFunctions.Ctx.IsInV1
@@ -112,8 +113,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord<TValue> logRecord)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Try to CAS out of the hashtable and if successful, add it to the free list.
             Debug.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
@@ -126,8 +127,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, ref LogRecord<TValue> logRecord)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
             Debug.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
@@ -145,7 +146,7 @@ namespace Tsavorite.core
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
         bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref RecordSizeInfo sizeInfo, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress, out int allocatedSize)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
             if (RevivificationManager.TryTake(ref sizeInfo, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
@@ -176,11 +177,11 @@ namespace Tsavorite.core
         {
             // This is called on exception recovery for a newly-inserted record.
             var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
-            LogRecord<TValue>.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
+            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord<TValue> newLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+        private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord newLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
@@ -191,13 +192,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSourceLogRecord : ISourceLogRecord
             => PostCopyToTail(ref srcLogRecord, ref stackCtx, stackCtx.hei.Address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
+            where TSourceLogRecord : ISourceLogRecord
         {
             // Nothing required here if not using ReadCache
             if (!UseReadCache)
@@ -221,7 +222,7 @@ namespace Tsavorite.core
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
         // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool VerifyInMemoryAddresses(ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx)
+        private bool VerifyInMemoryAddresses(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
             if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
@@ -238,8 +239,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us.
             // Manual locking already automatically locks the bucket. hei already has the key's hashcode.
@@ -255,8 +256,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us.
             // Manual locking already automatically locks the bucket. hei already has the key's hashcode.
@@ -272,8 +273,8 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Ephemeral must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us.
             // Manual locking already automatically locks the bucket. hei already has the key's hashcode.

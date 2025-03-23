@@ -29,7 +29,7 @@ namespace Tsavorite.test.ReadCacheTests
 
     class ChainTests
     {
-        private TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store;
+        private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
         private LongKeyComparerModulo comparer;
 
@@ -197,9 +197,9 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
-        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<SpanByte, TStoreFunctions, TAllocator> store, SpanByte key, out SpanByte recordKey, out bool invalid, out bool isReadCache)
-            where TStoreFunctions : IStoreFunctions<SpanByte>
-            where TAllocator : IAllocator<SpanByte, TStoreFunctions>
+        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key, out SpanByte recordKey, out bool invalid, out bool isReadCache)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             var tagExists = store.FindHashBucketEntryForKey(key, out var entry);
             ClassicAssert.IsTrue(tagExists);
@@ -216,9 +216,9 @@ namespace Tsavorite.test.ReadCacheTests
         (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out SpanByte recordKey, out bool invalid, ref bool isReadCache)
             => NextInChain(store, physicalAddress, out recordKey, out invalid, ref isReadCache);
 
-        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<SpanByte, TStoreFunctions, TAllocator> store, long physicalAddress, out SpanByte recordKey, out bool invalid, ref bool isReadCache)
-            where TStoreFunctions : IStoreFunctions<SpanByte>
-            where TAllocator : IAllocator<SpanByte, TStoreFunctions>
+        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long physicalAddress, out SpanByte recordKey, out bool invalid, ref bool isReadCache)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             var log = isReadCache ? store.readcache : store.hlog;
             var info = LogRecord.GetInfo(physicalAddress);
@@ -269,9 +269,9 @@ namespace Tsavorite.test.ReadCacheTests
         (long logicalAddress, long physicalAddress) SkipReadCacheChain(SpanByte key)
             => SkipReadCacheChain(store, key);
 
-        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<SpanByte, TStoreFunctions, TAllocator> store, SpanByte key)
-            where TStoreFunctions : IStoreFunctions<SpanByte>
-            where TAllocator : IAllocator<SpanByte, TStoreFunctions>
+        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             var (la, pa) = GetHashChain(store, key, out _, out _, out bool isReadCache);
             while (isReadCache)
@@ -677,7 +677,7 @@ namespace Tsavorite.test.ReadCacheTests
 
     class LongStressChainTests
     {
-        private TsavoriteKV<SpanByte, LongStoreFunctions, LongAllocator> store;
+        private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
         private LongKeyComparerModulo comparer;
         const long ValueAdd = 1_000_000_000;
@@ -893,7 +893,7 @@ namespace Tsavorite.test.ReadCacheTests
 
     class SpanByteStressChainTests
     {
-        private TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
         SpanByteKeyComparerModulo comparer;
 

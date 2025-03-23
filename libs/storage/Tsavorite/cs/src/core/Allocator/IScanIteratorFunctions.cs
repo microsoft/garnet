@@ -35,7 +35,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions for log scan or key-version iteration
     /// </summary>
-    public interface IScanIteratorFunctions<TValue>
+    public interface IScanIteratorFunctions
     {
         /// <summary>Iteration is starting.</summary>
         /// <param name="beginAddress">Start address of the scan</param>
@@ -51,7 +51,7 @@ namespace Tsavorite.core
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
         bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : ISourceLogRecord<TValue>;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
         /// <param name="logRecord">Reference to the current log record's info</param>
@@ -61,7 +61,7 @@ namespace Tsavorite.core
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
         bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : ISourceLogRecord<TValue>;
+            where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
@@ -74,9 +74,9 @@ namespace Tsavorite.core
         void OnException(Exception exception, long numberOfRecords);
     }
 
-    internal interface IPushScanIterator<TValue>
+    internal interface IPushScanIterator
     {
-        bool BeginGetPrevInMemory(SpanByte key, out LogRecord<TValue> logRecord, out bool continueOnDisk);
+        bool BeginGetPrevInMemory(ReadOnlySpan<byte> key, out LogRecord logRecord, out bool continueOnDisk);
         void EndGetPrevInMemory();
 
         /// <summary>

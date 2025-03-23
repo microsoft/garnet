@@ -38,7 +38,7 @@ namespace Tsavorite.test
     [TestFixture]
     public class SpanByteLogCompactionTests
     {
-        private TsavoriteKV<SpanByte, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log;
 
         [SetUp]

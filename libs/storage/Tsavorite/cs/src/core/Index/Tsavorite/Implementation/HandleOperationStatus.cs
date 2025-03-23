@@ -8,16 +8,16 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleImmediateRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             OperationStatus internalStatus,
             TSessionFunctionsWrapper sessionFunctions,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
                 && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
 
@@ -26,7 +26,7 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus internalStatus, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -47,7 +47,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus,
             TSessionFunctionsWrapper sessionFunctions,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -115,7 +115,7 @@ namespace Tsavorite.core
             TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
             OperationStatus operationStatus,
-            out AsyncIOContext<TValue> request)
+            out AsyncIOContext request)
         {
             Debug.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
@@ -146,7 +146,7 @@ namespace Tsavorite.core
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;
                 if (pendingContext.IsAsync)
-                    request.asyncOperation = new TaskCompletionSource<AsyncIOContext<TValue>>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    request.asyncOperation = new TaskCompletionSource<AsyncIOContext>(TaskCreationOptions.RunContinuationsAsynchronously);
                 else
                     request.callbackQueue = sessionCtx.readyResponses;
 

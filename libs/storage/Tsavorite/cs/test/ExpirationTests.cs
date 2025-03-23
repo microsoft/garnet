@@ -521,7 +521,7 @@ namespace Tsavorite.test.Expiration
 
         IDevice log;
         ExpirationFunctions functions;
-        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
         BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 

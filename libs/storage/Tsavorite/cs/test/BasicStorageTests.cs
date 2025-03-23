@@ -97,7 +97,7 @@ namespace Tsavorite.test
 
         static void TestDeviceWriteRead(IDevice log)
         {
-            var store = new TsavoriteKV<SpanByte, StructStoreFunctions, StructAllocator>(
+            var store = new TsavoriteKV<StructStoreFunctions, StructAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,

@@ -41,7 +41,7 @@ namespace Tsavorite.test.spanbyte
     [TestFixture]
     internal class SpanByteLogScanTests
     {
-        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
         const int TotalRecords = 2000;
         const int PageSizeBits = 15;
@@ -287,7 +287,7 @@ namespace Tsavorite.test.spanbyte
 
         internal sealed class ScanCursorFuncs : IScanIteratorFunctions<SpanByte, SpanByte>
         {
-            readonly TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+            readonly TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
             internal int numRecords;
             internal long lastAddress;
@@ -297,7 +297,7 @@ namespace Tsavorite.test.spanbyte
             internal bool rcuDone, verifyKeys;
             internal Func<int, bool> filter;
 
-            internal ScanCursorFuncs(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
+            internal ScanCursorFuncs(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
             {
                 this.store = store;
                 Initialize(verifyKeys: true);

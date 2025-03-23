@@ -5,9 +5,9 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Continue a pending read operation. Computes 'output' from 'input' and value corresponding to 'key'
@@ -28,11 +28,11 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TValue> request,
+        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var diskRecord = new DiskLogRecord<TValue>((long)request.record.GetValidPointer());
+            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
 
             if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.key.Get(), diskRecord.Key))
                 goto NotFound;
@@ -42,7 +42,7 @@ namespace Tsavorite.core
                 SpinWaitUntilClosed(request.logicalAddress);
 
                 // TODO If !IsNoKey, verify the keys are the same.
-                OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(diskRecord.Key));
+                OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(diskRecord.Key));
 
                 while (true)
                 {
@@ -59,7 +59,7 @@ namespace Tsavorite.core
                     try
                     {
                         // During the pending operation, a record for the key may have been added to the log or readcache. Don't look for this if we are reading at address (rather than key).
-                        LogRecord<TValue> memoryRecord = default;
+                        LogRecord memoryRecord = default;
                         if (!pendingContext.IsReadAtAddress)
                         {
                             if (TryFindRecordInMemory(diskRecord.Key, ref stackCtx, ref pendingContext))
@@ -183,11 +183,11 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TValue> request,
+        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var diskRecord = new DiskLogRecord<TValue>((long)request.record.GetValidPointer());
+            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
 
             SpinWaitUntilClosed(request.logicalAddress);
 
@@ -195,7 +195,7 @@ namespace Tsavorite.core
 
             while (true)
             {
-                OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+                OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
                 if (!FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out status))
                     goto CheckRetry;
 
@@ -269,9 +269,9 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TValue> request,
+        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing.
             // If we're here we know the key matches because AllocatorBase.AsyncGetFromDiskCallback skips colliding keys by following the .PreviousAddress chain.
@@ -279,8 +279,8 @@ namespace Tsavorite.core
                 return OperationStatus.SUCCESS;
 
             // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
-            var diskRecord = new DiskLogRecord<TValue>((long)request.record.GetValidPointer());
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
 
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.InitialLatestLogicalAddress + 1;
@@ -327,9 +327,9 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TValue> request,
+        internal OperationStatus ContinuePendingConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext request,
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
             // If we're here we know the key matches because AllocatorBase.AsyncGetFromDiskCallback skips colliding keys by following the .PreviousAddress chain.

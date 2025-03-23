@@ -27,7 +27,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
     class SpanByteInsertAtTailChainTests
     {
-        private TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
         SpanByteKeyComparerModulo comparer;
 
@@ -96,7 +96,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 if (!logRecord.TrySetValueSpan(srcValue, ref sizeInfo))
                     return false;
@@ -105,7 +105,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             }
 
             /// <inheritdoc/>
-            public override bool SingleWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 if (!logRecord.TrySetValueSpan(srcValue, ref sizeInfo))
                     return false;
@@ -114,7 +114,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
                     return false;
@@ -133,7 +133,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             }
 
             /// <inheritdoc/>
-            public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 Assert.Fail("For these tests, InitialUpdater should never be called");
                 return false;

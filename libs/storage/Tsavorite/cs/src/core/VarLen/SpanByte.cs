@@ -11,6 +11,19 @@ using System.Text;
 namespace Tsavorite.core
 {
     /// <summary>
+    /// Span{byte} static utility functions. TODO: Move into SpanByte, replacing it completely, along with non-static utility functions (FromPinnedPointer, etc.)
+    /// </summary>
+    public static class SpanByteUtility
+    {
+        /// <summary>Length-limited string representation of a Span{byte}</summary>
+        public static string ToShortString(this ReadOnlySpan<byte> span, int maxLen)
+            => span.Length > maxLen ? $"{span.Slice(0, maxLen).ToString()}..." : span.ToString();
+
+        public static string ToShortString(this Span<byte> span, int maxLen)
+            => span.Length > maxLen ? $"{span.Slice(0, maxLen).ToString()}..." : span.ToString();
+    }
+
+    /// <summary>
     /// Represents a pinned variable length byte array that is viewable as a pinned Span&lt;byte&gt;
     /// Important: AOF header version needs to be updated if this struct's disk representation changes
     /// </summary>
@@ -136,7 +149,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
         /// </remarks>
-        public static SpanByte FromPinnedPointer(byte* pointer, int length) => new(length, (nint)pointer);
+        public static Span<byte> FromPinnedPointer(byte* pointer, int length) => new(pointer, length);
 
         /// <summary>
         /// Create a SpanByte around a pinned memory <paramref name="pointer"/> whose first sizeof(int) bytes are the length (i.e. serialized form).
@@ -144,7 +157,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
         /// </remarks>
-        public static SpanByte FromLengthPrefixedPinnedPointer(byte* pointer) => new(*(int*)pointer, (nint)(pointer + sizeof(int)));
+        public static Span<byte> FromLengthPrefixedPinnedPointer(byte* pointer) => new(pointer + sizeof(int), *(int*)pointer);
 
         /// <summary>
         /// Create a <see cref="SpanByte"/> from the given <paramref name="span"/>.
@@ -153,31 +166,7 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte FromPinnedSpan(ReadOnlySpan<byte> span) => new (span.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)));
-
-        /// <summary>
-        /// Convert payload to new byte array
-        /// </summary>
-        public byte[] ToByteArray() => AsReadOnlySpan().ToArray();
-
-        /// <summary>
-        /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyTo(SpanByte dst)
-        {
-            if (dst.Length < Length)
-                return false;
-            CopyTo(dst);
-            return true;
-        }
-
-        /// <summary>
-        /// Blindly copy to given pre-allocated <see cref="SpanByte"/>, assuming sufficient space.
-        /// Does not change length of destination.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyTo(SpanByte dst) => AsReadOnlySpan().CopyTo(dst.AsSpan());
+        public static Span<byte> FromPinnedSpan(ReadOnlySpan<byte> span) => new (Unsafe.AsPointer(ref MemoryMarshal.GetReference(span), span.Length));
 
         /// <summary>
         /// Copy to given <see cref="SpanByteAndMemory"/> (only payload copied to actual span/memory)

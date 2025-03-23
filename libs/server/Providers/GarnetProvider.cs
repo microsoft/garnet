@@ -8,14 +8,14 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     /// <summary>
     /// Session provider for Garnet, based on
     /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByteAndMemory, MainStoreFunctions, MainStoreAllocator>
     {
         readonly StoreWrapper storeWrapper;
 
@@ -57,9 +57,6 @@ namespace Garnet.server
         {
             storeWrapper.Dispose();
         }
-
-        /// <inheritdoc />
-        public override SpanByteFunctionsForServer<long> GetFunctions() => new();
 
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)

@@ -6,9 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Copy a record to the tail of the log after caller has verified it does not exist within a specified range.
@@ -28,9 +28,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
-                ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true, long maxAddress = long.MaxValue)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true, long maxAddress = long.MaxValue)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var callerHasEphemeralLock = stackCtx.recSrc.HasEphemeralSLock;
 
@@ -66,7 +66,7 @@ namespace Tsavorite.core
                 // point we just searched (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already. Use stackCtx2 to
                 // preserve stacKCtx, both for retrying the Insert if needed and for preserving the caller's lock status, etc.
                 var minAddress = stackCtx.recSrc.LatestLogicalAddress + 1;
-                OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx2 = new(stackCtx.hei.hash);
+                OperationStackContext<TStoreFunctions, TAllocator> stackCtx2 = new(stackCtx.hei.hash);
                 bool needIO;
                 do
                 {
@@ -93,13 +93,13 @@ namespace Tsavorite.core
         internal Status CompactionConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                 TSessionFunctionsWrapper sessionFunctions, ref TSourceLogRecord srcLogRecord, ref TInput input,
                 ref TOutput output, long currentAddress, long minAddress, long maxAddress = long.MaxValue)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
 
-            OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
             OperationStatus status;
             bool needIO;
             do
@@ -120,10 +120,10 @@ namespace Tsavorite.core
         internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                                         TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                                         ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
-                                        ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, WriteReason writeReason,
+                                        ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, WriteReason writeReason,
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;

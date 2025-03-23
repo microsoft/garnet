@@ -58,8 +58,8 @@ namespace Tsavorite.core
         RETRY_LATER,
 
         /// <summary>
-        /// I/O has been enqueued and the caller must go through <see cref="ITsavoriteContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePending(bool, bool)"/> or
-        /// <see cref="ITsavoriteContext{TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePendingWithOutputs(out CompletedOutputIterator{TValue, TInput, TOutput, TContext}, bool, bool)"/>,
+        /// I/O has been enqueued and the caller must go through <see cref="ITsavoriteContext{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePending(bool, bool)"/> or
+        /// <see cref="ITsavoriteContext{TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}.CompletePendingWithOutputs(out CompletedOutputIterator{TInput, TOutput, TContext}, bool, bool)"/>,
         /// or one of the Async forms.
         /// </summary>
         RECORD_ON_DISK,
@@ -72,7 +72,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
         /// <list type="bullet">
-        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{TValue, TStoreFunctions, TAllocator}.HandleImmediateRetryStatus{TInput, TOutput, TContext, TSessionFunctionsWrapper}(OperationStatus, TSessionFunctionsWrapper, ref TsavoriteKV{TValue, TStoreFunctions, TAllocator}.PendingContext{TInput, TOutput, TContext})"/>.</item>
+        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.HandleImmediateRetryStatus{TInput, TOutput, TContext, TSessionFunctionsWrapper}(OperationStatus, TSessionFunctionsWrapper, ref TsavoriteKV{TStoreFunctions, TAllocator}.PendingContext{TInput, TOutput, TContext})"/>.</item>
         ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
         /// </list>
         /// </summary>

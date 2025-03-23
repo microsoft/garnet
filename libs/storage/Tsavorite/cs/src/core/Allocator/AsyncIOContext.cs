@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext<TValue>
+    public unsafe struct AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Key
         /// </summary>
-        public IHeapContainer<SpanByte> request_key;
+        public IHeapContainer<ReadOnlySpan<byte>> request_key;
 
         /// <summary>
         /// Logical address
@@ -46,17 +46,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public AsyncQueue<AsyncIOContext<TValue>> callbackQueue;
+        public AsyncQueue<AsyncIOContext> callbackQueue;
 
         /// <summary>
         /// Async Operation ValueTask backer
         /// </summary>
-        public TaskCompletionSource<AsyncIOContext<TValue>> asyncOperation;
+        public TaskCompletionSource<AsyncIOContext> asyncOperation;
 
         /// <summary>
         /// Synchronous completion event
         /// </summary>
-        internal AsyncIOContextCompletionEvent<TValue> completionEvent;
+        internal AsyncIOContextCompletionEvent completionEvent;
 
         /// <summary>
         /// Indicates whether this is a default instance with no pending operation
@@ -75,11 +75,11 @@ namespace Tsavorite.core
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
-    internal sealed class AsyncIOContextCompletionEvent<TValue> : IDisposable
+    internal sealed class AsyncIOContextCompletionEvent : IDisposable
     {
         internal SemaphoreSlim semaphore;
         internal Exception exception;
-        internal AsyncIOContext<TValue> request;
+        internal AsyncIOContext request;
 
         internal AsyncIOContextCompletionEvent()
         {
@@ -89,7 +89,7 @@ namespace Tsavorite.core
             request.completionEvent = this;
         }
 
-        internal void Prepare(IHeapContainer<SpanByte> request_key, long logicalAddress)
+        internal void Prepare(IHeapContainer<ReadOnlySpan<byte>> request_key, long logicalAddress)
         {
             request.Dispose();
             request.request_key = request_key;
@@ -97,7 +97,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(ref AsyncIOContext<TValue> ctx)
+        internal void Set(ref AsyncIOContext ctx)
         {
             request.Dispose();
             request = ctx;

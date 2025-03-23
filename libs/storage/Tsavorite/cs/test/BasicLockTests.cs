@@ -69,7 +69,7 @@ namespace Tsavorite.test.LockTests
             }
         }
 
-        private TsavoriteKV<SpanByte, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
+        private TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
         private ClientSession<SpanByte, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
         private BasicContext<SpanByte, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
         private IDevice log;

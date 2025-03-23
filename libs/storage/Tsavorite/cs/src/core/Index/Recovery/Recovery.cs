@@ -157,9 +157,9 @@ namespace Tsavorite.core
         public long deltaLogTailAddress;
     }
 
-    public partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         private const long NoPageFreed = -1;
 
@@ -1110,7 +1110,7 @@ namespace Tsavorite.core
             while (pointer < untilLogicalAddressInPage)
             {
                 recordStart = pagePhysicalAddress + pointer;
-                var diskLogRecord = new DiskLogRecord<TValue>(recordStart);
+                var diskLogRecord = new DiskLogRecord(recordStart);
                 ref RecordInfo info = ref diskLogRecord.InfoRef;
 
                 if (info.IsNull)
@@ -1177,9 +1177,9 @@ namespace Tsavorite.core
         }
     }
 
-    public abstract partial class AllocatorBase<TValue, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public abstract partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Restore log

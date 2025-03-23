@@ -1,18 +1,19 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TValue>
-        where TAllocator : IAllocator<TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, bool stopAtHeadAddress = true)
+        private bool TryFindRecordInMemory(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, bool stopAtHeadAddress = true)
         {
             if (UseReadCache && FindInReadCache(key, ref stackCtx, minAddress: Constants.kInvalidAddress))
                 return true;
@@ -22,7 +23,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory<TInput, TOutput, TContext>(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx,
+        private bool TryFindRecordInMemory<TInput, TOutput, TContext>(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
@@ -37,7 +38,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLog(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress)
+        internal bool TryFindRecordInMainLog(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= minAddress)
@@ -49,7 +50,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLog(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress)
+        internal bool TryFindRecordInMainLog(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= minAddress)
@@ -63,8 +64,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         // Return true if the record is found in the log, else false and an indication of whether we need to do IO to continue the search
         internal bool TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long currentAddress, long minAddress, long maxAddress, out OperationStatus internalStatus, out bool needIO)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long currentAddress, long minAddress, long maxAddress, out OperationStatus internalStatus, out bool needIO)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (!FindTag(ref stackCtx.hei))
             {
@@ -123,7 +124,7 @@ namespace Tsavorite.core
         private static bool IsValidTracebackRecord(RecordInfo recordInfo) => !recordInfo.Invalid || recordInfo.IsSealed;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(SpanByte key, ref RecordSource<TValue, TStoreFunctions, TAllocator> recSrc, long minAddress)
+        private bool TraceBackForKeyMatch(ReadOnlySpan<byte> key, ref RecordSource<TStoreFunctions, TAllocator> recSrc, long minAddress)
         {
             // recSrc.PhysicalAddress must already be populated by callers.
             var recordInfo = LogRecord.GetInfo(recSrc.PhysicalAddress);
@@ -145,7 +146,7 @@ namespace Tsavorite.core
 
         // Overload with maxAddress to avoid the extra condition - TODO: check that this duplication saves on IL/perf
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(SpanByte key, ref RecordSource<TValue, TStoreFunctions, TAllocator> recSrc, long minAddress, long maxAddress)
+        private bool TraceBackForKeyMatch(ReadOnlySpan<byte> key, ref RecordSource<TStoreFunctions, TAllocator> recSrc, long minAddress, long maxAddress)
         {
             // PhysicalAddress must already be populated by callers.
             var recordInfo = LogRecord.GetInfo(recSrc.PhysicalAddress);
@@ -166,7 +167,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(SpanByte key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
+        private bool TraceBackForKeyMatch(ReadOnlySpan<byte> key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
             // This overload is called when the record at the "current" logical address does not match 'key'; fromLogicalAddress is its .PreviousAddress.
             foundLogicalAddress = fromLogicalAddress;
@@ -186,7 +187,7 @@ namespace Tsavorite.core
 
         // Overload with maxAddress to avoid the extra condition - TODO: check that this duplication saves on IL/perf
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(SpanByte key, long fromLogicalAddress, long minAddress, long maxAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
+        private bool TraceBackForKeyMatch(ReadOnlySpan<byte> key, long fromLogicalAddress, long minAddress, long maxAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
             // This overload is called when the record at the "current" logical address does not match 'key'; fromLogicalAddress is its .PreviousAddress.
             foundLogicalAddress = fromLogicalAddress;
@@ -205,7 +206,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordForUpdate(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordForUpdate(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
             // This routine returns true if we should proceed with the InternalXxx operation (whether the record was found or not),
             // else false (including false if we need a RETRY). If it returns true with recSrc.HasInMemorySrc, caller must set srcRecordInfo.
@@ -224,7 +225,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordForRead(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordForRead(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
             // This routine returns true if we should proceed with the InternalXxx operation (whether the record was found or not),
             // else false (including false if we need a RETRY). If it returns true with recSrc.HasInMemorySrc, caller must set srcRecordInfo.
@@ -243,7 +244,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordForPendingOperation<TInput, TOutput, TContext>(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus,
+        private bool TryFindRecordForPendingOperation<TInput, TOutput, TContext>(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus,
                                                       ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             // This routine returns true if we find the key, else false.
@@ -259,7 +260,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMainLogForPendingOperation(SpanByte key, ref OperationStackContext<TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordInMainLogForPendingOperation(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, out OperationStatus internalStatus)
         {
             // This overload is called when we do not have a PendingContext to get minAddress from, and we've skipped the readcache if present.
 

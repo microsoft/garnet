@@ -236,10 +236,10 @@ namespace Tsavorite.test
 
         public enum WaitMode { Wait, NoWait }
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TValue, TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(completedOutputs.Next());
             var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
@@ -266,9 +266,9 @@ namespace Tsavorite.test
             }
         }
 
-        internal static unsafe bool FindHashBucketEntryForKey<TValue, TStoreFunctions, TAllocator>(this TsavoriteKV<TValue, TStoreFunctions, TAllocator> store, SpanByte key, out HashBucketEntry entry)
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static unsafe bool FindHashBucketEntryForKey<TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key, out HashBucketEntry entry)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key));
             var success = store.FindTag(ref hei);
@@ -343,18 +343,18 @@ namespace Tsavorite.test
 
     static class StaticTestUtils
     {
-        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
-                this ITsavoriteContext<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
-            where Functions : ISessionFunctions<TValue, TInput, TOutput, TContext>
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
+            where Functions : ISessionFunctions<TInput, TOutput, TContext>
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => sessionContext.GetSinglePendingResult(out _);
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
-                this ITsavoriteContext<TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
-            where Functions : ISessionFunctions<TValue, TInput, TOutput, TContext>
-            where TStoreFunctions : IStoreFunctions<TValue>
-            where TAllocator : IAllocator<TValue, TStoreFunctions>
+        internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
+            where Functions : ISessionFunctions<TInput, TOutput, TContext>
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             _ = sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             return TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);

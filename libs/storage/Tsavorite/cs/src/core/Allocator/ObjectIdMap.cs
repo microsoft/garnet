@@ -7,24 +7,19 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Constants for <see cref="ObjectIdMap{TValue}"/>
+    /// Maps the ObjectId in the ObjectAllocator's Value field to the actual object in the object multi-level array.
+    /// This may be either a byte[] Span-overflow allocation, or an IHeapObject.
     /// </summary>
-    public struct ObjectIdMap
+    public class ObjectIdMap
     {
         /// <summary>We will never return a negative index from Allocate</summary>
         public const int InvalidObjectId = -1;
 
         /// <summary>Size of the object Id</summary>
         public const int ObjectIdSize = sizeof(int);
-    }
 
-    /// <summary>
-    /// Maps the ObjectId in the ObjectAllocator's Value field to the actual object in the object multi-level array
-    /// </summary>
-    public unsafe class ObjectIdMap<TValue>
-    {
-        // For this class, the "page" is a TValue.
-        internal MultiLevelPageArray<TValue> objectArray;
+        // For this class, the "page" is an object.
+        internal MultiLevelPageArray<object> objectArray;
 
         internal SimpleConcurrentStack<int> freeSlots;
 
@@ -48,7 +43,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free(int objectId)
         {
-            if (objectId != ObjectIdMap.InvalidObjectId)
+            if (objectId != InvalidObjectId)
             {
                 Set(objectId, default);
                 freeSlots.Push(objectId);
@@ -60,26 +55,28 @@ namespace Tsavorite.core
         public void Free(ref int objectIdRef)
         {
             var objectId = objectIdRef;
-            objectIdRef = ObjectIdMap.InvalidObjectId;
-            Free(objectIdRef);
+            objectIdRef = InvalidObjectId;
+            Free(objectId);
         }
 
         /// <summary>Returns the slot's object.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal TValue Get(int objectId) => objectArray.Get(objectId);
+        internal object Get(int objectId) => objectArray.Get(objectId);
 
         /// <summary>Returns the slot's object.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(int objectId, TValue element) => objectArray.Set(objectId, element);
+        internal void Set(int objectId, object element) => objectArray.Set(objectId, element);
 
+        /// <summary>Clear the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear() => objectArray?.Clear();    // TODO reduce allocated chapter count also?
 
+        /// <summary>Clear a specific slot of the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearAt(int objectId, Action<TValue> disposer)
+        public void ClearAt(int objectId, Action<IHeapObject> disposer)
         {
             var element = Get(objectId);
-            disposer(element);
+            disposer(Unsafe.As<object, IHeapObject>(ref element));
             Set(objectId, default);
         }
 

@@ -13,11 +13,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public struct AofValue
-    {
-        internal byte value;
-    }
-
     /// <summary>
     /// Tsavorite AOF (Append-Only File)
     /// </summary>
@@ -870,12 +865,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and one <see cref="SpanByte"/> entry atomically to the aof.
+        /// Append a user-defined blittable struct header and one <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
@@ -897,13 +892,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
@@ -926,12 +921,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe void Enqueue(ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, out long logicalAddress)
         {
             logicalAddress = 0;
             var length = item1.TotalSize + item2.TotalSize;
@@ -952,14 +947,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, ref ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
@@ -983,7 +978,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="input"></param>
@@ -1009,13 +1004,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
         {
             logicalAddress = 0;
@@ -1037,14 +1032,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
         {
             logicalAddress = 0;
@@ -1068,12 +1063,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the aof.
+        /// Append a user-defined header byte and a <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the aof.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe void Enqueue(byte userHeader, ref ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
             var length = sizeof(byte) + item.TotalSize;
@@ -1120,7 +1115,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Try to append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1128,7 +1123,7 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
@@ -1158,7 +1153,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the aof.
+        /// Try to append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the aof.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1167,7 +1162,7 @@ namespace Tsavorite.core
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, ref ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
@@ -1198,14 +1193,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the aof. If it returns true, we are
+        /// Try to append a user-defined header byte and a <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the aof. If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe bool TryEnqueue(byte userHeader, ref ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
             var length = sizeof(byte) + item.TotalSize;
