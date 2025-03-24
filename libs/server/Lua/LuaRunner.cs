@@ -511,8 +511,7 @@ namespace Garnet.server
 
             state.ClearStack();
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(nonErrorReturns + 1);
-            Debug.Assert(stackRes, "Bounds check above should mean this never fails");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(nonErrorReturns + 1), "Bounds check above should mean this never fails");
 
             for (var i = 0; i < nonErrorReturns; i++)
             {
@@ -541,8 +540,7 @@ namespace Garnet.server
 
             state.ClearStack();
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(nonErrorReturns + 1);
-            Debug.Assert(stackRes, "Should never fail, as nonErrorReturns+1 <= LUA_MINSTACK");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(nonErrorReturns + 1), "Should never fail, as nonErrorReturns+1 <= LUA_MINSTACK");
 
             for (var i = 0; i < nonErrorReturns; i++)
             {
@@ -1130,8 +1128,7 @@ namespace Garnet.server
             // Space for function
             const int NeededStackSize = 1;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
-            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
             preambleOuterSession = outerSession;
             preambleKeyAndArgvCount = count;
@@ -1194,8 +1191,7 @@ namespace Garnet.server
             // Space for function
             const int NeededStackSize = 1;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
-            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
             try
             {
@@ -1381,8 +1377,7 @@ namespace Garnet.server
             // Space for key count, value count, and function
             const int NeededStackSize = 3;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
-            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
             if (keyLength > nKeys || argvLength > nArgs)
             {
@@ -1414,10 +1409,7 @@ namespace Garnet.server
             // 1 for sandbox_env, 1 for "KEYS", and 1 for new table
             const int NeededStackSpace = 3;
 
-            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
-            {
-                return false;
-            }
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
             // Get sandbox_env and "KEYS" on the stack
             var sandboxEnvIndex = state.StackTop;
@@ -1447,10 +1439,7 @@ namespace Garnet.server
             // 1 for sandbox_env, 1 for "ARGV", and 1 for new table
             const int NeededStackSpace = 3;
 
-            if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
-            {
-                return false;
-            }
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
             // Get sandbox_env and "KEYS" on the stack
             var sandboxEnvIndex = state.StackTop;
@@ -1481,8 +1470,7 @@ namespace Garnet.server
             // Space for function
             const int NeededStackSize = 1;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
-            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
             try
             {

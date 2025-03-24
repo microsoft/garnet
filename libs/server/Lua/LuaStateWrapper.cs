@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -160,6 +161,23 @@ namespace Garnet.server
 
             StackTop = NativeMethods.GetTop(state);
             curStackSize = StackTop > LUA_MINSTACK ? StackTop : LUA_MINSTACK;
+        }
+
+        /// <summary>
+        /// Call when the Lua runtime calls back into .NET code AND we know enough details about the caller
+        /// to elide some p/invoke.
+        /// 
+        /// Calls from user provided scripts should go through <see cref="CallFromLuaEntered(nint)"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void KnownCallFromLuaEntered(IntPtr luaStatePtr, [ConstantExpected] int knownArgumentCount)
+        {
+            Debug.Assert(luaStatePtr == state, "Unexpected Lua state presented");
+            Debug.Assert(knownArgumentCount is >= 0 and <= LUA_MINSTACK, "known argument must be >= 0 and <= LUA_MINSTACK");
+            Debug.Assert(NativeMethods.GetTop(state) == knownArgumentCount, "knowArgumentCount is incorrect");
+
+            StackTop = knownArgumentCount;
+            curStackSize = LUA_MINSTACK;
         }
 
         /// <summary>

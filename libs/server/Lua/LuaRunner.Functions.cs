@@ -58,17 +58,14 @@ namespace Garnet.server
             // Space for table and key
             const int NeededStackSize = 2;
 
-            state.CallFromLuaEntered(luaStatePtr);
-
-            state.ExpectLuaStackEmpty();
+            state.KnownCallFromLuaEntered(luaStatePtr, 0);
 
             scratchBufferManager?.Reset();
 
             var keys = preambleKeys;
             var argv = preambleArgv;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSize);
-            Debug.Assert(stackRes, "LUA_MINSTACK should be large enough that this never fails");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSize), "LUA_MINSTACK should be large enough that this never fails");
 
             if (!TryResetParameters(keys?.Length ?? 0, argv?.Length ?? 0, out var failingStatus))
             {
@@ -182,9 +179,7 @@ namespace Garnet.server
         /// </summary>
         internal int UnsafeRunPreambleForSession(nint luaStatePtr)
         {
-            state.CallFromLuaEntered(luaStatePtr);
-
-            state.ExpectLuaStackEmpty();
+            state.KnownCallFromLuaEntered(luaStatePtr, 0);
 
             scratchBufferManager.Reset();
 
@@ -220,10 +215,7 @@ namespace Garnet.server
                 // One for KEYS, one for the key being written;
                 const int NeededStackSpace = 2;
 
-                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
-                {
-                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
-                }
+                Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
                 // Get KEYS on the stack
                 _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
@@ -272,10 +264,7 @@ namespace Garnet.server
                 // One for ARGV, one for the arg being written
                 const int NeededStackSpace = 2;
 
-                if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
-                {
-                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
-                }
+                Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
                 // Get ARGV on the stack
                 _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
@@ -316,8 +305,12 @@ namespace Garnet.server
 
             state.CallFromLuaEntered(luaStatePtr);
 
-            var ensureRes = state.TryEnsureMinimumStackCapacity(NeededStackSpace);
-            Debug.Assert(ensureRes, "LUA_MIN_STACK is large enough this should never fail");
+            if (state.StackTop > 0)
+            {
+                state.Pop(1);
+            }
+
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK is large enough this should never fail");
 
             state.PushNil();
             return 1;
@@ -3080,11 +3073,9 @@ namespace Garnet.server
 
             Debug.Assert(functionRegistryIndex == -1, "Shouldn't compile multiple times");
 
-            state.CallFromLuaEntered(luaState);
-            state.ExpectLuaStackEmpty();
+            state.KnownCallFromLuaEntered(luaState, 0);
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(NeededStackSpace);
-            Debug.Assert(stackRes, "LUA_MIN_STACK should be high enough that this cannot happen");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MIN_STACK should be high enough that this cannot happen");
 
             _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, loadSandboxedRegistryIndex);
             if (!state.TryPushBuffer(source.Span))
