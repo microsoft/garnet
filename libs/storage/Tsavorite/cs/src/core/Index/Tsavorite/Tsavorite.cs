@@ -660,7 +660,7 @@ namespace Tsavorite.core
             long total_entries_in_ofb_below_begin_address = 0;
             long total_entries_with_tentative_bit_set = 0;
             Dictionary<int, long> slots_unused_by_nonofb_buckets_histogram = new();
-            Dictionary<int, long> slots_unused_by_buckets_ofb_histogram = new();
+            Dictionary<int, long> slots_unused_by_ofb_buckets_histogram = new();
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
@@ -678,7 +678,8 @@ namespace Tsavorite.core
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
 
-                        total_entries_with_tentative_bit_set += x.Tentative ? 1 : 0;
+                        if (x.Tentative)
+                            ++total_entries_with_tentative_bit_set;
 
                         if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readCacheBase.HeadAddress)))
                         {
@@ -688,7 +689,7 @@ namespace Tsavorite.core
                             ++total_valid_records_in_this_bucket_cnt;
                             ++total_record_count;
                         }
-                        else if (x.word != default && x.Address < beginAddress)
+                        else if (x.word != default)
                         {
                             if (is_bucket_in_ofb_table)
                                 ++total_entries_in_ofb_below_begin_address;
@@ -708,9 +709,9 @@ namespace Tsavorite.core
 
                     if (is_bucket_in_ofb_table)
                     {
-                        if (!slots_unused_by_buckets_ofb_histogram.ContainsKey(zeroed_out_slots))
-                            slots_unused_by_buckets_ofb_histogram[zeroed_out_slots] = 0;
-                        slots_unused_by_buckets_ofb_histogram[zeroed_out_slots]++;
+                        if (!slots_unused_by_ofb_buckets_histogram.ContainsKey(zeroed_out_slots))
+                            slots_unused_by_ofb_buckets_histogram[zeroed_out_slots] = 0;
+                        slots_unused_by_ofb_buckets_histogram[zeroed_out_slots]++;
                     }
                     else
                     {
@@ -726,8 +727,10 @@ namespace Tsavorite.core
                     is_bucket_in_ofb_table = true;
                 }
 
-                if (!histogram.ContainsKey(total_valid_records_in_this_bucket_cnt)) histogram[total_valid_records_in_this_bucket_cnt] = 0;
-                histogram[total_valid_records_in_this_bucket_cnt]++;
+                if (!histogram.ContainsKey(total_valid_records_in_this_bucket_cnt))
+                    histogram[total_valid_records_in_this_bucket_cnt] = 1;
+                else
+                    histogram[total_valid_records_in_this_bucket_cnt]++;
 
                 total_valid_entries_in_ofb_in_this_bucket_cnt /= (int)Constants.kOverflowBucketIndex;
                 if (!ofb_chaining_histogram.ContainsKey(total_valid_entries_in_ofb_in_this_bucket_cnt)) ofb_chaining_histogram[total_valid_entries_in_ofb_in_this_bucket_cnt] = 0;
@@ -745,7 +748,7 @@ namespace Tsavorite.core
                 $"Total zeroed out slots: {total_zeroed_out_slots} \n" +
                 $"Total entries below begin addr: {total_entries_below_begin_address} \n" +
                 $"Total entries in overflow buckets: {total_entries_in_ofb} \n" +
-                $"Total entries in over flow buckets below begin addr: {total_entries_in_ofb_below_begin_address} \n" +
+                $"Total entries in overflow buckets below begin addr: {total_entries_in_ofb_below_begin_address} \n" +
                 $"Total entries with tentative bit set: {total_entries_with_tentative_bit_set} \n" +
                 $"Histogram of #entries per bucket:\n";
 
@@ -768,7 +771,7 @@ namespace Tsavorite.core
             }
 
             distribution += $"Histogram of #unused slots per bucket in overflow buckets:\n";
-            foreach (var kvp in slots_unused_by_buckets_ofb_histogram.OrderBy(e => e.Key))
+            foreach (var kvp in slots_unused_by_ofb_buckets_histogram.OrderBy(e => e.Key))
             {
                 distribution += $"  {kvp.Key} : {kvp.Value}\n";
             }
