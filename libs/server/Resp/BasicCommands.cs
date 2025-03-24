@@ -1161,8 +1161,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
             }

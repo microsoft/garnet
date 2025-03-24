@@ -62,6 +62,9 @@ namespace Garnet.server
         /// <param name="networkBufferSize"></param>
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
+        /// <param name="networkConnectionLimit"></param>
+        /// <param name="unixSocketPath"></param>
+        /// <param name="unixSocketPermission"></param>
         /// <param name="logger"></param>
         public GarnetServerTcp(
             EndPoint endpoint,
