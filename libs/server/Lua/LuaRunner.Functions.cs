@@ -60,8 +60,6 @@ namespace Garnet.server
 
             state.KnownCallFromLuaEntered(luaStatePtr, 0);
 
-            scratchBufferManager?.Reset();
-
             var keys = preambleKeys;
             var argv = preambleArgv;
 
@@ -180,8 +178,6 @@ namespace Garnet.server
         internal int UnsafeRunPreambleForSession(nint luaStatePtr)
         {
             state.KnownCallFromLuaEntered(luaStatePtr, 0);
-
-            scratchBufferManager.Reset();
 
             ref var parseState = ref preambleOuterSession.parseState;
 
