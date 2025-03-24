@@ -1193,6 +1193,21 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteNull()
+        {
+            if (respProtocolVersion == 3)
+            {
+                while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
             // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),

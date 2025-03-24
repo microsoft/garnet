@@ -483,8 +483,7 @@ namespace Garnet.server
                     if (pairs == null || pairs.Length == 0)
                     {
                         // No elements found
-                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                     else
                     {
@@ -1568,8 +1567,7 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
             else
             {
@@ -1675,8 +1673,7 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
                 return true;
             }
 
