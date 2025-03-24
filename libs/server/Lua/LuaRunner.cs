@@ -1609,8 +1609,7 @@ namespace Garnet.server
 
             var oldCur = resp.BufferCur;
 
-            var stackRes = state.TryEnsureMinimumStackCapacity(TopLevelNeededStackSpace);
-            Debug.Assert(stackRes, "Caller should have ensured we're < LUA_MINSTACK");
+            Debug.Assert(state.TryEnsureMinimumStackCapacity(TopLevelNeededStackSpace), "Caller should have ensured we're < LUA_MINSTACK");
 
             // Copy the value in case we need a second pass
             // 
@@ -1741,8 +1740,11 @@ namespace Garnet.server
                 {
                     // Redis does not respect metatables, so RAW access is ok here
 
-                    var stackRes = runner.state.TryEnsureMinimumStackCapacity(KeyNeededStackSpace);
-                    Debug.Assert(stackRes, "Space should have already been reserved");
+                    if (!runner.state.TryEnsureMinimumStackCapacity(KeyNeededStackSpace))
+                    {
+                        errConstStrIndex = runner.constStrs.OutOfMemory;
+                        return false;
+                    }
 
                     runner.state.PushConstantString(runner.constStrs.Double);
                     var doubleType = runner.state.RawGet(null, curTop);
