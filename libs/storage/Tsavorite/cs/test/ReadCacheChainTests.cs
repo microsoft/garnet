@@ -18,9 +18,9 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<SpanByte, LongKeyComparerModulo, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<SpanByte, LongKeyComparerModulo, SpanByteRecordDisposer>;
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteKeyComparerModulo, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparerModulo, SpanByteRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteKeyComparerModulo, SpanByteRecordDisposer>;
 
     internal static class RcTestGlobals
     {
@@ -68,7 +68,7 @@ namespace Tsavorite.test.ReadCacheTests
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 9,
                 ReadCacheEnabled = true
-            }, StoreFunctions<SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -91,7 +91,7 @@ namespace Tsavorite.test.ReadCacheTests
             var bContext = session.BasicContext;
 
             long keyVal = 0, valueVal = 0;
-            SpanByte key = SpanByteFrom(ref keyVal), value = SpanByteFrom(ref valueVal);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
             if (recordRegion != RecordRegion.Immutable)
             {
@@ -124,7 +124,7 @@ namespace Tsavorite.test.ReadCacheTests
             bool expectPending(long key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < ImmutableSplitKey);
 
             long keyVal = 0, valueVal = 0;
-            SpanByte key = SpanByteFrom(ref keyVal), value = SpanByteFrom(ref valueVal);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
             // Pass1: PENDING reads and populate the cache
             for (long ii = 0; ii < ChainLen; ++ii)
@@ -174,7 +174,7 @@ namespace Tsavorite.test.ReadCacheTests
         unsafe bool GetRecordInInMemoryHashChain(long keyNum, out bool isReadCache)
         {
             // returns whether the key was found before we'd go pending
-            var (la, pa) = GetHashChain(store, SpanByteFrom(ref keyNum), out var recordKey, out bool invalid, out isReadCache);
+            var (la, pa) = GetHashChain(store, SpanByte.FromPinnedVariable(ref keyNum), out var recordKey, out bool invalid, out isReadCache);
             while (isReadCache || la >= store.hlogBase.HeadAddress)
             {
                 if (recordKey.AsRef<long>() == keyNum && !invalid)
@@ -184,7 +184,7 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
-        internal bool FindRecordInReadCache(SpanByte key, out bool invalid, out long logicalAddress, out long physicalAddress)
+        internal bool FindRecordInReadCache(ReadOnlySpan<byte> key, out bool invalid, out long logicalAddress, out long physicalAddress)
         {
             // returns whether the key was found before we'd go pending
             (logicalAddress, physicalAddress) = GetHashChain(store, key, out var recordKey, out invalid, out bool isReadCache);
@@ -197,7 +197,7 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
-        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key, out SpanByte recordKey, out bool invalid, out bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, out ReadOnlySpan<byte> recordKey, out bool invalid, out bool isReadCache)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -213,10 +213,10 @@ namespace Tsavorite.test.ReadCacheTests
             return (entry.Address, pa);
         }
 
-        (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out SpanByte recordKey, out bool invalid, ref bool isReadCache)
+        (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out ReadOnlySpan<byte> recordKey, out bool invalid, ref bool isReadCache)
             => NextInChain(store, physicalAddress, out recordKey, out invalid, ref isReadCache);
 
-        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long physicalAddress, out SpanByte recordKey, out bool invalid, ref bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long physicalAddress, out ReadOnlySpan<byte> recordKey, out bool invalid, ref bool isReadCache)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -238,10 +238,10 @@ namespace Tsavorite.test.ReadCacheTests
             omitted ??= [];
 
             long keyVal = 0, valueVal = 0;
-            SpanByte key = SpanByteFrom(ref keyVal), value = SpanByteFrom(ref valueVal);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
-            var (la, pa) = GetHashChain(store, key.Set(LowChainKey), out SpanByte actualKey, out bool invalid, out bool isReadCache);
-            for (var expectedKey = HighChainKey; expectedKey >= LowChainKey; expectedKey -= HashMod)
+            var (la, pa) = GetHashChain(store, key.Set(LowChainKey), out ReadOnlySpan<byte> actualKey, out bool invalid, out bool isReadCache);
+            for (long expectedKey = HighChainKey; expectedKey >= LowChainKey; expectedKey -= HashMod)
             {
                 // We evict from readcache only to just below midChainKey
                 if (!evicted || expectedKey >= MidChainKey)
@@ -249,7 +249,7 @@ namespace Tsavorite.test.ReadCacheTests
 
                 if (isReadCache)
                 {
-                    ClassicAssert.AreEqual(expectedKey, actualKey);
+                    ClassicAssert.AreEqual(expectedKey, actualKey.AsRef<long>());
                     if (omitted.Contains(expectedKey))
                         ClassicAssert.IsTrue(invalid);
                 }
@@ -266,10 +266,10 @@ namespace Tsavorite.test.ReadCacheTests
             return (la, pa);
         }
 
-        (long logicalAddress, long physicalAddress) SkipReadCacheChain(SpanByte key)
+        (long logicalAddress, long physicalAddress) SkipReadCacheChain(ReadOnlySpan<byte> key)
             => SkipReadCacheChain(store, key);
 
-        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key)
+        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -279,15 +279,15 @@ namespace Tsavorite.test.ReadCacheTests
             return (la, pa);
         }
 
-        void VerifySplicedInKey(SpanByte expectedKey)
+        void VerifySplicedInKey(ReadOnlySpan<byte> expectedKey)
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
             var storedKey = LogRecord.GetInlineKey(pa);
-            ClassicAssert.AreEqual(expectedKey, storedKey);
+            ClassicAssert.AreEqual(expectedKey.AsRef<long>(), storedKey.AsRef<long>());
         }
 
-        static void ClearCountsOnError(ClientSession<SpanByte, long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -321,7 +321,7 @@ namespace Tsavorite.test.ReadCacheTests
             void doTest(long keyNum)
             {
                 long keyVal = 0, valueVal = 0;
-                SpanByte key = SpanByteFrom(ref keyVal), value = SpanByteFrom(ref valueVal);
+                Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
                 key.Set(keyNum);
                 var status = bContext.Delete(key);
@@ -354,7 +354,7 @@ namespace Tsavorite.test.ReadCacheTests
             void doTest(long keyNum)
             {
                 long keyVal = 0, valueVal = 0;
-                SpanByte key = SpanByteFrom(ref keyVal), value = SpanByteFrom(ref valueVal);
+                Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
                 key.Set(keyNum);
                 var status = bContext.Delete(key);
@@ -425,7 +425,7 @@ namespace Tsavorite.test.ReadCacheTests
             void doTest(long keyNum)
             {
                 long keyVal = 0, valueVal = 0;
-                SpanByte key = SpanByteFrom(ref keyVal), value = SpanByteFrom(ref valueVal);
+                Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
                 key.Set(keyNum);
                 var status = bContext.Read(key, ref valueVal);
@@ -474,7 +474,7 @@ namespace Tsavorite.test.ReadCacheTests
             var bContext = session.BasicContext;
 
             long input = 0, output = 0, keyNum = LowChainKey - HashMod; // key must be in evicted region for this test
-            SpanByte key = SpanByteFrom(ref keyNum);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum);
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             var status = bContext.Read(key, ref input, ref output, ref readOptions, out _);
@@ -497,7 +497,7 @@ namespace Tsavorite.test.ReadCacheTests
             var bContext = session.BasicContext;
 
             long keyNum = -1, valueNum = 0;
-            SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
 
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
@@ -528,14 +528,14 @@ namespace Tsavorite.test.ReadCacheTests
             var bContext = session.BasicContext;
             long keyNum = -1, valueNum = 0, output = -1;
 
-            SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
 
             long input = keyNum + ValueAdd;
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
                 // Existing key
                 keyNum = SpliceInExistingKey;
-                var status = bContext.RMW(key, input);
+                var status = bContext.RMW(key, ref input);
 
                 // If OnDisk, this used the readcache entry for its source and then invalidated it.
                 ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
@@ -547,7 +547,7 @@ namespace Tsavorite.test.ReadCacheTests
 
                 { // New key
                     keyNum = SpliceInNewKey;
-                    status = bContext.RMW(key, input);
+                    status = bContext.RMW(key, ref input);
 
                     // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
                     ClassicAssert.IsTrue(status.IsPending, status.ToString());
@@ -559,7 +559,7 @@ namespace Tsavorite.test.ReadCacheTests
             else
             {
                 keyNum = SpliceInNewKey;
-                var status = bContext.RMW(key, input);
+                var status = bContext.RMW(key, ref input);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
@@ -578,7 +578,7 @@ namespace Tsavorite.test.ReadCacheTests
             using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
             long keyNum = -1;
-            SpanByte key = SpanByteFrom(ref keyNum);
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum);
 
             if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
@@ -615,9 +615,9 @@ namespace Tsavorite.test.ReadCacheTests
 
             var keys = new[]
             {
-                new FixedLengthTransactionalKeyStruct(SpanByteFrom(ref keyNums[0]), LockType.Exclusive, luContext),
-                new FixedLengthTransactionalKeyStruct(SpanByteFrom(ref keyNums[1]), LockType.Shared, luContext),
-                new FixedLengthTransactionalKeyStruct(SpanByteFrom(ref keyNums[2]), LockType.Exclusive, luContext)
+                new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref keyNums[0]), LockType.Exclusive, luContext),
+                new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref keyNums[1]), LockType.Shared, luContext),
+                new FixedLengthTransactionalKeyStruct(SpanByte.FromPinnedVariable(ref keyNums[2]), LockType.Exclusive, luContext)
             };
 
             luContext.BeginUnsafe();
@@ -645,7 +645,7 @@ namespace Tsavorite.test.ReadCacheTests
                 foreach (var idx in TransactionalUnsafeContextTests.EnumActionKeyIndices(keys, TransactionalUnsafeContextTests.LockOperationType.Unlock))
                 {
                     ref var key = ref keys[idx];
-                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key.Key));
+                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key.Key.ReadOnlySpan));
                     OverflowBucketLockTableTests.PopulateHei(store, ref hei);
 
                     var lockState = store.LockTable.GetLockState(ref hei);
@@ -722,7 +722,7 @@ namespace Tsavorite.test.ReadCacheTests
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 9,
                 ReadCacheEnabled = true
-            }, StoreFunctions<SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -740,7 +740,7 @@ namespace Tsavorite.test.ReadCacheTests
         internal class RmwLongFunctions : SimpleLongSimpleFunctions
         {
             /// <inheritdoc/>
-            public override bool InitialUpdater(ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Assert.Fail("For these tests, InitialUpdater should never be called");
                 return false;
@@ -755,7 +755,7 @@ namespace Tsavorite.test.ReadCacheTests
             for (long ii = 0; ii < NumKeys; ii++)
             {
                 long key = ii;
-                var status = bContext.Upsert(SpanByteFrom(ref key), SpanByteFrom(ref key));
+                var status = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
                 ClassicAssert.IsFalse(status.IsPending);
                 ClassicAssert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
@@ -794,7 +794,7 @@ namespace Tsavorite.test.ReadCacheTests
                     for (var ii = 0; ii < NumKeys; ++ii)
                     {
                         long key = ii, output = 0;
-                        var status = bContext.Read(SpanByteFrom(ref key), ref output);
+                        var status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -841,8 +841,8 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         long key = ii, input = ii + ValueAdd * tid, output = 0;
                         var status = updateOp == UpdateOp.RMW
-                                        ? bContext.RMW(SpanByteFrom(ref key), ref input, ref output)
-                                        : bContext.Upsert(SpanByteFrom(ref key), ref input, SpanByteFrom(ref input), ref output);
+                                        ? bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref input, ref output)
+                                        : bContext.Upsert(SpanByte.FromPinnedVariable(ref key), ref input, SpanByte.FromPinnedVariable(ref input), ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -867,7 +867,7 @@ namespace Tsavorite.test.ReadCacheTests
                                 {
                                     ++numCompleted;
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key}, status {completedOutputs.Current.Status}, wasPending {true}");
+                                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key.ToShortString()}, status {completedOutputs.Current.Status}, wasPending {true}");
                                     ClassicAssert.AreEqual(completedOutputs.Current.Key.AsRef<long>() + ValueAdd * tid, completedOutputs.Current.Output);
                                 }
                             }
@@ -939,7 +939,7 @@ namespace Tsavorite.test.ReadCacheTests
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 9,
                 ReadCacheEnabled = true
-            }, StoreFunctions<SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
             , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -957,7 +957,7 @@ namespace Tsavorite.test.ReadCacheTests
         internal class RmwSpanByteFunctions : SpanByteFunctions<Empty>
         {
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 if (!base.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
                     return false;
@@ -966,7 +966,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool SingleWriter(ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, SpanByte srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 if (!base.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason))
                     return false;
@@ -975,7 +975,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 if (!base.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                     return false;
@@ -984,7 +984,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 // The default implementation of IPU simply writes input to destination, if there is space
                 if (!base.InPlaceUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
@@ -994,7 +994,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool InitialUpdater(ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 Assert.Fail("For these tests, InitialUpdater should never be called");
                 return false;
@@ -1003,15 +1003,14 @@ namespace Tsavorite.test.ReadCacheTests
 
         unsafe void PopulateAndEvict()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
             var bContext = session.BasicContext;
 
-            Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var key = SpanByte.FromPinnedSpan(keyVec);
+            Span<byte> key = stackalloc byte[sizeof(long)];
 
             for (long ii = 0; ii < NumKeys; ii++)
             {
-                ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
                 var status = bContext.Upsert(key, key);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
@@ -1039,11 +1038,10 @@ namespace Tsavorite.test.ReadCacheTests
             const int numIterations = 1;
             unsafe void runReadThread(int tid)
             {
-                using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
-                Span<byte> keyVec = stackalloc byte[sizeof(long)];
-                var key = SpanByte.FromPinnedSpan(keyVec);
+                Span<byte> key = stackalloc byte[sizeof(long)];
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -1052,7 +1050,7 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         SpanByteAndMemory output = default;
 
-                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
                         var status = bContext.Read(key, ref output);
 
                         var numPending = ii - numCompleted;
@@ -1064,7 +1062,7 @@ namespace Tsavorite.test.ReadCacheTests
 
                             ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
                             ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
-                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                            long value = BitConverter.ToInt64(output.ReadOnlySpan);
                             ClassicAssert.AreEqual(ii, value % ValueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
                             output.Memory.Dispose();
                         }
@@ -1081,13 +1079,13 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
-                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
 
                                     ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
 
                                     ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
-                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                                    long value = BitConverter.ToInt64(output.ReadOnlySpan);
                                     ClassicAssert.AreEqual(keyLong, value % ValueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
                                     output.Memory.Dispose();
                                 }
@@ -1100,13 +1098,12 @@ namespace Tsavorite.test.ReadCacheTests
 
             unsafe void runUpdateThread(int tid)
             {
-                using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
+                using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
                 var bContext = session.BasicContext;
 
-                Span<byte> keyVec = stackalloc byte[sizeof(long)];
-                var key = SpanByte.FromPinnedSpan(keyVec);
-                Span<byte> inputVec = stackalloc byte[sizeof(long)];
-                var input = SpanByte.FromPinnedSpan(inputVec);
+                Span<byte> key = stackalloc byte[sizeof(long)];
+                Span<byte> input = stackalloc byte[sizeof(long)];
+                var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -1115,11 +1112,11 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         SpanByteAndMemory output = default;
 
-                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + ValueAdd));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(key, ii));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(input, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
-                                        ? bContext.RMW(key, ref input, ref output)
-                                        : bContext.Upsert(key, ref input, input, ref output);
+                                        ? bContext.RMW(key, ref pinnedInputSpan, ref output)
+                                        : bContext.Upsert(key, ref pinnedInputSpan, input, ref output);
 
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
@@ -1133,7 +1130,7 @@ namespace Tsavorite.test.ReadCacheTests
                             if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                 ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                            long value = BitConverter.ToInt64(output.ReadOnlySpan);
                             ClassicAssert.AreEqual(ii + ValueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
                             output.Memory?.Dispose();
@@ -1151,12 +1148,12 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
-                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
 
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                         ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
 
-                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                                    long value = BitConverter.ToInt64(output.ReadOnlySpan);
                                     ClassicAssert.AreEqual(keyLong + ValueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
 
                                     output.Memory?.Dispose();

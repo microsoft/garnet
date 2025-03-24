@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -10,8 +11,8 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test.Cancellation
 {
     // Use an int in these tests just to get a different length underlying the SpanByte
-    using IntAllocator = SpanByteAllocator<StoreFunctions<SpanByte, IntKeyComparer, SpanByteRecordDisposer>>;
-    using IntStoreFunctions = StoreFunctions<SpanByte, IntKeyComparer, SpanByteRecordDisposer>;
+    using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>>;
+    using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     class CancellationTests
@@ -28,12 +29,12 @@ namespace Tsavorite.test.Cancellation
             ConcurrentWriter
         }
 
-        public class CancellationFunctions : SessionFunctionsBase<SpanByte, int, int, Empty>
+        public class CancellationFunctions : SessionFunctionsBase<int, int, Empty>
         {
             internal CancelLocation cancelLocation = CancelLocation.None;
             internal CancelLocation lastFunc = CancelLocation.None;
 
-            public override bool NeedInitialUpdate(SpanByte key, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.NeedInitialUpdate;
                 if (cancelLocation == CancelLocation.NeedInitialUpdate)
@@ -56,7 +57,7 @@ namespace Tsavorite.test.Cancellation
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.CopyUpdater;
                 ClassicAssert.AreNotEqual(CancelLocation.NeedCopyUpdate, cancelLocation);
@@ -68,7 +69,7 @@ namespace Tsavorite.test.Cancellation
                 return dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo);
             }
 
-            public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InitialUpdater;
                 ClassicAssert.AreNotEqual(CancelLocation.NeedInitialUpdate, cancelLocation);
@@ -78,10 +79,10 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(SpanByteFrom(ref input), ref sizeInfo);
+                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), ref sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InPlaceUpdater;
                 if (cancelLocation == CancelLocation.InPlaceUpdater)
@@ -89,11 +90,11 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(SpanByteFrom(ref input), ref sizeInfo);
+                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), ref sizeInfo);
             }
 
             // Upsert functions
-            public override bool SingleWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref int input, SpanByte srcValue, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 lastFunc = CancelLocation.SingleWriter;
                 if (cancelLocation == CancelLocation.SingleWriter)
@@ -104,7 +105,7 @@ namespace Tsavorite.test.Cancellation
                 return logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
             }
 
-            public override bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref int input, SpanByte srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.ConcurrentWriter;
                 if (cancelLocation == CancelLocation.ConcurrentWriter)
@@ -119,18 +120,21 @@ namespace Tsavorite.test.Cancellation
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref int input)
                 => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(int) };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref int input)
+            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref int input)
                 => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(int) };
             /// <inheritdoc/>
-            public override RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref int input)
+            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref int input)
                 => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref int input)
+                => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 
         IDevice log;
         CancellationFunctions functions;
         TsavoriteKV<IntStoreFunctions, IntAllocator> store;
-        ClientSession<SpanByte, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
-        BasicContext<SpanByte, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
+        ClientSession<int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
+        BasicContext<int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
 
         const int NumRecs = 100;
 
@@ -146,7 +150,7 @@ namespace Tsavorite.test.Cancellation
                 LogDevice = log,
                 MemorySize = 1L << 17,
                 PageSize = 1L << 12
-            }, StoreFunctions<SpanByte>.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -173,7 +177,7 @@ namespace Tsavorite.test.Cancellation
             for (int keyNum = 0; keyNum < NumRecs; keyNum++)
             {
                 var valueNum = keyNum * NumRecs * 10;
-                _ = bContext.Upsert(SpanByteFrom(ref keyNum), SpanByteFrom(ref valueNum));
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum));
             }
         }
 
@@ -185,7 +189,7 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs, valueNum = keyNum * NumRecs * 10;
-            SpanByte key = SpanByteFrom(ref keyNum);
+            var key = SpanByte.FromPinnedVariable(ref keyNum);
 
             functions.cancelLocation = CancelLocation.NeedInitialUpdate;
             var status = bContext.RMW(key, ref valueNum);
@@ -207,10 +211,10 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
-            SpanByte key = SpanByteFrom(ref keyNum);
 
             void do_it()
             {
+                var key = SpanByte.FromPinnedVariable(ref keyNum);
                 for (int lap = 0; lap < 2; ++lap)
                 {
                     functions.cancelLocation = CancelLocation.NeedCopyUpdate;
@@ -241,7 +245,7 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
-            SpanByte key = SpanByteFrom(ref keyNum);
+            var key = SpanByte.FromPinnedVariable(ref keyNum);
 
             // Note: ExpirationTests tests the combination of CancelOperation and DeleteRecord
             functions.cancelLocation = CancelLocation.InPlaceUpdater;
@@ -258,7 +262,8 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs + 1, valueNum = keyNum * NumRecs * 10;
-            SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum);
+            var key = SpanByte.FromPinnedVariable(ref keyNum);
+            var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             functions.cancelLocation = CancelLocation.SingleWriter;
             var status = bContext.Upsert(key, value);
@@ -274,7 +279,8 @@ namespace Tsavorite.test.Cancellation
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
             int keyNum = NumRecs / 2, valueNum = keyNum * NumRecs * 10;
-            SpanByte key = SpanByteFrom(ref keyNum), value = SpanByteFrom(ref valueNum);
+            var key = SpanByte.FromPinnedVariable(ref keyNum);
+            var value = SpanByte.FromPinnedVariable(ref valueNum);
 
             functions.cancelLocation = CancelLocation.ConcurrentWriter;
             var status = bContext.Upsert(key, value);

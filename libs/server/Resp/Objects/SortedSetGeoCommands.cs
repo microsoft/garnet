@@ -26,13 +26,13 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.GeoAdd(key, ref input, ref outputFooter);
 
@@ -88,7 +88,7 @@ namespace Garnet.server
             }
 
             // Get the key for the Sorted Set
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             var op =
                 command switch
@@ -105,7 +105,7 @@ namespace Garnet.server
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.GeoCommands(key, ref input, ref outputFooter);
 
@@ -166,7 +166,7 @@ namespace Garnet.server
                 SortedSetOp = SortedSetOperation.GEOSEARCHSTORE
             }, ref parseState, startIdx: 2);
 
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref input, ref output);
 
             switch (status)

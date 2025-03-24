@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -9,13 +10,13 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     [TestFixture]
     public class GarnetObjectTests
     {
-        TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
+        TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> store;
         IDevice logDevice, objectLogDevice;
 
         [SetUp]
@@ -123,34 +124,36 @@ namespace Garnet.test
             ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
         }
 
-        private class MyFunctions : SessionFunctionsBase<IGarnetObject, IGarnetObject, IGarnetObject, Empty>
+        private class MyFunctions : SessionFunctionsBase<IGarnetObject, IGarnetObject, Empty>
         {
             public MyFunctions()
             { }
 
             public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
             {
-                output = srcLogRecord.ValueObject;
+                output = (IGarnetObject)srcLogRecord.ValueObject;
                 return true;
             }
 
-            public override bool ConcurrentReader(ref LogRecord<IGarnetObject> logRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
+            public override bool ConcurrentReader(ref LogRecord logRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
             {
-                output = logRecord.ValueObject;
+                output = (IGarnetObject)logRecord.ValueObject;
                 return true;
             }
 
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
             {
-                _ = srcLogRecord.ValueObject.CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
+                _ = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
                 return true;
             }
 
             public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input)
                 => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref IGarnetObject input)
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref IGarnetObject input)
                 => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
-            public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, IGarnetObject value, ref IGarnetObject input)
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref IGarnetObject input)
+                => new() { KeyDataSize = key.Length, ValueDataSize = value.Length, ValueIsObject = false };
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IGarnetObject value, ref IGarnetObject input)
                 => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 
@@ -168,7 +171,7 @@ namespace Garnet.test
             };
 
             store = new(kvSettings
-                , StoreFunctions<IGarnetObject>.Create(new SpanByteComparer(), () => new MyGarnetObjectSerializer())
+                , StoreFunctions.Create(new SpanByteComparer(), () => new MyGarnetObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }

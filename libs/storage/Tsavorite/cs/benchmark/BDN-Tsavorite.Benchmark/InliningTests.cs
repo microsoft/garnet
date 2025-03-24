@@ -45,7 +45,7 @@ namespace BenchmarkDotNetTests
 
         unsafe void PopulateStore()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
@@ -83,7 +83,7 @@ namespace BenchmarkDotNetTests
         [BenchmarkCategory("Upsert"), Benchmark]
         public unsafe void Upsert()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
             Span<byte> keySpan = stackalloc byte[sizeof(long)];
@@ -100,17 +100,18 @@ namespace BenchmarkDotNetTests
         [BenchmarkCategory("RMW"), Benchmark]
         public unsafe void RMW()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
-            Span<byte> keySpan = stackalloc byte[sizeof(long)];
-            Span<byte> inputSpan = stackalloc byte[sizeof(long)];
+            Span<byte> key = stackalloc byte[sizeof(long)];
+            Span<byte> input = stackalloc byte[sizeof(long)];
+            var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
 
             for (long ii = 0; ii < NumRecords; ++ii)
             {
-                MemoryMarshal.Cast<byte, long>(keySpan)[0] = ii;
-                MemoryMarshal.Cast<byte, long>(inputSpan)[0] = ii + NumRecords * 3;
-                _ = bContext.RMW(keySpan, inputSpan);
+                MemoryMarshal.Cast<byte, long>(key)[0] = ii;
+                MemoryMarshal.Cast<byte, long>(input)[0] = ii + NumRecords * 3;
+                _ = bContext.RMW(key, ref pinnedInputSpan);
             }
 
             _ = bContext.CompletePending();
@@ -119,7 +120,7 @@ namespace BenchmarkDotNetTests
         [BenchmarkCategory("Read"), Benchmark]
         public unsafe void Read()
         {
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new());
             var bContext = session.BasicContext;
 
             Span<byte> keySpan = stackalloc byte[sizeof(long)];

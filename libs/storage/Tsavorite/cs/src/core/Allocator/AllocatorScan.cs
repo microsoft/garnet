@@ -334,12 +334,15 @@ namespace Tsavorite.core
             public readonly void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
             public readonly bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
-            public readonly bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
+            public readonly bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
+            public readonly bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
             public readonly bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
                 where TSourceLogRecord : ISourceLogRecord
                 => true;
-            public readonly void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public readonly bool ConcurrentWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, TValue newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+            public readonly void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+            public readonly void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+            public readonly bool ConcurrentWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+            public readonly bool ConcurrentWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
 
             public readonly bool InPlaceUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
 
@@ -363,7 +366,8 @@ namespace Tsavorite.core
                 where TSourceLogRecord : ISourceLogRecord
                 => default;
             public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) => default;
-            public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, TValue value, ref TInput input) => default;
+            public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input) => default;
+            public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => default;
 
             public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
         }

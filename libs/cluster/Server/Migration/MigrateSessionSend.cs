@@ -16,7 +16,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendMainStoreKeyValuePair(SpanByte key, SpanByte value)
+        private bool WriteOrSendMainStoreKeyValuePair(PinnedSpanByte key, PinnedSpanByte value)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.NeedsInitialization)
@@ -42,7 +42,7 @@ namespace Garnet.cluster
         /// <param name="value"></param>
         /// <param name="expiration"></param>
         /// <returns></returns>
-        private bool WriteOrSendObjectStoreKeyValuePair(SpanByte key, byte[] value, long expiration)
+        private bool WriteOrSendObjectStoreKeyValuePair(PinnedSpanByte key, byte[] value, long expiration)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.NeedsInitialization)

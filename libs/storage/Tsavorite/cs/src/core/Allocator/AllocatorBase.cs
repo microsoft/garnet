@@ -439,15 +439,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize, ObjectIdMap objectIdMap)
         {
-            byte* keyPtr;
+            Span<byte> keySpan;
             if (key.Length <= maxInlineKeySize)
             {
                 logRecord.InfoRef.SetKeyIsInline();
-                keyPtr = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
+                keySpan = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             }
             else
-                keyPtr = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap) ;
-            key.CopyTo(new Span<byte>(keyPtr, key.Length));
+                keySpan = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
+            key.CopyTo(keySpan);
         }
 
         #endregion LogRecord functions

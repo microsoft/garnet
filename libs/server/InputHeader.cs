@@ -170,9 +170,9 @@ namespace Garnet.server
             => (byte*)Unsafe.AsPointer(ref cmd);
 
         /// <summary>
-        /// Get header as SpanByte
+        /// Get header as PinnedSpanByte
         /// </summary>
-        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+        public unsafe PinnedSpanByte SpanByte => PinnedSpanByte.FromPinnedPointer(ToPointer(), Length);
 
         /// <summary>
         /// Get header length
@@ -387,7 +387,7 @@ namespace Garnet.server
             var curr = dest;
 
             // Serialize header
-            header.SpanByte.CopyTo(curr);
+            header.SpanByte.SerializeTo(curr);
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1

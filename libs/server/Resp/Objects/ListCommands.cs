@@ -26,7 +26,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             var lop =
                 command switch
@@ -76,7 +76,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             var popCount = 1;
 
@@ -104,7 +104,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(key, ref input, ref outputFooter)
@@ -145,15 +145,15 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var element = parseState.GetArgSliceByRef(1).ReadOnlySpan;  // TODO: unused
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);  // TODO: unused
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LPOS };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListPosition(key, ref input, ref outputFooter);
 
@@ -431,7 +431,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("LLEN");
             }
 
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
@@ -475,7 +475,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Read the parameters(start and stop) from LTRIM
             if (!parseState.TryGetInt(1, out var start) ||
@@ -525,7 +525,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Read count start and end params for LRANGE
             if (!parseState.TryGetInt(1, out var start) ||
@@ -541,7 +541,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListRange(key, ref input, ref outputFooter);
 
@@ -579,7 +579,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Read index param
             if (!parseState.TryGetInt(1, out var index))
@@ -594,7 +594,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListIndex(key, ref input, ref outputFooter);
 
@@ -642,7 +642,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINSERT };
@@ -689,7 +689,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Get count parameter
             if (!parseState.TryGetInt(1, out var nCount))
@@ -868,14 +868,14 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var key = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LSET };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListSet(key, ref input, ref outputFooter);
 

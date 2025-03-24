@@ -44,14 +44,11 @@ namespace Tsavorite.test
             const int initialKeyLen = 10;
             const int initialValueLen = 40;
 
-            Span<byte> keyBytes = stackalloc byte[initialKeyLen];
-            Span<byte> valueBytes = stackalloc byte[initialValueLen];
+            Span<byte> key = stackalloc byte[initialKeyLen];
+            Span<byte> value = stackalloc byte[initialValueLen];
 
-            keyBytes.Fill(0x42);
-            valueBytes.Fill(0x43);
-
-            SpanByte key = SpanByte.FromPinnedSpan(keyBytes);
-            SpanByte value = SpanByte.FromPinnedSpan(valueBytes);
+            key.Fill(0x42);
+            value.Fill(0x43);
 
             var sizeInfo = new RecordSizeInfo()
             {
@@ -85,13 +82,13 @@ namespace Tsavorite.test
             nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
             long recordEndAddress = nativePointer + sizeInfo.AllocatedInlineRecordSize;
 
-            var logRecord = new LogRecord<SpanByte>((long)nativePointer);
+            var logRecord = new LogRecord((long)nativePointer);
             logRecord.InfoRef = default;
             logRecord.InfoRef.SetKeyIsInline();
             logRecord.InfoRef.SetValueIsInline();
 
-            var keyPtr = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
-            key.AsReadOnlySpan().CopyTo(new Span<byte>(keyPtr, key.Length));
+            var keySpan = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
+            key.CopyTo(keySpan);
             SpanField.SetInlineDataLength(logRecord.ValueAddress, value.Length);
 
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(initialValueLen));

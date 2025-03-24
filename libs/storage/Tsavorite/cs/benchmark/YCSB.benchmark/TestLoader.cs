@@ -340,7 +340,7 @@ namespace Tsavorite.benchmark
 
         internal string BackupPath => $"{DataPath}/{Distribution}_{(Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
-        internal bool MaybeRecoverStore<V, SF, A>(TsavoriteKV<SF, A> store)
+        internal bool MaybeRecoverStore<SF, A>(TsavoriteKV<SF, A> store)
             where SF : IStoreFunctions
             where A : IAllocator<SF>
         {
@@ -371,7 +371,7 @@ namespace Tsavorite.benchmark
             return false;
         }
 
-        internal void MaybeCheckpointStore<V, SF, A>(TsavoriteKV<SF, A> store)
+        internal void MaybeCheckpointStore<SF, A>(TsavoriteKV<SF, A> store)
             where SF : IStoreFunctions
             where A : IAllocator<SF>
         {

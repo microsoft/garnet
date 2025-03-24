@@ -327,7 +327,7 @@ namespace Tsavorite.core
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
         {
             using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, logger: logger);
-            return ScanLookup<SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress);
+            return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress);
         }
 
         /// <summary>

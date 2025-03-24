@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -34,7 +35,7 @@ namespace Garnet.server
             }
 
             // Read key for the scan
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Get cursor value
             if (!parseState.TryGetInt(1, out var cursorValue) || cursorValue < 0)
@@ -65,7 +66,7 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
             var status = storageApi.ObjectScan(key, ref input, ref outputFooter);
 
             switch (status)

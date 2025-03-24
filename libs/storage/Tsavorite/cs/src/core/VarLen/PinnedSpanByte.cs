@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -61,7 +62,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Total size of the contained span, including the length prefix.
         /// </summary>
-        public int TotalSize() => sizeof(int) + length;
+        public readonly int TotalSize
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return sizeof(int) + length; }
+        }
 
         /// <summary>
         /// Set this as invalid; used by <see cref="SpanByteAndMemory"/> to indicate the <see cref="Memory{_byte_}"/> should be used.
@@ -130,11 +135,42 @@ namespace Tsavorite.core
             => new() { ptr = ptr, length = length };
 
         /// <summary>
+        /// Create a SpanByte around a pinned memory <paramref name="pointer"/> whose first sizeof(int) bytes are the length (i.e. serialized form).
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
+        /// </remarks>
+        public static PinnedSpanByte FromLengthPrefixedPinnedPointer(byte* pointer) => new() { ptr = pointer + sizeof(int), length = *(int*)pointer };
+
+        /// <summary>
         /// Check for equality to the provided argSlice
         /// </summary>
         /// <param name="argSlice"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool Equals(PinnedSpanByte argSlice) => argSlice.Span.SequenceEqual(Span);
+
+        /// <summary>
+        /// Copy serialized version to specified memory location
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least <see cref="TotalSize"/> length.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SerializeTo(byte* destination)
+        {
+            *(int*)destination = length;
+            Buffer.MemoryCopy(ptr, destination + sizeof(int), Length, Length);
+        }
+
+        /// <summary>
+        /// Copy non-serialized version to specified memory location (do not copy the length prefix space)
+        /// </summary>
+        public void CopyTo(Span<byte> destination) => ReadOnlySpan.CopyTo(destination);
+
+        /// <summary>
+        /// Copy non-serialized version to specified <see cref="SpanByteAndMemory"/> (do not copy the length prefix space)
+        /// </summary>
+        public void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool) => ReadOnlySpan.CopyTo(ref dst, memoryPool);
     }
 }

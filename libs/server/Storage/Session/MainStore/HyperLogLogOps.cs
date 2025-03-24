@@ -32,7 +32,7 @@ namespace Garnet.server
                 var elementSlice = scratchBufferManager.CreateArgSlice(element);
                 parseState.SetArgument(0, elementSlice);
 
-                var o = new SpanByteAndMemory(output, 1);
+                var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
                 _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
 
                 _ = scratchBufferManager.RewindScratchBuffer(ref elementSlice);
@@ -121,8 +121,8 @@ namespace Garnet.server
                     sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
-                var dstMergeBuffer = new SpanByteAndMemory(srcReadBuffer, hllBufferSize);
-                var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
+                var dstMergeBuffer = SpanByteAndMemory.FromPinnedPointer(srcReadBuffer, hllBufferSize);
+                var srcMergeBuffer = SpanByteAndMemory.FromPinnedPointer(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -219,7 +219,7 @@ namespace Garnet.server
 
                     var currInput = new RawStringInput(RespCommand.PFMERGE);
 
-                    var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
+                    var mergeBuffer = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
                     var srcKey = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
                     var status = GET(srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);

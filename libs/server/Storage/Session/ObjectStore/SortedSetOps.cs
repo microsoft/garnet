@@ -635,7 +635,7 @@ namespace Garnet.server
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(outputContainer, outputContainerSize) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref outputFooter);
 
@@ -887,7 +887,7 @@ namespace Garnet.server
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(outputContainer, outputContainerSize) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref outputFooter);
 

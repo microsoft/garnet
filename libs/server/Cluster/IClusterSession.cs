@@ -4,6 +4,7 @@
 using System;
 using Garnet.common;
 using Garnet.server.ACL;
+using Tsavorite.core;
 
 namespace Garnet.server
 {

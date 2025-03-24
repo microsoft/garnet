@@ -335,7 +335,7 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             byte* pbOutput = stackalloc byte[8];
-            var o = new SpanByteAndMemory(pbOutput, 8);
+            var o = SpanByteAndMemory.FromPinnedPointer(pbOutput, 8);
 
             var status = context.RMW(key.ReadOnlySpan, ref input, ref o);
 
@@ -979,7 +979,7 @@ namespace Garnet.server
             var inputHeader = new RawStringInput(RespCommand.PERSIST);
 
             var pbOutput = stackalloc byte[8];
-            var o = new SpanByteAndMemory(pbOutput, 8);
+            var o = SpanByteAndMemory.FromPinnedPointer(pbOutput, 8);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
@@ -1068,7 +1068,7 @@ namespace Garnet.server
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];
 
-            var _output = new SpanByteAndMemory(outputBuffer, outputBufferLength);
+            var _output = SpanByteAndMemory.FromPinnedPointer(outputBuffer, outputBufferLength);
 
             var status = context.RMW(key.ReadOnlySpan, ref input, ref _output);
             if (status.IsPending)
@@ -1147,7 +1147,7 @@ namespace Garnet.server
             }
             else
             {
-                memoryUsage = RecordInfo.GetLength() + Utility.RoundUp(key.TotalSize(), RecordInfo.GetLength()) + Utility.RoundUp(keyValue.TotalSize(), RecordInfo.GetLength());
+                memoryUsage = RecordInfo.GetLength() + Utility.RoundUp(key.TotalSize, RecordInfo.GetLength()) + Utility.RoundUp(keyValue.TotalSize, RecordInfo.GetLength());
             }
 
             return status;

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {

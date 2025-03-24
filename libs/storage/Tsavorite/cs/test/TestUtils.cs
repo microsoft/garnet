@@ -268,7 +268,7 @@ namespace Tsavorite.test
             }
         }
 
-        internal static unsafe bool FindHashBucketEntryForKey<TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key, out HashBucketEntry entry)
+        internal static unsafe bool FindHashBucketEntryForKey<TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, out HashBucketEntry entry)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -278,8 +278,6 @@ namespace Tsavorite.test
             return success;
         }
 
-        internal static unsafe SpanByte SpanByteFrom<T>(ref T localVar) where T : unmanaged
-            => new (Unsafe.SizeOf<T>(), (IntPtr)Unsafe.AsPointer(ref localVar));
     }
 
     /// <summary>Deterministic equality comparer for ints</summary>
@@ -292,10 +290,10 @@ namespace Tsavorite.test
         public static readonly IntKeyComparer Instance = new();
 
         /// <inheritdoc />
-        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<int>() == k2.AsRef<int>();
+        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<int>() == k2.AsRef<int>();
 
         /// <inheritdoc />
-        public long GetHashCode64(SpanByte k) => Utility.GetHashCode(k.AsRef<int>());
+        public long GetHashCode64(ReadOnlySpan<byte> k) => Utility.GetHashCode(k.AsRef<int>());
     }
 
     /// <summary>Deterministic equality comparer for longs</summary>
@@ -308,10 +306,10 @@ namespace Tsavorite.test
         public static readonly LongKeyComparer Instance = new();
 
         /// <inheritdoc />
-        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<long>() == k2.AsRef<long>();
+        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
 
         /// <inheritdoc />
-        public long GetHashCode64(SpanByte k) => Utility.GetHashCode(k.AsRef<long>());
+        public long GetHashCode64(ReadOnlySpan<byte> k) => Utility.GetHashCode(k.AsRef<long>());
     }
 
     /// <summary>Deterministic equality comparer for longs with hash modulo</summary>
@@ -321,9 +319,9 @@ namespace Tsavorite.test
 
         internal LongKeyComparerModulo(long mod) => this.mod = mod;
 
-        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<long>() == k2.AsRef<long>();
+        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
 
-        public long GetHashCode64(SpanByte k) => mod == 0 ? k.AsRef<long>() : k.AsRef<long>() % mod;
+        public long GetHashCode64(ReadOnlySpan<byte> k) => mod == 0 ? k.AsRef<long>() : k.AsRef<long>() % mod;
     }
 
     /// <summary>Deterministic equality comparer for SpanBytes with hash modulo</summary>
@@ -333,10 +331,10 @@ namespace Tsavorite.test
 
         internal SpanByteKeyComparerModulo(HashModulo mod) => modRange = mod;
 
-        public readonly bool Equals(SpanByte k1, SpanByte k2) => SpanByteComparer.StaticEquals(k1, k2);
+        public readonly bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => SpanByteComparer.StaticEquals(k1, k2);
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(SpanByte k)
+        public readonly long GetHashCode64(ReadOnlySpan<byte> k)
         {
             var value = SpanByteComparer.StaticGetHashCode64(k);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
@@ -368,7 +366,7 @@ namespace Tsavorite.test
             return ref Unsafe.As<byte, T>(ref spanByte[0]);
         }
 
-        public static ref readonly T AsReadOnlyRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
+        public static ref readonly T AsRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
         {
             Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
             return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];

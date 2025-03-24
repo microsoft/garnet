@@ -1069,13 +1069,11 @@ namespace Garnet.server
 
         private static unsafe bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
         {
-            if (k.Length > length) return false;
+            if (k.Length > length)
+                return false;
 
-            var dest = new Span<byte>(dst, length);
-            if (k.IsSpanByte)
-                k.SpanByte.ReadOnlySpan.CopyTo(dest);
-            else
-                k.AsMemoryReadOnlySpan().CopyTo(dest);
+            k.
+            ReadOnlySpan.CopyTo(new Span<byte>(dst, length));
             return true;
         }
 

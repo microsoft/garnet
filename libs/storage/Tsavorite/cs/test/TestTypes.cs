@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using static Tsavorite.test.TestUtils;
 
 #pragma warning disable CA2211 // Non-constant fields should not be visible (This is for the .Instance members)
 
@@ -24,9 +23,9 @@ namespace Tsavorite.test
 
         public struct Comparer : IKeyComparer
         {
-            public readonly long GetHashCode64(SpanByte key) => Utility.GetHashCode(key.AsRef<KeyStruct>().kfield1);
+            public readonly long GetHashCode64(ReadOnlySpan<byte> key) => Utility.GetHashCode(key.AsRef<KeyStruct>().kfield1);
 
-            public readonly bool Equals(SpanByte key1, SpanByte key2)
+            public readonly bool Equals(ReadOnlySpan<byte> key1, ReadOnlySpan<byte> key2)
             {
                 var k1 = key1.AsRef<KeyStruct>();
                 var k2 = key2.AsRef<KeyStruct>();
@@ -73,9 +72,9 @@ namespace Tsavorite.test
     {
     }
 
-    public class FunctionsWithContext<TContext> : SessionFunctionsBase<SpanByte, InputStruct, OutputStruct, TContext>
+    public class FunctionsWithContext<TContext> : SessionFunctionsBase<InputStruct, OutputStruct, TContext>
     {
-        public override void RMWCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
@@ -83,7 +82,7 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield2 + input.ifield2, output.value.vfield2);
         }
 
-        public override void ReadCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<KeyStruct>().kfield1, output.value.vfield1);
@@ -97,11 +96,11 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
             => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
 
         // RMW functions
-        public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 = input.ifield1;
@@ -110,7 +109,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 += input.ifield1;
@@ -125,7 +124,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             var oldValue = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             ref var newValue = ref dstLogRecord.ValueSpan.AsRef<ValueStruct>();
@@ -140,22 +139,22 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input)
             => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref InputStruct input)
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
             => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref InputStruct input)
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
             => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
     }
 
-    public class FunctionsCompaction : SessionFunctionsBase<SpanByte, InputStruct, OutputStruct, int>
+    public class FunctionsCompaction : SessionFunctionsBase<InputStruct, OutputStruct, int>
     {
-        public override void RMWCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override void ReadCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
@@ -177,11 +176,11 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref InputStruct input, ref OutputStruct dst, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct dst, ref ReadInfo readInfo)
             => SingleReader(ref logRecord, ref input, ref dst, ref readInfo);
 
         // RMW functions
-        public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 = input.ifield1;
@@ -189,7 +188,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 += input.ifield1;
@@ -199,7 +198,7 @@ namespace Tsavorite.test
 
         public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo) => true;
 
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             var oldValue = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             ref var newValue = ref dstLogRecord.ValueSpan.AsRef<ValueStruct>();
@@ -213,14 +212,14 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input)
             => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref InputStruct input)
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
             => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref InputStruct input)
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
             => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
     }
 
-    public class FunctionsCopyOnWrite : SessionFunctionsBase<SpanByte, InputStruct, OutputStruct, Empty>
+    public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
     {
         private int concurrentWriterCallCount;
         private int inPlaceUpdaterCallCount;
@@ -228,13 +227,13 @@ namespace Tsavorite.test
         public int ConcurrentWriterCallCount => concurrentWriterCallCount;
         public int InPlaceUpdaterCallCount => inPlaceUpdaterCallCount;
 
-        public override void RMWCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override void ReadCompletionCallback(ref DiskLogRecord<SpanByte> diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             var key = diskLogRecord.Key.AsRef<KeyStruct>();
@@ -249,24 +248,24 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
             => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
 
         // Upsert functions
-        public override bool SingleWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, SpanByte srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.ValueSpan.AsRef<ValueStruct>() = srcValue.AsRef<ValueStruct>();
             return true;
         }
 
-        public override bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, SpanByte srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
             _ = Interlocked.Increment(ref concurrentWriterCallCount);
             return false;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             ref var value = ref logRecord.ValueSpan.AsRef<ValueStruct>();
             value.vfield1 = input.ifield1;
@@ -274,7 +273,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             _ = Interlocked.Increment(ref inPlaceUpdaterCallCount);
             return false;
@@ -286,7 +285,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
             var oldValue = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             ref var newValue = ref dstLogRecord.ValueSpan.AsRef<ValueStruct>();
@@ -300,23 +299,23 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input)
             => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref InputStruct input)
+        public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
             => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref InputStruct input)
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
             => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
     }
 
-    public class SimpleLongSimpleFunctions : SessionFunctionsBase<SpanByte, long, long, Empty>
+    public class SimpleLongSimpleFunctions : SessionFunctionsBase<long, long, Empty>
     {
-        private readonly Func<SpanByte, SpanByte, long> merger;
+        private readonly Func<long, long, long> merger;
 
-        public SimpleLongSimpleFunctions() : base() => merger = (input, oldValue) => input.AsRef<long>();
+        public SimpleLongSimpleFunctions() : base() => merger = (input, oldValue) => input;
 
-        public SimpleLongSimpleFunctions(Func<SpanByte, SpanByte, long> merger) => this.merger = merger;
+        public SimpleLongSimpleFunctions(Func<long, long, long> merger) => this.merger = merger;
 
         /// <inheritdoc/>
-        public override bool ConcurrentReader(ref LogRecord<SpanByte> logRecord, ref long input, ref long output, ref ReadInfo readInfo)
+        public override bool ConcurrentReader(ref LogRecord logRecord, ref long input, ref long output, ref ReadInfo readInfo)
         {
             output = logRecord.ValueSpan.AsRef<long>();
             return true;
@@ -329,7 +328,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool SingleWriter(ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, SpanByte srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             var result = base.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
             if (result)
@@ -337,7 +336,7 @@ namespace Tsavorite.test
             return result;
         }
 
-        public override bool ConcurrentWriter(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref long input, SpanByte srcValue, ref long output, ref UpsertInfo upsertInfo)
+        public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
         {
             var result = base.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             if (result)
@@ -346,37 +345,37 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
         {
-            var ok = dstLogRecord.TrySetValueSpan(SpanByteFrom(ref input), ref sizeInfo);
+            var ok = dstLogRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), ref sizeInfo);
             if (ok)
                 output = input;
             return ok;
         }
 
         /// <inheritdoc/>
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
         {
             ClassicAssert.IsTrue(dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo), "Failed TryCopyRecordValues");
-            var result = output = merger(SpanByteFrom(ref input), srcLogRecord.ValueSpan);   // 'result' must be local for SpanByteFrom; 'output' may be on the heap
-            return dstLogRecord.TrySetValueSpan(SpanByteFrom(ref result), ref sizeInfo);
+            var result = output = merger(input, srcLogRecord.ValueSpan.AsRef<long>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
+            return dstLogRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref result), ref sizeInfo);
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
         {
-            var result = output = merger(SpanByteFrom(ref input), logRecord.ValueSpan);   // 'result' must be local for SpanByteFrom; 'output' may be on the heap
-            return logRecord.TrySetValueSpan(SpanByteFrom(ref result), ref sizeInfo);
+            var result = output = merger(input, logRecord.ValueSpan.AsRef<long>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
+            return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref result), ref sizeInfo);
         }
 
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref long input)
             => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(long) };
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref long input)
+        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref long input)
             => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(long) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref long input)
+        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref long input)
             => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
     }
 }

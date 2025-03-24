@@ -113,7 +113,7 @@ namespace Tsavorite.test.LockTable
             ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared);
         }
 
-        internal static void AssertLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, SpanByte key, bool expectedX, int expectedS)
+        internal static void AssertLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, bool expectedX, int expectedS)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {

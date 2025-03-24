@@ -12,7 +12,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using StructStoreFunctions = StoreFunctions<SpanByte, FixedLengthKey.Comparer, SpanByteRecordDisposer>;
+    using StructStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
 
     internal class Tsavorite_YcsbBenchmark
     {
@@ -111,7 +111,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions<SpanByte>.Create(new FixedLengthKey.Comparer(), SpanByteRecordDisposer.Instance)
+                , StoreFunctions.Create(new FixedLengthKey.Comparer(), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -139,7 +139,8 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
+            ReadOnlySpan<byte> key = keyStruct.AsReadOnlySpan();
+            Span<byte> value = valueStruct.AsSpan();
             Input input = default;
             Output output = default;
 
@@ -229,7 +230,8 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
+            ReadOnlySpan<byte> key = keyStruct.AsReadOnlySpan();
+            Span<byte> value = valueStruct.AsSpan();
             Input input = default;
             Output output = default;
 
@@ -419,7 +421,8 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
+            ReadOnlySpan<byte> key = keyStruct.AsReadOnlySpan();
+            Span<byte> value = valueStruct.AsSpan();
 
             try
             {
@@ -465,7 +468,8 @@ namespace Tsavorite.benchmark
 
             FixedLengthKey keyStruct = default;
             FixedLengthValue valueStruct = default;
-            SpanByte key = keyStruct.AsReadOnlySpan(), value = valueStruct.AsSpanByte();
+            ReadOnlySpan<byte> key = keyStruct.AsReadOnlySpan();
+            Span<byte> value = valueStruct.AsSpan();
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;

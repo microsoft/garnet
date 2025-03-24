@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -265,7 +264,6 @@ namespace Tsavorite.core
         {
             // First copy the data
             var objectId = GetObjectIdRef(fieldAddress);
-            byte* newPtr;
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
                 var oldSpan = new Span<byte>((byte[])objectIdMap.Get(objectId));
@@ -273,13 +271,12 @@ namespace Tsavorite.core
 
                 // Sequencing here is important for zeroinit correctness
                 var copyLength = oldSpan.Length < newLength ? oldSpan.Length : newLength;
-                newPtr = SetInlineDataLength(fieldAddress, newLength);
-                var newSpan = new Span<byte>(newPtr, newLength);
+                var newSpan = SetInlineDataLength(fieldAddress, newLength);
                 recordInfo.SetValueIsInline();
                 oldSpan.Slice(0, copyLength).CopyTo(newSpan);
                 return newSpan;
             }
-            return new Span<byte>(SetInlineDataLength(fieldAddress, newLength), newLength);
+            return SetInlineDataLength(fieldAddress, newLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -310,25 +307,25 @@ namespace Tsavorite.core
         /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte* ConvertObjectIdToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertObjectIdToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
         {
             ref int objIdRef = ref GetObjectIdRef(fieldAddress);
             objectIdMap.Free(objIdRef);
             objIdRef = 0;
 
             // Sequencing here is important for zeroinit correctness
-            var newPtr = SetInlineDataLength(fieldAddress, newLength);
+            var newSpan = SetInlineDataLength(fieldAddress, newLength);
             recordInfo.SetValueIsInline();
-            return newPtr;
+            return newSpan;
         }
 
         /// <summary>
         /// Utility function to set the inline length of a Span field and return a <see cref="Span{_byte_}"/> to the data start (which may be an inline byte stream or a byte[]).
         /// </summary>
-        internal static byte* SetInlineDataLength(long fieldAddress, int newLength)
+        internal static Span<byte> SetInlineDataLength(long fieldAddress, int newLength)
         {
             GetInlineLengthRef(fieldAddress) = newLength;             // actual length (i.e. the inline data space used by this field)
-            return (byte*)GetInlineDataAddress(fieldAddress);
+            return new Span<byte>((byte*)GetInlineDataAddress(fieldAddress), newLength);
         }
 
         /// <summary>

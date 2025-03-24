@@ -22,9 +22,9 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 1);
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
             var input = new RawStringInput(RespCommand.GETWITHETAG);
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
@@ -54,9 +54,9 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
             var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
@@ -185,10 +185,8 @@ namespace Garnet.server
                 return true;
             }
 
-            SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
-
-            NetworkSET_Conditional(cmd, expiry, ref key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
-
+            var key = parseState.GetArgSliceByRef(0);
+            NetworkSET_Conditional(cmd, expiry, key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
             return true;
         }
     }

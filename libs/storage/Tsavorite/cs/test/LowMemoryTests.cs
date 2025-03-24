@@ -9,8 +9,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LowMemory
 {
-    using LongAllocator = SpanByteAllocator<StoreFunctions<SpanByte, LongKeyComparer, SpanByteRecordDisposer>>;
-    using LongStoreFunctions = StoreFunctions<SpanByte, LongKeyComparer, SpanByteRecordDisposer>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     public class LowMemoryTests
@@ -34,7 +34,7 @@ namespace Tsavorite.test.LowMemory
                 MemorySize = 1L << 12,
                 SegmentSize = 1L << 26,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions<SpanByte>.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -49,11 +49,11 @@ namespace Tsavorite.test.LowMemory
             DeleteDirectory(MethodTestDir);
         }
 
-        private static void Populate(ClientSession<SpanByte, long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> s1)
+        private static void Populate(ClientSession<long, long, Empty, SimpleLongSimpleFunctions, LongStoreFunctions, LongAllocator> s1)
         {
             var bContext1 = s1.BasicContext;
             for (long key = 0; key < NumOps; key++)
-                _ = bContext1.Upsert(SpanByteFrom(ref key), SpanByteFrom(ref key));
+                _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
         }
 
         [Test]
@@ -61,7 +61,7 @@ namespace Tsavorite.test.LowMemory
         [Category(StressTestCategory)]
         public void LowMemConcurrentUpsertReadTest()
         {
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a.AsRef<long>() + b.AsRef<long>()));
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
             var bContext1 = s1.BasicContext;
 
             Populate(s1);
@@ -70,7 +70,7 @@ namespace Tsavorite.test.LowMemory
             var numCompleted = 0;
             for (long key = 0; key < NumOps; key++)
             {
-                var (status, output) = bContext1.Read(SpanByteFrom(ref key));
+                var (status, output) = bContext1.Read(SpanByte.FromPinnedVariable(ref key));
                 if (!status.IsPending)
                 {
                     ++numCompleted;
@@ -86,7 +86,7 @@ namespace Tsavorite.test.LowMemory
                 {
                     ++numCompleted;
                     ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
-                    ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output);
+                    ClassicAssert.AreEqual(completedOutputs.Current.Key.AsRef<long>(), completedOutputs.Current.Output);
                 }
             }
             ClassicAssert.AreEqual(NumOps, numCompleted, "numCompleted");
@@ -97,7 +97,7 @@ namespace Tsavorite.test.LowMemory
         [Category(StressTestCategory)]
         public void LowMemConcurrentUpsertRMWReadTest([Values] bool completeSync)
         {
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a.AsRef<long>() + b.AsRef<long>()));
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
             var bContext1 = s1.BasicContext;
 
             Populate(s1);
@@ -106,7 +106,7 @@ namespace Tsavorite.test.LowMemory
             int numPending = 0;
             for (long key = 0; key < NumOps; key++)
             {
-                var status = bContext1.RMW(SpanByteFrom(ref key), ref key);
+                var status = bContext1.RMW(SpanByte.FromPinnedVariable(ref key), ref key);
                 if (status.IsPending && (++numPending % 256) == 0)
                 {
                     _ = bContext1.CompletePending(wait: true);
@@ -120,7 +120,7 @@ namespace Tsavorite.test.LowMemory
             var numCompleted = 0;
             for (long key = 0; key < NumOps; key++)
             {
-                var (status, output) = bContext1.Read(SpanByteFrom(ref key));
+                var (status, output) = bContext1.Read(SpanByte.FromPinnedVariable(ref key));
                 if (!status.IsPending)
                 {
                     ++numCompleted;

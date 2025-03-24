@@ -4,7 +4,6 @@
 #pragma warning disable 1591
 
 using System;
-using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -15,13 +14,14 @@ namespace Tsavorite.core
     {
         /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo) => true;
+
         /// <inheritdoc/>
         public virtual bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
             => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, Span<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public virtual bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
             return logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
@@ -35,7 +35,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public virtual bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, Span<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public virtual bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
             return dstLogRecord.TrySetValueSpan(srcValue, ref sizeInfo);
@@ -65,7 +65,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public virtual void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, Span<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public virtual void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         /// <inheritdoc/>
         public virtual void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
@@ -113,80 +113,11 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) => throw new NotImplementedException("GetRMWInitialFieldInfo");
         /// <inheritdoc/>
-        public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input) => throw new NotImplementedException("GetUpsertFieldInfo(Span<byte>)");
+        public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input) => throw new NotImplementedException("GetUpsertFieldInfo(Span<byte>)");
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => throw new NotImplementedException("GetUpsertFieldInfo(IHeapObject)");
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
-    }
-
-    /// <summary>
-    /// Default simple functions base class with TInput and TOutput the same as TValue.
-    /// </summary>
-    public struct SimpleSessionFunctions<TContext> : ISessionFunctions<Span<byte>, Span<byte>, TContext>
-    {
-        /// <inheritdoc/>
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref TValue input, ref TValue output, ref ReadInfo readInfo)
-        {
-            if (logRecord.ValueIsObject)
-            {
-                output = logRecord.ValueObject;
-                return true;
-            }
-            return logRecord.ValueSpan.TryCopyTo(Unsafe.As<SpanByte>(ref output));
-        }
-
-        /// <inheritdoc/>
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TValue input, ref TValue output, ref ReadInfo readInfo)
-        {
-            if (srcLogRecord.ValueIsObject)
-            {
-                output = srcLogRecord.ValueObject;
-                return true;
-            }
-            return srcLogRecord.ValueSpan.TryCopyTo(Unsafe.As<SpanByte>(ref output));
-        }
-
-        public override bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TValue input, TValue srcValue, ref TValue output, ref UpsertInfo upsertInfo, WriteReason reason)
-        {
-            var result = base.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
-            if (result)
-                output = srcValue;
-            return result;
-        }
-
-        public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TValue input, TValue srcValue, ref TValue output, ref UpsertInfo upsertInfo)
-        {
-            var result = base.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
-            if (result)
-                output = srcValue;
-            return result;
-        }
-
-        /// <inheritdoc/>
-        public override bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TValue input, ref TValue output, ref RMWInfo rmwInfo)
-        {
-            var ok = input is IHeapObject heapObj
-               ? dstLogRecord.TrySetValueObject((TValue)heapObj, ref sizeInfo)
-               : dstLogRecord.TrySetValueSpan(Unsafe.As<Span<byte>>(ref input), ref sizeInfo);
-            if (ok)
-                output = input;
-            return ok;
-        }
-        /// <inheritdoc/>
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TValue input, ref TValue output, ref RMWInfo rmwInfo)
-        {
-            // Simple base implementation does not use upsertInfo or WriteReason
-            var upsertInfo = new UpsertInfo();
-            return base.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref upsertInfo, WriteReason.Upsert);
-        }
-        /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TValue input, ref TValue output, ref RMWInfo rmwInfo)
-        {
-            // Simple base implementation does not use upsertInfo
-            var upsertInfo = new UpsertInfo();
-            return ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, input, ref output, ref upsertInfo);
-        }
     }
 }

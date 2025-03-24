@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using Tsavorite.core;
 
 namespace Garnet.server
 {

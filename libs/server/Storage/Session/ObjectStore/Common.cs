@@ -226,9 +226,7 @@ namespace Garnet.server
             byte* element = null;
             var len = 0;
 
-            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte
-                ? outputFooter.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.ReadOnlySpan;
 
             try
             {
@@ -310,9 +308,7 @@ namespace Garnet.server
             // For reading the elements in the outputFooter
             byte* element = null;
 
-            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte
-                ? outputFooter.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.ReadOnlySpan;
 
             try
             {
@@ -362,9 +358,7 @@ namespace Garnet.server
             error = default;
             byte* element = null;
             var len = 0;
-            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte
-                ? outputFooter.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.ReadOnlySpan;
 
             try
             {
@@ -422,9 +416,7 @@ namespace Garnet.server
             var len = 0;
             PinnedSpanByte result;
 
-            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte
-                ? outputFooter.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.ReadOnlySpan;
             try
             {
                 fixed (byte* outputPtr = outputSpan)
@@ -454,9 +446,7 @@ namespace Garnet.server
         /// <returns>integer</returns>
         unsafe bool TryProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter, out long value)
         {
-            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte
-                ? outputFooter.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+            var outputSpan = outputFooter.SpanByteAndMemory.ReadOnlySpan;
             try
             {
                 fixed (byte* outputPtr = outputSpan)

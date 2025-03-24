@@ -24,7 +24,7 @@ namespace Garnet.cluster
             SectorAlignedMemory buffer = new(bufferSize, 1);
             var bufPtr = buffer.GetValidPointer();
             var bufPtrEnd = bufPtr + bufferSize;
-            var output = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
+            var output = SpanByteAndMemory.FromPinnedPointer(bufPtr, (int)(bufPtrEnd - bufPtr));
 
             try
             {
@@ -43,7 +43,7 @@ namespace Garnet.cluster
                     if (pair.Value != KeyMigrationStatus.MIGRATING)
                         continue;
 
-                    var key = pair.Key.SpanByte;
+                    var key = pair.Key;
 
                     // Read value for key
                     var status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
@@ -66,14 +66,14 @@ namespace Garnet.cluster
                     else
                     {
                         fixed (byte* ptr = output.Memory.Memory.Span)
-                            ok = WriteOrSendMainStoreKeyValuePair(key, SpanByte.FromLengthPrefixedPinnedPointer(ptr));
+                            ok = WriteOrSendMainStoreKeyValuePair(key, PinnedSpanByte.FromLengthPrefixedPinnedPointer(ptr));
                     }
 
                     if (!ok)
                         return false;
 
                     // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                    output.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
+                    output.SpanByte = PinnedSpanByte.FromPinnedPointer(bufPtr, (int)(bufPtrEnd - bufPtr));
                 }
 
                 // Flush data in client buffer
@@ -111,7 +111,7 @@ namespace Garnet.cluster
                     // Process only keys in MIGRATING status
                     if (mKey.Value != KeyMigrationStatus.MIGRATING)
                         continue;
-                    var key = mKey.Key.SpanByte;
+                    var key = mKey.Key;
 
                     ObjectInput input = default;
                     GarnetObjectStoreOutput value = default;
@@ -166,7 +166,7 @@ namespace Garnet.cluster
                 if (mKey.Value != KeyMigrationStatus.DELETING)
                     continue;
 
-                var key = mKey.Key.SpanByte;
+                var key = mKey.Key;
                 _ = localServerSession.BasicGarnetApi.DELETE(key);
 
                 // Set key as MIGRATED to allow allow all operations

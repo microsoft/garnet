@@ -5,9 +5,9 @@
 //#define FIXED_SIZE_VALUE
 //#define FIXED_SIZE_VALUE_WITH_LOCK
 
+using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
@@ -16,7 +16,8 @@ namespace Tsavorite.benchmark
     {
         public const int Size = 8;
 
-        public unsafe SpanByte AsSpanByte() => new(sizeof(long), (nint)Unsafe.AsPointer(ref this));
+        // Only call this for stack-based structs, not the ones in the *_keys vectors
+        public unsafe Span<byte> AsSpan() => new(Unsafe.AsPointer(ref this), sizeof(long));
 
         [FieldOffset(0)]
         public long value;

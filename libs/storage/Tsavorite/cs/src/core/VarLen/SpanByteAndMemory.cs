@@ -33,15 +33,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Constructor using <see cref="core.SpanByte"/> at given pinned <paramref name="pointer"/>, of given <paramref name="length"/>
-        /// </summary>
-        public SpanByteAndMemory(byte* pointer, int length)
-        {
-            SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length);
-            Memory = default;
-        }
-
-        /// <summary>
         /// Get length
         /// </summary>
         public int Length
@@ -58,18 +49,20 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor using given IMemoryOwner
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SpanByteAndMemory(IMemoryOwner<byte> memory)
         {
-            SpanByte.Invalid = true;
+            SpanByte.Invalidate();
             Memory = memory;
         }
 
         /// <summary>
         /// Constructor using given IMemoryOwner and length
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SpanByteAndMemory(IMemoryOwner<byte> memory, int length)
         {
-            SpanByte.Invalid = true;
+            SpanByte.Invalidate();
             Memory = memory;
             SpanByte.Length = length;
         }
@@ -77,45 +70,45 @@ namespace Tsavorite.core
         /// <summary>
         /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> ReadOnlySpan() => IsSpanByte ? SpanByte.ReadOnlySpan : Memory.Memory.Span.Slice(0, Length);
+        public ReadOnlySpan<byte> ReadOnlySpan
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return IsSpanByte ? SpanByte.ReadOnlySpan : Memory.Memory.Span.Slice(0, Length); }
+        }
 
         /// <summary>
         /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> Span() => IsSpanByte ? SpanByte.Span : Memory.Memory.Span.Slice(0, Length);
-
-        /// <summary>
-        /// As a span of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ReadOnlySpan<byte> AsMemoryReadOnlySpan()
+        public ReadOnlySpan<byte> Span
         {
-            Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
-            return Memory.Memory.Span.Slice(0, Length);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return IsSpanByte ? SpanByte.Span : Memory.Memory.Span.Slice(0, Length); }
         }
 
         /// <summary>
-        /// Copy from the passed ReadOnlySpan{byte}. Use this when you have not tested <see cref="IsSpanByte"/>.
+        /// As a ReadOnlySpan of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyFrom(ReadOnlySpan<byte> srcSpan, MemoryPool<byte> memoryPool)
+        public readonly ReadOnlySpan<byte> MemoryReadOnlySpan
         {
-            if (IsSpanByte)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
             {
-                if (srcSpan.Length < Length)
-                {
-                    srcSpan.CopyTo(SpanByte.AsSpan());
-                    Length = srcSpan.Length;
-                    return;
-                }
-                ConvertToHeap();
+                Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
+                return Memory.Memory.Span.Slice(0, Length);
             }
+        }
 
-            Length = srcSpan.Length;
-            Memory = memoryPool.Rent(srcSpan.Length);
-            srcSpan.CopyTo(Memory.Memory.Span);
+        /// <summary>
+        /// As a Span of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
+        /// </summary>
+        public readonly ReadOnlySpan<byte> MemorySpan
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
+                return Memory.Memory.Span.Slice(0, Length);
+            }
         }
 
         /// <summary>
@@ -124,11 +117,19 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
         /// </remarks>
-        public static SpanByteAndMemory FromPinnedSpan(ReadOnlySpan<byte> span) => new(this.SpanByte.FromPinnedSpan(span));
+        public static SpanByteAndMemory FromPinnedSpan(ReadOnlySpan<byte> span) => new() { SpanByte = PinnedSpanByte.FromPinnedSpan(span), Memory = default };
+
+        /// <summary>
+        /// Create a <see cref="SpanByteAndMemory"/> from a given pinned <paramref name="pointer"/>, of given <paramref name="length"/>
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
+        /// </remarks>
+        public static SpanByteAndMemory FromPinnedPointer(byte* pointer, int length) => new() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length), Memory = default };
 
         /// <summary>
         /// Convert to be used on heap (IMemoryOwner)
         /// </summary>
-        public void ConvertToHeap() { SpanByte.Invalid = true; }
+        public void ConvertToHeap() { SpanByte.Invalidate(); }
     }
 }

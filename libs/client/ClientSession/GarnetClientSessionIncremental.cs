@@ -94,7 +94,7 @@ namespace Garnet.client
         /// <param name="value"></param>
         /// <param name="task"></param>
         /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(SpanByte key, SpanByte value, out Task<string> task)
+        public bool TryWriteKeyValueSpanByte(PinnedSpanByte key, PinnedSpanByte value, out Task<string> task)
         {
             task = null;
             // Try write key value pair directly to client buffer
@@ -109,15 +109,15 @@ namespace Garnet.client
             keyValuePairCount++;
             return true;
 
-            bool WriteSerializedSpanByte(SpanByte key, SpanByte value)
+            bool WriteSerializedSpanByte(PinnedSpanByte key, PinnedSpanByte value)
             {
                 var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
                 if (totalLen > (int)(end - curr))
                     return false;
 
-                key.CopyTo(curr);
+                key.SerializeTo(curr);
                 curr += key.TotalSize;
-                value.CopyTo(curr);
+                value.SerializeTo(curr);
                 curr += value.TotalSize;
                 return true;
             }
@@ -131,7 +131,7 @@ namespace Garnet.client
         /// <param name="expiration"></param>
         /// <param name="task"></param>
         /// <returns></returns>
-        public bool TryWriteKeyValueByteArray(SpanByte key, byte[] value, long expiration, out Task<string> task)
+        public bool TryWriteKeyValueByteArray(PinnedSpanByte key, byte[] value, long expiration, out Task<string> task)
         {
             task = null;
             // Try write key value pair directly to client buffer
@@ -146,7 +146,7 @@ namespace Garnet.client
             keyValuePairCount++;
             return true;
 
-            bool WriteSerializedKeyValueByteArray(SpanByte key, byte[] value, long expiration)
+            bool WriteSerializedKeyValueByteArray(PinnedSpanByte key, byte[] value, long expiration)
             {
                 // We include space for newline at the end, to be added before sending
                 int totalLen = 4 + key.Length + 4 + value.Length + 8 + 2;

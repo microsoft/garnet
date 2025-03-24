@@ -87,7 +87,7 @@ namespace Garnet.server
         private bool TryCustomRawStringCommand<TGarnetApi>(RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
             var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
@@ -134,7 +134,7 @@ namespace Garnet.server
         private bool TryCustomObjectCommand<TGarnetApi>(GarnetObjectType objType, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
 
@@ -229,12 +229,12 @@ namespace Garnet.server
             var _output = new SpanByteAndMemory(null);
             if (customCommand.type == CommandType.ReadModifyWrite)
             {
-                _ = storageApi.RMW_MainStore(key.SpanByte, ref rawStringInput, ref _output);
+                _ = storageApi.RMW_MainStore(key, ref rawStringInput, ref _output);
                 Debug.Assert(!_output.IsSpanByte);
 
                 if (_output.Memory != null)
                 {
-                    output = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan());
+                    output = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan);
                     _output.Memory.Dispose();
                 }
                 else
@@ -244,14 +244,14 @@ namespace Garnet.server
             }
             else
             {
-                var status = storageApi.Read_MainStore(key.SpanByte, ref rawStringInput, ref _output);
+                var status = storageApi.Read_MainStore(key, ref rawStringInput, ref _output);
                 Debug.Assert(!_output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
                     if (_output.Memory != null)
                     {
-                        output = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan());
+                        output = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan);
                         _output.Memory.Dispose();
                     }
                     else
@@ -294,7 +294,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (customObjCommand.type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_ObjectStore(key.SpanByte, ref input, ref _output);
+                status = storageApi.RMW_ObjectStore(key, ref input, ref _output);
                 Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
@@ -304,7 +304,7 @@ namespace Garnet.server
                         break;
                     default:
                         if (_output.SpanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan());
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
@@ -312,14 +312,14 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_ObjectStore(key.SpanByte, ref input, ref _output);
+                status = storageApi.Read_ObjectStore(key, ref input, ref _output);
                 Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
                     case GarnetStatus.OK:
                         if (_output.SpanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan());
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan);
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;

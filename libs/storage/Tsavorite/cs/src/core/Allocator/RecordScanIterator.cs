@@ -325,7 +325,7 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueObject(Action disposer) { }  // Not relevant for iterators
+        public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
 
         /// <inheritdoc/>
         public LogRecord AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
