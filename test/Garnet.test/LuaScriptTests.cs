@@ -98,13 +98,6 @@ namespace Garnet.test
         private string aclFile;
         private GarnetServer server;
 
-        /// <summary>
-        /// Temporarily disable errors raised from Lua until longjmp work is completed.
-        /// 
-        /// TODO: Delete all of this
-        /// </summary>
-        private static bool CanTestLuaErrors { get; } = OperatingSystem.IsWindows() && Environment.Version.Major <= 8;
-
         public LuaScriptTests(LuaMemoryManagementMode allocMode, string limitBytes, string limitTimeout)
         {
             this.allocMode = allocMode;
@@ -649,20 +642,17 @@ namespace Garnet.test
             using var denyRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(authUsername: "deny"));
             var denyDB = denyRedis.GetDatabase(0);
 
-            if (CanTestLuaErrors)
-            {
-                var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
-                ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
+            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd()"));
+            ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR Please specify at least one argument for this redis lib call"));
 
-                var invalidCmdArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
-                ClassicAssert.IsTrue(invalidCmdArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
+            var invalidCmdArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd({123})"));
+            ClassicAssert.IsTrue(invalidCmdArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
 
-                var invalidCmd = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
-                ClassicAssert.IsTrue(invalidCmd.Message.StartsWith("ERR Invalid command passed to redis.acl_check_cmd()"));
+            var invalidCmd = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('nope')"));
+            ClassicAssert.IsTrue(invalidCmd.Message.StartsWith("ERR Invalid command passed to redis.acl_check_cmd()"));
 
-                var invalidArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
-                ClassicAssert.IsTrue(invalidArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            var invalidArgType = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.acl_check_cmd('GET', {123})"));
+            ClassicAssert.IsTrue(invalidArgType.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
 
             var canRun = (bool)db.ScriptEvaluate("return redis.acl_check_cmd('GET')");
             ClassicAssert.IsTrue(canRun);
@@ -701,17 +691,14 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            if (CanTestLuaErrors)
-            {
-                var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
-                ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
+            var noArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp()"));
+            ClassicAssert.IsTrue(noArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
 
-                var tooManyArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
-                ClassicAssert.IsTrue(tooManyArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
+            var tooManyArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1, 2)"));
+            ClassicAssert.IsTrue(tooManyArgs.Message.StartsWith("ERR redis.setresp() requires one argument."));
 
-                var badArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
-                ClassicAssert.IsTrue(badArg.Message.StartsWith("ERR RESP version must be 2 or 3."));
-            }
+            var badArg = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp({123})"));
+            ClassicAssert.IsTrue(badArg.Message.StartsWith("ERR RESP version must be 2 or 3."));
 
             var resp2 = db.ScriptEvaluate("redis.setresp(2)");
             ClassicAssert.IsTrue(resp2.IsNull);
@@ -719,11 +706,8 @@ namespace Garnet.test
             var resp3 = db.ScriptEvaluate("redis.setresp(3)");
             ClassicAssert.IsTrue(resp3.IsNull);
 
-            if (CanTestLuaErrors)
-            {
-                var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
-                ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
-            }
+            var badRespVersion = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("redis.setresp(1)"));
+            ClassicAssert.IsTrue(badRespVersion.Message.StartsWith("ERR RESP version must be 2 or 3."));
         }
 
         [Test]
@@ -1198,13 +1182,6 @@ return redis.status_reply("OK")
                 return;
             }
 
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-            if (!CanTestLuaErrors)
-            {
-                Assert.Ignore($"Ignoring test when running in .NET9.");
-            }
-
             const string ScriptOOMText = @"
 local foo = 'abcdefghijklmnopqrstuvwxyz'
 if @Ctrl == 'OOM' then
@@ -1311,12 +1288,9 @@ return retArray";
                 }
             }
 
-            if (CanTestLuaErrors)
-            {
-                // Finally, check that nil is an illegal argument
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
-                ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
-            }
+            // Finally, check that nil is an illegal argument
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
+            ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
         }
 
         [Test]

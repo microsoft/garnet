@@ -1114,6 +1114,7 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.BadArgEncode);
             }
 
+            scratchBufferManager.Reset();
             var ret = Encode(this, 0);
 
             if (ret == 1)
