@@ -59,7 +59,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var background = false;
+            var background = true;
             var nodeId = parseState.GetString(0);
 
             if (parseState.Count > 1)
@@ -88,8 +88,8 @@ namespace Garnet.cluster
             else
             {
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, nodeId, background: background, force: false, out var errorMessage) :
-                    clusterProvider.replicationManager.TryBeginReplicate(this, nodeId, background: background, force: false, out errorMessage);
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, nodeId, background: background, force: false, tryAddReplica: true, out var errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, nodeId, background: background, force: false, tryAddReplica: true, out errorMessage);
 
                 if (success)
                 {
@@ -371,9 +371,19 @@ namespace Garnet.cluster
                 primaryReplicaId,
                 entry,
                 beginAddress,
-                tailAddress);
-            while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
-                SendAndReset();
+                tailAddress,
+                out var errorMessage);
+
+            if (errorMessage.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteInt64(replicationOffset, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -402,7 +412,7 @@ namespace Garnet.cluster
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
                 _ = clusterProvider.replicationManager.TryAttachSync(syncMetadata, out errorMessage);
             else
-                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata);
+                replicationOffset = clusterProvider.replicationManager.ReplicaRecoverDiskless(syncMetadata, out errorMessage);
 
             if (!errorMessage.IsEmpty)
             {

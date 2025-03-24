@@ -139,6 +139,7 @@ namespace Garnet.test.cluster
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             bool useHostname = false)
@@ -179,6 +180,7 @@ namespace Garnet.test.cluster
                 enableLua: enableLua,
                 asyncReplay: asyncReplay,
                 enableDisklessSync: enableDisklessSync,
+                replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit);
 

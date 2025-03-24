@@ -432,8 +432,7 @@ namespace Garnet.server
 
                 if (user is null)
                 {
-                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                 }
                 else
                 {
