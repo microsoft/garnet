@@ -1513,6 +1513,11 @@ namespace Garnet.server
                 {
                     return DecodeObject(self, o);
                 }
+                else if(node == null)
+                {
+                    self.state.PushNil();
+                    return 1;
+                }
                 else
                 {
                     self.logger?.LogError("Unexpected json node type: {typeName}", node.GetType().Name);

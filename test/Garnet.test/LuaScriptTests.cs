@@ -162,6 +162,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void KeysArgvResize()
+        {
+            const string KeysScript = "return KEYS[1] .. KEYS[2]";
+            const string ArgvScript = "return ARGV[1] .. ARGV[2]";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var twoKeys = (string)db.ScriptEvaluate(KeysScript, ["hello", "world"]);
+            ClassicAssert.AreEqual("helloworld", twoKeys);
+
+            var threeKeys = (string)db.ScriptEvaluate(KeysScript, ["fizz", "buzz", "foo"]);
+            ClassicAssert.AreEqual("fizzbuzz", threeKeys);
+
+            var twoArgv = (string)db.ScriptEvaluate(ArgvScript, [], ["a", "b"]);
+            ClassicAssert.AreEqual("ab", twoArgv);
+
+            var threeArgv = (string)db.ScriptEvaluate(ArgvScript, [], ["c", "d", "e"]);
+            ClassicAssert.AreEqual("cd", threeArgv);
+        }
+
+        [Test]
         public void GlobalsForbidden()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -511,6 +533,77 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MiscMath()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // ATan2
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 2, 3)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2('a', 1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 'b')"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.atan2(0.1, 0.2))");
+                ClassicAssert.AreEqual(Math.Round(Math.Atan2(0.1, 0.2), 14).ToString(), val);
+            }
+
+            // Cosh
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.cosh(0.1))");
+                ClassicAssert.AreEqual(Math.Round(Math.Cosh(0.1), 14).ToString(), val);
+            }
+
+            // Log10
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.log10(0.1))");
+                ClassicAssert.AreEqual("-1.0", val);
+            }
+
+            // Pow
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 2, 3)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow('a', 1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 'b')"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.pow(0.1, 0.2))");
+                ClassicAssert.AreEqual(Math.Round(Math.Pow(0.1, 0.2), 14).ToString(), val);
+            }
+
+            // Sinh
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.sinh(0.1))");
+                ClassicAssert.AreEqual(Math.Round(Math.Sinh(0.1), 14).ToString(), val);
+            }
+
+            // Tanh
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.tanh(0.2))");
+                ClassicAssert.AreEqual(Math.Round(Math.Tanh(0.2), 14).ToString(), val);
+            }
+        }
+
+        [Test]
         public void RedisPCall()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -587,7 +680,10 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(warn\)] \|.*\| <.*> .* \^.*{Regex.Escape(noticeStr)}\^"));
             ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(errr\)] \|.*\| <.*> .* \^.*{Regex.Escape(warningStr)}\^"));
 
-            // More than 1 log line, and non-string values are legal
+            // Single number log arg is legal
+            _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123)");
+
+            // More than 1 log arg, and non-string values are legal
             _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123, 456, 789)");
 
             var constantsDefined = (int[])db.ScriptEvaluate("return {redis.LOG_DEBUG, redis.LOG_VERBOSE, redis.LOG_NOTICE, redis.LOG_WARNING}");
@@ -2109,11 +2205,17 @@ return cjson.encode(nested)");
                 var badFormatExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
                 ClassicAssert.True(badFormatExc.Message.Contains("Expected value but found invalid token"));
 
+                var nullDecode = (string)db.ScriptEvaluate("return type(cjson.decode('null'))");
+                ClassicAssert.AreEqual("nil", nullDecode);
+
                 var numberDecode = (string)db.ScriptEvaluate("return cjson.decode(123)");
                 ClassicAssert.AreEqual("123", numberDecode);
 
-                var boolDecode = (string)db.ScriptEvaluate("return type(cjson.decode('true'))");
-                ClassicAssert.AreEqual("boolean", boolDecode);
+                var bool1Decode = (string)db.ScriptEvaluate("return type(cjson.decode('true'))");
+                ClassicAssert.AreEqual("boolean", bool1Decode);
+
+                var bool2Decode = (string)db.ScriptEvaluate("return type(cjson.decode('false'))");
+                ClassicAssert.AreEqual("boolean", bool2Decode);
 
                 var stringDecode = (string)db.ScriptEvaluate("return cjson.decode('\"hello world\"')");
                 ClassicAssert.AreEqual("hello world", stringDecode);
