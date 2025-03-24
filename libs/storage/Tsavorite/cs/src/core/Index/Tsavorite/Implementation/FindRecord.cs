@@ -126,16 +126,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ReadOnlySpan<byte> key, ref RecordSource<TStoreFunctions, TAllocator> recSrc, long minAddress)
         {
-            // recSrc.PhysicalAddress must already be populated by callers.
-            var recordInfo = LogRecord.GetInfo(recSrc.PhysicalAddress);
+            var logRecord = hlog.CreateLogRecord(recSrc.LogicalAddress);
 
-            if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(key, LogRecord.GetKey(recSrc.PhysicalAddress)))
+            if (IsValidTracebackRecord(logRecord.Info) && storeFunctions.KeysEqual(key, logRecord.Key))
             {
                 recSrc.SetHasMainLogSrc();
                 return true;
             }
 
-            recSrc.LogicalAddress = recordInfo.PreviousAddress;
+            recSrc.LogicalAddress = logRecord.Info.PreviousAddress;
             if (TraceBackForKeyMatch(key, recSrc.LogicalAddress, minAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
             {
                 recSrc.SetHasMainLogSrc();
@@ -148,16 +147,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TraceBackForKeyMatch(ReadOnlySpan<byte> key, ref RecordSource<TStoreFunctions, TAllocator> recSrc, long minAddress, long maxAddress)
         {
-            // PhysicalAddress must already be populated by callers.
-            var recordInfo = LogRecord.GetInfo(recSrc.PhysicalAddress);
+            var logRecord = hlog.CreateLogRecord(recSrc.LogicalAddress);
 
-            if (IsValidTracebackRecord(recordInfo) && recSrc.LogicalAddress < maxAddress && storeFunctions.KeysEqual(key, LogRecord.GetKey(recSrc.PhysicalAddress)))
+            if (IsValidTracebackRecord(logRecord.Info) && recSrc.LogicalAddress < maxAddress && storeFunctions.KeysEqual(key, logRecord.Key))
             {
                 recSrc.SetHasMainLogSrc();
                 return true;
             }
 
-            recSrc.LogicalAddress = recordInfo.PreviousAddress;
+            recSrc.LogicalAddress = logRecord.Info.PreviousAddress;
             if (TraceBackForKeyMatch(key, recSrc.LogicalAddress, minAddress, maxAddress, out recSrc.LogicalAddress, out recSrc.PhysicalAddress))
             {
                 recSrc.SetHasMainLogSrc();
@@ -173,13 +171,13 @@ namespace Tsavorite.core
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minAddress)
             {
-                foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
+                var logRecord = hlog.CreateLogRecord(foundLogicalAddress);
+                foundPhysicalAddress = logRecord.physicalAddress;
 
-                ref var recordInfo = ref LogRecord.GetInfoRef(foundPhysicalAddress);
-                if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(key, LogRecord.GetKey(foundPhysicalAddress)))
+                if (IsValidTracebackRecord(logRecord.Info) && storeFunctions.KeysEqual(key, logRecord.Key))
                     return true;
 
-                foundLogicalAddress = recordInfo.PreviousAddress;
+                foundLogicalAddress = logRecord.Info.PreviousAddress;
             }
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;
@@ -193,13 +191,13 @@ namespace Tsavorite.core
             foundLogicalAddress = fromLogicalAddress;
             while (foundLogicalAddress >= minAddress)
             {
-                foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
+                var logRecord = hlog.CreateLogRecord(foundLogicalAddress);
+                foundPhysicalAddress = logRecord.physicalAddress;
 
-                var recordInfo = LogRecord.GetInfo(foundPhysicalAddress);
-                if (IsValidTracebackRecord(recordInfo) && foundLogicalAddress < maxAddress && storeFunctions.KeysEqual(key, LogRecord.GetKey(foundPhysicalAddress)))
+                if (IsValidTracebackRecord(logRecord.Info) && foundLogicalAddress < maxAddress && storeFunctions.KeysEqual(key, logRecord.Key))
                     return true;
 
-                foundLogicalAddress = recordInfo.PreviousAddress;
+                foundLogicalAddress = logRecord.Info.PreviousAddress;
             }
             foundPhysicalAddress = Constants.kInvalidAddress;
             return false;

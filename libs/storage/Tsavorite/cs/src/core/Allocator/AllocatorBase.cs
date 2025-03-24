@@ -446,7 +446,7 @@ namespace Tsavorite.core
                 keyPtr = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             }
             else
-                keyPtr = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
+                keyPtr = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap) ;
             key.CopyTo(new Span<byte>(keyPtr, key.Length));
         }
 

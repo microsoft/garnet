@@ -20,12 +20,7 @@ namespace Tsavorite.core
         /// <summary>Whether there is actually a record here</summary>
         bool IsSet { get; }
 
-        /// <summary>The key:
-        ///     <list type="bullet">
-        ///     <item>If serialized, then the key is inline in this record (i.e. is below the overflow size).</item>
-        ///     <item>If not serialized, then it is a pointer to the key in <see cref="OverflowAllocator"/>.</item>
-        ///     </list>
-        /// </summary>
+        /// <summary>The key, which may be inline in this record or an overflow byte[]</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         ReadOnlySpan<byte> Key { get; }
 

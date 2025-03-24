@@ -928,7 +928,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = ChainTests.SkipReadCacheChain(store, expectedKey);
-            var storedKey = LogRecord.GetKey(pa);
+            var storedKey = LogRecord.GetInlineKey(pa);
             ClassicAssert.AreEqual(expectedKey.AsRef<long>(), storedKey.AsRef<long>());
 
             var keyVec = new[] { new FixedLengthTransactionalKeyStruct(expectedKey, LockType.Exclusive, luContext) };

@@ -202,7 +202,7 @@ namespace Tsavorite.core
                     try
                     {
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, LogRecord.GetKey(physicalAddress));
+                            store.LockForScan(ref stackCtx, logRecord.Key);
 
                         hlogBase.SerializeRecordToIteratorBuffer(ref logRecord, ref recordBuffer, out valueObject);
                     }

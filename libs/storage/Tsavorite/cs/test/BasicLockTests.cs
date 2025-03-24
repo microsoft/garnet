@@ -176,13 +176,13 @@ namespace Tsavorite.test.LockTests
             ClassicAssert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
             ClassicAssert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
             var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
-            var lookupKey = LogRecord.GetKey(physicalAddress);
-            ClassicAssert.AreEqual(collidingKeyNum, lookupKey.AsRef<long>(), "Expected collidingKey");
+            var lookupKey = LogRecord.GetInlineKey(physicalAddress);
+            ClassicAssert.AreEqual(collidingKeyNum, lookupKey.AsReadOnlyRef<long>(), "Expected collidingKey");
 
             // Backtrace to deleteKey
             physicalAddress = store.hlog.GetPhysicalAddress(LogRecord.GetInfo(physicalAddress).PreviousAddress);
-            lookupKey = LogRecord.GetKey(physicalAddress);
-            ClassicAssert.AreEqual(deleteKey.AsRef<long>(), lookupKey.AsRef<long>(), "Expected deleteKey");
+            lookupKey = LogRecord.GetInlineKey(physicalAddress);
+            ClassicAssert.AreEqual(deleteKey.AsReadOnlyRef<long>(), lookupKey.AsReadOnlyRef<long>(), "Expected deleteKey");
             ClassicAssert.IsFalse(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be false");
 
             // In-place delete.

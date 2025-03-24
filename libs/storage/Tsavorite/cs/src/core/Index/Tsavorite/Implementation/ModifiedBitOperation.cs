@@ -28,15 +28,14 @@ namespace Tsavorite.core
             #region Trace back for record in in-memory HybridLog
             _ = FindTag(ref hei);
             var logicalAddress = hei.Address;
-            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                var recordInfo = LogRecord.GetInfo(physicalAddress);
-                if (recordInfo.Invalid || !storeFunctions.KeysEqual(key, LogRecord.GetKey(physicalAddress)))
+                var logRecord = hlog.CreateLogRecord(logicalAddress);
+                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, logRecord.Key))
                 {
-                    logicalAddress = recordInfo.PreviousAddress;
-                    TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out physicalAddress);
+                    logicalAddress = logRecord.Info.PreviousAddress;
+                    TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
                 }
             }
             #endregion
@@ -44,7 +43,7 @@ namespace Tsavorite.core
             modifiedInfo = default;
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
+                ref var recordInfo = ref LogRecord.GetInfoRef(hlog.GetPhysicalAddress(logicalAddress));
                 if (reset)
                 {
                     if (!recordInfo.TryResetModifiedAtomic())

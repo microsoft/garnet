@@ -21,9 +21,8 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// This creates a 3-d array of page vectors. The initial use of this as for <see cref="OverflowAllocator.NativePageAllocator"/> to allocate for caller use as pages,
-    /// so this can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where the user-visible allocations are created. This may be
-    /// used for sub-allocations within page, particularly where the pages are unmanaged pointers; for example, <see cref="OverflowAllocator.FixedSizePages"/>.
+    /// This creates a 3-d array of page vectors. This can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where
+    /// the user-visible allocations are created.
     /// <list type="bullet">
     ///     <item>The first dimension is the "book", which is a collection of "chapters".</item>
     ///     <item>The second dimension is the "chapters", which is a collection of pages.</item>

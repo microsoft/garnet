@@ -21,8 +21,8 @@ namespace Tsavorite.core
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         long* pagePointers;
 
-        /// <summary>For each in-memory page of this allocator we have an <see cref="OverflowAllocator"/> for keys that are too large to fit inline into the main log,
-        /// and an ObjectIdMap to contain the Object values (needed for GC) and mapping index.</summary>
+        /// <summary>For each in-memory page of this allocator we have an <see cref="ObjectIdMap"/> for keys that are too large to fit inline into the main log
+        /// and become overflow byte[], or are Object values; this is needed to root the objects for GC.</summary>
         internal struct ObjectPage
         {
             internal readonly ObjectIdMap objectIdMap { get; init; }

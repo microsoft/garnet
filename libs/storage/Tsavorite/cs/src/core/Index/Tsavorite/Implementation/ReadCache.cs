@@ -48,18 +48,23 @@ namespace Tsavorite.core
 
                 // When traversing the readcache, we skip Invalid (Closed) records. We don't have Sealed records in the readcache because they cause
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
-                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc
-                    && storeFunctions.KeysEqual(key, LogRecord.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
+                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    // Keep these at the current readcache location; they'll be the caller's source record.
-                    stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
-                    stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
-                    stackCtx.recSrc.SetHasReadCacheSrc();
-                    stackCtx.recSrc.SetAllocator(readCacheBase);
+                    ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
+                        ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)
+                        : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
+                    if (storeFunctions.KeysEqual(key, keySpan))
+                    {
+                        // Keep these at the current readcache location; they'll be the caller's source record.
+                        stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
+                        stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
+                        stackCtx.recSrc.SetHasReadCacheSrc();
+                        stackCtx.recSrc.SetAllocator(readCacheBase);
 
-                    // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
-                    if (!alwaysFindLatestLA)
-                        return true;
+                        // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
+                        if (!alwaysFindLatestLA)
+                            return true;
+                    }
                 }
 
                 // Update the leading LatestLogicalAddress to recordInfo.PreviousAddress, and if that is a main log record, break out.
@@ -218,9 +223,9 @@ namespace Tsavorite.core
             // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
             while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))
             {
-                var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
-                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, LogRecord.GetKey(physicalAddress)))
+                var logRecord = readcache.CreateLogRecord(entry.AbsoluteAddress);
+                ref var recordInfo = ref logRecord.InfoRef;
+                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, logRecord.Key))
                 {
                     recordInfo.SetInvalidAtomic();
                     return;

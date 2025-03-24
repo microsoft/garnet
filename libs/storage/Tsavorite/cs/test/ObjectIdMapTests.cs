@@ -16,7 +16,7 @@ namespace Tsavorite.test
     [TestFixture]
     class ObjectIdMapTests
     {
-        ObjectIdMap<TestObjectValue> map;
+        ObjectIdMap map;
 
         [SetUp]
         public void Setup()

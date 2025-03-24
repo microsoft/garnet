@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.OverflowAllocator;
 using static Tsavorite.core.Utility;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -76,7 +75,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly RecordInfo Info => GetInfoRef(physicalAddress);
         /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress);
+        public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress, objectIdMap);
 
         /// <inheritdoc/>
         public bool IsPinnedKey => Info.KeyIsInline;
@@ -90,7 +89,7 @@ namespace Tsavorite.core
             get
             {
                 Debug.Assert(!ValueIsObject || Info.ValueIsInline, "ValueSpan is not valid for non-inline Object log records");
-                return SpanField.AsSpan(ValueAddress, Info.ValueIsInline);
+                return SpanField.AsSpan(ValueAddress, Info.ValueIsInline, objectIdMap);
             }
         }
 
@@ -170,7 +169,12 @@ namespace Tsavorite.core
         /// <summary>A <see cref="SpanField"/> representing the record Key</summary>
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ReadOnlySpan<byte> GetKey(long physicalAddress) => SpanField.AsSpan(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsInline);
+        public static ReadOnlySpan<byte> GetKey(long physicalAddress, ObjectIdMap objectIdMap) => SpanField.AsSpan(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsInline, objectIdMap);
+
+        /// <summary>A <see cref="SpanField"/> representing the record Key *if* the key is inline; this must be tested before the call</summary>
+        /// <remarks>Not a ref return as it cannot be changed</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ReadOnlySpan<byte> GetInlineKey(long physicalAddress) => SpanField.AsInlineSpan(GetKeyAddress(physicalAddress));
 
         /// <summary>The address of the value</summary>
         public readonly long ValueAddress => GetValueAddress(physicalAddress);
@@ -274,8 +278,7 @@ namespace Tsavorite.core
             {
                 // Both are out-of-line, so reallocate in place if needed. Object records will do what they need to after this call returns;
                 // we're only here to set up inline lengths, and that hasn't changed here.
-                if (newDataLength != BlockHeader.GetUserSize(SpanField.GetOverflowPointer(valueAddress)))
-                    _ = SpanField.ReallocateOverflow(valueAddress, newDataLength, objectIdMap);
+                _ = SpanField.ReallocateOverflow(valueAddress, newDataLength, objectIdMap);
                 goto Done;
             }
             else if (Info.ValueIsObject && sizeInfo.ValueIsObject)
@@ -343,11 +346,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap, objectIdMap);
+                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap, objectIdMap);
+                            _ = SpanField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap);
                     }
                 }
                 else
@@ -372,11 +375,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap, objectIdMap);
+                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap, objectIdMap);
+                            _ = SpanField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newDataLength, objectIdMap);
                     }
                 }
             }
@@ -395,7 +398,7 @@ namespace Tsavorite.core
             if (!TrySetValueLength(ref sizeInfo))
                 return false;
 
-            value.CopyTo(SpanField.AsSpan(ValueAddress, Info.ValueIsInline));
+            value.CopyTo(SpanField.AsSpan(ValueAddress, Info.ValueIsInline, objectIdMap));
             return true;
         }
 

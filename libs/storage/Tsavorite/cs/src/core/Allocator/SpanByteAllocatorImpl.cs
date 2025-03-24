@@ -14,36 +14,20 @@ namespace Tsavorite.core
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
     {
-        /// <summary>Circular buffer definition, in parallel with <see cref="values"/></summary>
+        /// <summary>Circular buffer definition</summary>
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         long* pagePointers;
 
-        /// <summary>For each in-memory page of this allocator we have an <see cref="OverflowAllocator"/> for keys and values that are too large to fit inline 
-        /// into the main log.</summary>
-        OverflowAllocator[] values;
-
-        private readonly OverflowPool<PageUnit<OverflowAllocator>> freePagePool;
-
-        readonly int maxInlineKeySize;
-        readonly int maxInlineValueSize;
-        readonly int overflowAllocatorFixedPageSize;
+        private OverflowPool<PageUnit<Empty>> freePagePool;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
-            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
-            overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
-
-            freePagePool = new OverflowPool<PageUnit<OverflowAllocator>>(4, p => { });
+            freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
 
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
-
-            values = new OverflowAllocator[BufferSize];
-            for (var ii = 0; ii < BufferSize; ++ii)
-                values[ii] = new(overflowAllocatorFixedPageSize);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -67,14 +51,12 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
-                values[index] = item.value;
                 // TODO resize the values[index] arrays smaller if they are above a certain point
                 return;
             }
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new(overflowAllocatorFixedPageSize);
         }
 
         void ReturnPage(int index)
@@ -85,7 +67,7 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
-                    value = values[index]
+                    value = Empty.Default
                 });
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -102,22 +84,18 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, objectIdMap: null);
+        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize: int.MaxValue, objectIdMap: null);
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
         {
+            // Value is always inline in the SpanByteAllocator
             var valueAddress = LogRecord.GetValueAddress(physicalAddress);
-            if (sizeInfo.ValueIsInline)
-            {
-                // Only set length indicator for inline; overflow does not have a length header
-                LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
-            }
-            else
-                SpanField.InitializeInlineForOverflowField(valueAddress);
+
+            LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
+            _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -181,14 +159,14 @@ namespace Tsavorite.core
 
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            // For SpanByteAllocator, we are always inline.
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
+            sizeInfo.KeyIsInline = true;
+            var keySize = sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize;
 
             // Value
-            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
+            sizeInfo.ValueIsInline = true;
+            var valueSize = sizeInfo.FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
@@ -219,9 +197,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
-            if (disposeReason != DisposeReason.Deleted)
-                _ = logRecord.FreeKeyOverflow();
-            _ = logRecord.FreeValueOverflow();
+            // Value is always inline in the SpanByteAllocator so this is a no-op
         }
 
         internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) { /* This allocator has no IHeapObject */ }
@@ -231,13 +207,11 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            var localValues = Interlocked.Exchange(ref values, null);
-            if (localValues != null)
+            var localFreePagePool = Interlocked.Exchange(ref freePagePool, null);
+            if (localFreePagePool != null)
             {
                 base.Dispose();
                 freePagePool.Dispose();
-                foreach (var value in localValues)
-                    value.Dispose();
 
                 if (pagePointers is not null)
                 {

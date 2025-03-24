@@ -207,7 +207,7 @@ namespace Tsavorite.test.ReadCacheTests
             isReadCache = entry.ReadCache;
             var log = isReadCache ? store.readcache : store.hlog;
             var pa = log.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-            recordKey = LogRecord.GetKey(pa);
+            recordKey = LogRecord.GetInlineKey(pa);
             invalid = LogRecord.GetInfo(pa).Invalid;
 
             return (entry.Address, pa);
@@ -228,7 +228,7 @@ namespace Tsavorite.test.ReadCacheTests
             log = isReadCache ? store.readcache : store.hlog;
             la &= ~Constants.kReadCacheBitMask;
             var pa = log.GetPhysicalAddress(la);
-            recordKey = LogRecord.GetKey(pa);
+            recordKey = LogRecord.GetInlineKey(pa);
             invalid = LogRecord.GetInfo(pa).Invalid;
             return (la, pa);
         }
@@ -283,7 +283,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
-            var storedKey = LogRecord.GetKey(pa);
+            var storedKey = LogRecord.GetInlineKey(pa);
             ClassicAssert.AreEqual(expectedKey, storedKey);
         }
 

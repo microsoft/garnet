@@ -118,23 +118,22 @@ namespace Tsavorite.core
                     {
                         entry.word = *(((long*)src_start) + index);
                         if (Constants.kInvalidEntry == entry.word)
-                        {
                             continue;
-                        }
 
                         var logicalAddress = entry.Address;
                         long physicalAddress = 0;
 
+                        LogRecord logRecord = default;
                         if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
-                            physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
+                            logRecord = readcache.CreateLogRecord(entry.AbsoluteAddress);
                         else if (logicalAddress >= hlogBase.HeadAddress)
-                            physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
+                            logRecord = hlog.CreateLogRecord(logicalAddress);
 
                         // It is safe to always use hlog instead of readcache for some calls such
                         // as GetKey and GetInfo
-                        if (physicalAddress != 0)
+                        if (logRecord.IsSet)
                         {
-                            var hash = storeFunctions.GetKeyHashCode64(LogRecord.GetKey(physicalAddress));
+                            var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left

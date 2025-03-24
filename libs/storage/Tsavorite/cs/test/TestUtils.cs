@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -360,13 +362,19 @@ namespace Tsavorite.test
             return TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
         }
 
-        public static unsafe ref T AsRef<T>(this SpanByte spanByte) where T : unmanaged
+        public static unsafe ref T AsRef<T>(this Span<byte> spanByte) where T : unmanaged
         {
-            ClassicAssert.IsTrue(spanByte.Length == sizeof(T));
-            return ref *(T*)spanByte.ToPointer();
+            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            return ref Unsafe.As<byte, T>(ref spanByte[0]);
         }
 
-        internal static unsafe SpanByte Set<T>(this SpanByte spanByte, T value) where T : unmanaged
+        public static ref readonly T AsReadOnlyRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
+        {
+            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];
+        }
+
+        internal static unsafe Span<byte> Set<T>(this Span<byte> spanByte, T value) where T : unmanaged
         {
             ClassicAssert.IsTrue(spanByte.Length == sizeof(T));
             spanByte.AsRef<T>() = value;
