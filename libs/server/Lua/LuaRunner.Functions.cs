@@ -1513,7 +1513,7 @@ namespace Garnet.server
                 {
                     return DecodeObject(self, o);
                 }
-                else if(node == null)
+                else if (node == null)
                 {
                     self.state.PushNil();
                     return 1;
