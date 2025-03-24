@@ -127,7 +127,7 @@ namespace Garnet.server
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
         internal bool TryLoad(
-            RespServerSession session, 
+            RespServerSession session,
             ReadOnlySpan<byte> source,
             ScriptHashKey digest,
             out LuaRunner runner,
