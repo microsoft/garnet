@@ -1194,13 +1194,13 @@ namespace Garnet.test
             var server = redis.GetServers().First();
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "1", "FIELDS", "2", "field1", "field2");
+            var result = db.Execute("HPEXPIRE", "myhash", "500", "FIELDS", "2", "field1", "field2");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
 
-            result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "2", "field3", "field4");
+            result = db.Execute("HPEXPIRE", "myhash", "1500", "FIELDS", "2", "field3", "field4");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1208,7 +1208,7 @@ namespace Garnet.test
 
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
 
-            await Task.Delay(1200);
+            await Task.Delay(600);
 
             var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1220,7 +1220,7 @@ namespace Garnet.test
             ClassicAssert.Less(newMemory, orginalMemory);
             orginalMemory = newMemory;
 
-            await Task.Delay(2200);
+            await Task.Delay(1100);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);

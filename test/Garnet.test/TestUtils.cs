@@ -448,6 +448,7 @@ namespace Garnet.test
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
@@ -493,6 +494,7 @@ namespace Garnet.test
                     enableLua: enableLua,
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
+                    replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit);
 
@@ -548,6 +550,7 @@ namespace Garnet.test
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
@@ -660,7 +663,7 @@ namespace Garnet.test
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
-                ReplicaDisklessSyncDelay = 1
+                ReplicaDisklessSyncDelay = replicaDisklessSyncDelay
             };
 
             if (lowMemory)
