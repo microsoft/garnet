@@ -295,15 +295,15 @@ namespace Tsavorite.core
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
-        internal readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
+        public readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
         public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
         public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
         public bool KeyIsOverflow => !KeyIsInline;
 
-        internal readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
+        public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
         public void SetValueIsInline() => word = (word & ~kValueIsObjectBitMask) | kValueIsInlineBitMask;
 
-        internal readonly bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
+        public readonly bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
         public void SetValueIsObject() => word = (word & ~kValueIsInlineBitMask) | kValueIsObjectBitMask;
 
         // "Overflow" is determined by lack of Inline and lack of Object

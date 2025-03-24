@@ -216,7 +216,7 @@ namespace Garnet.server
         /// <param name="args">Args to the command</param>
         /// <param name="output">Output from the command</param>
         /// <returns>True if successful</returns>
-        public bool InvokeCustomRawStringCommand<TGarnetApi>(ref TGarnetApi storageApi, CustomRawStringCommand customCommand, ArgSlice key, ArgSlice[] args, out ArgSlice output)
+        public bool InvokeCustomRawStringCommand<TGarnetApi>(ref TGarnetApi storageApi, CustomRawStringCommand customCommand, PinnedSpanByte key, PinnedSpanByte[] args, out PinnedSpanByte output)
             where TGarnetApi : IGarnetAdvancedApi
         {
             ArgumentNullException.ThrowIfNull(customCommand);
@@ -234,7 +234,7 @@ namespace Garnet.server
 
                 if (_output.Memory != null)
                 {
-                    output = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+                    output = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan());
                     _output.Memory.Dispose();
                 }
                 else
@@ -251,7 +251,7 @@ namespace Garnet.server
                 {
                     if (_output.Memory != null)
                     {
-                        output = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+                        output = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan());
                         _output.Memory.Dispose();
                     }
                     else
@@ -277,7 +277,7 @@ namespace Garnet.server
         /// <param name="args">Args to the command</param>
         /// <param name="output">Output from the command</param>
         /// <returns>True if successful</returns>
-        public bool InvokeCustomObjectCommand<TGarnetApi>(ref TGarnetApi storageApi, CustomObjectCommand customObjCommand, ArgSlice key, ArgSlice[] args, out ArgSlice output)
+        public bool InvokeCustomObjectCommand<TGarnetApi>(ref TGarnetApi storageApi, CustomObjectCommand customObjCommand, PinnedSpanByte key, PinnedSpanByte[] args, out PinnedSpanByte output)
             where TGarnetApi : IGarnetAdvancedApi
         {
             ArgumentNullException.ThrowIfNull(customObjCommand);
@@ -304,7 +304,7 @@ namespace Garnet.server
                         break;
                     default:
                         if (_output.SpanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.AsReadOnlySpan());
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan());
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
@@ -319,7 +319,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         if (_output.SpanByteAndMemory.Memory != null)
-                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.AsReadOnlySpan());
+                            output = scratchBufferManager.FormatScratch(0, _output.SpanByteAndMemory.ReadOnlySpan());
                         else
                             output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_OK);
                         break;

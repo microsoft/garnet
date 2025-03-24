@@ -12,10 +12,10 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(SpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             var type = input.header.type;
 
@@ -41,7 +41,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialUpdater(ref LogRecord<IGarnetObject> logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
@@ -71,7 +71,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostInitialUpdater(ref LogRecord<IGarnetObject> dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public void PostInitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -84,7 +84,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref LogRecord<IGarnetObject> logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             if (InPlaceUpdaterWorker(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo, out long sizeChange))
             {
@@ -98,7 +98,7 @@ namespace Garnet.server
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord<IGarnetObject> logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -148,7 +148,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = logRecord.ValueObject.Operate(ref input, ref output, out sizeChange);
+                        var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, out sizeChange);
                         if (output.HasWrongType)
                             return true;
                         if (output.HasRemoveKey)
@@ -162,7 +162,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        if (IncorrectObjectType(ref input, logRecord.ValueObject, ref output.SpanByteAndMemory))
+                        if (IncorrectObjectType(ref input, ((IGarnetObject)logRecord.ValueObject), ref output.SpanByteAndMemory))
                         {
                             output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
@@ -170,7 +170,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(logRecord.Key, ref input, logRecord.ValueObject, ref memoryAndLength, ref rmwInfo);
+                        var result = customObjectCommand.Updater(logRecord.Key, ref input, ((IGarnetObject)logRecord.ValueObject), ref memoryAndLength, ref rmwInfo);
                         output.SpanByteAndMemory.Memory = memoryAndLength.Memory;
                         output.SpanByteAndMemory.Length = memoryAndLength.Length;
                         if (!result)
@@ -184,12 +184,12 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            where TSourceLogRecord : ISourceLogRecord
             => true;
 
         /// <inheritdoc />
-        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+        public bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
         {
             // Expired data
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
@@ -201,13 +201,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+        public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+            where TSourceLogRecord : ISourceLogRecord
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
             var oldValueSize = srcLogRecord.ValueObject.Size;
-            var value = srcLogRecord.ValueObject.CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
+            var value = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
 
             // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.

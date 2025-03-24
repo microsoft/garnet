@@ -74,7 +74,7 @@ namespace Garnet.server
             }
         }
 
-        unsafe int Broadcast(ArgSlice key, ArgSlice value)
+        unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value)
         {
             var numSubscribers = 0;
 
@@ -99,7 +99,7 @@ namespace Garnet.server
                     var pattern = entry.pattern;
                     fixed (byte* patternPtr = pattern.ReadOnlySpan)
                     {
-                        var patternSlice = new ArgSlice(patternPtr, pattern.ReadOnlySpan.Length);
+                        var patternSlice = PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.ReadOnlySpan.Length);
                         if (Match(key, patternSlice))
                         {
                             var sessions = entry.subscriptions;
@@ -154,9 +154,9 @@ namespace Garnet.server
                 }
 
                 var ptr = payloadPtr;
-                var key = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
-                ptr += sizeof(int) + key.length;
-                var value = new ArgSlice(ptr + sizeof(int), *(int*)ptr);
+                var key = PinnedSpanByte.FromPinnedPointer(ptr + sizeof(int), *(int*)ptr);
+                ptr += sizeof(int) + key.Length;
+                var value = PinnedSpanByte.FromPinnedPointer(ptr + sizeof(int), *(int*)ptr);
                 _ = Broadcast(key, value);
                 if (nextAddress > aof.BeginAddress)
                     aof.TruncateUntil(nextAddress);
@@ -184,7 +184,7 @@ namespace Garnet.server
         /// <param name="key">Key to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool Subscribe(ArgSlice key, ServerSessionBase session)
+        public unsafe bool Subscribe(PinnedSpanByte key, ServerSessionBase session)
         {
             if (!initialized && Interlocked.Increment(ref sid) == 1)
                 Initialize();
@@ -204,7 +204,7 @@ namespace Garnet.server
         /// <param name="pattern">Pattern to subscribe to</param>
         /// <param name="session">Server session</param>
         /// <returns></returns>
-        public unsafe bool PatternSubscribe(ArgSlice pattern, ServerSessionBase session)
+        public unsafe bool PatternSubscribe(PinnedSpanByte pattern, ServerSessionBase session)
         {
             if (!initialized && Interlocked.Increment(ref sid) == 1)
                 Initialize();
@@ -295,7 +295,7 @@ namespace Garnet.server
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
         /// <returns>Number of subscribers notified</returns>
-        public unsafe int PublishNow(ArgSlice key, ArgSlice value)
+        public unsafe int PublishNow(PinnedSpanByte key, PinnedSpanByte value)
         {
             if (subscriptions == null && patternSubscriptions == null) return 0;
             return Broadcast(key, value);
@@ -306,13 +306,12 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
-        public unsafe void Publish(ArgSlice key, ArgSlice value)
+        public unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
             if (subscriptions == null && patternSubscriptions == null)
                 return;
 
-            var valueSB = value.SpanByte;
-            aof.Enqueue(key.SpanByte, ref valueSB, out _);
+            aof.Enqueue(key.ReadOnlySpan, value.ReadOnlySpan, out _);
         }
 
         /// <summary>
@@ -331,7 +330,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="pattern"></param>
         /// <returns></returns>
-        public unsafe List<ByteArrayWrapper> GetChannels(ArgSlice pattern)
+        public unsafe List<ByteArrayWrapper> GetChannels(PinnedSpanByte pattern)
         {
             if (subscriptions is null || subscriptions.Count == 0)
                 return [];
@@ -341,7 +340,7 @@ namespace Garnet.server
             {
                 fixed (byte* keyPtr = key.ReadOnlySpan)
                 {
-                    if (Match(new ArgSlice(keyPtr, key.ReadOnlySpan.Length), pattern))
+                    if (Match(PinnedSpanByte.FromPinnedPointer(keyPtr, key.ReadOnlySpan.Length), pattern))
                         matches.Add(key);
                 }
             }
@@ -360,7 +359,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="channel"></param>
         /// <returns></returns>
-        public int NumSubscriptions(ArgSlice channel)
+        public int NumSubscriptions(PinnedSpanByte channel)
         {
             if (subscriptions is null)
                 return 0;
@@ -380,7 +379,7 @@ namespace Garnet.server
             device.Dispose();
         }
 
-        unsafe bool Match(ArgSlice key, ArgSlice pattern)
-            => GlobUtils.Match(pattern.ptr, pattern.length, key.ptr, key.length);
+        unsafe bool Match(PinnedSpanByte key, PinnedSpanByte pattern)
+            => GlobUtils.Match(pattern.ToPointer(), pattern.Length, key.ToPointer(), key.Length);
     }
 }

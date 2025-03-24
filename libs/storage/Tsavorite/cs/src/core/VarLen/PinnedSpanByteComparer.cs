@@ -1,33 +1,33 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 
-namespace Garnet.server
+namespace Tsavorite.core
 {
     /// <summary>
-    /// ArgSlice Comparer
+    /// ArgSlice Comparer. This implements <see cref="IEqualityComparer{PinnedSpanByte}"/>, not <see cref="IKeyComparer"/>,
+    /// as it is not used for Tsavorite keys directly (they are converted to <see cref="ReadOnlySpan{_byte_}"/>).
     /// </summary>
-    public sealed class ArgSliceComparer : IEqualityComparer<ArgSlice>
+    public sealed class PinnedSpanByteComparer : IEqualityComparer<PinnedSpanByte>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly ArgSliceComparer Instance = new();
+        public static readonly PinnedSpanByteComparer Instance = new();
 
         /// <inheritdoc />
-        public bool Equals(ArgSlice x, ArgSlice y) => x.Equals(y);
+        public bool Equals(PinnedSpanByte x, PinnedSpanByte y) => x.Equals(y);
 
         /// <inheritdoc />
-        public unsafe int GetHashCode([DisallowNull] ArgSlice obj)
+        public unsafe int GetHashCode([DisallowNull] PinnedSpanByte obj)
         {
             fixed (byte* ptr = obj.Span)
-            {
                 return (int)HashBytes(ptr, obj.Length);
-            }
         }
 
         static unsafe long HashBytes(byte* pbString, int len)

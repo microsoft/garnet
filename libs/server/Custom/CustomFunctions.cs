@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -63,7 +64,7 @@ namespace Garnet.server
         /// <summary>
         /// Create output as an array of bulk strings, from given array of ArgSlice values
         /// </summary>
-        protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, params ArgSlice[] values)
+        protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, params PinnedSpanByte[] values)
         {
             var totalLen = 1 + NumUtils.CountDigits(values.Length) + 2;
             for (var i = 0; i < values.Length; i++)
@@ -91,7 +92,7 @@ namespace Garnet.server
         /// <summary>
         /// Create output as an array of bulk strings, from given array of ArgSlice values
         /// </summary>
-        protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, List<ArgSlice> values)
+        protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, List<PinnedSpanByte> values)
         {
             var totalLen = 1 + NumUtils.CountDigits(values.Count) + 2;
             for (var i = 0; i < values.Count; i++)
@@ -201,7 +202,7 @@ namespace Garnet.server
         /// <param name="parseState">Current parse state</param>
         /// <param name="idx">Current argument index in parse state</param>
         /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ref SessionParseState parseState, ref int idx)
+        protected static unsafe PinnedSpanByte GetNextArg(ref SessionParseState parseState, ref int idx)
         {
             var arg = idx < parseState.Count
                 ? parseState.GetArgSliceByRef(idx)
@@ -216,7 +217,7 @@ namespace Garnet.server
         /// <param name="procInput">Procedure input</param>
         /// <param name="idx">Current argument index in parse state</param>
         /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ref CustomProcedureInput procInput, ref int idx)
+        protected static unsafe PinnedSpanByte GetNextArg(ref CustomProcedureInput procInput, ref int idx)
         {
             return GetNextArg(ref procInput.parseState, ref idx);
         }
@@ -243,7 +244,7 @@ namespace Garnet.server
         /// <param name="input">Args to the command</param>
         /// <param name="output">Output from the command</param>
         /// <returns>True if successful</returns>
-        protected bool ExecuteCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, CustomRawStringCommand rawStringCommand, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+        protected bool ExecuteCustomRawStringCommand<TGarnetApi>(TGarnetApi garnetApi, CustomRawStringCommand rawStringCommand, PinnedSpanByte key, PinnedSpanByte[] input, out PinnedSpanByte output)
             where TGarnetApi : IGarnetApi
         {
             return respServerSession.InvokeCustomRawStringCommand(ref garnetApi, rawStringCommand, key, input, out output);
@@ -257,7 +258,7 @@ namespace Garnet.server
         /// <param name="input">Args to the command</param>
         /// <param name="output">Output from the command</param>
         /// <returns>True if successful</returns>
-        protected bool ExecuteCustomObjectCommand<TGarnetApi>(TGarnetApi garnetApi, CustomObjectCommand objectCommand, ArgSlice key, ArgSlice[] input, out ArgSlice output)
+        protected bool ExecuteCustomObjectCommand<TGarnetApi>(TGarnetApi garnetApi, CustomObjectCommand objectCommand, PinnedSpanByte key, PinnedSpanByte[] input, out PinnedSpanByte output)
             where TGarnetApi : IGarnetApi
         {
             return respServerSession.InvokeCustomObjectCommand(ref garnetApi, objectCommand, key, input, out output);

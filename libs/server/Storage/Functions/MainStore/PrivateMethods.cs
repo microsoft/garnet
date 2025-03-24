@@ -13,9 +13,9 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
     {
-        static void CopyTo(SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        static void CopyTo(ReadOnlySpan<byte> src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             int srcLength = src.Length;
 
@@ -24,7 +24,7 @@ namespace Garnet.server
                 if (dst.Length >= srcLength)
                 {
                     dst.Length = srcLength;
-                    src.AsReadOnlySpan().CopyTo(dst.SpanByte.AsSpan());
+                    src.CopyTo(dst.SpanByte.Span);
                     return;
                 }
                 dst.ConvertToHeap();
@@ -32,10 +32,10 @@ namespace Garnet.server
 
             dst.Memory = memoryPool.Rent(srcLength);
             dst.Length = srcLength;
-            src.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
+            src.CopyTo(dst.Memory.Memory.Span);
         }
 
-        void CopyRespTo(SpanByte src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
+        void CopyRespTo(ReadOnlySpan<byte> src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
         {
             int srcLength = end == -1 ? src.Length : ((start < end) ? (end - start) : 0);
             if (srcLength == 0)
@@ -58,7 +58,7 @@ namespace Garnet.server
                     NumUtils.WriteInt32(srcLength, numLength, ref tmp);
                     *tmp++ = (byte)'\r';
                     *tmp++ = (byte)'\n';
-                    src.AsReadOnlySpan().Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
+                    src.Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
                     tmp += srcLength;
                     *tmp++ = (byte)'\r';
                     *tmp++ = (byte)'\n';
@@ -76,7 +76,7 @@ namespace Garnet.server
                 NumUtils.WriteInt32(srcLength, numLength, ref tmp);
                 *tmp++ = (byte)'\r';
                 *tmp++ = (byte)'\n';
-                src.AsReadOnlySpan().Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
+                src.Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
                 tmp += srcLength;
                 *tmp++ = (byte)'\r';
                 *tmp++ = (byte)'\n';
@@ -84,7 +84,7 @@ namespace Garnet.server
         }
 
         void CopyRespToWithInput<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory dst, bool isFromPending)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var value = srcLogRecord.ValueSpan;
 
@@ -102,17 +102,17 @@ namespace Garnet.server
                 case RespCommand.MIGRATE:
                     if (value.Length <= dst.Length)
                     {
-                        value.CopyTo(dst.SpanByte);
+                        value.CopyTo(dst.SpanByte.Span);
                         dst.Length = value.Length;
                         return;
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.TotalSize;
+                    dst.Length = value.TotalSize();
 
                     if (dst.Memory == default) // Allocate new heap buffer
                         dst.Memory = functionsState.memoryPool.Rent(dst.Length);
-                    else if (dst.Memory.Memory.Span.Length < value.TotalSize)
+                    else if (dst.Memory.Memory.Span.Length < value.TotalSize())
                     // Allocate new heap buffer only if existing one is smaller
                     // otherwise it is safe to re-use existing buffer
                     {
@@ -127,19 +127,26 @@ namespace Garnet.server
                     if (value.Length <= dst.Length)
                     {
                         dst.Length = value.Length;
-                        value.AsReadOnlySpan().CopyTo(dst.SpanByte.AsSpan());
+                        value.CopyTo(dst.SpanByte.Span);
                         return;
                     }
 
                     dst.ConvertToHeap();
                     dst.Length = value.Length;
                     dst.Memory = functionsState.memoryPool.Rent(value.Length);
-                    value.AsReadOnlySpan().CopyTo(dst.Memory.Memory.Span);
+                    value.CopyTo(dst.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GETBIT:
                     var offset = input.arg1;
-                    var oldValSet = BitmapManager.GetBit(offset, value.ToPointer(), value.Length);
+                    byte oldValSet;
+
+                    if (srcLogRecord.IsPinnedValue)
+                        oldValSet = BitmapManager.GetBit(offset, srcLogRecord.PinnedValuePointer, value.Length);
+                    else
+                        fixed (byte* valuePtr = value)
+                            oldValSet = BitmapManager.GetBit(offset, valuePtr, value.Length);
+
                     if (oldValSet == 0)
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
                     else
@@ -163,7 +170,13 @@ namespace Garnet.server
                         }
                     }
 
-                    var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer(), value.Length);
+                    long count;
+                    if (srcLogRecord.IsPinnedValue)
+                        count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, srcLogRecord.PinnedValuePointer, value.Length);
+                    else
+                        fixed(byte* valuePtr = value)
+                            count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, valuePtr, value.Length);
+
                     functionsState.CopyRespNumber(count, ref dst);
                     break;
 
@@ -188,30 +201,42 @@ namespace Garnet.server
                         }
                     }
 
-                    var pos = BitmapManager.BitPosDriver(
-                        input: value.ToPointer(),
-                        inputLen: value.Length,
-                        startOffset: bpStartOffset,
-                        endOffset: bpEndOffset,
-                        searchFor: bpSetVal,
-                        offsetType: bpOffsetType
-                        );
+                    long pos;
+                    if (srcLogRecord.IsPinnedValue)
+                        pos = BitmapManager.BitPosDriver(input: srcLogRecord.PinnedValuePointer, inputLen: value.Length, startOffset: bpStartOffset,
+                                endOffset: bpEndOffset, searchFor: bpSetVal, offsetType: bpOffsetType);
+                    else
+                        fixed (byte* valuePtr = value)
+                            pos = BitmapManager.BitPosDriver(input: valuePtr, inputLen: value.Length, startOffset: bpStartOffset,
+                                endOffset: bpEndOffset, searchFor: bpSetVal, offsetType: bpOffsetType);
+
                     *(long*)dst.SpanByte.ToPointer() = pos;
                     functionsState.CopyRespNumber(pos, ref dst);
                     break;
 
                 case RespCommand.BITOP:
-                    var bitmap = (IntPtr)value.ToPointer();
                     var output = dst.SpanByte.ToPointer();
 
-                    *(long*)output = bitmap.ToInt64();
-                    *(int*)(output + 8) = value.Length;
+                    if (srcLogRecord.IsPinnedValue)
+                        *(long*)output = ((IntPtr)srcLogRecord.PinnedValuePointer).ToInt64();
+                    else
+                        fixed(byte* valuePtr = value)
+                            *(long*)output = ((IntPtr)valuePtr).ToInt64();
 
+                    *(int*)(output + sizeof(long)) = value.Length;
                     return;
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
+
+                    long retValue;
+                    bool overflow;
+                    if (srcLogRecord.IsPinnedValue)
+                        (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, srcLogRecord.PinnedValuePointer, value.Length);
+                    else
+                        fixed (byte* valuePtr = value)
+                            (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, value.Length);
+
                     if (!overflow)
                         functionsState.CopyRespNumber(retValue, ref dst);
                     else
@@ -220,13 +245,35 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD_RO:
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
-                    var retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, value.ToPointer(), value.Length);
+
+                    long retValue_RO;
+                    if (srcLogRecord.IsPinnedValue)
+                        retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, srcLogRecord.PinnedValuePointer, value.Length);
+                    else
+                        fixed (byte* valuePtr = value)
+                            retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, valuePtr, value.Length);
+
                     functionsState.CopyRespNumber(retValue_RO, ref dst);
                     return;
 
                 case RespCommand.PFCOUNT:
                 case RespCommand.PFMERGE:
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer(), value.Length))
+                    bool ok;
+                    if (srcLogRecord.IsPinnedValue)
+                    {
+                        if (ok = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, value.Length))
+                            Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, dst.SpanByte.ToPointer(), value.Length, value.Length);
+                    }
+                    else
+                    {
+                        fixed (byte* valuePtr = value)
+                        {
+                            if (ok = HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length))
+                                Buffer.MemoryCopy(valuePtr, dst.SpanByte.ToPointer(), value.Length, value.Length);
+                        }
+                    }
+
+                    if (!ok)
                     {
                         *(long*)dst.SpanByte.ToPointer() = -1;
                         return;
@@ -234,7 +281,6 @@ namespace Garnet.server
 
                     if (value.Length <= dst.Length)
                     {
-                        Buffer.MemoryCopy(value.ToPointer(), dst.SpanByte.ToPointer(), value.Length, value.Length);
                         dst.SpanByte.Length = value.Length;
                         return;
                     }
@@ -274,7 +320,7 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord<SpanByte> logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
+        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
             var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
@@ -330,7 +376,7 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, SpanByte newValue, ref SpanByteAndMemory output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref SpanByteAndMemory output)
         {
             var expiryExists = logRecord.Info.HasExpiration;
             var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
@@ -424,10 +470,10 @@ namespace Garnet.server
         }
 
         internal static bool CheckExpiry<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
             => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
-        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        static bool InPlaceUpdateNumber(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var ndigits = NumUtils.CountDigits(val, out var isNegative);
             ndigits += isNegative ? 1 : 0;
@@ -436,15 +482,15 @@ namespace Garnet.server
                 return false;
 
             var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
-            _ = NumUtils.WriteInt64(val, value.AsSpan());
+            _ = NumUtils.WriteInt64(val, value);
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            value.CopyTo(output.SpanByte.Span);
             output.SpanByte.Length = value.Length;
             return true;
         }
 
-        static bool InPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        static bool InPlaceUpdateNumber(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, double val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
 
@@ -452,20 +498,33 @@ namespace Garnet.server
                 return false;
 
             var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
-            _ = NumUtils.WriteDouble(val, value.AsSpan());
+            _ = NumUtils.WriteDouble(val, value);
 
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            value.CopyTo(output.SpanByte.Span);
             output.SpanByte.Length = value.Length;
             return true;
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, long input)
         {
             // Check if value contains a valid number
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
-            if (!IsValidNumber(value.Length, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
-                return true;
+
+            long val;
+            if (logRecord.IsPinnedValue)
+            {
+                if (!IsValidNumber(value.Length, logRecord.PinnedValuePointer, output.SpanByte.Span, out val))
+                    return true;
+            }
+            else
+            {
+                fixed(byte* valuePtr = value)
+                {
+                    if (!IsValidNumber(value.Length, valuePtr, output.SpanByte.Span, out val))
+                        return true;
+                }
+            }
 
             try
             {
@@ -473,46 +532,58 @@ namespace Garnet.server
             }
             catch
             {
-                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
                 return true;
             }
 
             return InPlaceUpdateNumber(ref logRecord, ref sizeInfo, val, ref output, ref rmwInfo);
         }
 
-        static bool TryInPlaceUpdateNumber(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
+        static bool TryInPlaceUpdateNumber(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, double input)
         {
             var value = logRecord.ValueSpan;  // To reduce redundant length calculations getting to Value
 
-            // Check if value contains a valid number
-            if (!IsValidDouble(value.Length, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
-                return true;
+            double val;
+            if (logRecord.IsPinnedValue)
+            {
+                if (!IsValidDouble(value.Length, logRecord.PinnedValuePointer, output.SpanByte.Span, out val))
+                    return true;
+            }
+            else
+            {
+                fixed (byte* valuePtr = value)
+                {
+                    if (!IsValidDouble(value.Length, valuePtr, output.SpanByte.Span, out val))
+                        return true;
+                }
+            }
+
 
             val += input;
 
             if (!double.IsFinite(val))
             {
-                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
                 return true;
             }
 
             return InPlaceUpdateNumber(ref logRecord, ref sizeInfo, val, ref output, ref rmwInfo);
         }
 
-        static bool TryCopyUpdateNumber(long next, SpanByte newValue, ref SpanByteAndMemory output)
+        static bool TryCopyUpdateNumber(long next, Span<byte> newValue, ref SpanByteAndMemory output)
         {
-            if (NumUtils.WriteInt64(next, newValue.AsSpan()) == 0)
+            if (NumUtils.WriteInt64(next, newValue) == 0)
                 return false;
-            newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            newValue.CopyTo(output.SpanByte.Span);
             output.SpanByte.Length = newValue.Length;
             return true;
         }
 
-        static bool TryCopyUpdateNumber(double next, SpanByte newValue, ref SpanByteAndMemory output)
+        static bool TryCopyUpdateNumber(double next, Span<byte> newValue, ref SpanByteAndMemory output)
         {
-            if (NumUtils.WriteDouble(next, newValue.AsSpan()) == 0)
+            if (NumUtils.WriteDouble(next, newValue) == 0)
                 return false;
-            newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            newValue.CopyTo(output.SpanByte.Span);
             output.SpanByte.Length = newValue.Length;
             return true;
         }
@@ -525,20 +596,35 @@ namespace Garnet.server
         /// <param name="sizeInfo">Size info for record fields</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, long input)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, long input)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                 return false;
 
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
 
-            // Check if value contains a valid number
-            if (!IsValidNumber(srcValue.Length, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            long val;
+            if (srcLogRecord.IsPinnedValue)
             {
-                // Move to tail of the log even when oldValue is alphanumeric
-                // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
+                if (!IsValidNumber(srcValue.Length, srcLogRecord.PinnedValuePointer, output.SpanByte.Span, out val))
+                {
+                    // Move to tail of the log even when oldValue is alphanumeric
+                    // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
+                    return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
+                }
+            }
+            else
+            {
+                fixed (byte* valuePtr = srcValue)
+                {
+                    if (!IsValidNumber(srcValue.Length, valuePtr, output.SpanByte.Span, out val))
+                    {
+                        // Move to tail of the log even when oldValue is alphanumeric
+                        // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
+                        return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
+                    }
+                }
             }
 
             // Check operation overflow
@@ -548,7 +634,7 @@ namespace Garnet.server
             }
             catch
             {
-                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
                 return false;
             }
 
@@ -564,26 +650,41 @@ namespace Garnet.server
         /// <param name="sizeInfo">Size information for record fields</param>
         /// <param name="output">Output value</param>
         /// <param name="input">Parsed input value</param>
-        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, double input)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+        static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, double input)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
                 return false;
 
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
 
-            // Check if value contains a valid number
-            if (!IsValidDouble(srcValue.Length, srcValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            double val;
+            if (srcLogRecord.IsPinnedValue)
             {
-                // Move to tail of the log even when oldValue is alphanumeric
-                // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
+                if (!IsValidDouble(srcValue.Length, srcLogRecord.PinnedValuePointer, output.SpanByte.Span, out val))
+                {
+                    // Move to tail of the log even when oldValue is alphanumeric
+                    // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
+                    return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
+                }
+            }
+            else
+            {
+                fixed (byte* valuePtr = srcValue)
+                {
+                    if (!IsValidDouble(srcValue.Length, valuePtr, output.SpanByte.Span, out val))
+                    {
+                        // Move to tail of the log even when oldValue is alphanumeric
+                        // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
+                        return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
+                    }
+                }
             }
 
             val += input;
             if (!double.IsFinite(val))
             {
-                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
                 return false;
             }
 
@@ -626,7 +727,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy length of value to output (as ASCII bytes)
         /// </summary>
-        static bool CopyValueLengthToOutput(SpanByte value, ref SpanByteAndMemory output)
+        static bool CopyValueLengthToOutput(ReadOnlySpan<byte> value, ref SpanByteAndMemory output)
         {
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
 
@@ -643,7 +744,7 @@ namespace Garnet.server
             return true;
         }
 
-        void CopyRespWithEtagData(SpanByte value, ref SpanByteAndMemory dst, bool hasETag, MemoryPool<byte> memoryPool)
+        void CopyRespWithEtagData(ReadOnlySpan<byte> value, ref SpanByteAndMemory dst, bool hasETag, MemoryPool<byte> memoryPool)
         {
             int valueLength = value.Length;
             // always writing an array of size 2 => *2\r\n
@@ -656,7 +757,7 @@ namespace Garnet.server
             // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
             desiredLength += 1 + NumUtils.CountDigits(etag) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
 
-            WriteValAndEtagToDst(desiredLength, value.AsReadOnlySpan(), etag, ref dst, memoryPool);
+            WriteValAndEtagToDst(desiredLength, value, etag, ref dst, memoryPool);
         }
 
         static void WriteValAndEtagToDst(int desiredLength, ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
@@ -686,7 +787,7 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
 
@@ -698,7 +799,7 @@ namespace Garnet.server
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
-                ref key, ref value, ref input, out _);
+                key, value, ref input, out _);
         }
 
         /// <summary>
@@ -707,14 +808,14 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(SpanByte key, ref RawStringInput input, long version, int sessionId)
+        void WriteLogRMW(ReadOnlySpan<byte> key, ref RawStringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                ref key, ref input, out _);
+                key, ref input, out _);
         }
 
         /// <summary>
@@ -722,11 +823,10 @@ namespace Garnet.server
         ///  a. ConcurrentDeleter
         ///  b. PostSingleDeleter
         /// </summary>
-        void WriteLogDelete(SpanByte key, long version, int sessionID)
+        void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
-            SpanByte def = default;
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, ref key, ref def, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)

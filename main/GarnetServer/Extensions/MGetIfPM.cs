@@ -39,8 +39,8 @@ namespace Garnet
             var prefix = GetNextArg(ref procInput, ref offset);
 
             // Read key, check condition, add to output
-            ArgSlice key;
-            List<ArgSlice> values = [];
+            PinnedSpanByte key;
+            List<PinnedSpanByte> values = [];
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
                 if (api.GET(key, out var value) == GarnetStatus.OK)

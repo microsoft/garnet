@@ -11,11 +11,11 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
         public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
             {
@@ -49,14 +49,14 @@ namespace Garnet.server
                     default:
                         if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                         {
-                            var opResult = srcLogRecord.ValueObject.Operate(ref input, ref output, out _);
+                            var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, out _);
                             if (output.HasWrongType)
                                 return true;
 
                             return opResult;
                         }
 
-                        if (IncorrectObjectType(ref input, srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
+                        if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
                         {
                             output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
@@ -64,19 +64,19 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, srcLogRecord.ValueObject, ref outp, ref readInfo);
+                        var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, (IGarnetObject)srcLogRecord.ValueObject, ref outp, ref readInfo);
                         output.SpanByteAndMemory.Memory = outp.Memory;
                         output.SpanByteAndMemory.Length = outp.Length;
                         return result;
                 }
             }
 
-            output.GarnetObject = srcLogRecord.ValueObject;
+            output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }
 
         /// <inheritdoc />
-        public bool ConcurrentReader(ref LogRecord<IGarnetObject> srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
+        public bool ConcurrentReader(ref LogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
             => SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo);
     }
 }

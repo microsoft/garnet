@@ -15,12 +15,25 @@ namespace Tsavorite.core
     /// </summary>
     public static class SpanByteUtility
     {
-        /// <summary>Length-limited string representation of a Span{byte}</summary>
+        /// <summary>Length-limited string representation of a Span</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ToShortString(this ReadOnlySpan<byte> span, int maxLen)
             => span.Length > maxLen ? $"{span.Slice(0, maxLen).ToString()}..." : span.ToString();
 
+        /// <summary>Length-limited string representation of a Span</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ToShortString(this Span<byte> span, int maxLen)
             => span.Length > maxLen ? $"{span.Slice(0, maxLen).ToString()}..." : span.ToString();
+
+        /// <summary>Total size, including length prefix, of a Span</summary>
+        /// <remarks>This must be a methods instead of a property due to extension limitations</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int TotalSize(this ReadOnlySpan<byte> span) => sizeof(int) + span.Length;
+
+        /// <summary>Total size, including length prefix, of a Span</summary>
+        /// <remarks>This must be a methods instead of a property due to extension limitations</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int TotalSize(this Span<byte> span) => sizeof(int) + span.Length;
     }
 
     /// <summary>

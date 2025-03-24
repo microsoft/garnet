@@ -103,12 +103,12 @@ namespace Garnet.test
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
-                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out var items);
+                var result = api.SortedSetPop(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), out var items);
                 ClassicAssert.AreEqual(1, items.Length);
                 ClassicAssert.AreEqual("a", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
                 ClassicAssert.AreEqual("1", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
 
-                result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out items);
+                result = api.SortedSetPop(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), out items);
                 ClassicAssert.AreEqual(1, items.Length);
                 ClassicAssert.AreEqual("b", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
                 ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));

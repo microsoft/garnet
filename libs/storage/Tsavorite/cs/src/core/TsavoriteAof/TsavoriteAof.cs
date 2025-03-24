@@ -870,11 +870,11 @@ namespace Tsavorite.core
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item.TotalSize;
+            var length = sizeof(THeader) + item.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -884,7 +884,8 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            var offset = headerSize + sizeof(THeader);
+            item.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -898,11 +899,11 @@ namespace Tsavorite.core
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -912,8 +913,10 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -926,10 +929,10 @@ namespace Tsavorite.core
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, out long logicalAddress)
+        public unsafe void Enqueue(ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = item1.TotalSize + item2.TotalSize;
+            var length = item1.TotalSize() + item2.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -938,8 +941,10 @@ namespace Tsavorite.core
             logicalAddress = AllocateBlock(allocatedLength);
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            item1.CopyTo(physicalAddress + headerSize);
-            item2.CopyTo(physicalAddress + headerSize + item1.TotalSize);
+            var offset = headerSize;
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -954,11 +959,11 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, ref ReadOnlySpan<byte> item3, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + item3.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -968,9 +973,12 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item2.TotalSize();
+            item3.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1010,11 +1018,11 @@ namespace Tsavorite.core
         /// <param name="item1"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + input.SerializedLength;
+            var length = sizeof(THeader) + item1.TotalSize() + input.SerializedLength;
             var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1023,8 +1031,10 @@ namespace Tsavorite.core
             logicalAddress = AllocateBlock(allocatedLength);
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize, input.SerializedLength);
+            var offset = headerSize + sizeof(THeader);
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            input.CopyTo(physicalAddress + offset, input.SerializedLength);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1039,11 +1049,11 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + input.SerializedLength;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + input.SerializedLength;
             var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1052,10 +1062,12 @@ namespace Tsavorite.core
             logicalAddress = AllocateBlock(allocatedLength);
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize,
-                input.SerializedLength);
+            var offset = headerSize + sizeof(THeader);
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item2.TotalSize();
+            input.CopyTo(physicalAddress + offset, input.SerializedLength);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1068,10 +1080,10 @@ namespace Tsavorite.core
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(byte userHeader, ref ReadOnlySpan<byte> item, out long logicalAddress)
+        public unsafe void Enqueue(byte userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item.TotalSize;
+            var length = sizeof(byte) + item.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1081,7 +1093,8 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
-            item.CopyTo(physicalAddress + sizeof(byte));
+            var offset = sizeof(byte);
+            item.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1123,11 +1136,11 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1143,8 +1156,10 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();    
+            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1162,11 +1177,11 @@ namespace Tsavorite.core
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref ReadOnlySpan<byte> item1, ref ReadOnlySpan<byte> item2, ref ReadOnlySpan<byte> item3, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + item3.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1182,9 +1197,12 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item2.TotalSize();
+            item3.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1200,10 +1218,10 @@ namespace Tsavorite.core
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue(byte userHeader, ref ReadOnlySpan<byte> item, out long logicalAddress)
+        public unsafe bool TryEnqueue(byte userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item.TotalSize;
+            var length = sizeof(byte) + item.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1219,7 +1237,8 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
-            item.CopyTo(physicalAddress + sizeof(byte));
+            var offset = sizeof(byte);
+            item.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();

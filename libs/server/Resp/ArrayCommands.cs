@@ -317,7 +317,7 @@ namespace Garnet.server
             }
 
             var pattern = "*"u8;
-            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
+            var patternArgSlice = PinnedSpanByte.FromPinnedSpan(pattern);
             var allKeys = true;
             long countValue = 10;
             ReadOnlySpan<byte> typeParameterValue = default;

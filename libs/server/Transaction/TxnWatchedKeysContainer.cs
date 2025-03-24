@@ -49,7 +49,7 @@ namespace Garnet.server
             watchBufferHeadAddress = 0;
         }
 
-        public bool RemoveWatch(ArgSlice key)
+        public bool RemoveWatch(PinnedSpanByte key)
         {
             for (int i = 0; i < sliceCount; i++)
             {
@@ -62,7 +62,7 @@ namespace Garnet.server
             return false;
         }
 
-        public void AddWatch(ArgSlice key, StoreType type)
+        public void AddWatch(PinnedSpanByte key, StoreType type)
         {
             if (sliceCount >= sliceBufferSize)
             {
@@ -92,12 +92,12 @@ namespace Garnet.server
                 }
             }
 
-            var slice = new ArgSlice(watchBufferPtr, key.Length);
-            key.ReadOnlySpan.CopyTo(slice.Span);
+            var slice = PinnedSpanByte.FromPinnedPointer(watchBufferPtr, key.Length);
+            key.            ReadOnlySpan.CopyTo(slice.Span);
 
             keySlices[sliceCount].slice = slice;
             keySlices[sliceCount].type = type;
-            keySlices[sliceCount].hash = Utility.HashBytes(slice.ptr, slice.Length);
+            keySlices[sliceCount].hash = Utility.HashBytes(slice.ToPointer(), slice.Length);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
             watchBufferPtr += key.Length;

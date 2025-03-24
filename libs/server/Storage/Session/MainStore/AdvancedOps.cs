@@ -8,13 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET_WithPending<TContext>(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus GET_WithPending<TContext>(ReadOnlySpan<byte> key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending, ref TContext context)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var status = context.Read(key, ref input, ref output, ctx);
 
@@ -39,7 +39,7 @@ namespace Garnet.server
         }
 
         public bool GET_CompletePending<TContext>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             Debug.Assert(outputArr != null);
 
@@ -62,8 +62,8 @@ namespace Garnet.server
             return ret;
         }
 
-        public bool GET_CompletePending<TContext>(out CompletedOutputIterator<SpanByte, RawStringInput, SpanByteAndMemory, long> completedOutputs, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public bool GET_CompletePending<TContext>(out CompletedOutputIterator<RawStringInput, SpanByteAndMemory, long> completedOutputs, bool wait, ref TContext context)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
             var ret = context.CompletePendingWithOutputs(out completedOutputs, wait);
@@ -71,8 +71,8 @@ namespace Garnet.server
             return ret;
         }
 
-        public GarnetStatus RMW_MainStore<TContext>(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus RMW_MainStore<TContext>(ReadOnlySpan<byte> key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var status = context.RMW(key, ref input, ref output);
 
@@ -85,8 +85,8 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus Read_MainStore<TContext>(SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus Read_MainStore<TContext>(ReadOnlySpan<byte> key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var status = context.Read(key, ref input, ref output);
 

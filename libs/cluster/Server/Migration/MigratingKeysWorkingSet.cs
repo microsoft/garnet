@@ -4,21 +4,21 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
     internal class MigratingKeysWorkingSet
     {
-        readonly Dictionary<ArgSlice, KeyMigrationStatus> WorkingSet;
+        readonly Dictionary<PinnedSpanByte, KeyMigrationStatus> WorkingSet;
         SingleWriterMultiReaderLock keyDictLock;
 
         public MigratingKeysWorkingSet()
         {
-            WorkingSet = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
+            WorkingSet = new Dictionary<PinnedSpanByte, KeyMigrationStatus>(PinnedSpanByteComparer.Instance);
         }
 
-        public IEnumerable<KeyValuePair<ArgSlice, KeyMigrationStatus>> GetKeys()
+        public IEnumerable<KeyValuePair<PinnedSpanByte, KeyMigrationStatus>> GetKeys()
         {
             foreach (var pair in WorkingSet)
                 yield return pair;
@@ -36,7 +36,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="key"></param>
         /// <param name="status"></param>
-        public bool TryAdd(ref ArgSlice key, KeyMigrationStatus status)
+        public bool TryAdd(PinnedSpanByte key, KeyMigrationStatus status)
         {
             try
             {
@@ -55,7 +55,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="status"></param>
         /// <returns></returns>
-        public bool TryGetValue(ref ArgSlice key, out KeyMigrationStatus status)
+        public bool TryGetValue(PinnedSpanByte key, out KeyMigrationStatus status)
         {
             try
             {
@@ -77,7 +77,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="status"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateStatus(ArgSlice key, KeyMigrationStatus status)
+        public void UpdateStatus(PinnedSpanByte key, KeyMigrationStatus status)
             => WorkingSet[key] = status;
 
         /// <summary>

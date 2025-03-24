@@ -18,6 +18,7 @@ using System.Text.Json.Nodes;
 using Garnet.common;
 using KeraLua;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -3191,8 +3192,8 @@ end
                     }
 
                     // Note these spans are implicitly pinned, as they're actually on the Lua stack
-                    var key = ArgSlice.FromPinnedSpan(keySpan);
-                    var value = ArgSlice.FromPinnedSpan(valSpan);
+                    var key = PinnedSpanByte.FromPinnedSpan(keySpan);
+                    var value = PinnedSpanByte.FromPinnedSpan(valSpan);
 
                     _ = api.SET(key, value);
 
@@ -3212,7 +3213,7 @@ end
                     }
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
-                    var key = ArgSlice.FromPinnedSpan(keySpan);
+                    var key = PinnedSpanByte.FromPinnedSpan(keySpan);
                     var status = api.GET(key, out var value);
 
                     if (status == GarnetStatus.OK)

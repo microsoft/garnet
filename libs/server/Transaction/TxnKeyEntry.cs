@@ -8,11 +8,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
@@ -61,8 +61,8 @@ namespace Garnet.server
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, TransactionalContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext,
-                TransactionalContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext)
+        internal TxnKeyEntries(int initialCount, TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext,
+                TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
@@ -86,11 +86,11 @@ namespace Garnet.server
             }
         }
 
-        public void AddKey(ArgSlice keyArgSlice, bool isObject, LockType type)
+        public void AddKey(PinnedSpanByte keyArgSlice, bool isObject, LockType type)
         {
             var keyHash = !isObject
-                ? comparison.transactionalContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparison.objectStoreTransactionalContext.GetKeyHash(keyArgSlice.SpanByte);
+                ? comparison.transactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan)
+                : comparison.objectStoreTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)

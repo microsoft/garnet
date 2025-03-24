@@ -6,7 +6,7 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
-    public interface ISourceLogRecord
+    public unsafe interface ISourceLogRecord
     {
         /// <summary>Whether this is a record for an object or a Span{byte} value</summary>
         bool ValueIsObject { get; }
@@ -29,12 +29,24 @@ namespace Tsavorite.core
         /// <remarks>Not a ref return as it cannot be changed</remarks>
         ReadOnlySpan<byte> Key { get; }
 
+        /// <summary>Whether the record's key is pinned in memory, e.g. inline in the log vs an overflow byte[]. If this is true, <see cref="PinnedKeyPointer"/> is non-null.</summary>
+        bool IsPinnedKey { get; }
+
+        /// <summary>The pointer to the pinned memory if <see cref="IsPinnedKey"/> is true, else null.</summary>
+        byte* PinnedKeyPointer { get; }
+
         /// <summary>The value <see cref="Span{_byte_}"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
         /// <remarks>Not a ref return as it cannot be changed directly; use LogRecord.TrySetValueSpan(Span{_byte_}, ref RecordSizeInfo) instead.</remarks>
         Span<byte> ValueSpan { get; }
 
         /// <summary>The value object, if the value in this record is an IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
         IHeapObject ValueObject { get; }
+
+        /// <summary>Whether the record's value is pinned in memory, e.g. inline in the log vs an overflow byte[]. If this is true, <see cref="PinnedValuePointer"/> is non-null.</summary>
+        bool IsPinnedValue { get; }
+
+        /// <summary>The pointer to the pinned memory if <see cref="IsPinnedValue"/> is true, else null.</summary>
+        byte* PinnedValuePointer { get; }
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -8,10 +9,10 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref ObjectInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref ObjectInput input)
         {
             return new RecordFieldInfo()
             {
@@ -25,7 +26,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var fieldInfo = new RecordFieldInfo()
             {
@@ -52,14 +53,26 @@ namespace Garnet.server
             }
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, IGarnetObject value, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ObjectInput input)
+        {
+            return new RecordFieldInfo()
+            {
+                KeyDataSize = key.Length,
+                ValueDataSize = value.Length,
+                ValueIsObject = false,
+                 HasETag = input.header.CheckWithETagFlag()
+                // No object commands take an Expiration for Upsert.
+            };
+        }
+
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IGarnetObject value, ref ObjectInput input)
         {
             return new RecordFieldInfo()
             {
                 KeyDataSize = key.Length,
                 ValueDataSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                 HasETag = input.header.CheckWithETagFlag()
+                HasETag = input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.
             };
         }

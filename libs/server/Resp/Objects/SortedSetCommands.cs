@@ -922,7 +922,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var keys = new ArgSlice[nKeys];
+            var keys = new PinnedSpanByte[nKeys];
 
             for (var i = 1; i < nKeys + 1; i++)
             {
@@ -1614,7 +1614,7 @@ namespace Garnet.server
                 keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).SpanByte.ToByteArray();
             }
 
-            var cmdArgs = new ArgSlice[2];
+            var cmdArgs = new PinnedSpanByte[2];
 
             var orderArg = parseState.GetArgSliceByRef(currTokenId++);
             var orderSpan = orderArg.ReadOnlySpan;
@@ -1629,7 +1629,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
-            cmdArgs[0] = new ArgSlice((byte*)&lowScoresFirst, 1);
+            cmdArgs[0] = PinnedSpanByte.FromPinnedPointer((byte*)&lowScoresFirst, 1);
 
             var popCount = 1;
 
@@ -1649,7 +1649,7 @@ namespace Garnet.server
                 }
             }
 
-            cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
+            cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs).Result;
 

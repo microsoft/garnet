@@ -47,7 +47,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long GetSerializedLength(long physicalAddress) => *(long*)(physicalAddress + RecordInfo.GetLength());
 
-        #region IReadOnlyRecord
+        #region ISourceLogRecord
         /// <inheritdoc/>
         public readonly bool ValueIsObject
         {
@@ -60,6 +60,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public bool IsPinnedValue => Info.ValueIsInline;
+
+        /// <inheritdoc/>
+        public byte* PinnedValuePointer => IsPinnedValue ? (byte*)ValueAddress : null;
+
+        /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0;
         /// <inheritdoc/>
         public readonly ref RecordInfo InfoRef => ref Unsafe.AsRef<RecordInfo>((byte*)physicalAddress);
@@ -67,6 +73,12 @@ namespace Tsavorite.core
         public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
         /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> Key => SpanByte.FromLengthPrefixedPinnedPointer((byte*)KeyAddress);
+        /// <inheritdoc/>
+        public bool IsPinnedKey => true;
+
+        /// <inheritdoc/>
+        public byte* PinnedKeyPointer => (byte*)KeyAddress;
+
         /// <inheritdoc/>
         public readonly Span<byte> ValueSpan => ValueIsObject ? throw new TsavoriteException("DiskLogRecord with ValueIsObject does not support Span<byte> values") : SpanByte.FromLengthPrefixedPinnedPointer((byte*)ValueAddress);
         /// <inheritdoc/>
@@ -94,7 +106,7 @@ namespace Tsavorite.core
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration
             };
-        #endregion //IReadOnlyRecord
+        #endregion //ISourceLogRecord
 
         public readonly long SerializedRecordLength => GetSerializedLength(physicalAddress);
 

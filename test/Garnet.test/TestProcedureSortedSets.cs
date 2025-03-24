@@ -41,8 +41,8 @@ namespace Garnet
         private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
-            var ssItems = new (ArgSlice score, ArgSlice member)[10];
-            var ssMembers = new ArgSlice[10];
+            var ssItems = new (PinnedSpanByte score, PinnedSpanByte member)[10];
+            var ssMembers = new PinnedSpanByte[10];
 
             var ssA = GetNextArg(ref procInput, ref offset);
 
@@ -57,7 +57,7 @@ namespace Garnet
             var maxRange = GetNextArg(ref procInput, ref offset);
             var match = GetNextArg(ref procInput, ref offset);
 
-            var ssB = new ArgSlice();
+            var ssB = new PinnedSpanByte();
             api.SortedSetAdd(ssB, ssItems[0].score, ssItems[0].member, out int count);
             if (count != 0)
                 return false;
@@ -73,7 +73,7 @@ namespace Garnet
             var strMatch = Encoding.ASCII.GetString(match.ReadOnlySpan);
 
             // Exercise SortedSetScan
-            api.SortedSetScan(ssA, 0, strMatch, ssItems.Length, out ArgSlice[] itemsInScan);
+            api.SortedSetScan(ssA, 0, strMatch, ssItems.Length, out PinnedSpanByte[] itemsInScan);
 
             // The pattern "*em*" should match all items
             if (itemsInScan.Length != (ssItems.Length * 2) + 1)

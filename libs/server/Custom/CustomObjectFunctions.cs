@@ -50,7 +50,7 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="input">Input</param>
         /// <param name="output">Output</param>
-        public virtual bool NeedInitialUpdate(SpanByte key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => throw new NotImplementedException();
+        public virtual bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => throw new NotImplementedException();
 
         /// <summary>
         /// Create initial value, given key and input. Optionally generate output for command.
@@ -61,7 +61,7 @@ namespace Garnet.server
         /// <param name="output">Output</param>
         /// <param name="rmwInfo">Advanced arguments</param>
         /// <returns>True if done, false if we need to cancel the update</returns>
-        public virtual bool InitialUpdater(SpanByte key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo) => Updater(key, ref input, value, ref output, ref rmwInfo);
+        public virtual bool InitialUpdater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo) => Updater(key, ref input, value, ref output, ref rmwInfo);
 
         /// <summary>
         /// Update given value in place, given key and input. Optionally generate output for command.
@@ -72,7 +72,7 @@ namespace Garnet.server
         /// <param name="output">Output</param>
         /// <param name="rmwInfo">Advanced arguments</param>
         /// <returns>True if done, false if we have no space to update in place</returns>
-        public virtual bool Updater(SpanByte key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public virtual bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo) => throw new NotImplementedException();
 
         /// <summary>
         /// Read value, given key and input and generate output for command.
@@ -83,6 +83,6 @@ namespace Garnet.server
         /// <param name="output">Output</param>
         /// <param name="readInfo">Advanced arguments</param>
         /// <returns>True if done, false if not found</returns>
-        public virtual bool Reader(SpanByte key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo) => throw new NotImplementedException();
+        public virtual bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo) => throw new NotImplementedException();
     }
 }

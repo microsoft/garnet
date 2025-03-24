@@ -8,14 +8,14 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleDeleter(ref LogRecord<IGarnetObject> logRecord, ref DeleteInfo deleteInfo)
+        public bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             => true;
 
         /// <inheritdoc />
-        public void PostSingleDeleter(ref LogRecord<IGarnetObject> logRecord, ref DeleteInfo deleteInfo)
+        public void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
@@ -24,7 +24,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref LogRecord<IGarnetObject> logRecord, ref DeleteInfo deleteInfo)
+        public bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

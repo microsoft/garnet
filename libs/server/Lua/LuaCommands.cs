@@ -37,7 +37,7 @@ namespace Garnet.server
             LuaRunner runner = null;
 
             // Length check is mandatory, as ScriptHashKey assumes correct length
-            if (digest.length == SessionScriptCache.SHA1Len)
+            if (digest.Length == SessionScriptCache.SHA1Len)
             {
             tryAgain:
                 var scriptKey = new ScriptHashKey(digest.Span);
@@ -161,7 +161,7 @@ namespace Garnet.server
                 var exists = 0;
 
                 // Length check is required, as ScriptHashKey makes a hard assumption
-                if (sha1.length == SessionScriptCache.SHA1Len)
+                if (sha1.Length == SessionScriptCache.SHA1Len)
                 {
                     AsciiUtils.ToLowerInPlace(sha1.Span);
 

@@ -12,14 +12,14 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <summary>
         /// Logging upsert from
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(SpanByte key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -27,11 +27,9 @@ namespace Garnet.server
             var valueBytes = GarnetObjectSerializer.Serialize(value);
             fixed (byte* valPtr = valueBytes)
             {
-                var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
-
                 functionsState.appendOnlyFile.Enqueue(
                     new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                    ref key, ref valSB, out _);
+                    key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
             }
         }
 
@@ -41,14 +39,14 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(SpanByte key, ref ObjectInput input, long version, int sessionID)
+        void WriteLogRMW(ReadOnlySpan<byte> key, ref ObjectInput input, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                ref key, ref input, out _);
+                key, ref input, out _);
         }
 
         /// <summary>
@@ -56,20 +54,19 @@ namespace Garnet.server
         ///  a. ConcurrentDeleter
         ///  b. PostSingleDeleter
         /// </summary>
-        void WriteLogDelete(SpanByte key, long version, int sessionID)
+        void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {
             if (functionsState.StoredProcMode)
                 return;
 
-            SpanByte valueSpan = default;
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, ref key, ref valueSpan, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }
 
         internal static bool CheckExpiry<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            where TSourceLogRecord : ISourceLogRecord
             => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
-        static bool EvaluateObjectExpireInPlace(ref LogRecord<IGarnetObject> logRecord, ExpireOption optionType, long newExpiry, ref GarnetObjectStoreOutput output)
+        static bool EvaluateObjectExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetObjectStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();

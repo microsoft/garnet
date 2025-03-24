@@ -13,8 +13,8 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        public static bool Expired<TValue, TSourceLogRecord>(ref TSourceLogRecord logRecord)
-            where TSourceLogRecord : ISourceLogRecord<TValue>
+        public static bool Expired<TSourceLogRecord>(ref TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
             => logRecord.Info.HasExpiration && logRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
         internal enum MigrateCmdParseState : byte
@@ -116,7 +116,7 @@ namespace Garnet.cluster
             {
                 transferOption = TransferOption.KEYS;
                 keys = new();
-                _ = keys.TryAdd(ref keySlice, KeyMigrationStatus.QUEUED);
+                _ = keys.TryAdd(keySlice, KeyMigrationStatus.QUEUED);
             }
 
             var currTokenIdx = 5;
@@ -148,13 +148,12 @@ namespace Garnet.cluster
                     while (currTokenIdx < parseState.Count)
                     {
                         var currKeySlice = parseState.GetArgSliceByRef(currTokenIdx++);
-                        var sbKey = currKeySlice.SpanByte;
 
                         // Skip if previous error encountered
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
                         // Check if all keys are local R/W because we migrate keys and need to be able to delete them
-                        var slot = HashSlotUtils.HashSlot(sbKey.ToPointer(), sbKey.Length);
+                        var slot = HashSlotUtils.HashSlot(currKeySlice.ToPointer(), currKeySlice.Length);
                         if (!current.IsLocal(slot, readWriteSession: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;
@@ -176,7 +175,7 @@ namespace Garnet.cluster
                         }
 
                         // Add pointer of current parsed key
-                        if (!keys.TryAdd(ref currKeySlice, KeyMigrationStatus.QUEUED))
+                        if (!keys.TryAdd(currKeySlice, KeyMigrationStatus.QUEUED))
                         {
                             logger?.LogWarning("Failed to add {key}", Encoding.ASCII.GetString(keySlice.ReadOnlySpan));
                             pstate = MigrateCmdParseState.FAILEDTOADDKEY;

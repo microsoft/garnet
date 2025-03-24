@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -53,7 +54,7 @@ namespace Garnet.server
         /// Rewind (pop) the last entry of scratch buffer (rewinding the current scratch buffer offset),
         /// if it contains the given ArgSlice
         /// </summary>
-        public bool RewindScratchBuffer(ref ArgSlice slice)
+        public bool RewindScratchBuffer(PinnedSpanByte slice)
         {
             if (slice.ptr + slice.Length == scratchBufferHead + scratchBufferOffset)
             {
@@ -81,11 +82,11 @@ namespace Garnet.server
         /// <summary>
         /// Create ArgSlice in scratch buffer, from given ReadOnlySpan
         /// </summary>
-        public ArgSlice CreateArgSlice(ReadOnlySpan<byte> bytes)
+        public PinnedSpanByte CreateArgSlice(ReadOnlySpan<byte> bytes)
         {
             ExpandScratchBufferIfNeeded(bytes.Length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, bytes.Length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, bytes.Length);
             bytes.CopyTo(retVal.Span);
             scratchBufferOffset += bytes.Length;
             return retVal;
@@ -103,12 +104,12 @@ namespace Garnet.server
         /// <summary>
         /// Create ArgSlice in UTF8 format in scratch buffer, from given string
         /// </summary>
-        public ArgSlice CreateArgSlice(string str)
+        public PinnedSpanByte CreateArgSlice(string str)
         {
             int length = Encoding.UTF8.GetByteCount(str);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             Encoding.UTF8.GetBytes(str, retVal.Span);
             scratchBufferOffset += length;
             return retVal;
@@ -138,12 +139,12 @@ namespace Garnet.server
         /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice values (arg1 and arg2)
         /// </summary>
-        public ArgSlice FormatScratchAsResp(int headerSize, ArgSlice arg1, ArgSlice arg2)
+        public PinnedSpanByte FormatScratchAsResp(int headerSize, PinnedSpanByte arg1, PinnedSpanByte arg2)
         {
             int length = headerSize + GetRespFormattedStringLength(arg1) + GetRespFormattedStringLength(arg2);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
@@ -160,12 +161,12 @@ namespace Garnet.server
         /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by RESP Bulk-String formatted versions of the specified ArgSlice value arg1
         /// </summary>
-        public ArgSlice FormatScratchAsResp(int headerSize, ArgSlice arg1)
+        public PinnedSpanByte FormatScratchAsResp(int headerSize, PinnedSpanByte arg1)
         {
             int length = headerSize + GetRespFormattedStringLength(arg1);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
@@ -180,12 +181,12 @@ namespace Garnet.server
         /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by the specified ArgSlice (arg)
         /// </summary>
-        public ArgSlice FormatScratch(int headerSize, ArgSlice arg)
+        public PinnedSpanByte FormatScratch(int headerSize, PinnedSpanByte arg)
         {
             int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
@@ -199,11 +200,11 @@ namespace Garnet.server
         /// <summary>
         /// Create an ArgSlice of specified length, leaves contents as is
         /// </summary>
-        public ArgSlice CreateArgSlice(int length)
+        public PinnedSpanByte CreateArgSlice(int length)
         {
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
@@ -214,26 +215,26 @@ namespace Garnet.server
         /// Does NOT move the offset forward
         /// </summary>
         /// <returns></returns>
-        public ArgSlice ViewRemainingArgSlice(int minLength = 0)
+        public PinnedSpanByte ViewRemainingArgSlice(int minLength = 0)
         {
             ExpandScratchBufferIfNeeded(minLength);
-            return new ArgSlice(scratchBufferHead + scratchBufferOffset, scratchBuffer.Length - scratchBufferOffset);
+            return PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, scratchBuffer.Length - scratchBufferOffset);
         }
 
-        public ArgSlice ViewFullArgSlice()
+        public PinnedSpanByte ViewFullArgSlice()
         {
-            return new ArgSlice(scratchBufferHead, scratchBufferOffset);
+            return PinnedSpanByte.FromPinnedPointer(scratchBufferHead, scratchBufferOffset);
         }
 
         /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by the specified Memory
         /// </summary>
-        public ArgSlice FormatScratch(int headerSize, ReadOnlySpan<byte> arg)
+        public PinnedSpanByte FormatScratch(int headerSize, ReadOnlySpan<byte> arg)
         {
             int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
@@ -310,7 +311,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="slice"></param>
         /// <returns></returns>
-        static int GetRespFormattedStringLength(ArgSlice slice)
+        static int GetRespFormattedStringLength(PinnedSpanByte slice)
             => 1 + NumUtils.CountDigits(slice.Length) + 2 + slice.Length + 2;
 
         void ExpandScratchBufferIfNeeded(int newLength)
@@ -337,7 +338,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns a new <see cref="ArgSlice"/>
+        /// Returns a new <see cref="PinnedSpanByte"/>
         /// with the <paramref name="length"/> bytes of the buffer;
         /// these are the most recently added bytes.
         /// </summary>
@@ -345,9 +346,9 @@ namespace Garnet.server
         /// <remarks>This is called by functions that add multiple items to the buffer,
         /// after all items have been added and all reallocations have been done.
         /// </remarks>
-        public ArgSlice GetSliceFromTail(int length)
+        public PinnedSpanByte GetSliceFromTail(int length)
         {
-            return new ArgSlice(scratchBufferHead + scratchBufferOffset - length, length);
+            return PinnedSpanByte.FromPinnedPointer(scratchBufferHead + scratchBufferOffset - length, length);
         }
 
         /// <summary>

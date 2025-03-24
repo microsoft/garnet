@@ -10,7 +10,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord
+        internal unsafe struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord
         {
             // User provided information
             internal OperationType type;
@@ -111,10 +111,22 @@ namespace Tsavorite.core
             public readonly ReadOnlySpan<byte> Key => key.Get();
 
             /// <inheritdoc/>
+            public bool IsPinnedKey => Info.KeyIsInline;
+
+            /// <inheritdoc/>
+            public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)KeyAddress : null;
+
+            /// <inheritdoc/>
             public readonly unsafe Span<byte> ValueSpan => ValueIsObject ? throw new TsavoriteException("Cannot use ValueSpan on an Object value") : Unsafe.As<Span<byte>>(ref valueSpan.Get());
 
             /// <inheritdoc/>
             public readonly IHeapObject ValueObject => valueObject;
+
+            /// <inheritdoc/>
+            public bool IsPinnedValue => Info.ValueIsInline;
+
+            /// <inheritdoc/>
+            public byte* PinnedValuePointer => IsPinnedValue ? (byte*)ValueAddress : null;
 
             /// <inheritdoc/>
             public readonly IHeapObject GetReadOnlyValue() => value.Get();

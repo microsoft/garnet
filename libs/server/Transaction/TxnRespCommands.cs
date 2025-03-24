@@ -193,7 +193,7 @@ namespace Garnet.server
                 return true;
             }
 
-            List<ArgSlice> keys = [];
+            List<PinnedSpanByte> keys = [];
 
             for (var c = 0; c < count; c++)
             {

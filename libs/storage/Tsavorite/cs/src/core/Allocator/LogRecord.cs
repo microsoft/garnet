@@ -79,6 +79,12 @@ namespace Tsavorite.core
         public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress);
 
         /// <inheritdoc/>
+        public bool IsPinnedKey => Info.KeyIsInline;
+
+        /// <inheritdoc/>
+        public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)KeyAddress : null;
+
+        /// <inheritdoc/>
         public readonly Span<byte> ValueSpan
         {
             get
@@ -104,6 +110,12 @@ namespace Tsavorite.core
                 return Unsafe.As<object, IHeapObject>(ref heapObj);
             }
         }
+
+        /// <inheritdoc/>
+        public bool IsPinnedValue => Info.ValueIsInline;
+
+        /// <inheritdoc/>
+        public byte* PinnedValuePointer => IsPinnedValue ? (byte*)ValueAddress : null;
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : LogRecord.NoETag;
@@ -150,7 +162,7 @@ namespace Tsavorite.core
         public static RecordInfo GetInfo(long physicalAddress) => LogRecord.GetInfo(physicalAddress);
 
         /// <summary>The address of the key</summary>
-        internal readonly long KeyAddress => GetKeyAddress(physicalAddress);
+        public readonly long KeyAddress => GetKeyAddress(physicalAddress);
         /// <summary>The address of the key</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetKeyAddress(long physicalAddress) => physicalAddress + RecordInfo.GetLength();
@@ -161,7 +173,7 @@ namespace Tsavorite.core
         public static ReadOnlySpan<byte> GetKey(long physicalAddress) => SpanField.AsSpan(GetKeyAddress(physicalAddress), GetInfo(physicalAddress).KeyIsInline);
 
         /// <summary>The address of the value</summary>
-        internal readonly long ValueAddress => GetValueAddress(physicalAddress);
+        public readonly long ValueAddress => GetValueAddress(physicalAddress);
         /// <summary>The address of the value.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetValueAddress(long physicalAddress)
@@ -376,7 +388,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpan(Span<byte> value, ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueSpan(ReadOnlySpan<byte> value, ref RecordSizeInfo sizeInfo)
         {
             RecordSizeInfo.AssertValueDataLength(value.Length, ref sizeInfo);
 

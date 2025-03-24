@@ -8,10 +8,10 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleWriter(ref LogRecord<IGarnetObject> dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             if (!dstLogRecord.TrySetValueObject(srcValue, ref sizeInfo))
                 return false;
@@ -23,12 +23,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<IGarnetObject> dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord
             => dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo);
 
         /// <inheritdoc />
-        public void PostSingleWriter(ref LogRecord<IGarnetObject> logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             if (reason != WriteReason.CopyToTail)
                 functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -42,7 +42,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentWriter(ref LogRecord<IGarnetObject> logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
+        public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IGarnetObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
             _ = logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))

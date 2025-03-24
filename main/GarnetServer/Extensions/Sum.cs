@@ -12,7 +12,7 @@ namespace Garnet
         {
             var offset = 0;
             var sum = 0;
-            ArgSlice key;
+            PinnedSpanByte key;
 
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {

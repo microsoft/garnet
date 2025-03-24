@@ -67,7 +67,7 @@ namespace Garnet.server
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
-            RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs = null)
+            RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs = null)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await this.GetCollectionItemAsync(observer, keys, timeoutInSeconds);
@@ -84,7 +84,7 @@ namespace Garnet.server
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
-            RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs)
+            RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await this.GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds);
@@ -399,7 +399,7 @@ namespace Garnet.server
         /// BZPOPMIN and BZPOPMAX share same implementation since Dictionary.First() and Last() 
         /// handle the ordering automatically based on sorted set scores
         /// </summary>
-        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
+        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, RespCommand command, PinnedSpanByte[] cmdArgs, out CollectionItemResult result)
         {
             result = default;
 
@@ -414,8 +414,8 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.BZMPOP:
-                    var lowScoresFirst = *(bool*)cmdArgs[0].ptr;
-                    var popCount = *(int*)cmdArgs[1].ptr;
+                    var lowScoresFirst = *(bool*)cmdArgs[0].ToPointer();
+                    var popCount = *(int*)cmdArgs[1].ToPointer();
                     popCount = Math.Min(popCount, sortedSetObj.Dictionary.Count);
 
                     var scores = new double[popCount];
@@ -436,7 +436,7 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
+        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
             result = default;
@@ -449,7 +449,7 @@ namespace Garnet.server
                 _ => throw new NotSupportedException()
             };
 
-            ArgSlice dstKey = default;
+            PinnedSpanByte dstKey = default;
             if (command == RespCommand.BLMOVE)
                 dstKey = cmdArgs[0];
 
@@ -477,11 +477,9 @@ namespace Garnet.server
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
                 IGarnetObject dstObj = null;
-                byte[] arrDstKey = default;
                 if (command == RespCommand.BLMOVE)
                 {
-                    arrDstKey = dstKey.ToArray();
-                    var dstStatusOp = storageSession.GET(dstKey.SpanByte, out var osDstObject, ref objectTransactionalContext);
+                    var dstStatusOp = storageSession.GET(dstKey, out var osDstObject, ref objectTransactionalContext);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.GarnetObject;
                 }
 
@@ -521,13 +519,13 @@ namespace Garnet.server
 
                                 if (isSuccessful && newObj)
                                 {
-                                    isSuccessful = storageSession.SET(dstKey.SpanByte, dstList, ref objectTransactionalContext) == GarnetStatus.OK;
+                                    isSuccessful = storageSession.SET(dstKey, dstList, ref objectTransactionalContext) == GarnetStatus.OK;
                                 }
 
                                 return isSuccessful;
                             case RespCommand.BLMPOP:
                                 var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
-                                var popCount = *(int*)(cmdArgs[1].ptr);
+                                var popCount = *(int*)(cmdArgs[1].ToPointer());
                                 popCount = Math.Min(popCount, listObj.LnkList.Count);
 
                                 var items = new byte[popCount][];

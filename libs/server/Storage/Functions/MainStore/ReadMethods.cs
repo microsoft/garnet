@@ -11,11 +11,11 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
         public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (CheckExpiry(ref srcLogRecord))
             {
@@ -41,7 +41,7 @@ namespace Garnet.server
                 var valueLength = value.Length;
                 (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
                 var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                    .Reader(srcLogRecord.Key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref memoryAndLength, ref readInfo);
+                    .Reader(srcLogRecord.Key, ref input, value, ref memoryAndLength, ref readInfo);
                 Debug.Assert(valueLength <= value.Length);
                 (output.Memory, output.Length) = memoryAndLength;
                 return ret;
@@ -70,7 +70,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentReader(ref LogRecord<SpanByte> srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public bool ConcurrentReader(ref LogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             if (CheckExpiry(ref srcLogRecord))
             {
@@ -96,7 +96,7 @@ namespace Garnet.server
                 var valueLength = value.Length;
                 (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
                 var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                    .Reader(srcLogRecord.Key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref memoryAndLength, ref readInfo);
+                    .Reader(srcLogRecord.Key, ref input, value, ref memoryAndLength, ref readInfo);
                 Debug.Assert(valueLength <= value.Length);
                 (output.Memory, output.Length) = memoryAndLength;
                 return ret;
@@ -125,7 +125,7 @@ namespace Garnet.server
         }
 
         private bool handleGetIfNotMatch<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
         {
             // Any value without an etag is treated the same as a value with an etag
             long etagToMatchAgainst = input.parseState.GetLong(0);

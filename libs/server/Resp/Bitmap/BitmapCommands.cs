@@ -9,7 +9,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using SecondaryCommandList = List<(RespCommand, ArgSlice[])>;
+    using SecondaryCommandList = List<(RespCommand, PinnedSpanByte[])>;
 
     ///  (1) , (2) , (3) 
     /// overflow check, ptr protection, and status not found implemented for below
@@ -366,7 +366,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             var isOverflowTypeSet = false;
-            ArgSlice overflowTypeSlice = default;
+            PinnedSpanByte overflowTypeSlice = default;
             var secondaryCommandArgs = new SecondaryCommandList();
 
             var currTokenIdx = 1;
@@ -521,7 +521,7 @@ namespace Garnet.server
                                                       RespCommand cmd,
                                                       SecondaryCommandList secondaryCommandArgs,
                                                       bool isOverflowTypeSet = false,
-                                                      ArgSlice overflowTypeSlice = default)
+                                                      PinnedSpanByte overflowTypeSlice = default)
             where TGarnetApi : IGarnetApi
         {
             while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))

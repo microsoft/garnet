@@ -191,7 +191,9 @@ namespace Garnet.server
             offset += encodedLength.Length;
 
             // copy value to buffer
-            value.ReadOnlySpan.CopyTo(buffer[offset..]);
+            value.
+            // copy value to buffer
+            ReadOnlySpan.CopyTo(buffer[offset..]);
             offset += value.ReadOnlySpan.Length;
 
             // Write RDB version

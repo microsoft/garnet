@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class RecordScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
+    public sealed unsafe class RecordScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -301,10 +301,22 @@ namespace Tsavorite.core
         public ReadOnlySpan<byte> Key => diskLogRecord.Key;
 
         /// <inheritdoc/>
+        public bool IsPinnedKey => diskLogRecord.IsPinnedKey;
+
+        /// <inheritdoc/>
+        public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
+
+        /// <inheritdoc/>
         public Span<byte> ValueSpan => diskLogRecord.ValueSpan;
 
         /// <inheritdoc/>
         public IHeapObject ValueObject => diskLogRecord.ValueObject;
+
+        /// <inheritdoc/>
+        public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
+
+        /// <inheritdoc/>
+        public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;

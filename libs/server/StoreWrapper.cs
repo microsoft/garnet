@@ -508,7 +508,7 @@ namespace Garnet.server
                 var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
                 var input = new ObjectInput(header);
 
-                ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
+                ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
                 storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
                 scratchBufferManager.Reset();
             }

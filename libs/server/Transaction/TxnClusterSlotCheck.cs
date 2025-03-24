@@ -8,7 +8,7 @@ namespace Garnet.server
     sealed unsafe partial class TransactionManager
     {
         // Keys involved in the current transaction
-        ArgSlice[] keys;
+        PinnedSpanByte[] keys;
         int keyCount;
 
         internal byte* saveKeyRecvBufferPtr;
@@ -18,7 +18,7 @@ namespace Garnet.server
         /// Keep track of actual key accessed by command
         /// </summary>
         /// <param name="argSlice"></param>
-        public void SaveKeyArgSlice(ArgSlice argSlice)
+        public void SaveKeyArgSlice(PinnedSpanByte argSlice)
         {
             // Execute method only if clusterEnabled
             if (!clusterEnabled) return;
@@ -26,7 +26,7 @@ namespace Garnet.server
             if (keyCount >= keys.Length)
             {
                 var oldKeys = keys;
-                keys = new ArgSlice[keys.Length * 2];
+                keys = new PinnedSpanByte[keys.Length * 2];
                 Array.Copy(oldKeys, keys, oldKeys.Length);
             }
 

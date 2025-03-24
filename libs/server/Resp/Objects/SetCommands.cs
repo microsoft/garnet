@@ -37,7 +37,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.SetAdd(key.SpanByte, ref input, out var output);
+            var status = storageApi.SetAdd(key, ref input, out var output);
 
             switch (status)
             {
@@ -71,7 +71,7 @@ namespace Garnet.server
             }
 
             // Read all keys
-            var keys = new ArgSlice[parseState.Count];
+            var keys = new PinnedSpanByte[parseState.Count];
             for (var i = 0; i < keys.Length; i++)
             {
                 keys[i] = parseState.GetArgSliceByRef(i);
@@ -129,7 +129,7 @@ namespace Garnet.server
             // Get the key
             var key = parseState.GetArgSliceByRef(0);
 
-            var keys = new ArgSlice[parseState.Count - 1];
+            var keys = new PinnedSpanByte[parseState.Count - 1];
             for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
@@ -233,7 +233,7 @@ namespace Garnet.server
             }
 
             // Read all the keys
-            var keys = new ArgSlice[parseState.Count];
+            var keys = new PinnedSpanByte[parseState.Count];
 
             for (var i = 0; i < keys.Length; i++)
             {
@@ -282,13 +282,13 @@ namespace Garnet.server
             // Get the key
             var key = parseState.GetArgSliceByRef(0);
 
-            var keys = new ArgSlice[parseState.Count - 1];
+            var keys = new PinnedSpanByte[parseState.Count - 1];
             for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetUnionStore(key.SpanByte, keys, out var output);
+            var status = storageApi.SetUnionStore(key.ReadOnlySpan, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -709,7 +709,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SDIFF");
             }
 
-            var keys = new ArgSlice[parseState.Count];
+            var keys = new PinnedSpanByte[parseState.Count];
             for (var i = 0; i < parseState.Count; i++)
             {
                 keys[i] = parseState.GetArgSliceByRef(i);
@@ -772,7 +772,7 @@ namespace Garnet.server
             // Get the key
             var key = parseState.GetArgSliceByRef(0);
 
-            var keys = new ArgSlice[parseState.Count - 1];
+            var keys = new PinnedSpanByte[parseState.Count - 1];
             for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);

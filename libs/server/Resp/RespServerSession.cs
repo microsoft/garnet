@@ -18,18 +18,18 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>,
-            ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
-    using TransactionalGarnetApi = GarnetApi<TransactionalContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        TransactionalContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>,
-            ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
+    using TransactionalGarnetApi = GarnetApi<TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+        TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     /// <summary>
     /// RESP server session
@@ -1012,7 +1012,7 @@ namespace Garnet.server
             return result;
         }
 
-        public ArgSlice GetCommandAsArgSlice(out bool success)
+        public PinnedSpanByte GetCommandAsArgSlice(out bool success)
         {
             if (bytesRead - readHead < 6)
             {
@@ -1040,7 +1040,7 @@ namespace Garnet.server
             }
             Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
 
-            var result = new ArgSlice(recvBufferPtr + readHead + 2, psize);
+            var result = PinnedSpanByte.FromPinnedPointer(recvBufferPtr + readHead + 2, psize);
             Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
             Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
 
@@ -1071,11 +1071,11 @@ namespace Garnet.server
         {
             if (k.Length > length) return false;
 
-            var dest = new SpanByte(length, (IntPtr)dst);
+            var dest = new Span<byte>(dst, length);
             if (k.IsSpanByte)
-                k.SpanByte.CopyTo(dest);
+                k.SpanByte.ReadOnlySpan.CopyTo(dest);
             else
-                k.AsMemoryReadOnlySpan().CopyTo(dest.AsSpan());
+                k.AsMemoryReadOnlySpan().CopyTo(dest);
             return true;
         }
 

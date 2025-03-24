@@ -32,7 +32,7 @@ namespace Garnet.server
             scratchBufferManager = new();
         }
 
-        public ArgSlice GetResponse()
+        public PinnedSpanByte GetResponse()
             => scratchBufferManager.ViewFullArgSlice();
 
         public void Reset()

@@ -9,14 +9,14 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Output that encapsulates sync stack output (via <see cref="core.SpanByte"/>) and async heap output (via IMemoryOwner)
+    /// Output that encapsulates sync stack output (via <see cref="core.PinnedSpanByte"/>) and async heap output (via IMemoryOwner)
     /// </summary>
     public unsafe struct SpanByteAndMemory
     {
         /// <summary>
         /// Stack output as <see cref="core.SpanByte"/>
         /// </summary>
-        public SpanByte SpanByte;
+        public PinnedSpanByte SpanByte;
 
         /// <summary>
         /// Heap output as IMemoryOwner
@@ -26,9 +26,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor using given <paramref name="spanByte"/>
         /// </summary>
-        public SpanByteAndMemory(SpanByte spanByte)
+        public SpanByteAndMemory(PinnedSpanByte spanByte)
         {
-            if (spanByte.Serialized) throw new Exception("Cannot create new SpanByteAndMemory using serialized SpanByte");
             SpanByte = spanByte;
             Memory = default;
         }
@@ -36,9 +35,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor using <see cref="core.SpanByte"/> at given pinned <paramref name="pointer"/>, of given <paramref name="length"/>
         /// </summary>
-        public SpanByteAndMemory(void* pointer, int length)
+        public SpanByteAndMemory(byte* pointer, int length)
         {
-            SpanByte = new SpanByte(length, (IntPtr)pointer);
+            SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length);
             Memory = default;
         }
 
@@ -54,7 +53,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Is it allocated as <see cref="core.SpanByte"/> (on stack)?
         /// </summary>
-        public readonly bool IsSpanByte => !SpanByte.Invalid;
+        public readonly bool IsSpanByte => SpanByte.IsValid;
 
         /// <summary>
         /// Constructor using given IMemoryOwner
@@ -79,7 +78,13 @@ namespace Tsavorite.core
         /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsReadOnlySpan() => IsSpanByte ? SpanByte.AsReadOnlySpan() : Memory.Memory.Span.Slice(0, Length);
+        public ReadOnlySpan<byte> ReadOnlySpan() => IsSpanByte ? SpanByte.ReadOnlySpan : Memory.Memory.Span.Slice(0, Length);
+
+        /// <summary>
+        /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<byte> Span() => IsSpanByte ? SpanByte.Span : Memory.Memory.Span.Slice(0, Length);
 
         /// <summary>
         /// As a span of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
@@ -119,7 +124,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
         /// </remarks>
-        public static SpanByteAndMemory FromPinnedSpan(ReadOnlySpan<byte> span) => new(SpanByte.FromPinnedSpan(span));
+        public static SpanByteAndMemory FromPinnedSpan(ReadOnlySpan<byte> span) => new(this.SpanByte.FromPinnedSpan(span));
 
         /// <summary>
         /// Convert to be used on heap (IMemoryOwner)

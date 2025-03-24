@@ -12,7 +12,7 @@ namespace Garnet.server
         public long version;
 
         [FieldOffset(8)]
-        public ArgSlice slice;
+        public PinnedSpanByte slice;
 
         [FieldOffset(20)]
         public long hash;

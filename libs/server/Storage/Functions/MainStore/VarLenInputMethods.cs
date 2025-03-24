@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -9,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -17,12 +18,33 @@ namespace Garnet.server
         /// <param name="source">Source string to evaluate</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidNumber(SpanByte source, out long val)
+        static bool IsValidNumber(ReadOnlySpan<byte> source, out long val)
         {
             try
             {
                 // Check for valid number
-                return NumUtils.TryReadInt64(source.Length, source.ToPointer(), out val);
+                return NumUtils.TryReadInt64(source, out val);
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                val = 0;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="source">Source string to evaluate</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidNumber(byte* source, int sourceLen, out long val)
+        {
+            try
+            {
+                // Check for valid number
+                return NumUtils.TryReadInt64(sourceLen, source, out val);
             }
             catch
             {
@@ -38,12 +60,33 @@ namespace Garnet.server
         /// <param name="source">Source string to evaluate</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidDouble(SpanByte source, out double val)
+        static bool IsValidDouble(ReadOnlySpan<byte> source, out double val)
         {
             try
             {
                 // Check for valid number
-                return NumUtils.TryReadDouble(source.Length, source.ToPointer(), out val) || !double.IsFinite(val);
+                return NumUtils.TryReadDouble(source, out val) || !double.IsFinite(val);
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                val = 0;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="source">Source string to evaluate</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidDouble(byte* source, int sourceLen, out double val)
+        {
+            try
+            {
+                // Check for valid number
+                return NumUtils.TryReadDouble(sourceLen, source, out val) || !double.IsFinite(val);
             }
             catch
             {
@@ -54,7 +97,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(SpanByte key, ref RawStringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref RawStringInput input)
         {
             var cmd = input.header.cmd;
             var fieldInfo = new RecordFieldInfo()
@@ -79,7 +122,7 @@ namespace Garnet.server
                     fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
                     return fieldInfo;
                 case RespCommand.PFMERGE:
-                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
                     return fieldInfo;
 
                 case RespCommand.SETIFGREATER:
@@ -91,13 +134,13 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
-                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
                 case RespCommand.SETKEEPTTL:
                     // Copy input to value; do not change expiration
-                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
+                    fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
                     return fieldInfo;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
@@ -152,7 +195,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var fieldInfo = new RecordFieldInfo()
             {
@@ -175,10 +218,10 @@ namespace Garnet.server
                         var value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
                                                      // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
-                        if (IsValidNumber(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
                         {
                             // TODO Consider adding a way to cache curr for the IPU call
-                            var curr = NumUtils.ReadInt64(value.AsSpan());
+                            var curr = NumUtils.ReadInt64(value);
                             var next = curr + incrByValue;
 
                             fieldInfo.ValueDataSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
@@ -191,9 +234,9 @@ namespace Garnet.server
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead).
-                        if (IsValidNumber(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
                         {
-                            var curr = NumUtils.ReadInt64(srcLogRecord.ValueSpan.AsSpan());
+                            var curr = NumUtils.ReadInt64(value);
                             var next = curr - decrByValue;
 
                             fieldInfo.ValueDataSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
@@ -205,9 +248,9 @@ namespace Garnet.server
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
-                        if (IsValidDouble(value, out _))
+                        if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidDouble(value, out _))
                         {
-                            _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan.AsSpan(), out var currVal);
+                            _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan, out var currVal);
                             var nextVal = currVal + incrByFloat;
 
                             fieldInfo.ValueDataSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
@@ -226,15 +269,22 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.PFADD:
-                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'
-                        fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.ValueSpan.ToPointer());
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'. Also carry this result through to RMWMethods.
+                        if (srcLogRecord.IsPinnedValue)
+                            fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.PinnedValuePointer);
+                        else
+                            fixed(byte* valuePtr = srcLogRecord.ValueSpan)
+                                fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, valuePtr);
                         return fieldInfo;
 
                     case RespCommand.PFMERGE:
-                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods
-                        var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
-                        var dstHLL = srcLogRecord.ValueSpan.ToPointer();
-                        fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'. Also carry this result through to RMWMethods.
+                        var srcHLL = input.parseState.GetArgSliceByRef(0).ToPointer();
+                        if (srcLogRecord.IsPinnedValue)
+                            fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, srcLogRecord.PinnedValuePointer);
+                        else
+                            fixed(byte* dstHLL = srcLogRecord.ValueSpan)
+                                fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
                         return fieldInfo;
 
                     case RespCommand.SETKEEPTTLXX:
@@ -336,7 +386,7 @@ namespace Garnet.server
                         if (cmd > RespCommandExtensions.LastValidCommand)
                         {
                             var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
-                            fieldInfo.ValueDataSize = functions.GetLength(srcLogRecord.ValueSpan.AsReadOnlySpan(), ref input);
+                            fieldInfo.ValueDataSize = functions.GetLength(srcLogRecord.ValueSpan, ref input);
                             fieldInfo.HasExpiration = input.arg1 != 0;
                             return fieldInfo;
                         }
@@ -349,7 +399,7 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(SpanByte key, SpanByte value, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref RawStringInput input)
         {
             var fieldInfo = new RecordFieldInfo()
             {
@@ -368,5 +418,8 @@ namespace Garnet.server
             }
             return fieldInfo;
         }
+
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref RawStringInput input)
+            => throw new GarnetException("String store should not be called with IHeapObject");
     }
 }

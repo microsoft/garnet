@@ -211,7 +211,7 @@ namespace Garnet.cluster
         /// <param name="slot"></param>
         /// <param name="readOnly"></param>
         /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
+        public bool CanAccessKey(ref PinnedSpanByte key, int slot, bool readOnly)
         {
             try
             {

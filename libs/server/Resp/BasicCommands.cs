@@ -333,7 +333,7 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
-            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
             _ = storageApi.SETRANGE(key, ref input, ref output);
 
@@ -745,7 +745,7 @@ namespace Garnet.server
             }
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
-            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
             var input = new RawStringInput(cmd, 0, incrByValue);
             _ = storageApi.Increment(key, ref input, ref output);
@@ -788,7 +788,7 @@ namespace Garnet.server
             }
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
             var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1);
             _ = storageApi.Increment(key, ref input, ref output);

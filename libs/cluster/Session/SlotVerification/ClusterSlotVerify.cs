@@ -11,24 +11,24 @@ namespace Garnet.cluster
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool Exists(ref ArgSlice keySlice)
+        private bool Exists(ref PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
 
         private bool CheckIfKeyExists(byte[] key)
         {
             fixed (byte* keyPtr = key)
             {
-                var keySlice = new ArgSlice(keyPtr, key.Length);
+                var keySlice = new PinnedSpanByte(keyPtr, key.Length);
                 return Exists(ref keySlice);
             }
         }
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, int slot = -1)
         {
             return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(ref config, ref keySlice);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
+            ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
                 var IsLocal = config.IsLocal(_slot);
@@ -69,7 +69,7 @@ namespace Garnet.cluster
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
+            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
                 var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
@@ -110,7 +110,7 @@ namespace Garnet.cluster
                 }
             }
 
-            bool CanOperateOnKey(ref ArgSlice key, int slot, bool readOnly)
+            bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly)
             {
                 // For both read and read/write ops we need to ensure that key will not be removed
                 // while we try to operate on it so we will delay the corresponding operation
@@ -125,7 +125,7 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, int count)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, int count)
         {
             var _end = count < 0 ? keys.Length : count;
             var slot = ArgSliceUtils.HashSlot(ref keys[0]);

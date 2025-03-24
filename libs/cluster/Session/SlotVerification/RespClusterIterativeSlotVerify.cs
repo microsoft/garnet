@@ -28,7 +28,7 @@ namespace Garnet.cluster
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
         /// <returns></returns>
-        public bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
+        public bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking)
         {
             ClusterSlotVerificationResult verifyResult;
 

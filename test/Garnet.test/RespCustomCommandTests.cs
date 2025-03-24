@@ -153,7 +153,7 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrement, out long _, 1);
 
             var keyToReturn = GetNextArg(ref procInput, ref offset);
-            garnetApi.GET(keyToReturn, out ArgSlice outval);
+            garnetApi.GET(keyToReturn, out PinnedSpanByte outval);
             WriteBulkString(ref output, outval.Span);
             return true;
         }
@@ -178,7 +178,7 @@ namespace Garnet.test
 
             // key will have an etag associated with it already but the transaction should not be able to see it.
             // if the transaction needs to see it, then it can send GET with cmd as GETWITHETAG
-            garnetApi.GET(key, out ArgSlice outval);
+            garnetApi.GET(key, out PinnedSpanByte outval);
 
             List<byte> valueToMessWith = outval.ToArray().ToList();
 
@@ -207,13 +207,11 @@ namespace Garnet.test
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
-                ArgSlice valForKey1 = new ArgSlice(valuePtr, valueToMessWith.Count);
+                PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
                 // since we are setting with retain to etag, this change should be reflected in an etag update
-                SpanByte sameKeyToUse = key.SpanByte;
-                garnetApi.SET_Conditional(sameKeyToUse, ref input);
+                garnetApi.SET_Conditional(key.ReadOnlySpan, ref input);
             }
-
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
