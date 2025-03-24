@@ -35,9 +35,9 @@ namespace Garnet.cluster
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             try
             {
-                if (clusterProvider.replicationManager.Recovering)
+                if (clusterProvider.replicationManager.CannotStreamAOF)
                 {
-                    logger?.LogWarning("Replica is recovering cannot sync AOF");
+                    logger?.LogError("Replica is recovering cannot sync AOF");
                     throw new GarnetException("Replica is recovering cannot sync AOF", LogLevel.Warning, clientResponse: false);
                 }
 

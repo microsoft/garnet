@@ -63,20 +63,25 @@ namespace Garnet.common
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_TcpNetworkHandlerBase_Start_Server);
             base.Start(tlsOptions, remoteEndpointName, token);
         }
 
         /// <inheritdoc />
         public override async Task StartAsync(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
         {
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_TcpNetworkHandlerBase_Start_Server);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
         public override void Start(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             base.Start(tlsOptions, remoteEndpointName, token);
         }
@@ -84,6 +89,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public override async Task StartAsync(SslClientAuthenticationOptions tlsOptions, string remoteEndpointName = null, CancellationToken token = default)
         {
+            if (token == default && cancellationTokenSource != null) token = cancellationTokenSource.Token;
             Start(tlsOptions != null);
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
@@ -113,6 +119,11 @@ namespace Garnet.common
             return true;
         }
 
+        /// <summary>
+        /// Start the socket receive - after this call, NetworkHandler may get disposed at any time
+        /// such as when the socket is disconnected.
+        /// </summary>
+        /// <param name="useTLS"></param>
         void Start(bool useTLS)
         {
             var receiveEventArgs = new SocketAsyncEventArgs { AcceptSocket = socket };
@@ -159,6 +170,14 @@ namespace Garnet.common
                 // Dispose of the socket to free up unmanaged resources
                 socket.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Dispose resources - call ONLY if Start was not called on network handler
+        /// </summary>
+        public void DisposeResources()
+        {
+            DisposeImpl();
         }
 
         void Dispose(SocketAsyncEventArgs e)
