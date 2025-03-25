@@ -39,10 +39,10 @@ namespace Garnet.test
         [Test]
         public void WriteRead()
         {
-            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<IGarnetObject, Empty>>(new SimpleSessionFunctions<IGarnetObject, Empty>());
+            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());
             var bContext = session.BasicContext;
 
-            var key = SpanByte.FromPinnedSpan([0]);
+            var key = new ReadOnlySpan<byte>([0]);
             var obj = new SortedSetObject();
 
             _ = bContext.Upsert(key, obj);
@@ -60,7 +60,7 @@ namespace Garnet.test
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
             var bContext = session.BasicContext;
 
-            var key = SpanByte.FromPinnedSpan([0]);
+            var key = new ReadOnlySpan<byte>([0]);
             var obj = new SortedSetObject();
             obj.Add([15], 10);
 
@@ -93,7 +93,7 @@ namespace Garnet.test
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
             var bContext = session.BasicContext;
 
-            var key = SpanByte.FromPinnedSpan([0]);
+            var key = new ReadOnlySpan<byte>([0]);
             IGarnetObject obj = new SortedSetObject();
             ((SortedSetObject)obj).Add([15], 10);
 
@@ -153,7 +153,7 @@ namespace Garnet.test
                 => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
             public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref IGarnetObject input)
                 => new() { KeyDataSize = key.Length, ValueDataSize = value.Length, ValueIsObject = false };
-            public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IGarnetObject value, ref IGarnetObject input)
+            public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref IGarnetObject input)
                 => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 

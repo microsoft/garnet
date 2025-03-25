@@ -258,7 +258,7 @@ namespace Garnet.server
             var curr = dest;
 
             // Serialize header
-            header.SpanByte.CopyTo(curr);
+            header.SpanByte.SerializeTo(curr);
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
@@ -271,7 +271,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Number of serialized bytes
@@ -284,7 +284,7 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            var header = SpanByte.FromLengthPrefixedPinnedPointer(curr);
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
             curr += header.TotalSize;
             this.header = h;
@@ -396,7 +396,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -409,7 +409,7 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            var header = SpanByte.FromLengthPrefixedPinnedPointer(curr);
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
             curr += header.TotalSize;
             this.header = h;
@@ -478,7 +478,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             return (int)(curr - dest);

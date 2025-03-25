@@ -228,7 +228,7 @@ namespace Garnet.server
             try
             {
                 // Get the source key
-                var statusOp = GET(sourceKey.ReadOnlySpan, out var sourceList, ref objectTransactionalContext);
+                var statusOp = GET(sourceKey, out var sourceList, ref objectTransactionalContext);
 
                 if (statusOp == GarnetStatus.NOTFOUND)
                 {
@@ -246,7 +246,7 @@ namespace Garnet.server
                     if (!sameKey)
                     {
                         // Read destination key
-                        statusOp = GET(destinationKey.ReadOnlySpan, out var destinationList, ref objectStoreTransactionalContext);
+                        statusOp = GET(destinationKey, out var destinationList, ref objectStoreTransactionalContext);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                         {
@@ -301,7 +301,7 @@ namespace Garnet.server
                         newListValue = new ListObject(dstListObject.LnkList, dstListObject.Expiration, dstListObject.Size);
 
                         // Upsert
-                        _ = SET(destinationKey.ReadOnlySpan, newListValue, ref objectStoreTransactionalContext);
+                        _ = SET(destinationKey, newListValue, ref objectStoreTransactionalContext);
                     }
                     else
                     {

@@ -239,9 +239,7 @@ namespace Garnet.server
         {
             Debug.Assert(i + args.Length - 1 < Count);
             for (var j = 0; j < args.Length; j++)
-            {
                 *(bufferPtr + i + j) = args[j];
-            }
         }
 
         /// <summary>
@@ -253,9 +251,7 @@ namespace Garnet.server
         {
             Debug.Assert(i + args.Length - 1 < Count);
             for (var j = 0; j < args.Length; j++)
-            {
                 *(bufferPtr + i + j) = args[j];
-            }
         }
 
         /// <summary>
@@ -267,10 +263,7 @@ namespace Garnet.server
             var serializedLength = sizeof(int);
 
             for (var i = 0; i < Count; i++)
-            {
-                serializedLength += (*(bufferPtr + i)).SpanByte.TotalSize;
-            }
-
+                serializedLength += (*(bufferPtr + i)).TotalSize;
             return serializedLength;
         }
 
@@ -281,7 +274,7 @@ namespace Garnet.server
         /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
         /// <param name="length">Length of buffer to serialize into.</param>
         /// <returns>Total serialized bytes</returns>
-        public int CopyTo(byte* dest, int length)
+        public int SerializeTo(byte* dest, int length)
         {
             var curr = dest;
 
@@ -292,8 +285,8 @@ namespace Garnet.server
             // Serialize arguments
             for (var i = 0; i < Count; i++)
             {
-                var sbParam = (*(bufferPtr + i)).SpanByte;
-                sbParam.CopyTo(curr);
+                var sbParam = *(bufferPtr + i);
+                sbParam.SerializeTo(curr);
                 curr += sbParam.TotalSize;
             }
 
@@ -316,8 +309,8 @@ namespace Garnet.server
 
             for (var i = 0; i < argCount; i++)
             {
-                var argument = SpanByte.FromLengthPrefixedPinnedPointer(curr);
-                *(bufferPtr + i) = new ArgSlice(argument);
+                var argument = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+                *(bufferPtr + i) = argument;
                 curr += argument.TotalSize;
             }
 
@@ -367,7 +360,7 @@ namespace Garnet.server
         public int GetInt(int i)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.ReadInt(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i));
+            return ParseUtils.ReadInt(*(bufferPtr + i));
         }
 
         /// <summary>
@@ -378,7 +371,7 @@ namespace Garnet.server
         public bool TryGetInt(int i, out int value)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.TryReadInt(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value);
+            return ParseUtils.TryReadInt(*(bufferPtr + i), out value);
         }
 
         /// <summary>
@@ -389,7 +382,7 @@ namespace Garnet.server
         public long GetLong(int i)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.ReadLong(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i));
+            return ParseUtils.ReadLong(*(bufferPtr + i));
         }
 
         /// <summary>
@@ -400,7 +393,7 @@ namespace Garnet.server
         public bool TryGetLong(int i, out long value)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.TryReadLong(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value);
+            return ParseUtils.TryReadLong(*(bufferPtr + i), out value);
         }
 
         /// <summary>
@@ -411,7 +404,7 @@ namespace Garnet.server
         public double GetDouble(int i)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.ReadDouble(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i));
+            return ParseUtils.ReadDouble(*(bufferPtr + i));
         }
 
         /// <summary>
@@ -422,7 +415,7 @@ namespace Garnet.server
         public bool TryGetDouble(int i, out double value)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.TryReadDouble(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value);
+            return ParseUtils.TryReadDouble(*(bufferPtr + i), out value);
         }
 
         /// <summary>
@@ -433,7 +426,7 @@ namespace Garnet.server
         public string GetString(int i)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.ReadString(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i));
+            return ParseUtils.ReadString(*(bufferPtr + i));
         }
 
         /// <summary>
@@ -444,7 +437,7 @@ namespace Garnet.server
         public bool GetBool(int i)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.ReadBool(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i));
+            return ParseUtils.ReadBool(*(bufferPtr + i));
         }
 
         /// <summary>
@@ -455,7 +448,7 @@ namespace Garnet.server
         public bool TryGetBool(int i, out bool value)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.TryReadBool(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value);
+            return ParseUtils.TryReadBool(*(bufferPtr + i), out value);
         }
     }
 }

@@ -34,7 +34,7 @@ namespace Tsavorite.core
         {
             var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.key.Get(), diskRecord.Key))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.key.Get().ReadOnlySpan, diskRecord.Key))
                 goto NotFound;
 
             if (request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress)
@@ -203,7 +203,7 @@ namespace Tsavorite.core
                 {
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
                     // the record in 'request' is stale. We only lock for tag-chain stability during search.
-                    if (TryFindRecordForPendingOperation(diskRecord.Key, ref stackCtx, hlogBase.HeadAddress, out status, ref pendingContext))
+                    if (TryFindRecordForPendingOperation(diskRecord.Key, ref stackCtx, out status, ref pendingContext))
                     {
                         if (status != OperationStatus.SUCCESS)
                             goto CheckRetry;

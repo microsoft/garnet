@@ -177,7 +177,7 @@ namespace Tsavorite.test.ReadCacheTests
             var (la, pa) = GetHashChain(store, SpanByte.FromPinnedVariable(ref keyNum), out var recordKey, out bool invalid, out isReadCache);
             while (isReadCache || la >= store.hlogBase.HeadAddress)
             {
-                if (recordKey.AsRef<long>() == keyNum && !invalid)
+                if (recordKey.ReadOnlySpan.AsRef<long>() == keyNum && !invalid)
                     return true;
                 (la, pa) = NextInChain(store, pa, out recordKey, out invalid, ref isReadCache);
             }
@@ -190,14 +190,14 @@ namespace Tsavorite.test.ReadCacheTests
             (logicalAddress, physicalAddress) = GetHashChain(store, key, out var recordKey, out invalid, out bool isReadCache);
             while (isReadCache)
             {
-                if (recordKey.AsRef<long>() == key.AsRef<long>())
+                if (recordKey.ReadOnlySpan.AsRef<long>() == key.AsRef<long>())
                     return true;
                 (logicalAddress, physicalAddress) = NextInChain(store, physicalAddress, out recordKey, out invalid, ref isReadCache);
             }
             return false;
         }
 
-        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, out ReadOnlySpan<byte> recordKey, out bool invalid, out bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, out PinnedSpanByte recordKey, out bool invalid, out bool isReadCache)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -207,16 +207,16 @@ namespace Tsavorite.test.ReadCacheTests
             isReadCache = entry.ReadCache;
             var log = isReadCache ? store.readcache : store.hlog;
             var pa = log.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
-            recordKey = LogRecord.GetInlineKey(pa);
+            recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;
 
             return (entry.Address, pa);
         }
 
-        (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out ReadOnlySpan<byte> recordKey, out bool invalid, ref bool isReadCache)
+        (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out PinnedSpanByte recordKey, out bool invalid, ref bool isReadCache)
             => NextInChain(store, physicalAddress, out recordKey, out invalid, ref isReadCache);
 
-        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long physicalAddress, out ReadOnlySpan<byte> recordKey, out bool invalid, ref bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long physicalAddress, out PinnedSpanByte recordKey, out bool invalid, ref bool isReadCache)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -228,7 +228,7 @@ namespace Tsavorite.test.ReadCacheTests
             log = isReadCache ? store.readcache : store.hlog;
             la &= ~Constants.kReadCacheBitMask;
             var pa = log.GetPhysicalAddress(la);
-            recordKey = LogRecord.GetInlineKey(pa);
+            recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;
             return (la, pa);
         }
@@ -240,7 +240,7 @@ namespace Tsavorite.test.ReadCacheTests
             long keyVal = 0, valueVal = 0;
             Span<byte> key = SpanByte.FromPinnedVariable(ref keyVal), value = SpanByte.FromPinnedVariable(ref valueVal);
 
-            var (la, pa) = GetHashChain(store, key.Set(LowChainKey), out ReadOnlySpan<byte> actualKey, out bool invalid, out bool isReadCache);
+            var (la, pa) = GetHashChain(store, key.Set(LowChainKey), out var actualKey, out bool invalid, out bool isReadCache);
             for (long expectedKey = HighChainKey; expectedKey >= LowChainKey; expectedKey -= HashMod)
             {
                 // We evict from readcache only to just below midChainKey
@@ -249,11 +249,11 @@ namespace Tsavorite.test.ReadCacheTests
 
                 if (isReadCache)
                 {
-                    ClassicAssert.AreEqual(expectedKey, actualKey.AsRef<long>());
+                    ClassicAssert.AreEqual(expectedKey, actualKey.ReadOnlySpan.AsRef<long>());
                     if (omitted.Contains(expectedKey))
                         ClassicAssert.IsTrue(invalid);
                 }
-                else if (omitted.Contains(actualKey.AsRef<long>()))
+                else if (omitted.Contains(actualKey.ReadOnlySpan.AsRef<long>()))
                 {
                     ClassicAssert.AreEqual(deleted, LogRecord.GetInfo(pa).Tombstone);
                 }

@@ -18,11 +18,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Wrapper for store and store-specific information
@@ -37,12 +37,12 @@ namespace Garnet.server
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, MainStoreFunctions, MainStoreAllocator> store;
+        public readonly TsavoriteKV<MainStoreFunctions, MainStoreAllocator> store;
 
         /// <summary>
         /// Object store
         /// </summary>
-        public readonly TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        public readonly TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
 
         /// <summary>
         /// Server options
@@ -131,8 +131,8 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            TsavoriteKV<SpanByte, MainStoreFunctions, MainStoreAllocator> store,
-            TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
+            TsavoriteKV<MainStoreFunctions, MainStoreAllocator> store,
+            TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
             CustomCommandManager customCommandManager,
             TsavoriteAof appendOnlyFile,
@@ -600,8 +600,8 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(
+                            new SimpleGarnetObjectSessionFunctions(), untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -610,8 +610,8 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(
+                            new SimpleGarnetObjectSessionFunctions(), untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -931,15 +931,13 @@ namespace Garnet.server
             {
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, Empty>());
+                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleGarnetObjectSessionFunctions<SpanByte, Empty>>(new SimpleGarnetObjectSessionFunctions<SpanByte, Empty>());  // TODO replace with Push iterator
                     while (!hasKeyInSlots && iter.GetNext())
                     {
                         var key = iter.Key;
                         ushort hashSlotForKey = HashSlotUtils.HashSlot(key);
                         if (slots.Contains(hashSlotForKey))
-                        {
                             hasKeyInSlots = true;
-                        }
                     }
                 }
 
@@ -951,7 +949,7 @@ namespace Garnet.server
                     var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext())
                     {
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(iter.Key.AsSpan());
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(iter.Key);
                         if (slots.Contains(hashSlotForKey))
                             hasKeyInSlots = true;
                     }

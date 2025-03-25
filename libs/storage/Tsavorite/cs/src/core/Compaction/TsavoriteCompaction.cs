@@ -107,7 +107,7 @@ namespace Tsavorite.core
                         if (iter1.Info.Tombstone || cf.IsDeleted(key, value))
                             _ = tempbContext.Delete(key);
                         else
-                            _ = tempbContext.Upsert(key, value);
+                            _ = tempbContext.Upsert(key, value);    // TODO needs ETag and Expiration as well
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;

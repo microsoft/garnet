@@ -200,7 +200,7 @@ namespace Garnet.server
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref outputFooter);
 
-            _ = scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            _ = scratchBufferManager.RewindScratchBuffer(paramsSlice);
 
             items = default;
             if (status == GarnetStatus.OK)

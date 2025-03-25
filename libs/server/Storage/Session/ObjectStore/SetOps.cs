@@ -276,7 +276,7 @@ namespace Garnet.server
 
             try
             {
-                var srcGetStatus = GET(sourceKey.ReadOnlySpan, out var srcObject, ref objectTransactionalContext);
+                var srcGetStatus = GET(sourceKey, out var srcObject, ref objectTransactionalContext);
 
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
@@ -289,7 +289,7 @@ namespace Garnet.server
                 if (sameKey)
                     return GarnetStatus.OK;
 
-                var dstGetStatus = GET(destinationKey.ReadOnlySpan, out var dstObject, ref objectTransactionalContext);
+                var dstGetStatus = GET(destinationKey, out var dstObject, ref objectTransactionalContext);
 
                 SetObject dstSetObject;
                 if (dstGetStatus == GarnetStatus.OK)
@@ -322,7 +322,7 @@ namespace Garnet.server
 
                 if (dstGetStatus == GarnetStatus.NOTFOUND)
                 {
-                    var setStatus = SET(destinationKey.ReadOnlySpan, dstSetObject, ref objectTransactionalContext);
+                    var setStatus = SET(destinationKey, dstSetObject, ref objectTransactionalContext);
                     if (setStatus == GarnetStatus.OK)
                         smoveResult = 1;
                 }
@@ -458,7 +458,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            var status = GET(keys[0].ReadOnlySpan, out var first, ref objectContext);
+            var status = GET(keys[0], out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
                 if (first.GarnetObject is not SetObject firstObject)
@@ -484,7 +484,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                status = GET(keys[i].ReadOnlySpan, out var next, ref objectContext);
+                status = GET(keys[i], out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
                     if (next.GarnetObject is not SetObject nextObject)
@@ -618,7 +618,7 @@ namespace Garnet.server
 
             foreach (var item in keys)
             {
-                if (GET(item.ReadOnlySpan, out var currObject, ref objectContext) == GarnetStatus.OK)
+                if (GET(item, out var currObject, ref objectContext) == GarnetStatus.OK)
                 {
                     if (currObject.GarnetObject is not SetObject setObject)
                     {
@@ -878,7 +878,7 @@ namespace Garnet.server
             }
 
             // first SetObject
-            var status = GET(keys[0].ReadOnlySpan, out var first, ref objectContext);
+            var status = GET(keys[0], out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
                 if (first.GarnetObject is not SetObject firstObject)
@@ -897,7 +897,7 @@ namespace Garnet.server
             // after SetObjects
             for (var i = 1; i < keys.Length; i++)
             {
-                status = GET(keys[i].ReadOnlySpan, out var next, ref objectContext);
+                status = GET(keys[i], out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
                     if (next.GarnetObject is not SetObject nextObject)

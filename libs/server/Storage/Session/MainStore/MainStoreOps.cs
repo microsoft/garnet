@@ -1,4 +1,4 @@
-﻿d// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -83,14 +83,14 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.GET);
             value = default;
 
-            var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
+            var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice()};
 
             var ret = GET(key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.IsSpanByte)
                 {
-                    value = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan());
+                    value = scratchBufferManager.FormatScratch(0, _output.ReadOnlySpan);
                     _output.Memory.Dispose();
                 }
                 else
@@ -567,13 +567,13 @@ namespace Garnet.server
 
             var context = txnManager.TransactionalContext;
             var objectContext = txnManager.ObjectStoreTransactionalContext;
-            var oldKey = oldKeySlice.ReadOnlySpan;
+            var oldKey = oldKeySlice;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 try
                 {
-                    var newKey = newKeySlice.ReadOnlySpan;
+                    var newKey = newKeySlice;
 
                     var o = new SpanByteAndMemory();
                     var status = GET(oldKey, ref input, ref o, ref context);
@@ -630,7 +630,7 @@ namespace Garnet.server
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
                                 if (!withEtag && !isNX)
-                                    SET(newKey, newValSlice.ReadOnlySpan, ref context);
+                                    SET(newKey, newValSlice, ref context);
                                 else
                                 {
                                     // Build parse state
@@ -689,7 +689,7 @@ namespace Garnet.server
 
                 try
                 {
-                    var status = GET(oldKeySlice.ReadOnlySpan, out var value, ref objectContext);
+                    var status = GET(oldKeySlice, out var value, ref objectContext);
 
                     if (status == GarnetStatus.OK)
                     {
@@ -700,17 +700,17 @@ namespace Garnet.server
                         if (isNX)
                         {
                             // Not using EXISTS method to avoid new allocation of Array for key
-                            var getNewStatus = GET(newKeySlice.ReadOnlySpan, out _, ref objectContext);
+                            var getNewStatus = GET(newKeySlice, out _, ref objectContext);
                             canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
                         }
 
                         if (canSetAndDelete)
                         {
                             // valObj already has expiration time, so no need to write expiration logic here. TODO: No longer true; this is now a LogRecord attribute and must be SETEX'd
-                            SET(newKeySlice.ReadOnlySpan, valObj, ref objectContext);
+                            SET(newKeySlice, valObj, ref objectContext);
 
                             // Delete the old key
-                            DELETE(oldKeySlice.ReadOnlySpan, StoreType.Object, ref context, ref objectContext);
+                            DELETE(oldKeySlice, StoreType.Object, ref context, ref objectContext);
 
                             result = 1;
                         }
@@ -748,7 +748,7 @@ namespace Garnet.server
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
-                var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
+                var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice() };
                 status = GET(key, ref input, ref _output, ref context);
 
                 if (status == GarnetStatus.OK)
@@ -962,7 +962,7 @@ namespace Garnet.server
                 output = objOutput.SpanByteAndMemory;
             }
 
-            scratchBufferManager.RewindScratchBuffer(ref expirySlice);
+            scratchBufferManager.RewindScratchBuffer(expirySlice);
 
             Debug.Assert(output.IsSpanByte);
             if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
@@ -1081,8 +1081,6 @@ namespace Garnet.server
         }
 
         public void WATCH(PinnedSpanByte key, StoreType type) => txnManager.Watch(key, type);
-
-        public unsafe void WATCH(SpanByte key, StoreType type) => WATCH(key, type);
 
         public unsafe GarnetStatus SCAN<TContext>(long cursor, PinnedSpanByte match, long count, ref TContext context) => GarnetStatus.OK;
 

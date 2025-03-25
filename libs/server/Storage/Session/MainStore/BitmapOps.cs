@@ -157,11 +157,11 @@ namespace Garnet.server
 
                     if (maxBitmapLen > 0)
                     {
-                        var dstKey = keys[0].ReadOnlySpan;
+                        var dstKey = keys[0];
                         var valPtr = dstBitmapPtr;
                         valPtr -= sizeof(int);
                         *(int*)valPtr = maxBitmapLen;
-                        status = SET(dstKey, SpanByte.FromLengthPrefixedPinnedPointer(valPtr), ref uc);
+                        status = SET(dstKey, PinnedSpanByte.FromLengthPrefixedPinnedPointer(valPtr), ref uc);
                     }
                 }
                 else
@@ -244,7 +244,7 @@ namespace Garnet.server
 
             var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState);
 
-            _ = scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            _ = scratchBufferManager.RewindScratchBuffer(paramsSlice);
 
             var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
@@ -350,7 +350,7 @@ namespace Garnet.server
                     Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context) :
                     RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-                _ = scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+                _ = scratchBufferManager.RewindScratchBuffer(paramsSlice);
 
                 if (status == GarnetStatus.NOTFOUND && commandArguments[i].secondaryCommand == RespCommand.GET)
                 {

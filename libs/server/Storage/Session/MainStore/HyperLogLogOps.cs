@@ -35,7 +35,7 @@ namespace Garnet.server
                 var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
                 _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
 
-                _ = scratchBufferManager.RewindScratchBuffer(ref elementSlice);
+                _ = scratchBufferManager.RewindScratchBuffer(elementSlice);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
@@ -129,7 +129,7 @@ namespace Garnet.server
                 {
                     var currInput = new RawStringInput(RespCommand.PFCOUNT);
 
-                    var srcKey = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
 
                     var status = GET(srcKey, ref currInput, ref srcMergeBuffer, ref currTransactionalContext);
                     // Handle case merging source key does not exist
@@ -211,7 +211,7 @@ namespace Garnet.server
                 sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
 
-                var dstKey = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                var dstKey = input.parseState.GetArgSliceByRef(0);
 
                 for (var i = 1; i < input.parseState.Count; i++)
                 {
@@ -220,7 +220,7 @@ namespace Garnet.server
                     var currInput = new RawStringInput(RespCommand.PFMERGE);
 
                     var mergeBuffer = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
-                    var srcKey = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
 
                     var status = GET(srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
                     // Handle case merging source key does not exist

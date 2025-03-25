@@ -3214,7 +3214,7 @@ end
 
                     // Span is (implicitly) pinned since it's actually on the Lua stack
                     var key = PinnedSpanByte.FromPinnedSpan(keySpan);
-                    var status = api.GET(key, out var value);
+                    var status = api.GET(key, out PinnedSpanByte value);
 
                     if (status == GarnetStatus.OK)
                     {

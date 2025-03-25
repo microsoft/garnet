@@ -33,11 +33,11 @@ namespace Tsavorite.test
 
         public override string ToString() => value.ToString();
 
-        public class Serializer : BinaryObjectSerializer<TestObjectValue>
+        public class Serializer : BinaryObjectSerializer<IHeapObject>
         {
-            public override void Deserialize(out TestObjectValue obj) => obj = new TestObjectValue { value = reader.ReadInt32() };
+            public override void Deserialize(out IHeapObject obj) => obj = new TestObjectValue { value = reader.ReadInt32() };
 
-            public override void Serialize(ref TestObjectValue obj) => writer.Write(obj.value);
+            public override void Serialize(ref IHeapObject obj) => writer.Write(((TestObjectValue)obj).value);
         }
     }
 

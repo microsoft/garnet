@@ -94,7 +94,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Returns a collection of the values in the dictionary.
         /// </summary>
-        public ICollection Values
+        public ICollection<TValue> Values
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
