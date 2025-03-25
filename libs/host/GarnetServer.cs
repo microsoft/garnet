@@ -176,8 +176,8 @@ namespace Garnet
                     {red}    _________
                        /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
                        '. \   / .'      {normal}Listening on: {opts.EndPoint}{red}
-                         '.\ /.'        {normal}Environment: .NET {Environment.Version}; {Environment.OSVersion.Platform}; {RuntimeInformation.ProcessArchitecture}{red}
-                           '.'          {magenta}https://aka.ms/GetGarnet{red}
+                         '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
+                           '.'
                     {normal}
                     """);
             }

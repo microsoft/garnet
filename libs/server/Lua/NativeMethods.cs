@@ -335,6 +335,16 @@ namespace Garnet.server
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushvalue(lua_State luaState, int stackIndex);
 
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_version
+        /// 
+        /// Just returns a constant.
+        /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_version
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
+        private static partial double lua_version(lua_State ignored);
+
         // Helper methods for using the pinvokes defined above
 
         /// <summary>
@@ -693,5 +703,11 @@ namespace Garnet.server
         /// </summary>        
         internal static unsafe void SetHook(lua_State luaState, delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         => lua_sethook(luaState, (nint)hook, (int)mask, count);
+
+        /// <summary>
+        /// Get the Lua version.
+        /// </summary>
+        internal static double Version()
+        => lua_version(default);
     }
 }
