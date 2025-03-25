@@ -4791,7 +4791,7 @@ end
                 errorMessage = null;
                 return true;
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 errorMessage = e.Message;
                 return false;
