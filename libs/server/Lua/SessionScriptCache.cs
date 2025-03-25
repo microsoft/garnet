@@ -126,19 +126,27 @@ namespace Garnet.server
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        internal bool TryLoad(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
+        internal bool TryLoad(
+            RespServerSession session,
+            ReadOnlySpan<byte> source,
+            ScriptHashKey digest,
+            out LuaRunner runner,
+            out ScriptHashKey? digestOnHeap,
+            out byte[] compiledSource
+        )
         {
             if (scriptCache.TryGetValue(digest, out runner))
             {
                 digestOnHeap = null;
+                compiledSource = null;
                 return true;
             }
 
             try
             {
-                var sourceOnHeap = source.ToArray();
+                compiledSource = LuaRunner.CompileSource(source);
 
-                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, sourceOnHeap, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
+                runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, compiledSource, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
                 // If compilation fails, an error is written out
                 if (runner.CompileForSession(session))
@@ -177,10 +185,22 @@ namespace Garnet.server
                 logger?.LogError(ex, "During Lua script loading, an unexpected exception");
 
                 digestOnHeap = null;
+                compiledSource = null;
                 return false;
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Attempt to remove the script with the given hash from the cache.
+        /// </summary>
+        internal void Remove(ScriptHashKey key)
+        {
+            if (scriptCache.Remove(key, out var runner))
+            {
+                runner.Dispose();
+            }
         }
 
         /// <summary>
