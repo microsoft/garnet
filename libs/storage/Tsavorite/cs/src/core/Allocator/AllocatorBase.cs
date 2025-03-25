@@ -197,6 +197,12 @@ namespace Tsavorite.core
         public abstract void Initialize();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal SpanByteHeapContainer GetSpanByteHeapContainer(ReadOnlySpan<byte> item) => new SpanByteHeapContainer(item, bufferPool);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public IHeapContainer<TInput> GetInputHeapContainer<TInput>(ref TInput input) => new StandardHeapContainer<TInput>(ref input);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private protected unsafe byte* SerializeCommonRecordFieldsToBuffer(LogRecord logRecord, ref SectorAlignedMemory recordBuffer, int inlineRecordSize)
         {
             bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
@@ -1854,7 +1860,7 @@ namespace Tsavorite.core
                     _wrapper.DeserializeValueObject(ref diskLogRecord, ref ctx);
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    if (ctx.request_key is not null && !storeFunctions.KeysEqual(ctx.request_key.Get(), diskLogRecord.Key))
+                    if (ctx.request_key is not null && !storeFunctions.KeysEqual(ctx.request_key.Get().ReadOnlySpan, diskLogRecord.Key))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
                         ctx.logicalAddress = diskLogRecord.Info.PreviousAddress;

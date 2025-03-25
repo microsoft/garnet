@@ -273,10 +273,22 @@ namespace Tsavorite.core
         public ReadOnlySpan<byte> Key => CurrentIter.Key;
 
         /// <inheritdoc/>
+        public bool IsPinnedKey => CurrentIter.IsPinnedKey;
+
+        /// <inheritdoc/>
+        public unsafe byte* PinnedKeyPointer => CurrentIter.PinnedKeyPointer;
+
+        /// <inheritdoc/>
         public unsafe Span<byte> ValueSpan => CurrentIter.ValueSpan;
 
         /// <inheritdoc/>
         public IHeapObject ValueObject => CurrentIter.ValueObject;
+
+        /// <inheritdoc/>
+        public bool IsPinnedValue => CurrentIter.IsPinnedValue;
+
+        /// <inheritdoc/>
+        public unsafe byte* PinnedValuePointer => CurrentIter.PinnedValuePointer;
 
         /// <inheritdoc/>
         public long ETag => CurrentIter.ETag;

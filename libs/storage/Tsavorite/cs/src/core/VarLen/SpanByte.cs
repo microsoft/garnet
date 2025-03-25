@@ -72,6 +72,29 @@ namespace Tsavorite.core
         public static void CopyTo(this Span<byte> src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
             => ((ReadOnlySpan<byte>)src).CopyTo(ref dst, memoryPool);
 
+        /// <summary>
+        /// Copy serialized version to specified memory location
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least source.TotalSize().
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void SerializeTo(this ReadOnlySpan<byte> source, byte* destination)
+        {
+            *(int*)destination = source.Length;
+            source.CopyTo(new Span<byte>(destination + sizeof(int), source.Length));
+        }
+
+        /// <summary>
+        /// Copy serialized version to specified memory location
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least source.TotalSize().
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void SerializeTo(this Span<byte> source, byte* destination)
+            => ((ReadOnlySpan<byte>)source).SerializeTo(destination);
+
         /// <summary>Length-limited string representation of a Span</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ToShortString(this ReadOnlySpan<byte> span, int maxLen = 20)

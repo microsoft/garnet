@@ -65,7 +65,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => throw new NotImplementedException("Not implemented for AofAllocator");
 
@@ -121,14 +121,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly ref ReadOnlySpan<byte> GetContextRecordValue(ref AsyncIOContext ctx) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<ReadOnlySpan<byte>> GetKeyContainer(ReadOnlySpan<byte> key) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<ReadOnlySpan<byte>> GetValueContainer(ReadOnlySpan<byte> value) => throw new NotImplementedException("Not implemented for AofAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

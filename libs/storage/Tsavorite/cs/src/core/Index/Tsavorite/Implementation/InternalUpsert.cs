@@ -203,11 +203,14 @@ namespace Tsavorite.core
         {
             pendingContext.type = OperationType.UPSERT;
             if (pendingContext.key == default)
-                pendingContext.key = hlog.GetKeyContainer(key);
+                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
             if (pendingContext.input == default)
-                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
-            if (pendingContext.value == default)
-                pendingContext.value = hlog.GetValueContainer(value);
+                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
+
+            if (srcObjectValue is not null)
+                pendingContext.valueObject = srcObjectValue;
+            else if (pendingContext.valueSpan == default)
+                pendingContext.valueSpan = hlogBase.GetSpanByteHeapContainer(srcStringValue);
 
             pendingContext.output = output;
             sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);

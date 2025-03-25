@@ -1351,20 +1351,21 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
             void updater(ReadOnlySpan<byte> key, int iter)
             {
+                var localValueNum = getValue(key.AsRef<long>());
                 try
                 {
                     Status status;
                     switch (updateOp)
                     {
                         case UpdateOp.Upsert:
-                            status = luContext.Upsert(key, value.Set(getValue(key.AsRef<long>())));
+                            status = luContext.Upsert(key, SpanByte.FromPinnedVariable(ref localValueNum));
                             if (iter == 0)
                                 ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
                                 ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.RMW:
-                            status = luContext.RMW(key, getValue(key.AsRef<long>()));
+                            status = luContext.RMW(key, ref localValueNum);
                             if (iter == 0)
                                 ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else

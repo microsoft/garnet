@@ -157,7 +157,7 @@ namespace Tsavorite.core
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
             where TScanFunctions : IScanIteratorFunctions
         {
-            completionEvent.Prepare(_wrapper.GetKeyContainer(key), logicalAddress);
+            completionEvent.Prepare(GetSpanByteHeapContainer(key), logicalAddress);
 
             AsyncGetFromDisk(logicalAddress, DiskLogRecord.GetEstimatedIOSize(sectorSize, IsObjectAllocator), completionEvent.request);
             completionEvent.Wait();

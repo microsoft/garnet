@@ -223,9 +223,9 @@ namespace Tsavorite.core
         {
             pendingContext.type = OperationType.RMW;
             if (pendingContext.key == default)
-                pendingContext.key = hlog.GetKeyContainer(key);
+                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
             if (pendingContext.input == default)
-                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
+                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
 
             pendingContext.output = output;
             sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);

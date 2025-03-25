@@ -326,9 +326,9 @@ namespace Tsavorite.core
         {
             pendingContext.type = OperationType.READ;
             if (!pendingContext.IsNoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
-                pendingContext.key = hlog.GetKeyContainer(key);
+                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
             if (pendingContext.input == default)
-                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
+                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
 
             pendingContext.output = output;
             sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);

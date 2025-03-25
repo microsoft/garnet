@@ -71,13 +71,13 @@ namespace Tsavorite.core
     /// are released as soon as possible.</remarks>
     public struct CompletedOutput<TInput, TOutput, TContext>
     {
-        private IHeapContainer<ReadOnlySpan<byte>> keyContainer;
+        private SpanByteHeapContainer keyContainer;
         private IHeapContainer<TInput> inputContainer;
 
         /// <summary>
         /// The key for this pending operation.
         /// </summary>
-        public ReadOnlySpan<byte> Key => keyContainer.Get();
+        public ReadOnlySpan<byte> Key => keyContainer.Get().ReadOnlySpan;
 
         /// <summary>
         /// The input for this pending operation.

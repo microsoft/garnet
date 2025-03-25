@@ -117,7 +117,7 @@ namespace Tsavorite.core
             // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
             DiskLogRecord diskLogRecord = new((long)request.record.GetValidPointer());
             if (pendingContext.IsNoKey && pendingContext.key == default)
-                pendingContext.key = hlog.GetKeyContainer(diskLogRecord.Key);
+                pendingContext.key = hlogBase.GetSpanByteHeapContainer(diskLogRecord.Key);
             var key = pendingContext.key.Get();
 
             OperationStatus internalStatus = pendingContext.type switch

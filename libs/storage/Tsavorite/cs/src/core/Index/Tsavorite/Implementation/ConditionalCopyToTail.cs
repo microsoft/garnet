@@ -137,11 +137,15 @@ namespace Tsavorite.core
             {
                 pendingContext.recordInfo = srcLogRecord.Info;
                 Debug.Assert(pendingContext.key == default, "Key unexpectedly set");
-                pendingContext.key = hlog.GetKeyContainer(srcLogRecord.Key);
+                pendingContext.key = hlogBase.GetSpanByteHeapContainer(srcLogRecord.Key);
                 Debug.Assert(pendingContext.input == default, "Input unexpectedly set");
-                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
-                Debug.Assert(pendingContext.value == default, "Value unexpectedly set");
-                pendingContext.value = hlog.GetValueContainer(srcLogRecord.GetReadOnlyValue());
+                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
+                Debug.Assert(pendingContext.valueSpan == default, "ValueSpan unexpectedly set");
+                Debug.Assert(pendingContext.valueObject is null, "ValueObject unexpectedly set");
+                if (srcLogRecord.ValueIsObject)
+                    pendingContext.valueObject = srcLogRecord.ValueObject;
+                else
+                    pendingContext.valueSpan = hlogBase.GetSpanByteHeapContainer(srcLogRecord.ValueSpan);
 
                 pendingContext.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);

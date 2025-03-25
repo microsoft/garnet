@@ -231,14 +231,6 @@ namespace Tsavorite.core
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
-        {
-            if (typeof(TInput) == typeof(PinnedSpanByte))
-                return new SpanByteHeapContainer(Unsafe.As<TInput, PinnedSpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<TInput>;
-            return new StandardHeapContainer<TInput>(ref input);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

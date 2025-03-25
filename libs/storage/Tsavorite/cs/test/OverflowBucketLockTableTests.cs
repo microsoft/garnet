@@ -17,9 +17,9 @@ namespace Tsavorite.test.LockTable
 
     internal class SingleBucketComparer : IKeyComparer
     {
-        public bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<long>() == k2.AsRef<long>();
+        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
 
-        public long GetHashCode64(SpanByte k) => 42L;
+        public long GetHashCode64(ReadOnlySpan<byte> k) => 42L;
     }
 
     // Used to signal Setup to use the SingleBucketComparer
@@ -76,7 +76,7 @@ namespace Tsavorite.test.LockTable
 
         void TryLock(long key, LockType lockType, int expectedCurrentReadLocks, bool expectedLockResult)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByteFrom(ref key)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref key)));
             PopulateHei(ref hei);
 
             // Check for existing lock
@@ -91,7 +91,7 @@ namespace Tsavorite.test.LockTable
 
         void Unlock(long key, LockType lockType)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByteFrom(ref key)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref key)));
             PopulateHei(ref hei);
             if (lockType == LockType.Shared)
                 store.LockTable.UnlockShared(ref hei);
@@ -171,7 +171,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByteFrom(ref SingleBucketKey)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref SingleBucketKey)));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -207,7 +207,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByteFrom(ref SingleBucketKey)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref SingleBucketKey)));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -288,11 +288,11 @@ namespace Tsavorite.test.LockTable
             FixedLengthTransactionalKeyStruct createKey()
             {
                 long keyLong = rng.Next(numKeys);
-                var key = SpanByteFrom(ref keyLong);
+                var key = SpanByte.FromPinnedVariable(ref keyLong);
                 var keyHash = store.GetKeyHash(key);
                 return new()
                 {
-                    Key = key,
+                    Key = PinnedSpanByte.FromPinnedSpan(key),
                     // LockType.None means split randomly between Shared and Exclusive
                     LockType = rng.Next(0, 100) < 25 ? LockType.Exclusive : LockType.Shared,
                     KeyHash = keyHash,
@@ -385,7 +385,7 @@ namespace Tsavorite.test.LockTable
                     while (true)
                     {
                         var key = rng.Next(lowKey, highKey + 1);    // +1 because the end # is not included
-                        if (!Array.Exists(threadStructs, it => it.Key.Length > 0 && it.Key.AsRef<long>() == key))
+                        if (!Array.Exists(threadStructs, it => it.Key.Length > 0 && it.Key.ReadOnlySpan.AsRef<long>() == key))
                             return key;
                     }
                 }
@@ -397,10 +397,10 @@ namespace Tsavorite.test.LockTable
                     {
                         var keyNum = getNextKey();
                         threadKeyNums[ii] = keyNum;
-                        var key = SpanByteFrom(ref threadKeyNums[ii]);    // storage for the SpanByte
-                        threadStructs[ii] = new()   // local var for debugging
+                        var key = SpanByte.FromPinnedVariable(ref threadKeyNums[ii]);   // storage for the SpanByte
+                        threadStructs[ii] = new()                                       // local var for debugging
                         {
-                            Key = key,
+                            Key = PinnedSpanByte.FromPinnedSpan(key),
                             // LockType.None means split randomly between Shared and Exclusive
                             LockType = lockType == LockType.None ? (rng.Next(0, 100) > 50 ? LockType.Shared : LockType.Exclusive) : lockType,
                             KeyHash = comparer.GetHashCode64(key),

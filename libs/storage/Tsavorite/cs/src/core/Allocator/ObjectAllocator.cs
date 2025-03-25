@@ -69,7 +69,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
@@ -116,14 +116,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<ReadOnlySpan<byte>> GetKeyContainer(ReadOnlySpan<byte> key) => _this.GetKeyContainer(ref key);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<ReadOnlySpan<byte>> GetValueContainer(ReadOnlySpan<byte> value) => new StandardHeapContainer(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

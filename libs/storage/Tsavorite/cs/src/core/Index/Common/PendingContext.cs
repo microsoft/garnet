@@ -15,8 +15,9 @@ namespace Tsavorite.core
             // User provided information
             internal OperationType type;
             internal RecordInfo recordInfo;
-            internal IHeapContainer<ReadOnlySpan<byte>> key;
-            internal IHeapContainer<ReadOnlySpan<byte>> valueSpan;
+            internal SpanByteHeapContainer key;
+            internal SpanByteHeapContainer valueSpan;
+            internal IHeapObject valueObject;
             internal IHeapContainer<TInput> input;
             internal TOutput output;
             internal TContext userContext;
@@ -108,28 +109,25 @@ namespace Tsavorite.core
             public readonly bool IsSet => !recordInfo.IsNull;
 
             /// <inheritdoc/>
-            public readonly ReadOnlySpan<byte> Key => key.Get();
+            public readonly ReadOnlySpan<byte> Key => key.Get().ReadOnlySpan;
 
             /// <inheritdoc/>
-            public bool IsPinnedKey => Info.KeyIsInline;
+            public readonly bool IsPinnedKey => true;
 
             /// <inheritdoc/>
-            public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)KeyAddress : null;
+            public byte* PinnedKeyPointer => key.Get().ToPointer();
 
             /// <inheritdoc/>
-            public readonly unsafe Span<byte> ValueSpan => ValueIsObject ? throw new TsavoriteException("Cannot use ValueSpan on an Object value") : Unsafe.As<Span<byte>>(ref valueSpan.Get());
+            public readonly unsafe Span<byte> ValueSpan => valueObject is null ? valueSpan.Get().Span : throw new TsavoriteException("Cannot use ValueSpan on an Object value");
 
             /// <inheritdoc/>
             public readonly IHeapObject ValueObject => valueObject;
 
             /// <inheritdoc/>
-            public bool IsPinnedValue => Info.ValueIsInline;
+            public bool IsPinnedValue => true;
 
             /// <inheritdoc/>
-            public byte* PinnedValuePointer => IsPinnedValue ? (byte*)ValueAddress : null;
-
-            /// <inheritdoc/>
-            public readonly IHeapObject GetReadOnlyValue() => value.Get();
+            public byte* PinnedValuePointer => valueSpan.Get().ToPointer();
 
             /// <inheritdoc/>
             public readonly long ETag => recordInfo.HasETag ? eTag : LogRecord.NoETag;

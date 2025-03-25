@@ -120,7 +120,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
@@ -290,10 +290,6 @@ namespace Tsavorite.core
         {
             throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
         }
-
-        internal IHeapContainer<Span<byte>> GetKeyContainer(ref ReadOnlySpan<byte> key) => new SpanByteHeapContainer(key, bufferPool);
-
-        internal IHeapContainer<Span<byte>> GetValueContainer(ref Span<byte> value) => new SpanByteHeapContainer(value, bufferPool);
 
         internal static long[] GetSegmentOffsets() => null;
 

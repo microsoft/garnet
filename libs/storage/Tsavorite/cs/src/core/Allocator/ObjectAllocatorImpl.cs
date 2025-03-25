@@ -176,7 +176,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, Span<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+        public RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
         {
             // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
@@ -831,6 +831,13 @@ namespace Tsavorite.core
 #endif // READ_WRITE
         }
 
+        public struct AllocatorRecord   // TODO remove
+        {
+            public RecordInfo info;
+            public byte[] key;
+            public byte[] value;
+        }
+
         #region Page handlers for objects
         /// <summary>
         /// Deseialize part of page from stream
@@ -984,8 +991,6 @@ namespace Tsavorite.core
             var serializedBytes = ctx.record.GetArrayAndUnalignedOffset(diskLogRecord.physicalAddress);
             DeserializeFromDiskBuffer(ref diskLogRecord, serializedBytes);
         }
-
-        internal IHeapContainer<ReadOnlySpan<byte>> GetKeyContainer(ref ReadOnlySpan<byte> key) => new SpanByteHeapContainer(key, bufferPool);
         #endregion
 
         public long[] GetSegmentOffsets() => null;

@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Key
         /// </summary>
-        public IHeapContainer<ReadOnlySpan<byte>> request_key;
+        public SpanByteHeapContainer request_key;
 
         /// <summary>
         /// Logical address
@@ -89,7 +89,7 @@ namespace Tsavorite.core
             request.completionEvent = this;
         }
 
-        internal void Prepare(IHeapContainer<ReadOnlySpan<byte>> request_key, long logicalAddress)
+        internal void Prepare(SpanByteHeapContainer request_key, long logicalAddress)
         {
             request.Dispose();
             request.request_key = request_key;
