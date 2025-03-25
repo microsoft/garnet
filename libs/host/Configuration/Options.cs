@@ -658,16 +658,13 @@ namespace Garnet
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
-            if (useAzureStorage && (
-                    string.IsNullOrEmpty(AzureStorageConnectionString)
-                    && (string.IsNullOrEmpty(AzureStorageServiceUri) || string.IsNullOrEmpty(AzureStorageManagedIdentity))))
+            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
             {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri & storage-managed-identity");
+                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri");
             }
-            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString)
-                && (!string.IsNullOrEmpty(AzureStorageServiceUri) || !string.IsNullOrEmpty(AzureStorageManagedIdentity)))
+            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
             {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri or storage-managed-identity");
+                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri");
             }
 
             var logDir = LogDir;
@@ -737,9 +734,20 @@ namespace Garnet
                 if (SlowLogThreshold < 100)
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
-            Func<INamedDeviceFactoryCreator> azureFactoryCreator = string.IsNullOrEmpty(AzureStorageConnectionString)
-                ? () => new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, new DefaultAzureCredential(new DefaultAzureCredentialOptions { ManagedIdentityClientId = AzureStorageManagedIdentity }), logger)
-                : () => new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger);
+
+            Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
+            {
+                if (!string.IsNullOrEmpty(AzureStorageConnectionString))
+                {
+                    return new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger);
+                }
+                var credentialOptions = new DefaultAzureCredentialOptions();
+                if (!string.IsNullOrEmpty(AzureStorageManagedIdentity))
+                {
+                    credentialOptions.ManagedIdentityClientId = AzureStorageManagedIdentity;
+                }
+                return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, new DefaultAzureCredential(credentialOptions), logger);
+            };
 
             return new GarnetServerOptions(logger)
             {
@@ -799,16 +807,16 @@ namespace Garnet
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
-                    CertFileName, CertPassword,
-                    ClientCertificateRequired.GetValueOrDefault(),
-                    CertificateRevocationCheckMode,
-                    IssuerCertificatePath,
-                    CertSubjectName,
-                    CertificateRefreshFrequency,
-                    EnableCluster.GetValueOrDefault(),
-                    ClusterTlsClientTargetHost,
-                    ServerCertificateRequired.GetValueOrDefault(),
-                    logger: logger) : null,
+        CertFileName, CertPassword,
+        ClientCertificateRequired.GetValueOrDefault(),
+        CertificateRevocationCheckMode,
+        IssuerCertificatePath,
+        CertSubjectName,
+        CertificateRefreshFrequency,
+        EnableCluster.GetValueOrDefault(),
+        ClusterTlsClientTargetHost,
+        ServerCertificateRequired.GetValueOrDefault(),
+        logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
