@@ -126,10 +126,8 @@ namespace Garnet.server
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
-        internal bool TryLoad(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, out LuaRunner runner, out ScriptHashKey? digestOnHeap, out string error)
+        internal bool TryLoad(RespServerSession session, ReadOnlySpan<byte> source, ScriptHashKey digest, out LuaRunner runner, out ScriptHashKey? digestOnHeap)
         {
-            error = null;
-
             if (scriptCache.TryGetValue(digest, out runner))
             {
                 digestOnHeap = null;
@@ -176,7 +174,8 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                error = ex.Message;
+                logger?.LogError(ex, "During Lua script loading, an unexpected exception");
+
                 digestOnHeap = null;
                 return false;
             }
