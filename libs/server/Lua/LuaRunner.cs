@@ -2593,6 +2593,26 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Attempts a call into Lua libraries.
+        /// 
+        /// If this fails, it's basically impossible for any other Lua functionality to work.
+        /// </summary>
+        public static bool TryProbeSupport(out string errorMessage)
+        {
+            try
+            {
+                _ = NativeMethods.Version();
+                errorMessage = null;
+                return true;
+            }
+            catch (Exception e)
+            {
+                errorMessage = e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Construct a bitmap we can quickly check for NoScript commands in.
         /// </summary>
         /// <returns></returns>
