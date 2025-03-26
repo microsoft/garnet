@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -12,7 +12,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
-using Azure.Identity;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -371,13 +370,6 @@ namespace Garnet
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
 
-        [HttpsUrlValidation]
-        [Option("storage-service-uri", Required = false, HelpText = "The URI to use when establishing connection to Azure Blobs Storage.")]
-        public string AzureStorageServiceUri { get; set; }
-
-        [Option("storage-managed-identity", Required = false, HelpText = "The managed identity to use when establishing connection to Azure Blobs Storage.")]
-        public string AzureStorageManagedIdentity { get; set; }
-
         [Option("storage-string", Required = false, HelpText = "The connection string to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageConnectionString { get; set; }
 
@@ -658,14 +650,8 @@ namespace Garnet
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
-            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri");
-            }
-            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri");
-            }
+            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString))
+                throw new Exception("Cannot enable use-azure-storage without supplying storage-string.");
 
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
@@ -734,20 +720,6 @@ namespace Garnet
                 if (SlowLogThreshold < 100)
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
-
-            Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
-            {
-                if (!string.IsNullOrEmpty(AzureStorageConnectionString))
-                {
-                    return new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger);
-                }
-                var credential = new ChainedTokenCredential(
-                    new WorkloadIdentityCredential(),
-                    new ManagedIdentityCredential(clientId: AzureStorageManagedIdentity)
-                );
-                return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, credential, logger);
-            };
-
             return new GarnetServerOptions(logger)
             {
                 EndPoint = endpoint,
@@ -806,16 +778,16 @@ namespace Garnet
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
                 TlsOptions = EnableTLS.GetValueOrDefault() ? new GarnetTlsOptions(
-        CertFileName, CertPassword,
-        ClientCertificateRequired.GetValueOrDefault(),
-        CertificateRevocationCheckMode,
-        IssuerCertificatePath,
-        CertSubjectName,
-        CertificateRefreshFrequency,
-        EnableCluster.GetValueOrDefault(),
-        ClusterTlsClientTargetHost,
-        ServerCertificateRequired.GetValueOrDefault(),
-        logger: logger) : null,
+                    CertFileName, CertPassword,
+                    ClientCertificateRequired.GetValueOrDefault(),
+                    CertificateRevocationCheckMode,
+                    IssuerCertificatePath,
+                    CertSubjectName,
+                    CertificateRefreshFrequency,
+                    EnableCluster.GetValueOrDefault(),
+                    ClusterTlsClientTargetHost,
+                    ServerCertificateRequired.GetValueOrDefault(),
+                    logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 SlowLogThreshold = SlowLogThreshold,
                 SlowLogMaxEntries = SlowLogMaxEntries,
@@ -828,7 +800,9 @@ namespace Garnet
                 ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
-                DeviceFactoryCreator = useAzureStorage ? azureFactoryCreator() : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                DeviceFactoryCreator = useAzureStorage
+                    ? new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger)
+                    : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -905,10 +879,5 @@ namespace Garnet
         GarnetConf = 0,
         // Redis.conf file format
         RedisConf = 1,
-    }
-
-    public class InvalidAzureConfiguration : Exception
-    {
-        public InvalidAzureConfiguration(string message) : base(message) { }
     }
 }
