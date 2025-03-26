@@ -189,6 +189,11 @@ namespace Garnet.server
             {
                 this.storeScriptCache = [];
 
+                if (!LuaRunner.TryProbeSupport(out var errorMessage))
+                {
+                    logger?.LogCritical("Lua probe failed, Lua scripts will fail {errorMessage}", errorMessage);
+                }
+
                 if (serverOptions.LuaOptions.Timeout != Timeout.InfiniteTimeSpan)
                 {
                     this.luaTimeoutManager = new(serverOptions.LuaOptions.Timeout, loggerFactory?.CreateLogger<LuaTimeoutManager>());

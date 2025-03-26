@@ -132,12 +132,9 @@ namespace Garnet.server
             ScriptHashKey digest,
             out LuaRunner runner,
             out ScriptHashKey? digestOnHeap,
-            out byte[] compiledSource,
-            out string error
+            out byte[] compiledSource
         )
         {
-            error = null;
-
             if (scriptCache.TryGetValue(digest, out runner))
             {
                 digestOnHeap = null;
@@ -185,7 +182,8 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                error = ex.Message;
+                logger?.LogError(ex, "During Lua script loading, an unexpected exception");
+
                 digestOnHeap = null;
                 compiledSource = null;
                 return false;
