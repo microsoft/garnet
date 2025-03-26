@@ -23,6 +23,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> get => "get"u8;
         public static ReadOnlySpan<byte> SET => "SET"u8;
         public static ReadOnlySpan<byte> set => "set"u8;
+        public static ReadOnlySpan<byte> del => "del"u8;
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
@@ -30,6 +31,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
         public static ReadOnlySpan<byte> ClusterPassword => "cluster-password"u8;
+        public static ReadOnlySpan<byte> NotifiyKeyspaceEvents => "notify-keyspace-events"u8;
         public static ReadOnlySpan<byte> ECHO => "ECHO"u8;
         public static ReadOnlySpan<byte> ACL => "ACL"u8;
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
@@ -149,6 +151,19 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
+        // TODO: move to another file or region for example KeyspaceNotificationEventStrings
+        public static ReadOnlySpan<byte> incrby => "incrby"u8;
+        public static ReadOnlySpan<byte> hincrby => "hincrby"u8;
+        public static ReadOnlySpan<byte> hincrbyfloat => "hincrbyfloat"u8;
+        public static ReadOnlySpan<byte> incrbyfloat => "incrbyfloat"u8;
+        public static ReadOnlySpan<byte> hpersist => "hpersist"u8;
+        public static ReadOnlySpan<byte> linsert => "linsert"u8;
+        public static ReadOnlySpan<byte> lset => "lset"u8;
+        public static ReadOnlySpan<byte> ltrim => "ltrim"u8;
+        public static ReadOnlySpan<byte> setrange => "setrange"u8;
+        public static ReadOnlySpan<byte> srem => "srem"u8;
+        public static ReadOnlySpan<byte> ssadd => "ssadd"u8;
+        // TODO: end
         public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
 
         /// <summary>

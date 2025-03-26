@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -606,6 +607,9 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
+                    // TODO: check usage of output var to send correct keyspace notification
+                    PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref sourceKey, CmdStrings.srem);
+                    PublishKeyspaceNotification(KeyspaceNotificationType.Set, ref destinationKey, CmdStrings.ssadd);
                     while (!RespWriteUtils.TryWriteInt32(output, ref dcurr, dend))
                         SendAndReset();
                     break;

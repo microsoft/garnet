@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -131,6 +132,7 @@ namespace Garnet.server
             string certPassword = null;
             string clusterUsername = null;
             string clusterPassword = null;
+            string notifiyKeyspaceEventsArguments = null;
             var unknownOption = false;
             var unknownKey = "";
 
@@ -147,6 +149,8 @@ namespace Garnet.server
                     clusterUsername = Encoding.ASCII.GetString(value);
                 else if (key.SequenceEqual(CmdStrings.ClusterPassword))
                     clusterPassword = Encoding.ASCII.GetString(value);
+                else if (key.SequenceEqual(CmdStrings.NotifiyKeyspaceEvents))
+                    notifiyKeyspaceEventsArguments = Encoding.ASCII.GetString(value);
                 else
                 {
                     if (!unknownOption)
@@ -190,6 +194,12 @@ namespace Garnet.server
                         if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
                         else errorMsg += " TLS is disabled.";
                     }
+                }
+
+                // TODO: Parse argument string into enum flags and remove second if statement
+                if (notifiyKeyspaceEventsArguments != null && notifiyKeyspaceEventsArguments.Equals("KEA"))
+                {
+                    storeWrapper.serverOptions.AllowedKeyspaceNotifications = KeyspaceNotificationType.All | KeyspaceNotificationType.Keyspace | KeyspaceNotificationType.Keyevent;
                 }
             }
 

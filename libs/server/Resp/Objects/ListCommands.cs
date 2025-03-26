@@ -4,6 +4,7 @@
 using System;
 using System.Text;
 using Garnet.common;
+using Garnet.server.KeyspaceNotifications;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -503,6 +504,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
+                    PublishKeyspaceNotification(KeyspaceNotificationType.List, ref parseState.GetArgSliceByRef(0), CmdStrings.ltrim);
                     //GarnetStatus.OK or NOTFOUND have same result
                     // no need to process output, just send OK
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -666,6 +668,7 @@ namespace Garnet.server
                     //process output
                     while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                         SendAndReset();
+                    PublishKeyspaceNotification(KeyspaceNotificationType.List, ref parseState.GetArgSliceByRef(0), CmdStrings.linsert);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -892,6 +895,7 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     //process output
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    PublishKeyspaceNotification(KeyspaceNotificationType.List, ref parseState.GetArgSliceByRef(0), CmdStrings.lset);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Garnet.server.Auth.Settings;
+using Garnet.server.KeyspaceNotifications;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -195,6 +196,11 @@ namespace Garnet.server
         /// Password for clients used by cluster backend
         /// </summary>
         public string ClusterPassword;
+
+        /// <summary>
+        /// Keyspace notifications
+        /// </summary>
+        public KeyspaceNotificationType AllowedKeyspaceNotifications;
 
         /// <summary>
         /// Enable per command latency tracking for all commands
