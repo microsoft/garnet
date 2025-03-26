@@ -96,6 +96,8 @@ namespace Garnet.server
 
         internal TransactionManager(StoreWrapper storeWrapper,
             RespServerSession respSession,
+            BasicGarnetApi garnetApi,
+            LockableGarnetApi lockableGarnetApi,
             StorageSession storageSession,
             ScratchBufferManager scratchBufferManager,
             bool clusterEnabled,
@@ -127,15 +129,20 @@ namespace Garnet.server
             Debug.Assert(dbFound);
             this.stateMachineDriver = db.StateMachineDriver;
 
-            garnetTxMainApi = respSession.lockableGarnetApi;
-            garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(respSession.basicGarnetApi);
-            garnetTxFinalizeApi = respSession.basicGarnetApi;
+            garnetTxMainApi = lockableGarnetApi;
+            garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(garnetApi);
+            garnetTxFinalizeApi = garnetApi;
 
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)
                 keys = new ArgSlice[initialKeyBufferSize];
 
             Reset(false);
+        }
+
+        internal void SetGarnetAPIs()
+        {
+
         }
 
         internal void Reset(bool isRunning)
