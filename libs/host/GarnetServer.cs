@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Garnet.cluster;
@@ -181,6 +182,7 @@ namespace Garnet
 
             this.logger = this.loggerFactory?.CreateLogger("GarnetServer");
             logger?.LogInformation("Garnet {version} {bits} bit; {clusterMode} mode; Endpoint: {endpoint}", version, IntPtr.Size == 8 ? "64" : "32", opts.EnableCluster ? "cluster" : "standalone", opts.EndPoint);
+            logger?.LogInformation("Environment .NET {netVersion}; {osPlatform}; {processArch}", Environment.Version, Environment.OSVersion.Platform, RuntimeInformation.ProcessArchitecture);
 
             // Flush initialization logs from memory logger
             FlushMemoryLogger(this.initLogger, "ArgParser", this.loggerFactory);
