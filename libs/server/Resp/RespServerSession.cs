@@ -1459,7 +1459,7 @@ namespace Garnet.server
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
             var transactionManager = new TransactionManager(storeWrapper, this, dbStorageSession, scratchBufferManager, 
                 storeWrapper.serverOptions.EnableCluster, logger, dbId);
-            storageSession.txnManager = transactionManager;
+            dbStorageSession.txnManager = transactionManager;
 
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
