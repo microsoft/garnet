@@ -88,6 +88,7 @@ namespace Garnet.test.cluster
         /// Create instances with provided configuration
         /// </summary>
         /// <param name="shards"></param>
+        /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
@@ -119,6 +120,7 @@ namespace Garnet.test.cluster
         /// <param name="useHostname"></param>
         public void CreateInstances(
             int shards,
+            bool enableCluster = true,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
             bool disableObjects = false,
@@ -160,6 +162,7 @@ namespace Garnet.test.cluster
                 TestFolder,
                 disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
+                enableCluster: enableCluster,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
                 timeout: timeout,
@@ -204,6 +207,7 @@ namespace Garnet.test.cluster
         /// Create single cluster instance with corresponding options
         /// </summary>
         /// <param name="endpoint"></param>
+        /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
@@ -229,6 +233,7 @@ namespace Garnet.test.cluster
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
+            bool enableCluster = true,
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
             bool tryRecover = false,
@@ -259,6 +264,7 @@ namespace Garnet.test.cluster
                 TestFolder,
                 TestFolder,
                 endpoint,
+                enableCluster: enableCluster,
                 disablePubSub: true,
                 disableObjects: disableObjects,
                 enableAOF: enableAOF,
