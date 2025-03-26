@@ -52,9 +52,9 @@ namespace Garnet.cluster
 
             var replaceSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
             var storeTypeSpan = parseState.GetArgSliceByRef(2).ReadOnlySpan;
-            var payload = parseState.GetArgSliceByRef(3).SpanByte;
+            var payload = parseState.GetArgSliceByRef(3);
             var payloadPtr = payload.ToPointer();
-            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
 
             var replaceOption = replaceSpan.EqualsUpperCaseSpanIgnoringCase("T"u8);
@@ -71,9 +71,9 @@ namespace Garnet.cluster
                 TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
-                    var key = SpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
                     payloadPtr += key.TotalSize;
-                    var value = SpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
+                    var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
                     payloadPtr += value.TotalSize;
 
                     // An error has occurred
@@ -92,8 +92,7 @@ namespace Garnet.cluster
                     }
 
                     // Set if key replace flag is set or key does not exist
-                    var keySlice = new ArgSlice(key.ToPointer(), key.Length);
-                    if (replaceOption || !Exists(ref keySlice))
+                    if (replaceOption || !Exists(key))
                         _ = basicGarnetApi.SET(key, value);
                     i++;
                 }
@@ -127,7 +126,7 @@ namespace Garnet.cluster
                     if (replaceOption || !CheckIfKeyExists(key))
                     { 
                         fixed(byte* keyPtr = key)
-                            _ = basicGarnetApi.SET(SpanByte.FromPinnedPointer(keyPtr, key.Length), value);
+                            _ = basicGarnetApi.SET(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), value);
                     }
                     i++;
                 }

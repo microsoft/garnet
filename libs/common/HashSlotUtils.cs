@@ -74,8 +74,8 @@ namespace Garnet.common
         /// <summary>
         /// Compute hash slot from the given ArgSlice
         /// </summary>
-        public static unsafe ushort HashSlot(ref PinnedSpanByte argSlice)
-            => HashSlotUtils.HashSlot(argSlice.ToPointer(), argSlice.Length);
+        public static unsafe ushort HashSlot(PinnedSpanByte argSlice)
+            => HashSlot(argSlice.ToPointer(), argSlice.Length);
 
         /// <summary>
         /// Compute hash slot from the given SpanByte
