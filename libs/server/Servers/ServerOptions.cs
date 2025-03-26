@@ -20,6 +20,11 @@ namespace Garnet.server
         public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
 
         /// <summary>
+        /// Cluster announce Endpoint
+        /// </summary>
+        public EndPoint ClusterAnnounceEndpoint { get; set; }
+
+        /// <summary>
         /// Total log memory used in bytes (rounds down to power of 2).
         /// </summary>
         public string MemorySize = "16g";

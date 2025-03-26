@@ -226,17 +226,26 @@ namespace Garnet.server
         public string GetIp()
         {
             IPEndPoint localEndPoint = null;
-            foreach (var server in servers)
+            if (serverOptions.ClusterAnnounceEndpoint == null)
             {
-                if (((GarnetServerTcp)server).EndPoint is IPEndPoint point)
+                foreach (var server in servers)
                 {
-                    localEndPoint = point;
-                    break;
+                    if (((GarnetServerTcp)server).EndPoint is IPEndPoint point)
+                    {
+                        localEndPoint = point;
+                        break;
+                    }
                 }
             }
+            else
+            {
+                if (serverOptions.ClusterAnnounceEndpoint is IPEndPoint point)
+                    localEndPoint = point;
+            }
 
+            // Fail if we cannot advertise an endpoint for remote nodes to connect to
             if (localEndPoint == null)
-                throw new GarnetException("Cluster mode requires definition of at least one TCP socket!");
+                throw new GarnetException("Cluster mode requires definition of at least one TCP socket through either the --bind or --cluster-announce-ip options!");
 
             if (localEndPoint.Address.Equals(IPAddress.Any))
             {
