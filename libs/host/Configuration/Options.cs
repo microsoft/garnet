@@ -11,8 +11,8 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
-using Azure.Identity;
 using System.Threading;
+using Azure.Identity;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -741,12 +741,11 @@ namespace Garnet
                 {
                     return new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger);
                 }
-                var credentialOptions = new DefaultAzureCredentialOptions();
-                if (!string.IsNullOrEmpty(AzureStorageManagedIdentity))
-                {
-                    credentialOptions.ManagedIdentityClientId = AzureStorageManagedIdentity;
-                }
-                return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, new DefaultAzureCredential(credentialOptions), logger);
+                var credential = new ChainedTokenCredential(
+                    new WorkloadIdentityCredential(),
+                    new ManagedIdentityCredential(clientId: AzureStorageManagedIdentity)
+                );
+                return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, credential, logger);
             };
 
             return new GarnetServerOptions(logger)
