@@ -62,7 +62,6 @@ namespace Garnet.server
         public void ResetAllLatencyMetrics() => LatencyMetrics?.ResetAll();
 
         readonly StoreWrapper storeWrapper;
-        internal TransactionManager txnManager;
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
@@ -91,9 +90,14 @@ namespace Garnet.server
         bool toDispose;
 
         int opCount;
+
+        /// <summary>
+        /// Current database session items
+        /// </summary>
         public StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
+        internal TransactionManager txnManager;
 
         readonly IGarnetAuthenticator _authenticator;
 
