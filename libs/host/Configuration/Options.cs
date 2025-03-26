@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -39,8 +40,16 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Required = false, HelpText = "Space separated string of IP addresses to bind server to (default: any)")]
+        [Option("bind", Required = false, HelpText = "Whitespace separated string of IP addresses to bind server to (default: any)")]
         public string Address { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        public int ClusterAnnouncePort { get; set; }
+
+        [IpAddressValidation(false)]
+        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        public string ClusterAnnounceIp { get; set; }
 
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -657,6 +666,15 @@ namespace Garnet
             if (!Format.TryParseAddressList(Address, Port, out var endpoints, out _) || endpoints.Length == 0)
                 throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
 
+            EndPoint[] clusterAnnounceEndpoint = null;
+            if (ClusterAnnounceIp != null)
+            {
+                ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                    throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
+            }
+
             if (!string.IsNullOrEmpty(UnixSocketPath))
                 endpoints = [.. endpoints, new UnixDomainSocketEndPoint(UnixSocketPath)];
 
@@ -713,6 +731,7 @@ namespace Garnet
             return new GarnetServerOptions(logger)
             {
                 EndPoints = endpoints,
+                ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
