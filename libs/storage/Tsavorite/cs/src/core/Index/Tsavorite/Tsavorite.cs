@@ -68,12 +68,6 @@ namespace Tsavorite.core
 
         internal readonly OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> LockTable;
 
-        internal void IncrementNumLockingSessions()
-        {
-            Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
-        }
-        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
-
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
         internal RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator> RevivificationManager;
@@ -87,7 +81,7 @@ namespace Tsavorite.core
         /// <param name="storeFunctions">Store-level user function implementations</param>
         /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
         public TsavoriteKV(KVSettings<TKey, TValue> kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
-            : base(kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
+            : base(kvSettings.Epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
             this.allocatorFactory = allocatorFactory;
             loggerFactory = kvSettings.loggerFactory;
@@ -158,7 +152,7 @@ namespace Tsavorite.core
             LockTable = new OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator>(this);
             RevivificationManager = new(this, isFixedLenReviv, kvSettings.RevivificationSettings, logSettings);
 
-            stateMachineDriver = new(epoch, SystemState.Make(Phase.REST, 1), kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
+            stateMachineDriver = kvSettings.StateMachineDriver ?? new(epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"StateMachineDriver"));
 
             if (kvSettings.TryRecoverLatest)
             {
@@ -181,18 +175,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <param name="streamingSnapshotIteratorFunctions">Iterator for streaming snapshot records</param>
         /// <returns>
         /// Whether we successfully initiated the checkpoint (initiation may
         /// fail if we are already taking a checkpoint or performing some other
         /// operation such as growing the index). Use CompleteCheckpointAsync to wait completion.
         /// </returns>
-        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
+        public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
 
@@ -201,11 +190,11 @@ namespace Tsavorite.core
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
+                stateMachine = Checkpoint.Streaming(this, out token);
             }
             else
             {
-                stateMachine = Checkpoint.Full(this, checkpointType, targetVersion, out token);
+                stateMachine = Checkpoint.Full(this, checkpointType, out token);
             }
             return stateMachineDriver.Register(stateMachine);
         }
@@ -215,11 +204,6 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <param name="streamingSnapshotIteratorFunctions">Iterator for streaming snapshot records</param>
         /// <returns>
         /// (bool success, Guid token)
@@ -230,9 +214,9 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeFullCheckpointAsync(CheckpointType checkpointType,
-            CancellationToken cancellationToken = default, long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
+            CancellationToken cancellationToken = default, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
-            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, targetVersion, streamingSnapshotIteratorFunctions);
+            var success = TryInitiateFullCheckpoint(out Guid token, checkpointType, streamingSnapshotIteratorFunctions);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -247,7 +231,7 @@ namespace Tsavorite.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token)
         {
-            var stateMachine = Checkpoint.IndexOnly(this, -1, out token);
+            var stateMachine = Checkpoint.IndexOnly(this, out token);
             return stateMachineDriver.Register(stateMachine);
         }
 
@@ -279,14 +263,9 @@ namespace Tsavorite.core
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
-            long targetVersion = -1, IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
+            IStreamingSnapshotIteratorFunctions<TKey, TValue> streamingSnapshotIteratorFunctions = null)
         {
             IStateMachine stateMachine;
 
@@ -295,7 +274,7 @@ namespace Tsavorite.core
                 if (streamingSnapshotIteratorFunctions is null)
                     throw new TsavoriteException("StreamingSnapshot checkpoint requires a streaming snapshot iterator");
                 this.streamingSnapshotIteratorFunctions = streamingSnapshotIteratorFunctions;
-                stateMachine = Checkpoint.Streaming(this, targetVersion, out token);
+                stateMachine = Checkpoint.Streaming(this, out token);
             }
             else
             {
@@ -307,14 +286,29 @@ namespace Tsavorite.core
                     && !hlog.HasObjectLog;
                 if (incremental)
                 {
-                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, targetVersion, token);
+                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, token);
                 }
                 else
                 {
-                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, targetVersion, out token);
+                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, out token);
                 }
             }
             return stateMachineDriver.Register(stateMachine);
+        }
+
+        /// <summary>
+        /// Whether we can take an incremental snapshot checkpoint given current state of the store
+        /// </summary>
+        /// <param name="checkpointType"></param>
+        /// <returns></returns>
+        public bool CanTakeIncrementalCheckpoint(CheckpointType checkpointType, out Guid guid)
+        {
+            guid = _lastSnapshotCheckpoint.info.guid;
+            return
+                checkpointType == CheckpointType.Snapshot
+                && guid != default
+                && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
+                && !hlog.HasObjectLog;
         }
 
         /// <summary>
@@ -323,11 +317,6 @@ namespace Tsavorite.core
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
         /// <param name="cancellationToken">Cancellation token</param>
-        /// <param name="targetVersion">
-        /// intended version number of the next version. Checkpoint will not execute if supplied version is not larger
-        /// than current version. Actual new version may have version number greater than supplied number. If the supplied
-        /// number is -1, checkpoint will unconditionally create a new version. 
-        /// </param>
         /// <returns>
         /// (bool success, Guid token)
         /// success: Whether we successfully initiated the checkpoint (initiation may
@@ -337,9 +326,9 @@ namespace Tsavorite.core
         /// Await task to complete checkpoint, if initiated successfully
         /// </returns>
         public async ValueTask<(bool success, Guid token)> TakeHybridLogCheckpointAsync(CheckpointType checkpointType,
-            bool tryIncremental = false, CancellationToken cancellationToken = default, long targetVersion = -1)
+            bool tryIncremental = false, CancellationToken cancellationToken = default)
         {
-            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental, targetVersion);
+            var success = TryInitiateHybridLogCheckpoint(out Guid token, checkpointType, tryIncremental);
 
             if (success)
                 await CompleteCheckpointAsync(cancellationToken).ConfigureAwait(false);
@@ -356,8 +345,30 @@ namespace Tsavorite.core
         /// <returns>Version we actually recovered to</returns>
         public long Recover(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1)
         {
+            // Do not recover
+            if (recoverTo == 0)
+                return 0;
             FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
             return InternalRecover(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo);
+        }
+
+        /// <summary>
+        /// Get the version we would recover to if we were to request recovery the specified version
+        /// </summary>
+        /// <param name="recoverTo">Specified version</param>
+        /// <returns></returns>
+        public long GetRecoverVersion(long recoverTo = -1)
+        {
+            try
+            {
+                FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
+                return recoveredHlcInfo.info.version;
+            }
+            catch
+            {
+                // Do not recover
+                return 0;
+            }
         }
 
         /// <summary>
@@ -371,6 +382,9 @@ namespace Tsavorite.core
         public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
             CancellationToken cancellationToken = default)
         {
+            // Do not recover
+            if (recoverTo == 0)
+                return ValueTask.FromResult(0L);
             FindRecoveryInfo(recoverTo, out var recoveredHlcInfo, out var recoveredIcInfo);
             return InternalRecoverAsync(recoveredIcInfo, recoveredHlcInfo, numPagesToPreload, undoNextVersion, recoverTo, cancellationToken);
         }
@@ -585,7 +599,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
             var indexResizeTask = new IndexResizeSMTask<TKey, TValue, TStoreFunctions, TAllocator>(this);
-            var indexResizeSM = new IndexResizeSM(-1, indexResizeTask);
+            var indexResizeSM = new IndexResizeSM(indexResizeTask);
             return await stateMachineDriver.RunAsync(indexResizeSM);
         }
 
@@ -639,32 +653,90 @@ namespace Tsavorite.core
             long beginAddress = hlogBase.BeginAddress;
             Dictionary<int, long> histogram = new();
 
+            Dictionary<int, long> ofb_chaining_histogram = new();
+            long total_entries_in_ofb = 0;
+            long total_zeroed_out_slots = 0;
+            long total_entries_below_begin_address = 0;
+            long total_entries_in_ofb_below_begin_address = 0;
+            long total_entries_with_tentative_bit_set = 0;
+            Dictionary<int, long> slots_unused_by_nonofb_buckets_histogram = new();
+            Dictionary<int, long> slots_unused_by_ofb_buckets_histogram = new();
+
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
+                bool is_bucket_in_ofb_table = false;
                 List<int> tags = new();
-                int cnt = 0;
+                int total_valid_records_in_this_bucket_cnt = 0;
+                int total_valid_entries_in_ofb_in_this_bucket_cnt = 0;
                 HashBucket b = *(ptable_ + bucket);
                 while (true)
                 {
+                    // per bucket calculate the number of zero'd out slots
+                    int zeroed_out_slots = 0;
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
+
+                        if (x.Tentative)
+                            ++total_entries_with_tentative_bit_set;
+
                         if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readCacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");
                             tags.Add(x.Tag);
-                            ++cnt;
+                            ++total_valid_records_in_this_bucket_cnt;
                             ++total_record_count;
                         }
+                        else if (x.word != default)
+                        {
+                            if (is_bucket_in_ofb_table)
+                                ++total_entries_in_ofb_below_begin_address;
+
+                            ++total_entries_below_begin_address;
+                        }
+                        else
+                        {
+                            ++zeroed_out_slots;
+                        }
+
+                        if (is_bucket_in_ofb_table)
+                            total_valid_entries_in_ofb_in_this_bucket_cnt++;
                     }
-                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+
+                    total_zeroed_out_slots += zeroed_out_slots;
+
+                    if (is_bucket_in_ofb_table)
+                    {
+                        if (!slots_unused_by_ofb_buckets_histogram.ContainsKey(zeroed_out_slots))
+                            slots_unused_by_ofb_buckets_histogram[zeroed_out_slots] = 0;
+                        slots_unused_by_ofb_buckets_histogram[zeroed_out_slots]++;
+                    }
+                    else
+                    {
+                        if (!slots_unused_by_nonofb_buckets_histogram.ContainsKey(zeroed_out_slots))
+                            slots_unused_by_nonofb_buckets_histogram[zeroed_out_slots] = 0;
+                        slots_unused_by_nonofb_buckets_histogram[zeroed_out_slots]++;
+                    }
+
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0)
+                        break;
+
                     b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
+                    is_bucket_in_ofb_table = true;
                 }
 
-                if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;
-                histogram[cnt]++;
+                if (!histogram.ContainsKey(total_valid_records_in_this_bucket_cnt))
+                    histogram[total_valid_records_in_this_bucket_cnt] = 1;
+                else
+                    histogram[total_valid_records_in_this_bucket_cnt]++;
+
+                total_valid_entries_in_ofb_in_this_bucket_cnt /= (int)Constants.kOverflowBucketIndex;
+                if (!ofb_chaining_histogram.ContainsKey(total_valid_entries_in_ofb_in_this_bucket_cnt)) ofb_chaining_histogram[total_valid_entries_in_ofb_in_this_bucket_cnt] = 0;
+                ofb_chaining_histogram[total_valid_entries_in_ofb_in_this_bucket_cnt]++;
+
+                total_entries_in_ofb += total_valid_entries_in_ofb_in_this_bucket_cnt;
             }
 
             var distribution =
@@ -673,9 +745,33 @@ namespace Tsavorite.core
                 $"Size of each bucket: {Constants.kEntriesPerBucket * sizeof(HashBucketEntry)} bytes\n" +
                 $"Total distinct hash-table entry count: {{{total_record_count}}}\n" +
                 $"Average #entries per hash bucket: {{{total_record_count / (double)table_size_:0.00}}}\n" +
+                $"Total zeroed out slots: {total_zeroed_out_slots} \n" +
+                $"Total entries below begin addr: {total_entries_below_begin_address} \n" +
+                $"Total entries in overflow buckets: {total_entries_in_ofb} \n" +
+                $"Total entries in overflow buckets below begin addr: {total_entries_in_ofb_below_begin_address} \n" +
+                $"Total entries with tentative bit set: {total_entries_with_tentative_bit_set} \n" +
                 $"Histogram of #entries per bucket:\n";
 
             foreach (var kvp in histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            distribution += $"Histogram of #buckets per OFB chain and their frequencies: \n";
+            foreach (var kvp in ofb_chaining_histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            // Histogram of slots unused per bucket in OFB and non-OFB
+            distribution += $"Histogram of #unused slots per bucket in main hash index:\n";
+            foreach (var kvp in slots_unused_by_nonofb_buckets_histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            distribution += $"Histogram of #unused slots per bucket in overflow buckets:\n";
+            foreach (var kvp in slots_unused_by_ofb_buckets_histogram.OrderBy(e => e.Key))
             {
                 distribution += $"  {kvp.Key} : {kvp.Value}\n";
             }

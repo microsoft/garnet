@@ -106,7 +106,7 @@ namespace Garnet.server
                 return;
             }
 
-            long storeVersion = -1, objectStoreVersion = -1;
+            long storeVersion = 0, objectStoreVersion = 0;
 
             foreach (var dbId in dbIdsToRecover)
             {
@@ -133,12 +133,19 @@ namespace Garnet.server
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw;
                 }
+
+                // After recovery, we check if store versions match
+                if (db.ObjectStore != null && storeVersion != objectStoreVersion)
+                {
+                    Logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                    if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                        throw new GarnetException("Main store and object store checkpoint versions do not match");
+                }
             }
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
-            CancellationToken token = default)
+        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
         {
             var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
             if (!lockAcquired) return false;
@@ -149,7 +156,7 @@ namespace Garnet.server
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
                 Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
 
-                TakeDatabasesCheckpointAsync(storeType, activeDbIdsMapSize, logger: logger, token: token).GetAwaiter().GetResult();
+                TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).GetAwaiter().GetResult();
             }
             finally
             {
@@ -160,8 +167,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, StoreType storeType = StoreType.All, ILogger logger = null,
-            CancellationToken token = default)
+        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
@@ -170,11 +176,22 @@ namespace Garnet.server
             if (!TryPauseCheckpointsContinuousAsync(dbId, token).GetAwaiter().GetResult())
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(databasesMapSnapshot[dbId], storeType, logger: logger, token: token).ContinueWith(
-                _ =>
+            var checkpointTask = TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
+                t =>
                 {
-                    TryUpdateLastSaveTimeAsync(dbId, token).GetAwaiter().GetResult();
-                    ResumeCheckpoints(dbId);
+                    try
+                    {
+                        if (t.IsCompletedSuccessfully)
+                        {
+                            var storeTailAddress = t.Result.Item1;
+                            var objectStoreTailAddress = t.Result.Item2;
+                            TryUpdateLastSaveDataAsync(dbId, storeTailAddress, objectStoreTailAddress, token).GetAwaiter().GetResult();
+                        }
+                    }
+                    finally
+                    {
+                        ResumeCheckpoints(dbId);
+                    }
                 }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
 
             if (background)
@@ -201,9 +218,11 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                await TakeCheckpointAsync(databasesMapSnapshot[dbId], StoreType.All, logger: Logger);
+                var result = await TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: Logger);
 
-                TryUpdateLastSaveTimeAsync(dbId).GetAwaiter().GetResult();
+                var storeTailAddress = result.Item1;
+                var objectStoreTailAddress = result.Item2;
+                TryUpdateLastSaveDataAsync(dbId, storeTailAddress, objectStoreTailAddress).GetAwaiter().GetResult();
             }
             finally
             {
@@ -243,7 +262,7 @@ namespace Garnet.server
 
                 if (dbIdsIdx == 0) return;
 
-                await TakeDatabasesCheckpointAsync(StoreType.All, dbIdsIdx, logger: logger, token: token);
+                await TakeDatabasesCheckpointAsync(dbIdsIdx, logger: logger, token: token);
             }
             finally
             {
@@ -879,12 +898,11 @@ namespace Garnet.server
         /// <summary>
         /// Asynchronously checkpoint multiple databases and wait for all to complete
         /// </summary>
-        /// <param name="storeType">Store type to checkpoint</param>
         /// <param name="dbIdsCount">Number of databases to checkpoint (first dbIdsCount indexes from dbIdsToCheckpoint)</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if checkpointing already in progress</returns>
-        private async Task TakeDatabasesCheckpointAsync(StoreType storeType, int dbIdsCount, ILogger logger = null,
+        private async Task TakeDatabasesCheckpointAsync(int dbIdsCount, ILogger logger = null,
             CancellationToken token = default)
         {
             Debug.Assert(checkpointTasks != null);
@@ -909,11 +927,22 @@ namespace Garnet.server
                     if (!await TryPauseCheckpointsContinuousAsync(dbId, token))
                         continue;
 
-                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], storeType, logger: logger, token: token).ContinueWith(
-                        _ =>
+                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
+                        t =>
                         {
-                            TryUpdateLastSaveTimeAsync(dbId, token).GetAwaiter().GetResult();
-                            ResumeCheckpoints(dbId);
+                            try
+                            {
+                                if (t.IsCompletedSuccessfully)
+                                {
+                                    var storeTailAddress = t.Result.Item1;
+                                    var objectStoreTailAddress = t.Result.Item2;
+                                    TryUpdateLastSaveDataAsync(dbId, storeTailAddress, objectStoreTailAddress, token).GetAwaiter().GetResult();
+                                }
+                            }
+                            finally
+                            {
+                                ResumeCheckpoints(dbId);
+                            }
                         }, TaskContinuationOptions.ExecuteSynchronously);
 
                     currIdx++;
@@ -931,7 +960,7 @@ namespace Garnet.server
             }
         }
 
-        private async Task<bool> TryUpdateLastSaveTimeAsync(int dbId, CancellationToken token = default)
+        private async Task<bool> TryUpdateLastSaveDataAsync(int dbId, long? storeTailAddress, long? objectStoreTailAddress, CancellationToken token = default)
         {
             var lockAcquired = await TryGetDatabasesContentReadLockAsync(token);
             if (!lockAcquired) return false;
@@ -941,6 +970,13 @@ namespace Garnet.server
             try
             {
                 databasesMapSnapshot[dbId].LastSaveTime = DateTimeOffset.UtcNow;
+                if (storeTailAddress.HasValue)
+                {
+                    databasesMapSnapshot[dbId].LastSaveStoreTailAddress = storeTailAddress.Value;
+
+                    if (databasesMapSnapshot[dbId].ObjectStore != null && objectStoreTailAddress.HasValue)
+                        databasesMapSnapshot[dbId].LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+                }
                 return true;
             }
             finally

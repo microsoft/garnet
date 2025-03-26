@@ -46,6 +46,7 @@ namespace Garnet.server
         public readonly FunctionsState functionsState;
 
         public TransactionManager txnManager;
+        public StateMachineDriver stateMachineDriver;
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
@@ -66,7 +67,6 @@ namespace Garnet.server
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId);
@@ -76,6 +76,7 @@ namespace Garnet.server
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
 
+            this.stateMachineDriver = db.StateMachineDriver;
             var session = db.MainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);

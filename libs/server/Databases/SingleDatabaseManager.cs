@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -52,7 +53,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
-            long storeVersion = -1, objectStoreVersion = -1;
+            long storeVersion = 0, objectStoreVersion = 0;
             try
             {
                 if (replicaRecover)
@@ -95,6 +96,14 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
+
+            // After recovery, we check if store versions match
+            if (ObjectStore != null && storeVersion != objectStoreVersion)
+            {
+                Logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                    throw new GarnetException("Main store and object store checkpoint versions do not match");
+            }
         }
 
         /// <inheritdoc/>
@@ -114,17 +123,33 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
-            CancellationToken token = default)
+        public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
         {
             if (!TryPauseCheckpointsContinuousAsync(DefaultDatabase.Id, token: token).GetAwaiter().GetResult())
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(DefaultDatabase, storeType, logger: logger, token: token).ContinueWith(
-                _ =>
+            var checkpointTask = TakeCheckpointAsync(DefaultDatabase, logger: logger, token: token).ContinueWith(
+                t =>
                 {
-                    DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
-                    ResumeCheckpoints(DefaultDatabase.Id);
+                    try
+                    {
+                        if (t.IsCompletedSuccessfully)
+                        {
+                            var storeTailAddress = t.Result.Item1;
+                            var objectStoreTailAddress = t.Result.Item2;
+                            
+                            if (storeTailAddress.HasValue)
+                                DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                            if (ObjectStore != null && objectStoreTailAddress.HasValue)
+                                DefaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+
+                            DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                        }
+                    }
+                    finally
+                    {
+                        ResumeCheckpoints(DefaultDatabase.Id);
+                    }
                 }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
 
             if (background)
@@ -135,13 +160,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override bool TakeCheckpoint(bool background, int dbId, StoreType storeType = StoreType.All,
-            ILogger logger = null,
-            CancellationToken token = default)
+        public override bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return TakeCheckpoint(background, storeType, logger, token);
+            return TakeCheckpoint(background, logger, token);
         }
 
         /// <inheritdoc/>
@@ -159,7 +182,15 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                await TakeCheckpointAsync(DefaultDatabase, StoreType.All, logger: Logger);
+                var result = await TakeCheckpointAsync(DefaultDatabase, logger: Logger);
+
+                var storeTailAddress = result.Item1;
+                var objectStoreTailAddress = result.Item2;
+
+                if (storeTailAddress.HasValue)
+                    DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                if (ObjectStore != null && objectStoreTailAddress.HasValue)
+                    DefaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
                 DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
@@ -184,7 +215,15 @@ namespace Garnet.server
 
             try
             {
-                await TakeCheckpointAsync(DefaultDatabase, StoreType.All, logger: logger, token: token);
+                var result = await TakeCheckpointAsync(DefaultDatabase, logger: logger, token: token);
+
+                var storeTailAddress = result.Item1;
+                var objectStoreTailAddress = result.Item2;
+
+                if (storeTailAddress.HasValue)
+                    DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                if (ObjectStore != null && objectStoreTailAddress.HasValue)
+                    DefaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
                 DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
@@ -296,12 +335,24 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
+            var safeTruncateAof = StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF;
+            
+            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog, !safeTruncateAof);
+
+            if (safeTruncateAof)
+                SafeTruncateAOF(AofEntryType.FlushDb, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
-        public override void FlushAllDatabases(bool unsafeTruncateLog) =>
-            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog);
+        public override void FlushAllDatabases(bool unsafeTruncateLog)
+        {
+            var safeTruncateAof = StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF;
+
+            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog, !safeTruncateAof);
+
+            if (safeTruncateAof)
+                SafeTruncateAOF(AofEntryType.FlushAll, unsafeTruncateLog);
+        }
 
         /// <inheritdoc/>
         public override bool TrySwapDatabases(int dbId1, int dbId2, CancellationToken token = default) => false;
@@ -337,6 +388,23 @@ namespace Garnet.server
             }
 
             return checkpointsPaused;
+        }
+
+        private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
+        {
+            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.TailAddress);
+            if (StoreWrapper.clusterProvider.IsPrimary())
+            {
+                AofHeader header = new()
+                {
+                    opType = entryType,
+                    storeVersion = 0,
+                    sessionID = -1,
+                    unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                    databaseId = (byte)DefaultDatabase.Id
+                };
+                AppendOnlyFile?.Enqueue(header, out _);
+            }
         }
 
         public override void Dispose()

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -10,6 +11,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -23,6 +25,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -39,6 +42,28 @@ namespace Garnet.test
         public long MemorySize;
         public long ReadCacheBeginAddress;
         public long ReadCacheTailAddress;
+    }
+
+    /// <summary>
+    /// Get all attributes that start with given prefix.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Parameter)]
+    public sealed class ValuesPrefixAttribute : NUnitAttribute, IParameterDataSource
+    {
+        readonly string prefix;
+
+        public ValuesPrefixAttribute(string prefix)
+        {
+            this.prefix = prefix;
+        }
+
+        public IEnumerable GetData(IParameterInfo parameter)
+        {
+            return new ValuesAttribute()
+                .GetData(parameter)
+                .Cast<object>()
+                .Where(e => e.ToString().StartsWith(prefix));
+        }
     }
 
     internal static class TestUtils
@@ -90,6 +115,12 @@ namespace Garnet.test
                 }
                 return false;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
+        {
+            ClassicAssert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response, 0, expectedResponse.Length));
         }
 
         /// <summary>
@@ -221,6 +252,7 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
+            IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
@@ -305,7 +337,7 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold
@@ -416,6 +448,7 @@ namespace Garnet.test
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
@@ -461,6 +494,7 @@ namespace Garnet.test
                     enableLua: enableLua,
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
+                    replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit);
 
@@ -516,11 +550,13 @@ namespace Garnet.test
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
+            IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null)
         {
             if (useAzureStorage)
@@ -604,7 +640,7 @@ namespace Garnet.test
                     tlsServerOptionsOverride: null,
                     clusterTlsClientOptionsOverride: new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = certificates ?? [new X509Certificate2(certFile, certPassword)],
+                        ClientCertificates = certificates ?? [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -624,10 +660,10 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
-                ReplicaDisklessSyncDelay = 1
+                ReplicaDisklessSyncDelay = replicaDisklessSyncDelay
             };
 
             if (lowMemory)
@@ -714,7 +750,7 @@ namespace Garnet.test
                 (
                     new SslClientAuthenticationOptions
                     {
-                        ClientCertificates = certificates ?? [new X509Certificate2(certFile, certPassword)],
+                        ClientCertificates = certificates ?? [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                         TargetHost = "GarnetTest",
                         AllowRenegotiation = false,
                         RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -731,7 +767,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -747,7 +783,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
@@ -763,7 +799,7 @@ namespace Garnet.test
             {
                 sslOptions = new SslClientAuthenticationOptions
                 {
-                    ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                     TargetHost = "GarnetTest",
                     AllowRenegotiation = false,
                     RemoteCertificateValidationCallback = ValidateServerCertificate,

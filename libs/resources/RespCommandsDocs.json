@@ -41,16 +41,15 @@
       {
         "Command": "ACL_GETUSER",
         "Name": "ACL|GETUSER",
-        "Summary": "Returns the rules defined for an ACL user.",
+        "Summary": "Lists the ACL rules of a user.",
         "Group": "Server",
-        "Complexity": "O(1) amortized time considering the typical user.",
+        "Complexity": "O(N). Where N is the number of password, command and pattern rules that the user has.",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "USERNAME",
             "DisplayText": "username",
-            "Type": "String",
-            "ArgumentFlags": "Multiple"
+            "Type": "String"
           }
         ]
       },

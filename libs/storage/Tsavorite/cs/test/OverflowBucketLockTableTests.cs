@@ -317,7 +317,7 @@ namespace Tsavorite.test.LockTable
                     KeyHash = keyHash,
                 };
             }
-            return Enumerable.Range(0, numRecords).Select(ii => createKey()).ToArray();
+            return [.. Enumerable.Range(0, numRecords).Select(ii => createKey())];
         }
 
         void AssertSorted(FixedLengthLockableKeyStruct<long>[] keys, int count)

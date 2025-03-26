@@ -223,6 +223,7 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
+            opts.Initialize(loggerFactory);
             StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId) =>
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
@@ -278,11 +279,11 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateMainStore(dbId, clusterFactory);
-            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, out var objectStoreSizeTracker);
+            var store = CreateMainStore(dbId, clusterFactory, out var epoch, out var stateMachineDriver);
+            var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, epoch, stateMachineDriver, out var objectStoreSizeTracker);
             var (aofDevice, aof) = CreateAOF(dbId);
-            return new GarnetDatabase(dbId, store, objectStore, objectStoreSizeTracker, aofDevice, aof,
-                serverOptions.AdjustedIndexMaxCacheLines == 0,
+            return new GarnetDatabase(dbId, store, objectStore, epoch, stateMachineDriver, objectStoreSizeTracker,
+                aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0,
                 serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0);
         }
 
@@ -310,9 +311,13 @@ namespace Garnet
             }
         }
 
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory)
+        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory,
+            out LightEpoch epoch, out StateMachineDriver stateMachineDriver)
         {
-            kvSettings = opts.GetSettings(loggerFactory, out logFactory);
+            epoch = new LightEpoch();
+            stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
+
+            kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -329,13 +334,14 @@ namespace Garnet
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager, out CacheSizeTracker objectStoreSizeTracker)
+        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager, 
+            LightEpoch epoch, StateMachineDriver stateMachineDriver, out CacheSizeTracker objectStoreSizeTracker)
         {
             objectStoreSizeTracker = null;
             if (opts.DisableObjects)
                 return null;
 
-            objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
+            objKvSettings = opts.GetObjectStoreSettings(loggerFactory, epoch, stateMachineDriver,
                 out var objHeapMemorySize, out var objReadCacheHeapMemorySize);
 
             // Run checkpoint on its own thread to control p99

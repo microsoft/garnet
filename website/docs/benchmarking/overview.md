@@ -29,6 +29,8 @@ The BDN CI first looks at the "Allocated" bytes from that specific run and compa
     b) Follow the pattern for the labels of expected values that others have and use "_".
     
     c) If the expected Allocated value for Linux and Windows are different, use the value that is higher.
+
+    d) If the expected values are not highly deterministic, it is advisable to avoid failing the test when these values are out of compliance. To prevent false failures, prepend WARN-ON-FAIL_ instead of expected_ to each expected value. This ensures the values are checked and will only generate warnings without causing a pipeline failure. The values will still be included in the charts, even if they are marked as warnings.
  
 **To run BDN perf tests locally**
 test/BDNPerfTests/run_bdnperftest.ps1 

@@ -336,6 +336,7 @@ namespace Garnet.server
         CLUSTER_FAILOVER,
         CLUSTER_FAILREPLICATIONOFFSET,
         CLUSTER_FAILSTOPWRITES,
+        CLUSTER_FLUSHALL,
         CLUSTER_FORGET,
         CLUSTER_GETKEYSINSLOT,
         CLUSTER_GOSSIP,
@@ -1445,6 +1446,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.BZPOPMIN;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.SPUBLISH;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -2111,6 +2116,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
                 {
                     return RespCommand.CLUSTER_FAILSTOPWRITES;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
+                {
+                    return RespCommand.CLUSTER_FLUSHALL;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
                 {

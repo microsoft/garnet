@@ -41,14 +41,20 @@ namespace Garnet.server
         /// </summary>
         public LockableGarnetApi LockableGarnetApi;
 
+        /// <summary>
+        /// Transaction manager
+        /// </summary>
+        public TransactionManager TransactionManager;
+
         bool disposed = false;
 
-        public GarnetDatabaseSession(int id, StorageSession storageSession, BasicGarnetApi garnetApi, LockableGarnetApi lockableGarnetApi)
+        public GarnetDatabaseSession(int id, StorageSession storageSession, BasicGarnetApi garnetApi, LockableGarnetApi lockableGarnetApi, TransactionManager txnManager)
         {
             this.Id = id;
             this.StorageSession = storageSession;
             this.GarnetApi = garnetApi;
             this.LockableGarnetApi = lockableGarnetApi;
+            this.TransactionManager = txnManager;
         }
 
         /// <summary>

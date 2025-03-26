@@ -90,7 +90,7 @@ namespace Garnet.networking
         /* TLS related fields */
         readonly SslStream sslStream;
         readonly SemaphoreSlim receivedData, expectingData;
-        readonly CancellationTokenSource cancellationTokenSource;
+        protected readonly CancellationTokenSource cancellationTokenSource;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
         volatile TlsReaderStatus readerStatus;
@@ -150,7 +150,6 @@ namespace Garnet.networking
             if (tlsOptions == null && sslStream != null)
                 throw new Exception("Cannot provide SslServerAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
-            if (token == default) token = cancellationTokenSource.Token;
 
             _ = AuthenticateAsServerAsync(tlsOptions, remoteEndpointName, token);
         }
@@ -165,7 +164,6 @@ namespace Garnet.networking
             if (tlsOptions == null && sslStream != null)
                 throw new Exception("Cannot provide SslServerAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
-            if (token == default) token = cancellationTokenSource.Token;
 
             await AuthenticateAsServerAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
@@ -216,7 +214,6 @@ namespace Garnet.networking
             if (tlsOptions == null && sslStream != null)
                 throw new Exception("Cannot provide SslClientAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
-            if (token == default) token = cancellationTokenSource.Token;
 
             _ = AuthenticateAsClientAsync(tlsOptions, remoteEndpointName, token);
         }
@@ -231,7 +228,6 @@ namespace Garnet.networking
             if (tlsOptions == null && sslStream != null)
                 throw new Exception("Cannot provide SslClientAuthenticationOptions when TLS is disabled");
             if (tlsOptions == null && sslStream == null) return;
-            if (token == default) token = cancellationTokenSource.Token;
 
             await AuthenticateAsClientAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
         }
@@ -622,7 +618,7 @@ namespace Garnet.networking
             if (Interlocked.Increment(ref disposeCount) != 1)
             {
                 logger?.LogTrace("NetworkHandler.Dispose called multiple times");
-                throw new Exception("NetworkHandler.Dispose called multiple times");
+                return;
             }
 
             cancellationTokenSource?.Cancel();

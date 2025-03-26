@@ -38,6 +38,16 @@ namespace Garnet.server
         public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore;
 
         /// <summary>
+        /// Epoch instance used by server
+        /// </summary>
+        public LightEpoch Epoch;
+
+        /// <summary>
+        /// Common state machine driver used by Garnet
+        /// </summary>
+        public StateMachineDriver StateMachineDriver;
+
+        /// <summary>
         /// Size Tracker for Object Store
         /// </summary>
         public CacheSizeTracker ObjectStoreSizeTracker;
@@ -91,12 +101,15 @@ namespace Garnet.server
 
         public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
+            LightEpoch epoch, StateMachineDriver stateMachineDriver,
             CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
             bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut) : this()
         {
             Id = id;
             MainStore = mainStore;
             ObjectStore = objectStore;
+            Epoch = epoch;
+            StateMachineDriver = stateMachineDriver;
             ObjectStoreSizeTracker = objectStoreSizeTracker;
             AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
@@ -109,6 +122,8 @@ namespace Garnet.server
             Id = srcDb.Id;
             MainStore = srcDb.MainStore;
             ObjectStore = srcDb.ObjectStore;
+            Epoch = srcDb.Epoch;
+            StateMachineDriver = srcDb.StateMachineDriver;
             ObjectStoreSizeTracker = srcDb.ObjectStoreSizeTracker;
             AofDevice = enableAof ? srcDb.AofDevice : null;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;

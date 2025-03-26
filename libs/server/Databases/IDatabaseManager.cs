@@ -95,23 +95,20 @@ namespace Garnet.server
         /// Take checkpoint of all active databases
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="storeType">Store type to checkpoint</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default);
+        public bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
 
         /// <summary>
         /// Take checkpoint of specified database ID
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="dbId">ID of database to checkpoint</param>
-        /// <param name="storeType">Store type to checkpoint</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId, StoreType storeType = StoreType.All,
-            ILogger logger = null, CancellationToken token = default);
+        public bool TakeCheckpoint(bool background, int dbId, ILogger logger = null, CancellationToken token = default);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset

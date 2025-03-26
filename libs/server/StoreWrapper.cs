@@ -304,33 +304,31 @@ namespace Garnet.server
         /// Take checkpoint of all active databases
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
-        /// <param name="storeType">Store type to checkpoint</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null,
-            CancellationToken token = default) => databaseManager.TakeCheckpoint(background, storeType, logger, token);
+        public bool TakeCheckpoint(bool background, ILogger logger = null,
+            CancellationToken token = default) => databaseManager.TakeCheckpoint(background, logger, token);
 
         /// <summary>
         /// Take checkpoint of all active database IDs or a specified database ID
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="dbId">ID of database to checkpoint (default: -1 - checkpoint all active databases)</param>
-        /// <param name="storeType">Store type to checkpoint</param>
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if another checkpointing process is already in progress</returns>
-        public bool TakeCheckpoint(bool background, int dbId = -1, StoreType storeType = StoreType.All, ILogger logger = null, CancellationToken token = default)
+        public bool TakeCheckpoint(bool background, int dbId = -1, ILogger logger = null, CancellationToken token = default)
         {
             if (dbId == -1)
             {
-                return databaseManager.TakeCheckpoint(background, storeType, logger, token);
+                return databaseManager.TakeCheckpoint(background, logger, token);
             }
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.TakeCheckpoint)} with DB ID: {dbId}");
 
-            return databaseManager.TakeCheckpoint(background, dbId, storeType, logger, token);
+            return databaseManager.TakeCheckpoint(background, dbId, logger, token);
         }
 
         /// <summary>

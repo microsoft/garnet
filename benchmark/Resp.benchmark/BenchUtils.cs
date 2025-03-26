@@ -4,10 +4,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
+using Garnet.server.TLS;
 using StackExchange.Redis;
 
 namespace Resp.benchmark
@@ -62,7 +62,7 @@ namespace Resp.benchmark
         {
             return new SslClientAuthenticationOptions
             {
-                ClientCertificates = [new X509Certificate2(certFile, certPassword)],
+                ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
                 TargetHost = tlsHost,
                 AllowRenegotiation = false,
                 RemoteCertificateValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true,

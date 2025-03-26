@@ -16,6 +16,7 @@ namespace CommandInfoUpdater
             [
                 new("ACL|CAT", RespCommand.ACL_CAT),
                 new("ACL|DELUSER", RespCommand.ACL_DELUSER),
+                new("ACL|GETUSER", RespCommand.ACL_GETUSER),
                 new("ACL|LIST", RespCommand.ACL_LIST),
                 new("ACL|LOAD", RespCommand.ACL_LOAD),
                 new("ACL|SAVE", RespCommand.ACL_SAVE),
@@ -71,6 +72,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|FAILOVER", RespCommand.CLUSTER_FAILOVER),
                 new("CLUSTER|FAILREPLICATIONOFFSET", RespCommand.CLUSTER_FAILREPLICATIONOFFSET),
                 new("CLUSTER|FAILSTOPWRITES", RespCommand.CLUSTER_FAILSTOPWRITES),
+                new("CLUSTER|FLUSHALL", RespCommand.CLUSTER_FLUSHALL),
                 new("CLUSTER|FORGET", RespCommand.CLUSTER_FORGET),
                 new("CLUSTER|GETKEYSINSLOT", RespCommand.CLUSTER_GETKEYSINSLOT),
                 new("CLUSTER|GOSSIP", RespCommand.CLUSTER_GOSSIP),

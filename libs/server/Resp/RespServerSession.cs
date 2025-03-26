@@ -62,7 +62,7 @@ namespace Garnet.server
         public void ResetAllLatencyMetrics() => LatencyMetrics?.ResetAll();
 
         readonly StoreWrapper storeWrapper;
-        internal readonly TransactionManager txnManager;
+        internal TransactionManager txnManager;
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
@@ -245,9 +245,6 @@ namespace Garnet.server
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
-
-            txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
-            storageSession.txnManager = txnManager;
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
@@ -1239,6 +1236,21 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteNull()
+        {
+            if (respProtocolVersion == 3)
+            {
+                while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
             // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),
@@ -1445,9 +1457,13 @@ namespace Garnet.server
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var transactionManager = new TransactionManager(storeWrapper, this, dbStorageSession, scratchBufferManager, 
+                storeWrapper.serverOptions.EnableCluster, logger, dbId);
+            storageSession.txnManager = transactionManager;
+
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
-            return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi);
+            return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
         }
 
         /// <summary>
@@ -1457,6 +1473,7 @@ namespace Garnet.server
         private void SwitchActiveDatabaseSession(ref GarnetDatabaseSession dbSession)
         {
             this.activeDbId = dbSession.Id;
+            this.txnManager = dbSession.TransactionManager;
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;

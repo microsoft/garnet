@@ -892,6 +892,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             FlushDb(RespCommand.FLUSHDB);
 
             return true;
@@ -902,9 +909,16 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkFLUSHALL()
         {
-            if (parseState.Count > 2)
+            if (parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
+            }
+
+            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             // Since Garnet currently only supports a single database,
@@ -1147,8 +1161,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
             }

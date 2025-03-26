@@ -65,6 +65,11 @@ namespace Tsavorite.core
         RECORD_ON_DISK,
 
         /// <summary>
+        /// A checkpoint is in progress so the operation must be retried internally after refreshing the epoch and updating the session context version.
+        /// </summary>
+        CPR_SHIFT_DETECTED,
+
+        /// <summary>
         /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
         /// <list type="bullet">
         ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{Key, Value, StoreFunctions, Allocator}.HandleImmediateRetryStatus{Input, Output, Context, TSessionFunctionsWrapper}(OperationStatus, TSessionFunctionsWrapper, ref TsavoriteKV{Key, Value, StoreFunctions, Allocator}.PendingContext{Input, Output, Context})"/>.</item>

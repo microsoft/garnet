@@ -523,26 +523,38 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize Garnet server options
+        /// </summary>
+        /// <param name="loggerFactory"></param>
+        public void Initialize(ILoggerFactory loggerFactory = null)
+        {
+        }
+
+        /// <summary>
         /// Get main store settings
         /// </summary>
         /// <param name="loggerFactory">Logger factory for debugging and error tracing</param>
+        /// <param name="epoch">Epoch instance used by server</param>
+        /// <param name="stateMachineDriver">Common state machine driver used by Garnet</param>
         /// <param name="logFactory">Tsavorite Log factory instance</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, out INamedDeviceFactory logFactory)
+        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver, 
+            out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
 
-            KVSettings<SpanByte, SpanByte> kvSettings = new(baseDir: null, logger: logger);
-
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
-            kvSettings = new()
+
+            KVSettings<SpanByte, SpanByte> kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
                 PageSize = 1L << PageSizeBits(),
+                Epoch = epoch,
+                StateMachineDriver = stateMachineDriver,
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
@@ -686,23 +698,27 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the object store log
         /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+            out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
         {
             objReadCacheHeapMemorySize = default;
 
             if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
 
-            KVSettings<byte[], IGarnetObject> kvSettings = new(baseDir: null, logger: logger);
-
             var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
-            kvSettings = new()
+            KVSettings<byte[], IGarnetObject> kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = ObjectStoreMutablePercent / 100.0,
-                PageSize = 1L << ObjectStorePageSizeBits()
+                PageSize = 1L << ObjectStorePageSizeBits(),
+                Epoch = epoch,
+                StateMachineDriver = stateMachineDriver,
+                loggerFactory = loggerFactory,
+                logger = loggerFactory?.CreateLogger("TsavoriteKV  [obj]")
             };
+
             logger?.LogInformation("[Object Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
             logger?.LogInformation("[Object Store] Each page can hold ~{PageSize} key-value pairs of objects", kvSettings.PageSize / 24);
 

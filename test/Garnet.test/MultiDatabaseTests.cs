@@ -756,10 +756,11 @@ namespace Garnet.test
 
                 // Issue and wait for DB save
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
-                garnetServer.Save(SaveType.BackgroundSave);
+                db1.Execute("SAVE");
+                //garnetServer.Save(SaveType.BackgroundSave);
                 while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
-
+            
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
             server.Start();
