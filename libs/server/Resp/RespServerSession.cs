@@ -1461,7 +1461,7 @@ namespace Garnet.server
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
-            var transactionManager = new TransactionManager(storeWrapper, this, dbStorageSession, scratchBufferManager, 
+            var transactionManager = new TransactionManager(storeWrapper, this, dbStorageSession, scratchBufferManager,
                 storeWrapper.serverOptions.EnableCluster, logger, dbId);
             dbStorageSession.txnManager = transactionManager;
 

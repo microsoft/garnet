@@ -229,7 +229,7 @@ namespace Garnet.server
                 var checkpointType = StoreWrapper.serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
                 await InitiateCheckpointAsync(db, full, checkpointType, tryIncremental, logger);
 
-                return full ? new (lastSaveStoreTailAddress, lastSaveObjectStoreTailAddress) : (null, null);
+                return full ? new(lastSaveStoreTailAddress, lastSaveObjectStoreTailAddress) : (null, null);
             }
             catch (Exception ex)
             {
@@ -345,7 +345,7 @@ namespace Garnet.server
         {
             db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            
+
             if (truncateAof)
                 db.AppendOnlyFile?.TruncateUntil(db.AppendOnlyFile.TailAddress);
         }
@@ -594,7 +594,7 @@ namespace Garnet.server
             }
 
             (bool success, Guid token) checkpointResult = default;
-            
+
             IStateMachine sm;
             if (full)
             {

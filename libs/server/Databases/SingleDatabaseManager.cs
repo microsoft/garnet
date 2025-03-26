@@ -137,7 +137,7 @@ namespace Garnet.server
                         {
                             var storeTailAddress = t.Result.Item1;
                             var objectStoreTailAddress = t.Result.Item2;
-                            
+
                             if (storeTailAddress.HasValue)
                                 DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
                             if (ObjectStore != null && objectStoreTailAddress.HasValue)
@@ -336,7 +336,7 @@ namespace Garnet.server
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             var safeTruncateAof = StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF;
-            
+
             FlushDatabase(ref DefaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
             if (safeTruncateAof)

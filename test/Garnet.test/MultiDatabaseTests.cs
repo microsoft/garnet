@@ -760,7 +760,7 @@ namespace Garnet.test
                 //garnetServer.Save(SaveType.BackgroundSave);
                 while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
             }
-            
+
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
             server.Start();

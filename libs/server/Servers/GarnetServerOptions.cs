@@ -539,7 +539,7 @@ namespace Garnet.server
         /// <param name="logFactory">Tsavorite Log factory instance</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver, 
+        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
             out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
