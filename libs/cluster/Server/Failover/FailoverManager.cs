@@ -64,6 +64,7 @@ namespace Garnet.cluster
             if (!failoverTaskLock.TryWriteLock())
                 return false;
 
+            lastFailoverStatus = FailoverStatus.BEGIN_FAILOVER;
             currentFailoverSession = new FailoverSession(
                 clusterProvider,
                 option,

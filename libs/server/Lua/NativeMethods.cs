@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KeraLua;
 using charptr_t = nint;
-using intptr_t = nint;
 using lua_CFunction = nint;
 using lua_Hook = nint;
 using lua_State = nint;
@@ -110,13 +109,6 @@ namespace Garnet.server
         private static partial int lua_pcallk(lua_State luaState, int nargs, int nresults, int msgh, nint ctx, nint k);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_callk
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-        private static partial int lua_callk(lua_State luaState, int nargs, int nresults, nint ctx, nint k);
-
-        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_rawseti
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -180,13 +172,6 @@ namespace Garnet.server
         private static partial void lua_setglobal(lua_State luaState, charptr_t name);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_error
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
-        private static partial int lua_error(lua_State luaState);
-
-        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_next
         /// </summary>
         [LibraryImport(LuaLibraryName)]
@@ -199,6 +184,14 @@ namespace Garnet.server
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
         private static partial void lua_rotate(lua_State luaState, int stackIndex, int n);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_gc
+        /// 
+        /// Because this is variadic, must use DllImport and extern despite that being the old style.
+        /// </summary>
+        [DllImport(LuaLibraryName, EntryPoint = nameof(lua_gc), CallingConvention = CallingConvention.Cdecl)]
+        private static extern int lua_gc(lua_State luaState, int what, __arglist);
 
         // GC Transition suppressed - only do this after auditing the Lua method and confirming constant-ish, fast, runtime w/o allocations
 
@@ -275,17 +268,6 @@ namespace Garnet.server
         private static partial int lua_toboolean(lua_State L, int ix);
 
         /// <summary>
-        /// see: https://www.lua.org/manual/5.4/manual.html#lua_tointegerx
-        /// 
-        /// We should always have checked this is actually a number before calling, 
-        /// so the expensive paths won't be taken.
-        /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_tointegerx
-        /// </summary>
-        [LibraryImport(LuaLibraryName)]
-        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
-        private static partial long lua_tointegerx(lua_State L, int idex, intptr_t pisnum);
-
-        /// <summary>
         /// see: https://www.lua.org/manual/5.4/manual.html#lua_settop
         /// 
         /// We aren't pushing complex types, so none of the close logic should run.
@@ -334,6 +316,16 @@ namespace Garnet.server
         [LibraryImport(LuaLibraryName)]
         [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
         private static partial void lua_pushvalue(lua_State luaState, int stackIndex);
+
+        /// <summary>
+        /// see: https://www.lua.org/manual/5.4/manual.html#lua_version
+        /// 
+        /// Just returns a constant.
+        /// see: https://www.lua.org/source/5.4/lapi.c.html#lua_version
+        /// </summary>
+        [LibraryImport(LuaLibraryName)]
+        [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl), typeof(CallConvSuppressGCTransition)])]
+        private static partial double lua_version(lua_State ignored);
 
         // Helper methods for using the pinvokes defined above
 
@@ -384,16 +376,15 @@ namespace Garnet.server
         /// Pushes given span to stack as a string.
         /// 
         /// Provided data is copied, and can be reused once this call returns.
+        /// 
+        /// This method allocates, and can raise a Lua memory error.
         /// </summary>
-        internal static unsafe ref byte PushBuffer(lua_State luaState, ReadOnlySpan<byte> str)
+        internal static unsafe void PushBuffer(lua_State luaState, ReadOnlySpan<byte> str)
         {
-            nint inLuaPtr;
             fixed (byte* ptr = str)
             {
-                inLuaPtr = lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
+                _ = lua_pushlstring(luaState, (charptr_t)ptr, (size_t)str.Length);
             }
-
-            return ref Unsafe.AsRef<byte>((void*)inLuaPtr);
         }
 
         /// <summary>
@@ -481,14 +472,6 @@ namespace Garnet.server
         => lua_toboolean(luaState, index) != 0;
 
         /// <summary>
-        /// Read a long off the stack
-        /// 
-        /// Suppresses GC transition.
-        /// </summary>
-        internal static long ToInteger(lua_State luaState, int index)
-        => lua_tointegerx(luaState, index, 0);
-
-        /// <summary>
         /// Remove some number of items from the stack.
         /// 
         /// Suppresses GC transition.
@@ -533,6 +516,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Reserve space on the stack, returning false if that was not possible.
+        /// 
+        /// This method may allocate, but will not raise a Lua error if allocations fail.
         /// </summary>
         internal static bool CheckStack(lua_State luaState, int n)
         => lua_checkstack(luaState, n) == 1;
@@ -560,14 +545,6 @@ namespace Garnet.server
         /// </summary>
         internal static LuaStatus PCall(lua_State luaState, int nargs, int nrets)
         => (LuaStatus)lua_pcallk(luaState, nargs, nrets, 0, 0, 0);
-
-        /// <summary>
-        /// Perform a call with the given number of arguments, expecting the given number of returns.
-        /// </summary>
-        internal static void Call(lua_State luaState, int nargs, int nrets)
-        {
-            _ = lua_callk(luaState, nargs, nrets, 0, 0);
-        }
 
         /// <summary>
         /// Equivalent of t[i] = v, where t is the table at the given index and v is the value on the top of the stack.
@@ -681,17 +658,24 @@ namespace Garnet.server
         => lua_rotate(luaState, stackIndex, n);
 
         /// <summary>
-        /// Raise an error, using the top of the stack as an error item.
-        /// 
-        /// This method never returns, so be careful calling it.
-        /// </summary>
-        internal static int Error(lua_State luaState)
-        => lua_error(luaState);
-
-        /// <summary>
         /// Set a debugging hook.
         /// </summary>        
         internal static unsafe void SetHook(lua_State luaState, delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         => lua_sethook(luaState, (nint)hook, (int)mask, count);
+
+        /// <summary>
+        /// Get the Lua version.
+        /// </summary>
+        internal static double Version()
+        => lua_version(default);
+
+        /// <summary>
+        /// Invoke the Lua GC.
+        /// </summary>
+        internal static void GC(lua_State luaState, LuaGC gc)
+        {
+            var res = lua_gc(luaState, (int)gc, __arglist());
+            Debug.Assert(res != -1, "Response indicates failure in lua_gc");
+        }
     }
 }
