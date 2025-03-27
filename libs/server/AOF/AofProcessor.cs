@@ -113,17 +113,23 @@ namespace Garnet.server
 
         private long RecoverReplay(ref GarnetDatabase db, long untilAddress)
         {
+            // Begin replay for specified database
             logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
             try
             {
                 int count = 0;
-                var appendOnlyFile = db.AppendOnlyFile;
 
+                // Fetch the database AOF and update the current database context for the processor
+                var appendOnlyFile = db.AppendOnlyFile;
                 SwitchActiveDatabaseContext(ref db);
 
+                // Set the tail address for replay recovery to the tail address of the AOF if none specified
                 if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
+
+                // Scan the AOF up to the tail address
                 using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
 
+                // Replay each AOF record in the current database context
                 while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
                 {
                     count++;

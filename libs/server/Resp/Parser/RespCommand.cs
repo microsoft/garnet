@@ -183,7 +183,6 @@ namespace Garnet.server
         SPOP,
         SREM,
         SUNIONSTORE,
-        SWAPDB,
         UNLINK,
         ZADD,
         ZDIFFSTORE,
@@ -225,8 +224,10 @@ namespace Garnet.server
         PSUBSCRIBE,
         UNSUBSCRIBE,
         PUNSUBSCRIBE,
+        
         ASKING,
         SELECT,
+        SWAPDB,
         ECHO,
 
         CLIENT,

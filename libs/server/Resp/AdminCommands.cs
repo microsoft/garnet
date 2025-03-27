@@ -595,15 +595,15 @@ namespace Garnet.server
 
                 if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                 {
-                    // Cluster mode does not allow DBID
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                    // Cluster mode does not allow DBID specification
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
                 if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -866,15 +866,15 @@ namespace Garnet.server
 
                 if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                 {
-                    // Cluster mode does not allow DBID
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                    // Cluster mode does not allow DBID specification
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
                 if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -920,15 +920,15 @@ namespace Garnet.server
 
                 if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                 {
-                    // Cluster mode does not allow DBID
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                    // Cluster mode does not allow DBID specification
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
                 if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -977,15 +977,15 @@ namespace Garnet.server
 
                     if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
                     {
-                        // Cluster mode does not allow DBID
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                        // Cluster mode does not allow DBID specification
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
 
                     if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }

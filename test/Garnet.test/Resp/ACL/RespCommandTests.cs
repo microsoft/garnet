@@ -7094,7 +7094,7 @@ namespace Garnet.test.Resp.ACL
                     if (ex.Message == Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH))
                         throw;
 
-                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DBSWAP_UNSUPPORTED), ex.Message);
+                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED), ex.Message);
                 }
             }
         }

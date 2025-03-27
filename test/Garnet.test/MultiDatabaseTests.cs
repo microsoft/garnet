@@ -97,35 +97,73 @@ namespace Garnet.test
             // Add data to DB 0
             var response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Add data to DB 1
             response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Select DB 0 
             response = lightClientRequest.SendCommand($"SELECT 0");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             var evalCmd = $"*4\r\n$4\r\nEVAL\r\n$61\r\nredis.call('SWAPDB', 0, 1); return redis.call('GET', KEYS[1])\r\n$1\r\n1\r\n${db2Key1.Length}\r\n{db2Key1}\r\n";
             response = lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(evalCmd));
             expectedResponse = "$10\r\ndb2:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
-        public void MultiDatabaseBasicSelectErroneousTestSE()
+        public void MultiDatabaseDbSizeTestSE()
+        {
+            var dbIds = new [] {0, 1, 13};
+
+            var strKvps = new (string, string)[][]
+            {
+                [("db1:key1", "db1:val1")], 
+                [("db2:key1", "db2:val1"), ("db2:key2", "db2:val2")],
+                [("db12:key1", "db12:val1"), ("db12:key2", "db12:val2"), ("db12:key3", "db12:val3")]
+            };
+
+            var objKvps = new (string, string[])[][]
+            {
+                [("db1:key2", ["db1:val11", "db1:val12"])],
+                [("db2:key3", ["db2:val31", "db2:val32"]), ("db2:key4", ["db2:val41", "db2:val42"])],
+                [("db12:key4", ["db12:val41", "db12:val42"]), ("db12:key5", ["db12:val51", "db12:val52"]), ("db12:key6", ["db12:val61", "db12:val62"])]
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            // Insert data
+            for (var i = 0; i < dbIds.Length; i++)
+            {
+                var db = redis.GetDatabase(dbIds[i]);
+
+                foreach (var kvp in strKvps[i])
+                    db.StringSet(kvp.Item1, kvp.Item2);
+
+                foreach (var kvp in objKvps[i])
+                    db.ListLeftPush(kvp.Item1, kvp.Item2.Select(v => new RedisValue(v)).ToArray());
+            }
+
+            // Validate DB sizes
+            for (var i = 0; i < dbIds.Length; i++)
+            {
+                var db = redis.GetDatabase(dbIds[i]);
+                var actualDbSize = db.Execute("DBSIZE");
+                var expectedDbSize = strKvps[i].Length + objKvps[i].Length;
+                ClassicAssert.AreEqual(expectedDbSize, (ulong)actualDbSize);
+            }
+        }
+
+        [Test]
+        public void MultiDatabaseSelectErrorConditionsTestSE()
         {
             var db1Key1 = "db1:key1";
             var db1Key2 = "db1:key2";
@@ -138,6 +176,122 @@ namespace Garnet.test
 
             var db17 = redis.GetDatabase(17);
             Assert.Throws<RedisCommandException>(() => db17.StringSet(db1Key1, "db1:value1"), "The database does not exist on the server: 17");
+        }
+
+        [Test]
+        public void MultiDatabaseSwapDbErrorConditionsTestLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // SWAPDB non-numeric DBID
+            var response = lightClientRequest.SendCommand($"SWAPDB a 0");
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_INVALID_FIRST_DB_INDEX)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SWAPDB 1 b");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_INVALID_SECOND_DB_INDEX)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // SWAPDB DBID out-of-range
+            response = lightClientRequest.SendCommand($"SWAPDB -1 0");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SWAPDB 17 1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SWAPDB 0 -2");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SWAPDB 1 18");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // SWAPDB in cluster mode
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            server.Start();
+
+            using var lightClientRequest2 = TestUtils.CreateRequest();
+
+            // SWAPDB with non-numeric value
+            response = lightClientRequest2.SendCommand($"SWAPDB a 0");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // SWAPDB with out-of-range value
+            response = lightClientRequest2.SendCommand($"SWAPDB 0 -1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // SWAPDB 0 0
+            response = lightClientRequest2.SendCommand($"SWAPDB 0 0");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // SWAPDB 0 1
+            response = lightClientRequest2.SendCommand($"SWAPDB 0 1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        [TestCase("SELECT")]
+        [TestCase("SAVE")]
+        [TestCase("BGSAVE")]
+        [TestCase("LASTSAVE")]
+        [TestCase("COMMITAOF")]
+        public void MultiDatabaseSingleDbIdCommandErrorsTestLC(string cmd)
+        {
+            // Test that running a command with a single DB ID as input returns the correct error messages.
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // CMD with non-numeric DBID
+            var response = lightClientRequest.SendCommand($"{cmd} a");
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // CMD with DBID out-of-range
+            response = lightClientRequest.SendCommand($"{cmd} -1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"{cmd} 17");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Test that running a command with a single DB ID as input returns the correct error messages in cluster mode.
+
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            server.Start();
+
+            using var lightClientRequest2 = TestUtils.CreateRequest();
+
+            // CMD 0 (should return successfully, as all commands support DBID 0 in cluster mode)
+            response = lightClientRequest2.SendCommand($"{cmd} 0");
+            expectedResponse = cmd switch
+            {
+                "SELECT" or "SAVE" => "+OK\r\n",
+                "BGSAVE" => "+Background saving started\r\n",
+                "LASTSAVE" => ":0\r\n",
+                "COMMITAOF" => "+AOF file committed\r\n",
+                _ => null
+            };
+
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // CMD 1 (returns error)
+            response = lightClientRequest2.SendCommand($"{cmd} 1");
+            expectedResponse = cmd switch
+            {
+                "SELECT" => $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE)}",
+                _ => $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE)}",
+            };
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -235,68 +389,55 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LPUSH {db1Key2} db1:val1 db1:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"EXISTS {db1Key1}");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"EXISTS {db1Key2}");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             lightClientRequest.SendCommand($"SELECT 0");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"GET {db1Key1}", 2);
             expectedResponse = "$10\r\ndb1:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LPOP {db1Key2}", 2);
             expectedResponse = "$8\r\ndb1:val2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"GET {db2Key1}", 2);
             expectedResponse = "$10\r\ndb2:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SISMEMBER {db2Key2} db2:val2");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -314,121 +455,99 @@ namespace Garnet.test
             // Add data to DB 0
             var response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LPUSH {db1Key2} db1:val1 db1:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Add data to DB 1
             response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Add data to DB 11
             response = lightClientRequest.SendCommand($"SELECT 11");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SET {db12Key1} db12:value1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SADD {db12Key2} db12:val1 db12:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Swap DB 1 AND DB 11 (from DB 11 context)
             response = lightClientRequest.SendCommand($"SWAPDB 1 11");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify data in DB 11 is previous data from DB 1
             response = lightClientRequest.SendCommand($"GET {db2Key1}", 2);
             expectedResponse = "$10\r\ndb2:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SISMEMBER {db2Key2} db2:val2");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify data in DB 1 is previous data from DB 11
             response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"GET {db12Key1}", 2);
             expectedResponse = "$11\r\ndb12:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SISMEMBER {db12Key2} db12:val2");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Swap DB 11 AND DB 0 (from DB 1 context)
             response = lightClientRequest.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SWAPDB 11 0");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify data in DB 0 is previous data from DB 11
             response = lightClientRequest.SendCommand($"SELECT 0");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"GET {db2Key1}", 2);
             expectedResponse = "$10\r\ndb2:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"SISMEMBER {db2Key2} db2:val2");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify data in DB 11 is previous data from DB 0
             response = lightClientRequest.SendCommand($"SELECT 11");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"GET {db1Key1}", 2);
             expectedResponse = "$10\r\ndb1:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LPOP {db1Key2}", 2);
             expectedResponse = "$8\r\ndb1:val2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -444,25 +563,21 @@ namespace Garnet.test
             // Add data to DB 0
             var response = lightClientRequest1.SendCommand($"SET {db1Key1} db1:value1");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Add data to DB 1
             response = lightClientRequest2.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest2.SendCommand($"SET {db2Key1} db2:value1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Swap DB 0 AND DB 1 (from DB 0 context)
             response = lightClientRequest1.SendCommand($"SWAPDB 0 1");
-            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DBSWAP_UNSUPPORTED)}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED)}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -480,62 +595,51 @@ namespace Garnet.test
             // Add data to DB 0
             var response = lightClientRequest1.SendCommand($"SET {db1Key1} db1:value1");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest1.SendCommand($"LPUSH {db1Key2} db1:val1 db1:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Add data to DB 1
             response = lightClientRequest2.SendCommand($"SELECT 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest2.SendCommand($"SET {db2Key1} db2:value1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest2.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
             expectedResponse = ":2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest2.SendCommand($"GET {db2Key1}", 2);
             expectedResponse = "$10\r\ndb2:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Swap DB 0 AND DB 1 (from DB 0 context)
             response = lightClientRequest1.SendCommand($"SWAPDB 0 1");
             expectedResponse = "+OK\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify data in DB 0 is previous data from DB 1
             response = lightClientRequest1.SendCommand($"GET {db2Key1}", 2);
             expectedResponse = "$10\r\ndb2:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest1.SendCommand($"SISMEMBER {db2Key2} db2:val2");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Verify data in DB 1 is previous data from DB 0
             response = lightClientRequest2.SendCommand($"GET {db1Key1}", 2);
             expectedResponse = "$10\r\ndb1:value1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest2.SendCommand($"LPOP {db1Key2}", 2);
             expectedResponse = "$8\r\ndb1:val2\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]

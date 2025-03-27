@@ -646,31 +646,40 @@ namespace Garnet.server
             added = false;
             success = false;
 
+            // Get a current snapshot of the databases
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
 
+            // If database exists in the map, return it
             if (dbId >= 0 && dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault())
             {
                 success = true;
                 return ref databasesMapSnapshot[dbId];
             }
 
+            // Take the database map's write lock so that no new databases can be added with the same ID
+            // Note that we don't call TrySetValue because that would only guarantee that the map instance does not change,
+            // but the underlying values can still change.
+            // So here we're calling TrySetValueUnsafe and handling the locks ourselves.
             databases.mapLock.WriteLock();
 
             try
             {
+                // Check again if database exists in the map, if so return it
                 if (dbId >= 0 && dbId < databasesMapSize && !databasesMapSnapshot[dbId].IsDefault())
                 {
                     success = true;
                     return ref databasesMapSnapshot[dbId];
                 }
 
+                // Create the database and use TrySetValueUnsafe to add it to the map
                 var db = CreateDatabaseDelegate(dbId);
                 if (!databases.TrySetValueUnsafe(dbId, ref db, false))
                     return ref GarnetDatabase.Empty;
             }
             finally
             {
+                // Release the database map's lock
                 databases.mapLock.WriteUnlock();
             }
 
@@ -679,6 +688,7 @@ namespace Garnet.server
 
             HandleDatabaseAdded(dbId);
 
+            // Update the databases snapshot and return a reference to the added database
             databasesMapSnapshot = databases.Map;
             return ref databasesMapSnapshot[dbId];
         }

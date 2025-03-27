@@ -85,7 +85,7 @@ namespace Garnet.server
                 main_store_index_size += db.MainStore.IndexSize * 64;
                 main_store_log_memory_size += db.MainStore.Log.MemorySizeBytes;
                 main_store_read_cache_size += db.MainStore.ReadCache?.MemorySizeBytes ?? 0;
-                total_main_store_size += main_store_index_size + main_store_log_memory_size + main_store_read_cache_size;
+                
 
                 aof_log_memory_size = db.AppendOnlyFile?.MemorySizeBytes ?? -1;
 
@@ -96,10 +96,16 @@ namespace Garnet.server
                     object_store_read_cache_log_memory_size += db.ObjectStore.ReadCache?.MemorySizeBytes ?? 0;
                     object_store_heap_memory_size += db.ObjectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
                     object_store_read_cache_heap_memory_size += db.ObjectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
-                    total_object_store_size += object_store_index_size + object_store_log_memory_size +
-                                              object_store_read_cache_log_memory_size + object_store_heap_memory_size +
-                                              object_store_read_cache_heap_memory_size;
                 }
+            }
+
+            total_main_store_size = main_store_index_size + main_store_log_memory_size + main_store_read_cache_size;
+
+            if (!disableObj)
+            {
+                total_object_store_size = object_store_index_size + object_store_log_memory_size +
+                                           object_store_read_cache_log_memory_size + object_store_heap_memory_size +
+                                           object_store_read_cache_heap_memory_size;
             }
 
             var gcMemoryInfo = GC.GetGCMemoryInfo();

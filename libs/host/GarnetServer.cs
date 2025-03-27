@@ -257,7 +257,7 @@ namespace Garnet
                                         (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                         (storeWrapper.appendOnlyFile?.MaxMemorySizeBytes ?? 0);
                 if (storeWrapper.objectStore != null)
-                    configMemoryLimit += storeWrapper.objectStore.IndexSize * 64 +
+                    configMemoryLimit += (storeWrapper.objectStore.IndexSize * 64) +
                                          storeWrapper.objectStore.Log.MaxMemorySizeBytes +
                                          (storeWrapper.objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                          (storeWrapper.objectStoreSizeTracker?.TargetSize ?? 0) +
@@ -381,7 +381,7 @@ namespace Garnet
             }
 
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
-                throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with MainMemoryReplication");
+                throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
             opts.GetAofSettings(dbId, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
