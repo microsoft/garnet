@@ -27,7 +27,6 @@ namespace Garnet.server.BTreeIndex
         public BTree(uint sectorSize)
         {
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
-            stats.numAllocates = 1;
             root = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
             head = tail = root;
             root->info->next = root->info->previous = null;
@@ -37,6 +36,7 @@ namespace Garnet.server.BTreeIndex
             stats = new BTreeStats();
             stats.depth = 1;
             stats.numLeafNodes = 1;
+            stats.numAllocates = 1;
         }
 
         /// <summary>
