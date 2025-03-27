@@ -766,7 +766,7 @@ namespace Garnet.server
 
             var ret = customAllocator.TryExitInfallibleAllocationRegion();
 
-            if (ret)
+            if (!ret)
             {
                 NeedsDispose = true;
             }
