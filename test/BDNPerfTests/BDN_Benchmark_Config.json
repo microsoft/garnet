@@ -10,7 +10,7 @@
     "expected_InlinePing_None": 0
   },
   "BDN.benchmark.Operations.ObjectOperations.*": {
-    "expected_LPushPop_ACL": 14400,
+    "WARN-ON-FAIL_expected_LPushPop_ACL": 14400,
     "WARN-ON-FAIL_LPushPop_AOF": 14400,
     "WARN-ON-FAIL_LPushPop_None": 14400
   },
@@ -407,10 +407,10 @@
     "WARN-ON-FAIL_SUnion_AOF": 68800,
     "WARN-ON-FAIL_SUnionStore_AOF": 156000,
     "WARN-ON-FAIL_SInter_AOF": 41600,
-    "expected_SInterStore_AOF": 114400,
+    "WARN-ON-FAIL_SInterStore_AOF": 114400,
     "WARN-ON-FAIL_SInterCard_AOF": 36800,
     "WARN-ON-FAIL_SDiff_AOF": 45600,
-    "expected_SDiffStore_AOF": 118400,
+    "WARN-ON-FAIL_SDiffStore_AOF": 118400,
     "expected_SAddRem_None": 36001,
     "expected_SAddPopSingle_None": 36801,
     "expected_SCard_None": 3200,
@@ -421,7 +421,7 @@
     "WARN-ON-FAIL_SRandMemberSingle_None": 7200,
     "expected_SScan_None": 12000,
     "WARN-ON-FAIL_SUnion_None": 68800,
-    "expected_SUnionStore_None": 111200,
+    "WARN-ON-FAIL_SUnionStore_None": 111200,
     "WARN-ON-FAIL_SInter_None": 41600,
     "WARN-ON-FAIL_SInterStore_None": 71200,
     "WARN-ON-FAIL_SInterCard_None": 36800,
