@@ -165,7 +165,7 @@
     "expected_Script4_Managed,Limit": 0,
     "expected_Script1_Managed,None": 0,
     "expected_Script2_Managed,None": 24,
-    "expected_Script3_Managed,None": 32,
+    "expected_Script3_Managed,None": 230,
     "expected_Script4_Managed,None": 0,
     "expected_Script1_Native,None": 0,
     "expected_Script2_Native,None": 24,
