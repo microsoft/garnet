@@ -163,6 +163,61 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseSimpleTransactionTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db1 = redis.GetDatabase(1);
+
+            var tran = db1.CreateTransaction();
+
+            tran.StringSetAsync("db2:key1", "db2:val1");
+            tran.StringSetAsync("db2:key2", "db2:val2");
+
+            var committed = tran.Execute();
+            ClassicAssert.IsTrue(committed);
+
+            string actualValue = db1.StringGet("db2:key1");
+            ClassicAssert.AreEqual(actualValue, "db2:val1");
+
+            actualValue = db1.StringGet("db2:key2");
+            ClassicAssert.AreEqual(actualValue, "db2:val2");
+
+            var db0 = redis.GetDatabase(0);
+            ClassicAssert.IsFalse(db0.KeyExists("db2:key1"));
+            ClassicAssert.IsFalse(db0.KeyExists("db2:key2"));
+        }
+
+        [Test]
+        public void MultiDatabaseCustomCommandRegistrationTest()
+        {
+            server.Register.NewProcedure("SUM", () => new Sum());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            // Execute custom procedure in DB 0
+            var db1 = redis.GetDatabase(0);
+
+            db1.StringSet("db1:key1", "10");
+            db1.StringSet("db1:key2", "20");
+            db1.StringSet("db1:key3", "30");
+
+            var retValue = db1.Execute("SUM", "db1:key1", "db1:key2", "db1:key3");
+            ClassicAssert.AreEqual("60", retValue.ToString());
+
+            // Execute custom procedure in DB 1
+            var db2 = redis.GetDatabase(1);
+
+            db2.StringSet("db2:key1", "10");
+            db2.StringSet("db2:key2", "100");
+            db2.StringSet("db2:key3", "20");
+            db2.StringSet("db2:key4", "-20");
+
+            // Include non-existent and string keys as well
+            retValue = db2.Execute("SUM", "db2:key1", "db2:key2", "db2:key3", "db2:key4");
+            ClassicAssert.AreEqual("110", retValue.ToString());
+        }
+
+        [Test]
         public void MultiDatabaseSelectErrorConditionsTestSE()
         {
             var db1Key1 = "db1:key1";
@@ -441,6 +496,65 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseSelectInTransactionTestLC()
+        {
+            var db1Key1 = "db1:key1";
+            var db1Key2 = "db1:key2";
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key1";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand($"MULTI");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
+            var queuedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"LPUSH {db1Key2} db1:val1 db1:val2");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            lightClientRequest.SendCommand($"SELECT 1");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"EXEC", 6);
+            expectedResponse = "*5\r\n+OK\r\n:2\r\n+OK\r\n+OK\r\n:2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SELECT 0");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db1Key1}", 2);
+            expectedResponse = "$10\r\ndb1:value1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"LPOP {db1Key2}", 2);
+            expectedResponse = "$8\r\ndb1:val2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            lightClientRequest.SendCommand($"SELECT 1");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db2Key1}", 2);
+            expectedResponse = "$10\r\ndb2:value1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SISMEMBER {db2Key2} db2:val2");
+            expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public void MultiDatabaseSwapDatabasesTestLC()
         {
             var db1Key1 = "db1:key1";
@@ -547,6 +661,70 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand($"LPOP {db1Key2}", 2);
             expectedResponse = "$8\r\ndb1:val2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void MultiDatabaseSwapDatabasesInTransactionTestLC()
+        {
+            var db2Key1 = "db2:key1";
+            var db2Key2 = "db2:key2";
+            var db12Key1 = "db12:key1";
+            var db12Key2 = "db12:key2";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand($"SELECT 1");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"MULTI");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Add data to DB 1
+            response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
+            var queuedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SADD {db2Key2} db2:val1 db2:val2");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            // Swap DB 1 AND DB 11 (from DB 1 context)
+            response = lightClientRequest.SendCommand($"SWAPDB 1 11");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            // Add data to DB 1 (previous DB 11)
+            response = lightClientRequest.SendCommand($"SET {db12Key1} db12:value1");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SADD {db12Key2} db12:val1 db12:val2");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"EXEC", 6);
+            expectedResponse = "*5\r\n+OK\r\n:2\r\n+OK\r\n+OK\r\n:2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Verify data in DB 1 is previous data from DB 11
+            response = lightClientRequest.SendCommand($"GET {db12Key1}", 2);
+            expectedResponse = "$11\r\ndb12:value1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SISMEMBER {db12Key2} db12:val2");
+            expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Verify data in DB 11 is previous data from DB 1
+            response = lightClientRequest.SendCommand($"SELECT 11");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db2Key1}", 2);
+            expectedResponse = "$10\r\ndb2:value1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SISMEMBER {db2Key2} db2:val2");
+            expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
