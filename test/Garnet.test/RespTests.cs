@@ -2319,7 +2319,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
-            var expectedResponse = "-ERR invalid database index.\r\n+PONG\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}\r\n+PONG\r\n";
             var response = lightClientRequest.Execute("SELECT 17", "PING", expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, response);
         }

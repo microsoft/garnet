@@ -183,6 +183,7 @@ namespace Garnet.server
         SPOP,
         SREM,
         SUNIONSTORE,
+        SWAPDB,
         UNLINK,
         ZADD,
         ZDIFFSTORE,
@@ -227,7 +228,6 @@ namespace Garnet.server
 
         ASKING,
         SELECT,
-        SWAPDB,
         ECHO,
 
         CLIENT,
@@ -547,6 +547,7 @@ namespace Garnet.server
                 RespCommand.FLUSHALL => false,
                 RespCommand.KEYS => false,
                 RespCommand.SCAN => false,
+                RespCommand.SWAPDB => false,
                 _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
             };
         }
