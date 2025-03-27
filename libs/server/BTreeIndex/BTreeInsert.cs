@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Garnet.server.BTreeIndex
@@ -82,8 +81,6 @@ namespace Garnet.server.BTreeIndex
 
         public bool SplitLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, int index)
         {
-            // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newLeaf = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
@@ -214,6 +211,7 @@ namespace Garnet.server.BTreeIndex
             var sourceSpan = new ReadOnlySpan<byte>(node->keys + index * BTreeNode.KEY_SIZE, (node->info->count - index) * BTreeNode.KEY_SIZE);
             var destinationSpan = new Span<byte>(node->keys + ((index + 1) * BTreeNode.KEY_SIZE), (node->info->count - index) * BTreeNode.KEY_SIZE);
             sourceSpan.CopyTo(destinationSpan);
+            
             // move all children starting from index+1 to the right using a for loop
             for (var j = node->info->count; j > index; j--)
             {
@@ -229,8 +227,6 @@ namespace Garnet.server.BTreeIndex
 
         public BTreeNode* CreateInternalNode(ref BTreeNode* node, int splitPos)
         {
-            // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newNode = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
@@ -320,8 +316,6 @@ namespace Garnet.server.BTreeIndex
 
         public void CreateNewRoot(byte* key, BTreeNode* newlySplitNode)
         {
-            // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newRoot = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
@@ -329,6 +323,7 @@ namespace Garnet.server.BTreeIndex
             // Set the new root's key.
             newRoot->info->count = 1;
             newRoot->SetKey(0, key);
+
             // Set children: left child is the old root; right child is the newly split node.
             newRoot->SetChild(0, root);
             newRoot->SetChild(1, newlySplitNode);

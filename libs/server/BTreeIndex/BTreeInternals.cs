@@ -5,7 +5,6 @@ using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
-using Tsavorite.core;
 
 namespace Garnet.server.BTreeIndex
 {
@@ -104,8 +103,8 @@ namespace Garnet.server.BTreeIndex
         public NodeInfo* info;
         public NodeData data;
         public byte* keys;
-        // public SectorAlignedMemory memoryHandle;
         public IntPtr* memoryHandle;
+
         public static BTreeNode* Create(BTreeNodeType type, IntPtr* handle)
         {
             // Place the node header at the beginning of the block.
@@ -278,11 +277,6 @@ namespace Garnet.server.BTreeIndex
             {
                 return new Span<byte>(key1, KEY_SIZE).SequenceCompareTo(new Span<byte>(key2, KEY_SIZE));
             }
-        }
-
-        public void Deallocate()
-        {
-            // memoryHandle.Dispose();
         }
     }
 

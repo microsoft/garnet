@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.server;
 using Garnet.server.BTreeIndex;
-using Tsavorite.core;
 class Program
 {
     /// <summary>
@@ -13,14 +12,10 @@ class Program
     /// </summary>
     /// <param name="args"></param>
     /// 
-    static unsafe void something(SectorAlignedBufferPool pool, SectorAlignedMemory* ptr)
-    {
-        pool.Return(*ptr);
-    }
     static unsafe void Main(string[] args)
     {
         var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
-        ulong N = 40000;
+        ulong N = 400000;
         bool verbose = true;
         bool sanity = false;
         if (args.Length > 0)

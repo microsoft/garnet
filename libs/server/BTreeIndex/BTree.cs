@@ -3,9 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Tsavorite.core;
 
 namespace Garnet.server.BTreeIndex
 {
@@ -23,15 +21,11 @@ namespace Garnet.server.BTreeIndex
         BTreeNode*[] rootToTailLeaf; // array of nodes from root to tail leaf
         public BTreeStats stats; // statistics about the tree
 
-        SectorAlignedBufferPool bufferPool;
-
         /// <summary>
         /// Initializes a new instance of the <see cref="BTree"/> class.
         /// </summary>
         public BTree(uint sectorSize)
         {
-            bufferPool = new SectorAlignedBufferPool(1, BTreeNode.PAGE_SIZE);
-            // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates = 1;
             root = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
@@ -68,18 +62,10 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                // Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
                 NativeMemory.Free(node->memoryHandle);
                 stats.numDeallocates++;
                 node = null;
             }
-            
-            // if (node->memoryHandle != null)
-            // {
-            //     node->memoryHandle.Return();
-            //     stats.numDeallocates++;
-            //     node->memoryHandle = null;
-            // }
         }
 
         /// <summary>
@@ -105,7 +91,6 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                // Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
                 NativeMemory.Free(node->memoryHandle);
                 node = null;
             }
