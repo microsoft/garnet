@@ -84,6 +84,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Defines an implicit conversion to a <see cref="ReadOnlySpan{T}"/>
+        /// </summary>
+        public static implicit operator ReadOnlySpan<byte>(PinnedSpanByte psb) => psb.ReadOnlySpan;
+
+        /// <summary>
         /// Get slice as ReadOnlySpan
         /// </summary>
         public readonly ReadOnlySpan<byte> ReadOnlySpan

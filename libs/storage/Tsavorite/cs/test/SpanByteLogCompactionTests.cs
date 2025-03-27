@@ -19,10 +19,10 @@ namespace Tsavorite.test
 
         internal HashModuloKeyStructComparer(HashModulo mod) => modRange = mod;
 
-        public readonly bool Equals(SpanByte k1, SpanByte k2) => k1.AsRef<KeyStruct>().kfield1 == k2.AsRef<KeyStruct>().kfield1;
+        public readonly bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<KeyStruct>().kfield1 == k2.AsRef<KeyStruct>().kfield1;
 
         // Force collisions to create a chain
-        public readonly long GetHashCode64(SpanByte k)
+        public readonly long GetHashCode64(ReadOnlySpan<byte> k)
         {
             var value = Utility.GetHashCode(k.AsRef<KeyStruct>().kfield1);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
@@ -32,8 +32,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<SpanByte, HashModuloKeyStructComparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<SpanByte, HashModuloKeyStructComparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordDisposer>>;
+    using StructStoreFunctions = StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     public class SpanByteLogCompactionTests
@@ -63,7 +63,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 9
-            }, StoreFunctions<SpanByte>.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordDisposer.Instance)
+            }, StoreFunctions.Create(new HashModuloKeyStructComparer(hashMod), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -78,7 +78,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
-        static void VerifyRead(ClientSession<SpanByte, InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
+        static void VerifyRead(ClientSession<InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
         {
             InputStruct input = default;
             int numPending = 0;
@@ -110,7 +110,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = bContext.Read(SpanByteFrom(ref key1), ref input, ref output, isDeleted(i) ? 1 : 0);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, isDeleted(i) ? 1 : 0);
                 if (!status.IsPending)
                 {
                     if (isDeleted(i))
@@ -151,7 +151,7 @@ namespace Tsavorite.test
 
                 var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -184,7 +184,7 @@ namespace Tsavorite.test
 
                 var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -203,7 +203,7 @@ namespace Tsavorite.test
             {
                 var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -234,7 +234,7 @@ namespace Tsavorite.test
 
                 var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
 
                 if (i % 8 == 0)
@@ -277,7 +277,7 @@ namespace Tsavorite.test
 
                 var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
                 _ = bContext.Upsert(key, value, 0);
             }
 
@@ -294,7 +294,7 @@ namespace Tsavorite.test
                 OutputStruct output = default;
                 var keyStruct = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var valueStruct = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
@@ -331,7 +331,7 @@ namespace Tsavorite.test
 
             var keyStruct = new KeyStruct { kfield1 = 100, kfield2 = 101 };
             var valueStruct = new ValueStruct { vfield1 = 10, vfield2 = 20 };
-            SpanByte key = SpanByteFrom(ref keyStruct), value = SpanByteFrom(ref valueStruct);
+            ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyStruct), value = SpanByte.FromPinnedVariable(ref valueStruct);
 
             var input = default(InputStruct);
             var output = default(OutputStruct);
@@ -367,9 +367,10 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(valueStruct.vfield2, output.value.vfield2);
         }
 
-        private struct EvenCompactionFunctions : ICompactionFunctions<SpanByte>
+        private struct EvenCompactionFunctions : ICompactionFunctions
         {
-            public readonly bool IsDeleted(SpanByte key, SpanByte value) => value.AsRef<ValueStruct>().vfield1 % 2 != 0;
+            public readonly bool IsDeleted(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value) => value.AsRef<ValueStruct>().vfield1 % 2 != 0;
+            public readonly bool IsDeleted(ReadOnlySpan<byte> key, IHeapObject value) => false;
         }
     }
 }

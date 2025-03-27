@@ -8,6 +8,8 @@ namespace Tsavorite.core
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
     public unsafe interface ISourceLogRecord
     {
+        ReadOnlySpan<byte> GetReadOnlyValue() => default;   // TODO remove
+
         /// <summary>Whether this is a record for an object or a Span{byte} value</summary>
         bool ValueIsObject { get; }
 

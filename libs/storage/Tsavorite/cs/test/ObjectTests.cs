@@ -9,13 +9,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassAllocator = ObjectAllocator<TestObjectValue, StoreFunctions<TestObjectValue, TestObjectKey.Comparer, DefaultRecordDisposer<TestObjectValue>>>;
-    using ClassStoreFunctions = StoreFunctions<TestObjectValue, TestObjectKey.Comparer, DefaultRecordDisposer<TestObjectValue>>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
     [TestFixture]
     internal class ObjectTests
     {
-        private TsavoriteKV<TestObjectValue, ClassStoreFunctions, ClassAllocator> store;
+        private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -33,7 +33,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions<TestObjectValue>.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer<TestObjectValue>.Instance)
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -57,7 +57,7 @@ namespace Tsavorite.test
             var bContext = session.BasicContext;
 
             TestObjectKey keyStruct = new() { key = 9999999 };
-            SpanByte key = SpanByteFrom(ref keyStruct);
+            var key = SpanByte.FromPinnedVariable(ref keyStruct);
             TestObjectValue value = new() { value = 23 };
 
             TestObjectInput input = default;
@@ -75,14 +75,14 @@ namespace Tsavorite.test
             var bContext = session.BasicContext;
 
             TestObjectKey key1Struct = new() { key = 8999998 };
-            SpanByte key1 = SpanByteFrom(ref key1Struct);
+            var key1 = SpanByte.FromPinnedVariable(ref key1Struct);
             TestObjectInput input1 = new() { value = 23 };
             TestObjectOutput output = new();
 
             _ = bContext.RMW(key1, ref input1, Empty.Default);
 
             TestObjectKey key2Struct = new() { key = 8999999 };
-            SpanByte key2 = SpanByteFrom(ref key2Struct);
+            var key2 = SpanByte.FromPinnedVariable(ref key2Struct);
             TestObjectInput input2 = new() { value = 24 };
             _ = bContext.RMW(key2, ref input2, Empty.Default);
 
@@ -103,14 +103,14 @@ namespace Tsavorite.test
             for (int i = 0; i < 2000; i++)
             {
                 var key1Struct = new TestObjectKey { key = i };
-                SpanByte key = SpanByteFrom(ref key1Struct);
+                var key = SpanByte.FromPinnedVariable(ref key1Struct);
                 var value = new TestObjectValue { value = i };
                 _ = bContext.Upsert(key, value, Empty.Default);
                 // store.ShiftReadOnlyAddress(store.LogTailAddress);
             }
 
             TestObjectKey key2Struct = new() { key = 23 };
-            SpanByte key2 = SpanByteFrom(ref key2Struct);
+            var key2 = SpanByte.FromPinnedVariable(ref key2Struct);
             TestObjectInput input = new();
             TestObjectOutput g1 = new();
             var status = bContext.Read(key2, ref input, ref g1, Empty.Default);
@@ -135,7 +135,7 @@ namespace Tsavorite.test
             for (int i = 1900; i < 2000; i++)
             {
                 var keyStruct = new TestObjectKey { key = i };
-                SpanByte key = SpanByteFrom(ref keyStruct);
+                var key = SpanByte.FromPinnedVariable(ref keyStruct);
                 input = new TestObjectInput { value = 1 };
                 status = bContext.RMW(key, ref input, Empty.Default);
                 ClassicAssert.IsFalse(status.IsPending, "Expected RMW to complete in-memory");
@@ -145,7 +145,7 @@ namespace Tsavorite.test
             for (int i = 0; i < 100; i++)
             {
                 var keyStruct = new TestObjectKey { key = i };
-                SpanByte key = SpanByteFrom(ref keyStruct);
+                var key = SpanByte.FromPinnedVariable(ref keyStruct);
                 input = new TestObjectInput { value = 1 };
                 status = bContext.RMW(key, ref input, Empty.Default);
                 if (status.IsPending)
@@ -156,7 +156,7 @@ namespace Tsavorite.test
             {
                 var output = new TestObjectOutput();
                 var keyStruct = new TestObjectKey { key = i };
-                SpanByte key = SpanByteFrom(ref keyStruct);
+                var key = SpanByte.FromPinnedVariable(ref keyStruct);
                 var value = new TestObjectValue { value = i };
 
                 status = bContext.Read(key, ref input, ref output, Empty.Default);

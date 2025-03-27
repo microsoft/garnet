@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging;
 namespace Tsavorite.core
 {
     /// <summary>Interface for calculating the size of the log</summary>
-    /// <typeparam name="TValue">Type of value</typeparam>
     public interface ILogSizeCalculator
     {
         /// <summary>Calculates the size of a log record</summary>
@@ -57,7 +56,6 @@ namespace Tsavorite.core
     }
 
     /// <summary>Tracks and controls size of log</summary>
-    /// <typeparam name="TValue">Type of value</typeparam>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
     /// <typeparam name="TLogSizeCalculator">Type of the log size calculator</typeparam>

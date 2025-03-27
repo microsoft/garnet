@@ -47,6 +47,8 @@ namespace Tsavorite.core
     /// </summary>
     public interface ITsavoriteScanIterator : ISourceLogRecord, IDisposable
     {
+        new ReadOnlySpan<byte> GetReadOnlyValue() => default;   // TODO remove
+
         /// <summary>
         /// Get next record
         /// </summary>

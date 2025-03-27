@@ -16,7 +16,7 @@ namespace Tsavorite.core
         /// Obtain a code by which groups of keys will be sorted for Transactional locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
         /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{_byte_})"/></returns>
+        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64(ReadOnlySpan{byte})"/></returns>
         long GetKeyHash(ReadOnlySpan<byte> key);
     }
 

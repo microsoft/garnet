@@ -10,8 +10,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using StructAllocator = SpanByteAllocator<StoreFunctions<SpanByte, KeyStruct.Comparer, SpanByteRecordDisposer>>;
-    using StructStoreFunctions = StoreFunctions<SpanByte, KeyStruct.Comparer, SpanByteRecordDisposer>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class BasicStorageTests
@@ -104,7 +104,7 @@ namespace Tsavorite.test
                     LogDevice = log,
                     MemorySize = 1L << 15,
                     PageSize = 1L << 10,
-                }, StoreFunctions<SpanByte>.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -117,7 +117,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(SpanByteFrom(ref key1), SpanByteFrom(ref value), Empty.Default);
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
             _ = bContext.CompletePending(true);
 
@@ -126,7 +126,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
-                var status = bContext.RMW(SpanByteFrom(ref key1), input, Empty.Default);
+                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
                 if (status.IsPending)
                     _ = bContext.CompletePending(true);
             }
@@ -138,7 +138,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (bContext.Read(SpanByteFrom(ref key1), ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
                 {
                     _ = bContext.CompletePending(true);
                 }

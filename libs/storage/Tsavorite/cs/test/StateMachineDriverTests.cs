@@ -12,8 +12,8 @@ using Tsavorite.core;
 namespace Tsavorite.test.recovery
 {
     using static Tsavorite.test.TestUtils;
-    using LongAllocator = SpanByteAllocator<StoreFunctions<SpanByte, LongKeyComparer, DefaultRecordDisposer<SpanByte>>>;
-    using LongStoreFunctions = StoreFunctions<SpanByte, LongKeyComparer, DefaultRecordDisposer<SpanByte>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, DefaultRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordDisposer>;
 
     public abstract class StateMachineDriverTestsBase
     {
@@ -54,7 +54,7 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 MemorySize = 1L << 20,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions<SpanByte>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -92,7 +92,7 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(SpanByteFrom(ref key), ref output);
+                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -119,7 +119,7 @@ namespace Tsavorite.test.recovery
                     PageSize = 1L << 10,
                     MemorySize = 1L << 20,
                     CheckpointDir = MethodTestDir
-                }, StoreFunctions<SpanByte>.Create(LongKeyComparer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
                 _ = await store2.RecoverAsync(default, checkpointToken);
@@ -130,7 +130,7 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(SpanByteFrom(ref key), ref output);
+                    var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc2.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -166,7 +166,7 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 MemorySize = 1L << 20,
                 CheckpointDir = MethodTestDir
-            }, StoreFunctions<SpanByte>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -202,7 +202,7 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < numKeys; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(SpanByteFrom(ref key), ref output);
+                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
                     if (status.IsPending)
                     {
                         var completed = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
@@ -226,12 +226,12 @@ namespace Tsavorite.test.recovery
         {
             readonly Random fuzzer;
 
-            public SumFunctions(int thread_id, bool useTimingFuzzing) : base((l, r) => l.AsRef<long>() + r.AsRef<long>())
+            public SumFunctions(int thread_id, bool useTimingFuzzing) : base((l, r) => l + r)
             {
                 if (useTimingFuzzing) fuzzer = new Random(thread_id);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord<SpanByte> logRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Fuzz();
                 var ret = base.InPlaceUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
@@ -239,7 +239,7 @@ namespace Tsavorite.test.recovery
                 return ret;
             }
 
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord<SpanByte> dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Fuzz();
                 var ret = base.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
@@ -279,7 +279,7 @@ namespace Tsavorite.test.recovery
                 key = r.Next(numKeys);
 
                 // Run the RMW operation
-                _ = bc.RMW(SpanByteFrom(ref key), ref input);
+                _ = bc.RMW(SpanByte.FromPinnedVariable(ref key), ref input);
 
                 // Update expected counts for the old and new version of store
                 if (bc.Session.Version == currentIteration + 1)
@@ -339,8 +339,8 @@ namespace Tsavorite.test.recovery
                 } while (key2 == key1);
 
                 var exclusiveVec = new FixedLengthTransactionalKeyStruct[] {
-                    new(SpanByteFrom(ref key1), LockType.Exclusive, lc),
-                    new(SpanByteFrom(ref key2), LockType.Exclusive, lc)
+                    new(SpanByte.FromPinnedVariable(ref key1), LockType.Exclusive, lc),
+                    new(SpanByte.FromPinnedVariable(ref key2), LockType.Exclusive, lc)
                 };
 
                 var txnVersion = store.stateMachineDriver.AcquireTransactionVersion();
@@ -355,8 +355,8 @@ namespace Tsavorite.test.recovery
                 lc.LocksAcquired(txnVersion);
 
                 // Run transaction
-                _ = lc.RMW(SpanByteFrom(ref key1), ref input);
-                _ = lc.RMW(SpanByteFrom(ref key2), ref input);
+                _ = lc.RMW(SpanByte.FromPinnedVariable(ref key1), ref input);
+                _ = lc.RMW(SpanByte.FromPinnedVariable(ref key2), ref input);
 
                 // Unlock keys
                 lc.Unlock(exclusiveVec);
