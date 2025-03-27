@@ -105,8 +105,6 @@ namespace Garnet.server.BTreeIndex
                     var value = leaf->GetValue(i);
                     if (!value.Valid)
                     {
-                        byte[] key = new byte[BTreeNode.KEY_SIZE];
-                        Buffer.MemoryCopy(leaf->GetKey(i), Unsafe.AsPointer(ref key[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
                         tombstones.Add(leaf->GetValue(i));
                     }
                     else

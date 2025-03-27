@@ -152,8 +152,9 @@ namespace Garnet.server.BTreeIndex
 
         public void SetKey(int index, byte* keyData)
         {
-            byte* keyAddress = keys + (index * KEY_SIZE);
-            Buffer.MemoryCopy(keyData, keyAddress, KEY_SIZE, KEY_SIZE);
+            var sourceSpan = new ReadOnlySpan<byte>(keyData, KEY_SIZE);
+            var destinationSpan = new Span<byte>(keys + (index * KEY_SIZE), KEY_SIZE);
+            sourceSpan.CopyTo(destinationSpan);
         }
 
         public void SetChild(int index, BTreeNode* child)

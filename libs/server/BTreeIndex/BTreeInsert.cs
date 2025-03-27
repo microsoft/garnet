@@ -23,7 +23,18 @@ namespace Garnet.server.BTreeIndex
             stats.numKeys++;
             stats.numValidKeys++;
             leaf = tail;
-            return InsertToLeafNode(ref leaf, ref rootToTailLeaf, key, value,true);
+            return InsertToLeafNode(ref leaf, ref rootToTailLeaf, key, value, true);
+        }
+
+        public bool Insert(byte* key,ReadOnlySpan<byte> keySpan, Value value)
+        {
+            BTreeNode* leaf = null;
+            stats.totalFastInserts++;
+            stats.totalInserts++;
+            stats.numKeys++;
+            stats.numValidKeys++;
+            leaf = tail;
+            return InsertToLeafNode(ref leaf, ref rootToTailLeaf, key, value, true);
         }
         public bool InsertToLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, bool appendToLeaf = false)
         {
@@ -55,9 +66,11 @@ namespace Garnet.server.BTreeIndex
 
             if (leaf->info->count < BTreeNode.LEAF_CAPACITY)
             {
-                Buffer.MemoryCopy(leaf->keys + index * BTreeNode.KEY_SIZE, leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index) * BTreeNode.KEY_SIZE, (leaf->info->count - index) * BTreeNode.KEY_SIZE);
-                Buffer.MemoryCopy(leaf->data.values + index, leaf->data.values + index + 1, (leaf->info->count - index) * sizeof(Value), (leaf->info->count - index) * sizeof(Value));
-
+                // move keys to the right of index
+                var sourceSpan = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, (leaf->info->count - index) * BTreeNode.KEY_SIZE);
+                var destinationSpan = new Span<byte>(leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index) * BTreeNode.KEY_SIZE);
+                sourceSpan.CopyTo(destinationSpan);
+                
                 leaf->SetKey(index, key);
                 leaf->SetValue(index, value);
                 leaf->info->count++;
@@ -97,23 +110,47 @@ namespace Garnet.server.BTreeIndex
             {
                 // new key goes to the new leaf
                 var newIndex = index - leaf->info->count;
-                Buffer.MemoryCopy(leaf->keys + leaf->info->count * BTreeNode.KEY_SIZE, newLeaf->keys, newIndex * BTreeNode.KEY_SIZE, newIndex * BTreeNode.KEY_SIZE);
+                
+                // move the keys from old node to the new node using ReadOnlySpan
+                var sourceSpan = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, newIndex * BTreeNode.KEY_SIZE);
+                var destinationSpan = new Span<byte>(newLeaf->keys, newIndex * BTreeNode.KEY_SIZE);
+                sourceSpan.CopyTo(destinationSpan);
+
+                // add key to new leaf
                 newLeaf->SetKey(newIndex, key);
 
-                Buffer.MemoryCopy(leaf->keys + index * BTreeNode.KEY_SIZE, newLeaf->keys + (newIndex + 1) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE);
-                Buffer.MemoryCopy(leaf->data.values + leaf->info->count, newLeaf->data.values, newIndex * sizeof(Value), newIndex * sizeof(Value));
+                var existingLeafKeysSpan = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE);
+                var newLeafKeysSpan = new Span<byte>(newLeaf->keys + (newIndex + 1) * BTreeNode.KEY_SIZE, (BTreeNode.LEAF_CAPACITY - index) * BTreeNode.KEY_SIZE);
+                existingLeafKeysSpan.CopyTo(newLeafKeysSpan);
+
+                var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count, newIndex * sizeof(Value));
+                var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newIndex * sizeof(Value));
+                existingLeafValuesSpan.CopyTo(newLeafValuesSpan);
                 newLeaf->SetValue(newIndex, value);
-                Buffer.MemoryCopy(leaf->data.values + index, newLeaf->data.values + newIndex + 1, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value), (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
+                
+                var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
+                var newLeafValuesSpan2 = new Span<Value>(newLeaf->data.values + newIndex + 1, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
+                existingLeafValuesSpan2.CopyTo(newLeafValuesSpan2);
                 newLeaf->info->validCount++;
             }
             else
             {
-                Buffer.MemoryCopy(leaf->keys + (leaf->info->count - 1) * BTreeNode.KEY_SIZE, newLeaf->keys, newLeaf->info->count * BTreeNode.KEY_SIZE, newLeaf->info->count * BTreeNode.KEY_SIZE);
-                Buffer.MemoryCopy(leaf->keys + index * BTreeNode.KEY_SIZE, leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index - 1) * BTreeNode.KEY_SIZE, (leaf->info->count - index - 1) * BTreeNode.KEY_SIZE);
+                var existingLeafKeysSpan = new ReadOnlySpan<byte>(leaf->keys + (leaf->info->count - 1) * BTreeNode.KEY_SIZE, newLeaf->info->count * BTreeNode.KEY_SIZE);
+                var newLeafKeysSpan = new Span<byte>(newLeaf->keys, newLeaf->info->count * BTreeNode.KEY_SIZE);
+                existingLeafKeysSpan.CopyTo(newLeafKeysSpan);
+                
+                var existingLeafKeysSpan2 = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, (leaf->info->count - index - 1) * BTreeNode.KEY_SIZE);
+                var newLeafKeysSpan2 = new Span<byte>(leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index - 1) * BTreeNode.KEY_SIZE);
+                existingLeafKeysSpan2.CopyTo(newLeafKeysSpan2);
                 leaf->SetKey(index, key);
 
-                Buffer.MemoryCopy(leaf->data.values + leaf->info->count - 1, newLeaf->data.values, newLeaf->info->count * sizeof(Value), newLeaf->info->count * sizeof(Value));
-                Buffer.MemoryCopy(leaf->data.values + index, leaf->data.values + index + 1, (leaf->info->count - index - 1) * sizeof(Value), (leaf->info->count - index - 1) * sizeof(Value));
+                var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count - 1, newLeaf->info->count * sizeof(Value));
+                var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newLeaf->info->count * sizeof(Value));
+                existingLeafValuesSpan.CopyTo(newLeafValuesSpan);
+                
+                var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, (leaf->info->count - index - 1) * sizeof(Value));
+                var newLeafValuesSpan2 = new Span<Value>(leaf->data.values + index + 1, (leaf->info->count - index - 1) * sizeof(Value));
+                existingLeafValuesSpan2.CopyTo(newLeafValuesSpan2);
                 leaf->SetValue(index, value);
                 leaf->info->validCount++;
             }
@@ -173,7 +210,9 @@ namespace Garnet.server.BTreeIndex
         public void InsertToInternalNodeWithinCapacity(ref BTreeNode* node, byte* key, ref BTreeNode* child, ref BTreeNode*[] nodesTraversed, int index, uint newValidCount)
         {
             // move all keys to the right 
-            Buffer.MemoryCopy(node->keys + index * BTreeNode.KEY_SIZE, node->keys + ((index + 1) * BTreeNode.KEY_SIZE), (node->info->count - index) * BTreeNode.KEY_SIZE, (node->info->count - index) * BTreeNode.KEY_SIZE);
+            var sourceSpan = new ReadOnlySpan<byte>(node->keys + index * BTreeNode.KEY_SIZE, (node->info->count - index) * BTreeNode.KEY_SIZE);
+            var destinationSpan = new Span<byte>(node->keys + ((index + 1) * BTreeNode.KEY_SIZE), (node->info->count - index) * BTreeNode.KEY_SIZE);
+            sourceSpan.CopyTo(destinationSpan);
             // move all children starting from index+1 to the right using a for loop
             for (var j = node->info->count; j > index; j--)
             {
@@ -220,28 +259,55 @@ namespace Garnet.server.BTreeIndex
             if (index > nodeToSplit->info->count)
             {
                 // child goes to newNode
-                Buffer.MemoryCopy(nodeToSplit->keys + (nodeToSplit->info->count + 1) * BTreeNode.KEY_SIZE, newNode->keys, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE);
-                Buffer.MemoryCopy(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, newNode->keys + (index - nodeToSplit->info->count) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
+                var sourceSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + (nodeToSplit->info->count + 1) * BTreeNode.KEY_SIZE, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE);
+                var destinationSpan = new Span<byte>(newNode->keys, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE);
+                sourceSpan.CopyTo(destinationSpan);
+                
+                var existingNodeKeysSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
+                var newNodeKeysSpan = new Span<byte>(newNode->keys + (index - nodeToSplit->info->count) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
+                existingNodeKeysSpan.CopyTo(newNodeKeysSpan);
                 newNode->SetKey(index - nodeToSplit->info->count - 1, key);
-                Buffer.MemoryCopy(nodeToSplit->data.children + 1 + nodeToSplit->info->count, newNode->data.children, (index - nodeToSplit->info->count) * sizeof(BTreeNode*), (index - nodeToSplit->info->count) * sizeof(BTreeNode*));
-                Buffer.MemoryCopy(nodeToSplit->data.children + 1 + index, newNode->data.children + 1 + index - nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*), newNode->info->count * sizeof(BTreeNode*));
+                
+                var existingNodeChildrenSpan = new ReadOnlySpan<byte>(nodeToSplit->data.children + 1 + nodeToSplit->info->count, (index - nodeToSplit->info->count) * sizeof(BTreeNode*));
+                var newNodeChildrenSpan = new Span<byte>(newNode->data.children, (index - nodeToSplit->info->count) * sizeof(BTreeNode*));
+                existingNodeChildrenSpan.CopyTo(newNodeChildrenSpan);
+                
+                var existingNodeChildrenSpan2 = new ReadOnlySpan<byte>(nodeToSplit->data.children + 1 + index, newNode->info->count * sizeof(BTreeNode*));
+                var newNodeChildrenSpan2 = new Span<byte>(newNode->data.children + 1 + index - nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*));
+                existingNodeChildrenSpan2.CopyTo(newNodeChildrenSpan2);
                 newNode->SetChild(index - nodeToSplit->info->count, child);
                 key = nodeToSplit->GetKey(nodeToSplit->info->count);
             }
             else if (index == nodeToSplit->info->count)
             {
-                Buffer.MemoryCopy(nodeToSplit->keys + nodeToSplit->info->count * BTreeNode.KEY_SIZE, newNode->keys, newNode->info->count * BTreeNode.KEY_SIZE, newNode->info->count * BTreeNode.KEY_SIZE);
-                Buffer.MemoryCopy(nodeToSplit->data.children + 1 + nodeToSplit->info->count, newNode->data.children + 1, newNode->info->count * sizeof(BTreeNode*), newNode->info->count * sizeof(BTreeNode*));
+                var sourceSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + nodeToSplit->info->count * BTreeNode.KEY_SIZE, newNode->info->count * BTreeNode.KEY_SIZE);
+                var destinationSpan = new Span<byte>(newNode->keys, newNode->info->count * BTreeNode.KEY_SIZE);
+                sourceSpan.CopyTo(destinationSpan);
+                
+                var existingNodeChildrenSpan = new ReadOnlySpan<byte>(nodeToSplit->data.children + 1 + nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*));
+                var newNodeChildrenSpan = new Span<byte>(newNode->data.children + 1, newNode->info->count * sizeof(BTreeNode*));
+                existingNodeChildrenSpan.CopyTo(newNodeChildrenSpan);
                 newNode->SetChild(0, child);
             }
             else
             {
                 // child goes to old node
-                Buffer.MemoryCopy(nodeToSplit->keys + nodeToSplit->info->count * BTreeNode.KEY_SIZE, newNode->keys, newNode->info->count * BTreeNode.KEY_SIZE, newNode->info->count * BTreeNode.KEY_SIZE);
-                Buffer.MemoryCopy(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, nodeToSplit->keys + ((index + 1) * BTreeNode.KEY_SIZE), (nodeToSplit->info->count - index) * BTreeNode.KEY_SIZE, (nodeToSplit->info->count - index) * BTreeNode.KEY_SIZE);
+                var sourceSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + nodeToSplit->info->count * BTreeNode.KEY_SIZE, newNode->info->count * BTreeNode.KEY_SIZE);
+                var destinationSpan = new Span<byte>(newNode->keys, newNode->info->count * BTreeNode.KEY_SIZE);
+                sourceSpan.CopyTo(destinationSpan);
+                
+                var existingNodeKeysSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, (nodeToSplit->info->count - index) * BTreeNode.KEY_SIZE);
+                var newNodeKeysSpan = new Span<byte>(nodeToSplit->keys + ((index + 1) * BTreeNode.KEY_SIZE), (nodeToSplit->info->count - index) * BTreeNode.KEY_SIZE);
+                existingNodeKeysSpan.CopyTo(newNodeKeysSpan);
                 nodeToSplit->SetKey(index, key);
-                Buffer.MemoryCopy(nodeToSplit->data.children + nodeToSplit->info->count, newNode->data.children, newNode->info->count * sizeof(BTreeNode*), newNode->info->count * sizeof(BTreeNode*));
-                Buffer.MemoryCopy(nodeToSplit->data.children + index + 1, nodeToSplit->data.children + index + 2, (nodeToSplit->info->count - index + 1) * sizeof(BTreeNode*), (nodeToSplit->info->count - index + 1) * sizeof(BTreeNode*));
+                
+                var existingNodeChildrenSpan = new ReadOnlySpan<byte>(nodeToSplit->data.children + nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*));
+                var newNodeChildrenSpan = new Span<byte>(newNode->data.children, newNode->info->count * sizeof(BTreeNode*));
+                existingNodeChildrenSpan.CopyTo(newNodeChildrenSpan);
+                
+                var existingNodeChildrenSpan2 = new ReadOnlySpan<byte>(nodeToSplit->data.children + index + 1, (nodeToSplit->info->count - index + 1) * sizeof(BTreeNode*));
+                var newNodeChildrenSpan2 = new Span<byte>(nodeToSplit->data.children + index + 2, (nodeToSplit->info->count - index + 1) * sizeof(BTreeNode*));
+                existingNodeChildrenSpan2.CopyTo(newNodeChildrenSpan2);
                 nodeToSplit->SetChild(index + 1, child);
                 key = nodeToSplit->GetKey(nodeToSplit->info->count);
             }

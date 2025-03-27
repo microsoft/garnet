@@ -167,8 +167,7 @@ namespace Garnet.server.BTreeIndex
             {
                 return default;
             }
-            byte[] keyBytes = new byte[BTreeNode.KEY_SIZE];
-            Buffer.MemoryCopy(leaf->GetKey(0), Unsafe.AsPointer(ref keyBytes[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
+            byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(0), BTreeNode.KEY_SIZE).ToArray();
             return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(0));
         }
 
@@ -183,8 +182,7 @@ namespace Garnet.server.BTreeIndex
             {
                 return default;
             }
-            byte[] keyBytes = new byte[BTreeNode.KEY_SIZE];
-            Buffer.MemoryCopy(leaf->GetKey(leaf->info->count - 1), Unsafe.AsPointer(ref keyBytes[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
+            byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(leaf->info->count - 1), BTreeNode.KEY_SIZE).ToArray();
             return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(leaf->info->count - 1));
         }
 

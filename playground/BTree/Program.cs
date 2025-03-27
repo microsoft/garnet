@@ -20,7 +20,7 @@ class Program
     static unsafe void Main(string[] args)
     {
         var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
-        ulong N = 400000;
+        ulong N = 4000000;
         bool verbose = true;
         bool sanity = false;
         if (args.Length > 0)
@@ -90,6 +90,7 @@ class Program
             Console.WriteLine("Time for querying = " + query_time + " ns");
         }
         sw.Reset();
+        Console.WriteLine("All inserted keys found");
 
         // forward range query 
         double[] selectivities = [0.01, 0.05, 0.1];

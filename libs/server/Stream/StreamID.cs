@@ -53,7 +53,12 @@ namespace Garnet.server
                 throw new ArgumentException("idBytes must be 16 bytes");
             }
 
-            Buffer.MemoryCopy((byte*)Unsafe.AsPointer(ref inputBytes[0]), (byte*)Unsafe.AsPointer(ref idBytes[0]), 16, 16);
+            fixed (byte* idBytesPtr = idBytes)
+            {
+                var sourceSpan = new ReadOnlySpan<byte>(inputBytes);
+                var destinationSpan = new Span<byte>(idBytesPtr, 16);
+                sourceSpan.CopyTo(destinationSpan);
+            }
         }
     }
 }
