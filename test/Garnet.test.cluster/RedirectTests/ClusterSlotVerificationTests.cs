@@ -254,12 +254,12 @@ namespace Garnet.test.cluster
                 $"{GetNodeInfo(context.clusterTestUtils.ClusterNodes(targetIndex))}\n" +
                 $"{GetNodeInfo(context.clusterTestUtils.ClusterNodes(otherIndex))}\n";
 
-            string GetNodeInfo(ClusterConfiguration nodeConfig)
+            static string GetNodeInfo(ClusterConfiguration nodeConfig)
             {
-                var output = $"[{nodeConfig.Origin.ToString()}]";
+                var output = $"[{nodeConfig.Origin}]";
 
                 foreach (var node in nodeConfig.Nodes)
-                    output += $"\n\t{node.ToString()}";
+                    output += $"\n\t{node.Raw}";
                 return output;
             }
             return clusterStatus;
