@@ -20,7 +20,7 @@ class Program
     static unsafe void Main(string[] args)
     {
         var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
-        ulong N = 4000000;
+        ulong N = 40000;
         bool verbose = true;
         bool sanity = false;
         if (args.Length > 0)

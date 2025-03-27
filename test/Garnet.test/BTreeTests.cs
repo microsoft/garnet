@@ -38,7 +38,8 @@ namespace Garnet.test
         [Category("INIT")]
         public void InitBTreeLeafNode()
         {
-            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             var leaf = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
             ClassicAssert.AreEqual(leaf->info->type, BTreeNodeType.Leaf);
             ClassicAssert.AreEqual(leaf->info->count, 0);

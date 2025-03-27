@@ -32,7 +32,7 @@ namespace Garnet.server.BTreeIndex
         {
             bufferPool = new SectorAlignedBufferPool(1, BTreeNode.PAGE_SIZE);
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates = 1;
             root = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
             head = tail = root;
@@ -68,7 +68,8 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
+                // Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
+                NativeMemory.Free(node->memoryHandle);
                 stats.numDeallocates++;
                 node = null;
             }
@@ -104,7 +105,8 @@ namespace Garnet.server.BTreeIndex
             // Free the memory handle
             if (node->memoryHandle != null)
             {
-                Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
+                // Marshal.FreeHGlobal((IntPtr)node->memoryHandle);
+                NativeMemory.Free(node->memoryHandle);
                 node = null;
             }
         }

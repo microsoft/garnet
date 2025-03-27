@@ -83,7 +83,8 @@ namespace Garnet.server.BTreeIndex
         public bool SplitLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, int index)
         {
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newLeaf = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
     
@@ -229,7 +230,8 @@ namespace Garnet.server.BTreeIndex
         public BTreeNode* CreateInternalNode(ref BTreeNode* node, int splitPos)
         {
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newNode = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
             stats.numInternalNodes++;
@@ -319,7 +321,8 @@ namespace Garnet.server.BTreeIndex
         public void CreateNewRoot(byte* key, BTreeNode* newlySplitNode)
         {
             // var memoryBlock = bufferPool.Get(BTreeNode.PAGE_SIZE);
-            var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            // var memoryBlock = (IntPtr*)Marshal.AllocHGlobal(BTreeNode.PAGE_SIZE).ToPointer();
+            var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newRoot = BTreeNode.Create(BTreeNodeType.Internal, memoryBlock);
 
