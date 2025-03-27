@@ -70,7 +70,7 @@ namespace Garnet.server
             {
                 startOffset = startOffset < 0 ? ProcessNegativeOffset(startOffset, valLen) : startOffset;
                 endOffset = endOffset < 0 ? ProcessNegativeOffset(endOffset, valLen) : endOffset;
-                endOffset = endOffset >= valLen ? valLen : endOffset;
+                endOffset = endOffset >= valLen ? valLen - 1 : endOffset;
 
                 if (startOffset >= valLen) // If startOffset greater that valLen always bitcount zero
                     return 0;
