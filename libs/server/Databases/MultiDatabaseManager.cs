@@ -147,7 +147,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
         {
-            var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
             try
@@ -185,7 +185,7 @@ namespace Garnet.server
                         {
                             var storeTailAddress = t.Result.Item1;
                             var objectStoreTailAddress = t.Result.Item2;
-                            TryUpdateLastSaveDataAsync(dbId, storeTailAddress, objectStoreTailAddress, token).GetAwaiter().GetResult();
+                            TryUpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress, token);
                         }
                     }
                     finally
@@ -222,7 +222,7 @@ namespace Garnet.server
 
                 var storeTailAddress = result.Item1;
                 var objectStoreTailAddress = result.Item2;
-                TryUpdateLastSaveDataAsync(dbId, storeTailAddress, objectStoreTailAddress).GetAwaiter().GetResult();
+                TryUpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
             }
             finally
             {
@@ -234,7 +234,7 @@ namespace Garnet.server
         public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit, CancellationToken token = default,
             ILogger logger = null)
         {
-            var lockAcquired = await TryGetDatabasesContentReadLockAsync(token);
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
             try
@@ -274,7 +274,7 @@ namespace Garnet.server
         public override async Task CommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
             // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
             try
@@ -338,7 +338,7 @@ namespace Garnet.server
         public override async Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
             // Take a read lock to make sure that swap-db operation is not in progress
-            var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
             try
@@ -433,7 +433,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void DoCompaction(CancellationToken token = default, ILogger logger = null)
         {
-            var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
             try
@@ -474,7 +474,7 @@ namespace Garnet.server
         {
             var allIndexesMaxedOut = true;
 
-            var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
             try
@@ -506,7 +506,7 @@ namespace Garnet.server
         {
             sizeTrackersStarted = true;
 
-            var lockAcquired = TryGetDatabasesContentReadLockAsync(token).Result;
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
             try
@@ -595,7 +595,7 @@ namespace Garnet.server
             if (!success)
                 return false;
 
-            if (!TryGetDatabasesContentWriteLockAsync(token).GetAwaiter().GetResult()) return false;
+            if (!TryGetDatabasesContentWriteLock(token)) return false;
 
             try
             {
@@ -771,13 +771,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="token">Cancellation token</param>
         /// <returns>True if lock acquired</returns>
-        public async Task<bool> TryGetDatabasesContentReadLockAsync(CancellationToken token = default)
+        public bool TryGetDatabasesContentReadLock(CancellationToken token = default)
         {
             var lockAcquired = databasesContentLock.TryReadLock();
 
             while (!lockAcquired && !token.IsCancellationRequested && !Disposed)
             {
-                await Task.Yield();
+                Thread.Yield();
                 lockAcquired = databasesContentLock.TryReadLock();
             }
 
@@ -789,13 +789,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="token">Cancellation token</param>
         /// <returns>True if lock acquired</returns>
-        public async Task<bool> TryGetDatabasesContentWriteLockAsync(CancellationToken token = default)
+        public bool TryGetDatabasesContentWriteLock(CancellationToken token = default)
         {
             var lockAcquired = databasesContentLock.TryWriteLock();
 
             while (!lockAcquired && !token.IsCancellationRequested && !Disposed)
             {
-                await Task.Yield();
+                Thread.Yield();
                 lockAcquired = databasesContentLock.TryWriteLock();
             }
 
@@ -921,7 +921,7 @@ namespace Garnet.server
             for (var i = 0; i < checkpointTasks.Length; i++)
                 checkpointTasks[i] = Task.CompletedTask;
 
-            var lockAcquired = await TryGetDatabasesContentReadLockAsync(token);
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
             try
@@ -946,7 +946,7 @@ namespace Garnet.server
                                 {
                                     var storeTailAddress = t.Result.Item1;
                                     var objectStoreTailAddress = t.Result.Item2;
-                                    TryUpdateLastSaveDataAsync(dbId, storeTailAddress, objectStoreTailAddress, token).GetAwaiter().GetResult();
+                                    TryUpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress, token);
                                 }
                             }
                             finally
@@ -970,9 +970,9 @@ namespace Garnet.server
             }
         }
 
-        private async Task<bool> TryUpdateLastSaveDataAsync(int dbId, long? storeTailAddress, long? objectStoreTailAddress, CancellationToken token = default)
+        private bool TryUpdateLastSaveData(int dbId, long? storeTailAddress, long? objectStoreTailAddress, CancellationToken token = default)
         {
-            var lockAcquired = await TryGetDatabasesContentReadLockAsync(token);
+            var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
             var databasesMapSnapshot = databases.Map;
