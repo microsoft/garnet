@@ -224,7 +224,7 @@ namespace Garnet.server
         PSUBSCRIBE,
         UNSUBSCRIBE,
         PUNSUBSCRIBE,
-        
+
         ASKING,
         SELECT,
         SWAPDB,

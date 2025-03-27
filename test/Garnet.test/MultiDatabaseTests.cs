@@ -122,11 +122,11 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseDbSizeTestSE()
         {
-            var dbIds = new [] {0, 1, 13};
+            var dbIds = new[] { 0, 1, 13 };
 
             var strKvps = new (string, string)[][]
             {
-                [("db1:key1", "db1:val1")], 
+                [("db1:key1", "db1:val1")],
                 [("db2:key1", "db2:val1"), ("db2:key2", "db2:val2")],
                 [("db12:key1", "db12:val1"), ("db12:key2", "db12:val2"), ("db12:key3", "db12:val3")]
             };

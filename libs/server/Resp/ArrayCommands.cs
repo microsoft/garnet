@@ -295,8 +295,8 @@ namespace Garnet.server
                 return true;
             }
 
-            if (index1 < 0 || 
-                index2 < 0 || 
+            if (index1 < 0 ||
+                index2 < 0 ||
                 index1 >= storeWrapper.serverOptions.MaxDatabases ||
                 index2 >= storeWrapper.serverOptions.MaxDatabases)
             {
