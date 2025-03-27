@@ -6347,6 +6347,67 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task XADDACLsAsync()
+        {
+            int count = 0;
+            await CheckCommandsAsync(
+                "XADD",
+                [DoXAddAsync]
+            );
+
+            async Task DoXAddAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("XADD", ["foo", "*", $"bar--{count}", "fizz"]);
+                ClassicAssert.IsNotNull(val);
+            }
+        }
+
+        [Test]
+        public async Task XLENACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XLEN",
+                [DoXLenAsync]
+            );
+
+            async Task DoXLenAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XLEN", ["foo"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task XRangeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XRANGE",
+                [DoXRangeAsync]
+            );
+
+            async Task DoXRangeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("XRANGE", ["foo", "-", "+"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task XDELACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XDEL",
+                [DoXDelAsync]
+            );
+
+            async Task DoXDelAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XDEL", ["foo", "1"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
         public async Task ZAddACLsAsync()
         {
             // TODO: ZADD doesn't implement NX XX GT LT CH INCR; expand to cover all lengths when implemented
