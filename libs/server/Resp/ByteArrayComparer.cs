@@ -25,7 +25,7 @@ namespace Garnet.server
         public bool Equals(byte[] left, byte[] right)
             => new ReadOnlySpan<byte>(left).SequenceEqual(new ReadOnlySpan<byte>(right));
 
-        public ByteArrayComparer() { }
+        private ByteArrayComparer() { }
 
         /// <inheritdoc />
         public unsafe int GetHashCode(byte[] key)

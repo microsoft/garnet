@@ -19,7 +19,7 @@ namespace Garnet.server
 
         public StreamManager(long pageSize, long memorySize, int safeTailRefreshFreqMs)
         {
-            streams = new Dictionary<byte[], StreamObject>(new ByteArrayComparer());
+            streams = new Dictionary<byte[], StreamObject>(ByteArrayComparer.Instance);
             defPageSize = pageSize;
             defMemorySize = memorySize;
             this.safeTailRefreshFreqMs = safeTailRefreshFreqMs;

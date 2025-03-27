@@ -9,7 +9,7 @@ namespace Garnet.server
     internal struct SessionStreamCache
     {
         const int DefaultCacheSize = 16;
-        readonly Dictionary<byte[], StreamObject> streamCache = new Dictionary<byte[], StreamObject>(DefaultCacheSize, new ByteArrayComparer());
+        readonly Dictionary<byte[], StreamObject> streamCache = new Dictionary<byte[], StreamObject>(DefaultCacheSize, ByteArrayComparer.Instance);
         readonly byte[][] streamKeysCache = new byte[DefaultCacheSize][];
         int cachedStreamsCount = 0;
         int front = 0;
