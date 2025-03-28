@@ -249,7 +249,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="i">Index of buffer at which to start setting arguments</param>
         /// <param name="args">Arguments to set</param>
-        public void SetArguments(int i, ReadOnlySpan<ArgSlice> args)
+        public void SetArguments(int i, params ReadOnlySpan<ArgSlice> args)
         {
             Debug.Assert(i + args.Length - 1 < Count);
             for (var j = 0; j < args.Length; j++)
