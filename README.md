@@ -40,7 +40,7 @@ We illustrate a few key results on our [website](https://microsoft.github.io/gar
 ## Design Highlights
 
 Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network, to parsing and processing database operations, to performing storage interactions. We build on 
-top of years of our [prior research](https://microsoft.github.io/FASTER/docs/td-research-papers/). Below is Garnet’s overall architecture.
+top of years of our [prior research](https://microsoft.github.io/garnet/docs/research/papers). Below is Garnet’s overall architecture.
 
 <p align="center">
   <img src="https://github.com/microsoft/garnet/assets/18355833/8d89f719-f86b-4b1f-81d1-1ae7bd450001" width=400 />
