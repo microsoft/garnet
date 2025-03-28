@@ -39,7 +39,7 @@ namespace Garnet.test
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
                 UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute; // 770
 
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, enableTLS: useTls, unixSocketPath: unixSocketPath, unixSocketPermission: unixSocketPermission);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath, unixSocketPermission: unixSocketPermission);
             server.Start();
 
             using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
@@ -55,7 +55,7 @@ namespace Garnet.test
             var unixSocketPath = "./unix-socket-ping-test.sock";
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
 
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, enableTLS: useTls, unixSocketPath: unixSocketPath);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath);
             server.Start();
 
             using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
@@ -71,7 +71,7 @@ namespace Garnet.test
             var unixSocketPath = "./unix-socket-set-get-test.sock";
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
 
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, unixSocketEndpoint, enableTLS: useTls, unixSocketPath: unixSocketPath);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls, unixSocketPath: unixSocketPath);
             server.Start();
 
             using var client = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig([unixSocketEndpoint], useTLS: useTls));
