@@ -88,14 +88,26 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var op =
-                command switch
-                {
-                    RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
-                    RespCommand.GEODIST => SortedSetOperation.GEODIST,
-                    RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            SortedSetOperation op;
+
+            switch (command)
+            {
+                case RespCommand.GEOHASH:
+                    op = SortedSetOperation.GEOHASH;
+                    break;
+                case RespCommand.GEOPOS:
+                    op = SortedSetOperation.GEOPOS;
+                    break;
+                case RespCommand.GEODIST:
+                    op = SortedSetOperation.GEODIST;
+                    if (parseState.Count > 3 && !parseState.TryGetGeoDistanceUnit(3, out _))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT);
+                    }
+                    break;
+                default:
+                    throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
+            }
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };

@@ -186,7 +186,7 @@ namespace Garnet.server
                 if (input.parseState.Count > 2)
                 {
                     var validUnit = input.parseState.TryGetGeoDistanceUnit(2, out units);
-                    //Debug.Assert(validUnit);
+                    Debug.Assert(validUnit);
                 }
 
                 if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))

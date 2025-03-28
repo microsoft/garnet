@@ -757,6 +757,9 @@ namespace Garnet.test
             expectedResponse = "-ERR unsupported unit provided. please use M, KM, FT, MI\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            response = lightClientRequest.SendCommand("GEODIST Sicily Catania Palermo NM");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             response = lightClientRequest.SendCommand("GEOSEARCHSTORE bar foo FROMMEMBER nx BYRADIUS 1 FT ANY COUNT 1");
             expectedResponse = "-ERR syntax error\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
