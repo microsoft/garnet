@@ -618,49 +618,17 @@ namespace Garnet.server
         public GarnetStatus HashCollect<TObjectContext>(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            if (!_hcollectTaskLock.TryWriteLock())
+            if (keys[0].ReadOnlySpan.SequenceEqual("*"u8))
             {
-                return GarnetStatus.NOTFOUND;
+                return ObjectCollect(keys[0], CmdStrings.HASH, _hcollectTaskLock, ref input, ref objectContext);
             }
 
-            try
+            foreach (var key in keys)
             {
-                if (keys[0].ReadOnlySpan.SequenceEqual("*"u8))
-                {
-                    long cursor = 0;
-                    long storeCursor = 0;
-
-                    // Scan all hash keys in batches
-                    do
-                    {
-                        if (!DbScan(keys[0], true, cursor, out storeCursor, out var hashKeys, 100, CmdStrings.HASH))
-                        {
-                            return GarnetStatus.OK;
-                        }
-
-                        // Process each hash key
-                        foreach (var hashKey in hashKeys)
-                        {
-                            RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
-                        }
-
-                        cursor = storeCursor;
-                    } while (storeCursor != 0);
-
-                    return GarnetStatus.OK;
-                }
-
-                foreach (var key in keys)
-                {
-                    RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
-                }
-
-                return GarnetStatus.OK;
+                RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
             }
-            finally
-            {
-                _hcollectTaskLock.WriteUnlock();
-            }
+
+            return GarnetStatus.OK;
         }
     }
 }
