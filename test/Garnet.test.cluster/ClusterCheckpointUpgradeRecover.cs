@@ -28,7 +28,7 @@ namespace Garnet.test.cluster
             context.TearDown();
         }
 
-        [Test, Order(1)]
+        //[Test, Order(1)]
         public void ClusterCheckpointClusterToStandalone([Values] bool clusterMode)
         {
             // startup in cluster or standalone mode

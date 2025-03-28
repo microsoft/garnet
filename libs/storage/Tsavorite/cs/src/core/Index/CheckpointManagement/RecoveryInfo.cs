@@ -13,8 +13,12 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        const int CheckpointVersion = 5;
+        public const int CheckpointVersion = 6;
 
+        /// <summary>
+        /// HybridLogRecoveryVersion 
+        /// </summary>
+        public int hybridLogRecoveryVersion;
         /// <summary>
         /// Guid
         /// </summary>
@@ -79,12 +83,23 @@ namespace Tsavorite.core
         public long deltaTailAddress;
 
         /// <summary>
+        /// User cookie
+        /// </summary>
+        public byte[] cookie;
+
+        /// <summary>
+        /// If struct deserialized succesfully
+        /// </summary>
+        public bool Deserialized { get; private set; }
+
+        /// <summary>
         /// Initialize
         /// </summary>
         /// <param name="token"></param>
         /// <param name="_version"></param>
         public void Initialize(Guid token, long _version)
         {
+            Deserialized = false;
             guid = token;
             useSnapshotFile = 0;
             version = _version;
@@ -112,6 +127,8 @@ namespace Tsavorite.core
 
             if (cversion != CheckpointVersion)
                 throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+
+            hybridLogRecoveryVersion = cversion;
 
             value = reader.ReadLine();
             var checksum = long.Parse(value);
@@ -183,8 +200,26 @@ namespace Tsavorite.core
                 }
             }
 
+            if (cversion >= 6)
+            {
+                // Read user cookie
+                value = reader.ReadLine();
+                var cookieSize = int.Parse(value);
+                if (cookieSize > 0)
+                {
+                    cookie = new byte[cookieSize];
+                    for (var i = 0; i < cookieSize; i++)
+                    {
+                        value = reader.ReadLine();
+                        cookie[i] = byte.Parse(value);
+                    }
+                }
+            }
+
             if (checksum != Checksum(numSessions))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
+
+            Deserialized = true;
         }
 
         /// <summary>
@@ -200,11 +235,9 @@ namespace Tsavorite.core
         /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
         internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
-            if (metadata == null)
+            checkpointManager.GetLogCheckpointMetadataInfo(ref this, token, deltaLog, scanDelta, recoverTo);
+            if (!Deserialized)
                 throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
-            using StreamReader s = new(new MemoryStream(metadata));
-            Initialize(s);
         }
 
         /// <summary>
@@ -222,18 +255,11 @@ namespace Tsavorite.core
 
         internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
-            if (metadata == null)
+            commitCookie = null;
+            checkpointManager.GetLogCheckpointMetadataInfo(ref this, token, deltaLog, scanDelta, recoverTo);
+            if (!Deserialized)
                 throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
-            using StreamReader s = new(new MemoryStream(metadata));
-            Initialize(s);
-            if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
-            {
-                // Adjust delta tail address to include the metadata record
-                deltaTailAddress = deltaLog.NextAddress;
-            }
-            var cookie = s.ReadToEnd();
-            commitCookie = cookie.Length == 0 ? null : Convert.FromBase64String(cookie);
+            commitCookie = cookie;
         }
 
         /// <summary>
@@ -269,9 +295,20 @@ namespace Tsavorite.core
                     writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
                     if (objectLogSegmentOffsets != null)
                     {
-                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
+                        for (var i = 0; i < objectLogSegmentOffsets.Length; i++)
                         {
                             writer.WriteLine(objectLogSegmentOffsets[i]);
+                        }
+                    }
+
+                    // User cookie write
+                    var cookieSize = cookie == null ? 0 : cookie.Length;
+                    writer.WriteLine(cookieSize);
+                    if (cookieSize > 0)
+                    {
+                        for (var i = 0; i < cookieSize; i++)
+                        {
+                            writer.WriteLine(cookie[i]);
                         }
                     }
                 }
@@ -447,9 +484,7 @@ namespace Tsavorite.core
         public void Recover(Guid guid, ICheckpointManager checkpointManager)
         {
             token = guid;
-            var metadata = checkpointManager.GetIndexCheckpointMetadata(guid);
-            if (metadata == null)
-                throw new TsavoriteException("Invalid index commit metadata for ID " + guid.ToString());
+            var metadata = checkpointManager.GetIndexCheckpointMetadata(guid) ?? throw new TsavoriteException("Invalid index commit metadata for ID " + guid.ToString());
             using (StreamReader s = new(new MemoryStream(metadata)))
                 Initialize(s);
         }

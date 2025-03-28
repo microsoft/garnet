@@ -48,8 +48,7 @@ namespace Tsavorite.core
 
         internal void WriteHybridLogMetaInfo()
         {
-            var metadata = _hybridLogCheckpoint.info.ToByteArray();
-            checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
+            checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info);
         }
 
         internal void CleanupLogCheckpoint()
@@ -61,7 +60,7 @@ namespace Tsavorite.core
         internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
         {
             var metadata = _hybridLogCheckpoint.info.ToByteArray();
-            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
+            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info, deltaLog);
         }
 
         internal void CleanupLogIncrementalCheckpoint()
