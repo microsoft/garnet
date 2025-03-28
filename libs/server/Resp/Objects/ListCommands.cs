@@ -294,9 +294,12 @@ namespace Garnet.server
 
             if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            if (timeout < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
             }
 
             if (storeWrapper.objectStore == null)
@@ -311,21 +314,27 @@ namespace Garnet.server
                 return true;
             }
 
-            if (!result.Found)
+            switch (result.Status)
             {
-                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                    SendAndReset();
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
-                    SendAndReset();
+                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
+                        SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
-                    SendAndReset();
+                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                default:
+                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
 
             return true;
@@ -345,9 +354,12 @@ namespace Garnet.server
 
             if (!parseState.TryGetDouble(4, out var timeout))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            if (timeout < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
             }
 
             return ListBlockingMove(srcKey, dstKey, srcDir, dstDir, timeout);
@@ -371,9 +383,12 @@ namespace Garnet.server
 
             if (!parseState.TryGetDouble(2, out var timeout))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+            }
+
+            if (timeout < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
             }
 
             return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
@@ -405,14 +420,20 @@ namespace Garnet.server
             var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
 
-            if (!result.Found)
+            switch (result.Status)
             {
-                WriteNull();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
-                    SendAndReset();
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                default:
+                    WriteNull();
+                    break;
             }
 
             return true;
@@ -925,6 +946,11 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
             }
 
+            if (timeout < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+            }
+
             // Read count of keys
             if (!parseState.TryGetInt(currTokenId++, out var numKeys))
             {
@@ -987,28 +1013,36 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
                     SendAndReset();
-            }
-
-            if (!result.Found)
-            {
-                WriteNull();
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                SendAndReset();
-
-            while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
-                SendAndReset();
-
-            var elements = result.Items;
-            while (!RespWriteUtils.TryWriteArrayLength(elements.Length, ref dcurr, dend))
-                SendAndReset();
-
-            foreach (var element in elements)
+            switch (result.Status)
             {
-                while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
-                    SendAndReset();
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
+                        SendAndReset();
+
+                    var elements = result.Items;
+                    while (!RespWriteUtils.TryWriteArrayLength(elements.Length, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var element in elements)
+                    {
+                        while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                default:
+                    WriteNull();
+                    break;
             }
 
             return true;

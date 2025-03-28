@@ -229,7 +229,7 @@ namespace Garnet.server
                     // If the key already has a non-empty observer queue, it does not have an item to retrieve
                     // Otherwise, try to retrieve next available item
                     if ((keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty) ||
-                        !TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
+                        !TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, true,
                             out _, out var result)) continue;
 
                     // An item was found - set the observer result and return
@@ -282,7 +282,7 @@ namespace Garnet.server
                     }
 
                     // Try to get next available item from object stored in key
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
+                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, false,
                             out var currCount, out var result))
                     {
                         // If unsuccessful getting next item but there is at least one item in the collection,
@@ -427,7 +427,9 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
+        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession,
+                                         RespCommand command, ArgSlice[] cmdArgs, bool initial,
+                                         out int currCount, out CollectionItemResult result)
         {
             currCount = default;
             result = default;
@@ -452,10 +454,14 @@ namespace Garnet.server
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
                 var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
+                if (initial)
+                    storageSession.txnManager.SaveKeyEntryToLock(asKey, false, LockType.Exclusive);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
                 {
+                    if (initial)
+                        storageSession.txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
                     storageSession.txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
                 }
 
@@ -463,15 +469,50 @@ namespace Garnet.server
             }
 
             var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;
+            IGarnetObject dstObj = null;
+            byte[] arrDstKey = default;
 
             try
             {
                 // Get the object stored at key
                 var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
-                if (statusOp == GarnetStatus.NOTFOUND) return false;
+                if (statusOp == GarnetStatus.NOTFOUND)
+                {
+                    if (!initial)
+                        return false;
 
-                IGarnetObject dstObj = null;
-                byte[] arrDstKey = default;
+                    var context = storageSession.txnManager.LockableContext;
+
+                    var keySlice = storageSession.scratchBufferManager.CreateArgSlice(key);
+                    statusOp = storageSession.GET(keySlice, out ArgSlice _, ref context);
+
+                    if (statusOp != GarnetStatus.NOTFOUND)
+                    {
+                        result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                        return true;
+                    }
+
+                    if (command == RespCommand.BLMOVE)
+                    {
+                        arrDstKey = dstKey.ToArray();
+                        var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
+                        if (dstStatusOp != GarnetStatus.NOTFOUND && osDstObject.GarnetObject is not ListObject)
+                        {
+                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                            return true;
+                        }
+
+                        dstStatusOp = storageSession.GET(dstKey, out ArgSlice _, ref context);
+                        if (dstStatusOp != GarnetStatus.NOTFOUND)
+                        {
+                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+
                 if (command == RespCommand.BLMOVE)
                 {
                     arrDstKey = dstKey.ToArray();
@@ -485,8 +526,13 @@ namespace Garnet.server
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
-                        if (objectType != GarnetObjectType.List) return false;
-                        if (currCount == 0) return false;
+                        if (objectType != GarnetObjectType.List)
+                        {
+                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                            return initial;
+                        }
+                        if (currCount == 0)
+                            return false;
 
                         switch (command)
                         {
@@ -507,7 +553,11 @@ namespace Garnet.server
                                 {
                                     dstList = tmpDstList;
                                 }
-                                else return false;
+                                else
+                                {
+                                    result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                                    return initial;
+                                }
 
                                 isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
                                     (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
@@ -528,25 +578,31 @@ namespace Garnet.server
                                 var items = new byte[popCount][];
                                 for (var i = 0; i < popCount; i++)
                                 {
-                                    var _ = TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]); // Return can be ignored because it is guaranteed to return true
+                                    // Return can be ignored because it is guaranteed to return true
+                                    _ = TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]);
                                 }
 
                                 result = new CollectionItemResult(key, items);
                                 return true;
                             default:
-                                return false;
+                                result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                                return initial;
                         }
                     case SortedSetObject setObj:
                         currCount = setObj.Count();
                         if (objectType != GarnetObjectType.SortedSet)
-                            return false;
+                        {
+                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                            return initial;
+                        }
                         if (currCount == 0)
                             return false;
 
                         return TryGetNextSetObjects(key, setObj, currCount, command, cmdArgs, out result);
 
                     default:
-                        return false;
+                        result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                        return initial;
                 }
             }
             finally
