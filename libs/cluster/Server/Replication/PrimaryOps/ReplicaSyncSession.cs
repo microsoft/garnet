@@ -412,6 +412,7 @@ namespace Garnet.cluster
         {
             logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
             var checkpointMetadata = Array.Empty<byte>();
+            var hlri = new HybridLogRecoveryInfo();
             if (fileToken != default)
             {
                 switch (fileType)
@@ -428,12 +429,16 @@ namespace Garnet.cluster
                                 {
                                     var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
                                     deltaLog.InitializeForReads();
-                                    checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, deltaLog, true, -1, withoutCookie: false);
+                                    ckptManager.GetLogCheckpointMetadataInfo(ref hlri, fileToken, deltaLog, true, -1);
+                                    Debug.Assert(hlri.Deserialized && hlri.cookie != null);
+                                    checkpointMetadata = hlri.ToByteArray();
                                     break;
                                 }
                             }
                         }
-                        checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, false, -1, withoutCookie: false);
+                        ckptManager.GetLogCheckpointMetadataInfo(ref hlri, fileToken, null, true, -1);
+                        Debug.Assert(hlri.Deserialized && hlri.cookie != null);
+                        checkpointMetadata = hlri.ToByteArray();
                         break;
                     case CheckpointFileType.STORE_INDEX:
                     case CheckpointFileType.OBJ_STORE_INDEX:
