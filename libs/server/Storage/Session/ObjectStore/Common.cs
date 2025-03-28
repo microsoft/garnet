@@ -668,5 +668,51 @@ namespace Garnet.server
 
             return GarnetStatus.OK;
         }
+
+        /// <summary>
+        /// Collects objects from the object store based on the specified input and type.
+        /// </summary>
+        /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
+        /// <param name="searchKey">The key to search for in the object store.</param>
+        /// <param name="typeObject">The type of the object to collect.</param>
+        /// <param name="collectLock">The lock to ensure single writer and multiple readers.</param>
+        /// <param name="input">The input object for the operation.</param>
+        /// <param name="objectContext">The context of the object store.</param>
+        /// <returns>The status of the operation.</returns>
+        private GarnetStatus ObjectCollect<TObjectContext>(ArgSlice searchKey, ReadOnlySpan<byte> typeObject, SingleWriterMultiReaderLock collectLock, ref ObjectInput input, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (!collectLock.TryWriteLock())
+            {
+                return GarnetStatus.NOTFOUND;
+            }
+
+            try
+            {
+                long cursor = 0;
+                long storeCursor = 0;
+
+                do
+                {
+                    if (!DbScan(searchKey, true, cursor, out storeCursor, out var hashKeys, 100, typeObject))
+                    {
+                        return GarnetStatus.OK;
+                    }
+
+                    foreach (var hashKey in hashKeys)
+                    {
+                        RMWObjectStoreOperation(hashKey, ref input, out _, ref objectContext);
+                    }
+
+                    cursor = storeCursor;
+                } while (storeCursor != 0);
+
+                return GarnetStatus.OK;
+            }
+            finally
+            {
+                collectLock.WriteUnlock();
+            }
+        }
     }
 }
