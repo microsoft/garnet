@@ -14,7 +14,7 @@ namespace Tsavorite.benchmark
 #pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
 
-    internal class Tsavorite_YcsbBenchmark
+    internal class FixedLenYcsbBenchmark
     {
         RevivificationSettings FixedLengthBins = new()
         {
@@ -36,7 +36,7 @@ namespace Tsavorite.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent, upsertPercent, rmwPercent;
-        readonly SessionFunctions functions;
+        readonly SessionFixedLenFunctions functions;
         readonly Input[] input_;
 
         readonly FixedLengthKey[] init_keys_;
@@ -49,7 +49,7 @@ namespace Tsavorite.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal Tsavorite_YcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
+        internal FixedLenYcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -66,7 +66,7 @@ namespace Tsavorite.benchmark
             readPercent = testLoader.ReadPercent;
             upsertPercent = testLoader.UpsertPercent;
             rmwPercent = testLoader.RmwPercent;
-            functions = new SessionFunctions();
+            functions = new SessionFixedLenFunctions();
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
@@ -149,7 +149,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<Input, Output, Empty, SessionFixedLenFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -240,7 +240,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<Input, Output, Empty, SessionFixedLenFunctions>(functions);
             var bContext = session.BasicContext;
 
             while (!done)
@@ -415,7 +415,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            var session = store.NewSession<Input, Output, Empty, SessionFixedLenFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -463,7 +463,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<Input, Output, Empty, SessionFixedLenFunctions>(functions);
             var bContext = session.BasicContext;
 
             FixedLengthKey keyStruct = default;

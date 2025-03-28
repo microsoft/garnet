@@ -77,6 +77,16 @@ namespace Tsavorite.benchmark
             if (!verifyOption(rumdPercents.Length == 4 && Options.RumdPercents.Sum() == 100 && !Options.RumdPercents.Any(x => x < 0), "rmud",
                     "Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] must be empty or must sum to 100 with no negative elements"))
                 return;
+            if (Options.UseOverflowValues && Options.UseObjectValues)
+            {
+                Console.WriteLine($"Cannot specify both UseOverflowValues and UseObjectValues");
+                return;
+            }
+            if ((Options.UseOverflowValues || Options.UseObjectValues) && BenchmarkType != BenchmarkType.Object)
+            {
+                Console.WriteLine($"Can only specify UseOverflowValues or UseObjectValues with BenchmarkType.Object");
+                return;
+            }
             ReadPercent = rumdPercents[0];
             UpsertPercent = ReadPercent + rumdPercents[1];
             RmwPercent = UpsertPercent + rumdPercents[2];
@@ -106,15 +116,19 @@ namespace Tsavorite.benchmark
 
             switch (BenchmarkType)
             {
-                case BenchmarkType.Ycsb:
-                    Tsavorite_YcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
-                    LoadData(this, init_keys, txn_keys, new Tsavorite_YcsbBenchmark.KeySetter());
+                case BenchmarkType.FixedLen:
+                    FixedLenYcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    LoadData(this, init_keys, txn_keys, new FixedLenYcsbBenchmark.KeySetter());
                     break;
                 case BenchmarkType.SpanByte:
                     SpanByteYcsbBenchmark.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
                     LoadData(this, init_span_keys, txn_span_keys, new SpanByteYcsbBenchmark.KeySetter());
                     break;
-                case BenchmarkType.ConcurrentDictionaryYcsb:
+                case BenchmarkType.Object:
+                    ObjectYcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    LoadData(this, init_keys, txn_keys, new ObjectYcsbBenchmark.KeySetter());
+                    break;
+                case BenchmarkType.ConcurrentDictionary:
                     ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
                     LoadData(this, init_keys, txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());
                     break;

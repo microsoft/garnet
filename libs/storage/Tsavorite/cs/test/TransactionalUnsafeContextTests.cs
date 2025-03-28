@@ -718,6 +718,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                 session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
+                resultValue = (read24Output + read51Output) * valueMult2;
                 status = useRMW
                     ? luContext.RMW(SpanByte.FromPinnedVariable(ref resultKey), ref resultValue) // value is 'input' for RMW
                     : luContext.Upsert(SpanByte.FromPinnedVariable(ref resultKey), SpanByte.FromPinnedVariable(ref resultValue));

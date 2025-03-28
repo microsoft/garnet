@@ -146,17 +146,15 @@ namespace Tsavorite.core
             }
 
             // If "shrinking" the allocation because the overflow objectId size is less than the current inline size, we must zeroinit the extra space.
+            // Note: We don't zeroinit data in the overflow allocation, just like we don't zeroinit data in the inline value within the length.
             var clearLength = oldLength - OverflowInlineSize;
             if (clearLength > 0)
                 ZeroInlineData(fieldAddress, OverflowInlineSize, clearLength);
 
-            // Now clear any extra space in the new allocation beyond what we copied from the old data.
-            clearLength = newLength - copyLength;
-            if (clearLength > 0)
-                Array.Clear(array, copyLength, clearLength);
-
             recordInfo.SetValueIsOverflow();
-            GetObjectIdRef(fieldAddress) = objectIdMap.Allocate();
+            var objectId = objectIdMap.Allocate();
+            GetObjectIdRef(fieldAddress) = objectId;
+            objectIdMap.Set(objectId, array);
             return array;
         }
 

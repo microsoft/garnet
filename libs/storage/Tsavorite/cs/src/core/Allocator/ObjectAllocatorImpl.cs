@@ -27,7 +27,7 @@ namespace Tsavorite.core
         {
             internal readonly ObjectIdMap objectIdMap { get; init; }
 
-            public ObjectPage(int fixedPageSize)
+            public ObjectPage()
             {
                 objectIdMap = new();
             }
@@ -42,7 +42,6 @@ namespace Tsavorite.core
 
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
-        readonly int overflowAllocatorFixedPageSize;
 
         // Size of object chunks being written to storage
         // TODO: private readonly int objectBlockSize = 100 * (1 << 20);
@@ -59,7 +58,6 @@ namespace Tsavorite.core
 
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
-            overflowAllocatorFixedPageSize = 1 << settings.LogSettings.OverflowFixedPageSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
 
@@ -69,7 +67,7 @@ namespace Tsavorite.core
 
             values = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ++ii)
-                values[ii] = new(overflowAllocatorFixedPageSize);
+                values[ii] = new();
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -100,7 +98,7 @@ namespace Tsavorite.core
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            values[index] = new(overflowAllocatorFixedPageSize);
+            values[index] = new();
         }
 
         void ReturnPage(int index)

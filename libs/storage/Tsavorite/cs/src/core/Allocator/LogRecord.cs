@@ -154,11 +154,11 @@ namespace Tsavorite.core
 
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref LogRecord.GetInfoRef(physicalAddress);
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref *(RecordInfo*)(physicalAddress);
 
         /// <summary>Fast access returning a copy of the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static RecordInfo GetInfo(long physicalAddress) => LogRecord.GetInfo(physicalAddress);
+        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)(physicalAddress);
 
         /// <summary>The address of the key</summary>
         public readonly long KeyAddress => GetKeyAddress(physicalAddress);

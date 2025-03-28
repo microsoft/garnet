@@ -313,7 +313,7 @@ namespace Tsavorite.core
         {
             var sizeInfo = srcObjectValue is null
                 ? hlog.GetUpsertRecordSize(key, srcStringValue, ref input, sessionFunctions)
-                : hlog.GetUpsertRecordSize(key, srcStringValue, ref input, sessionFunctions);
+                : hlog.GetUpsertRecordSize(key, srcObjectValue, ref input, sessionFunctions);
             AllocateOptions allocOptions = new()
             {
                 recycle = true,
@@ -342,7 +342,7 @@ namespace Tsavorite.core
             var success = srcObjectValue is null
                 ? sessionFunctions.SingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert)
                 : sessionFunctions.SingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
-            if (success)
+            if (!success)
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
                 if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))

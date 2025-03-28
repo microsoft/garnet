@@ -36,7 +36,7 @@ namespace Tsavorite.test
         internal const string RevivificationCategory = "Revivification";
         internal const string MultiLevelPageArrayCategory = "MultiLevelPageArray";
         internal const string ObjectIdMapCategory = "ObjectIdMap";
-        internal const string OverflowAllocatorCategory = "OverflowAllocator";
+        internal const string OverflowFieldCategory = "OverflowField";
         internal const string LogRecordCategory = "LogRecord";
 
         public static ILoggerFactory TestLoggerFactory = CreateLoggerFactoryInstance(TestContext.Progress, LogLevel.Trace);

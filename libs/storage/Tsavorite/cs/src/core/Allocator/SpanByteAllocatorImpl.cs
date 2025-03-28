@@ -165,6 +165,7 @@ namespace Tsavorite.core
             var keySize = sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize;
 
             // Value
+            sizeInfo.MaxInlineValueSpanSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
             sizeInfo.ValueIsInline = true;
             var valueSize = sizeInfo.FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize;
 
@@ -211,7 +212,7 @@ namespace Tsavorite.core
             if (localFreePagePool != null)
             {
                 base.Dispose();
-                freePagePool.Dispose();
+                localFreePagePool.Dispose();
 
                 if (pagePointers is not null)
                 {

@@ -128,12 +128,6 @@ namespace Tsavorite.core
         public StateMachineDriver StateMachineDriver = null;
 
         /// <summary>
-        /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySize"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
-        /// values larger than <see cref="MaxInlineValueSize"/>
-        /// </summary>
-        public int OverflowFixedPageSize = 1 << LogSettings.kDefaultOverflowFixedPageSizeBits;
-
-        /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
         /// </summary>
         public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
@@ -229,7 +223,6 @@ namespace Tsavorite.core
                 MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings(),
-                OverflowFixedPageSizeBits = Utility.NumBitsPreviousPowerOf2(OverflowFixedPageSize),
                 MaxInlineKeySizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineKeySize),
                 MaxInlineValueSizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineValueSize)
             };

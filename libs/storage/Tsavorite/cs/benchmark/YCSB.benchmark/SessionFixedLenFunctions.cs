@@ -9,7 +9,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    public struct SessionFunctions : ISessionFunctions<Input, Output, Empty>
+    public struct SessionFixedLenFunctions : ISessionFunctions<Input, Output, Empty>
     {
         public void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -139,7 +139,7 @@ namespace Tsavorite.benchmark
             return ref Unsafe.As<byte, T>(ref spanByte[0]);
         }
 
-        public static ref readonly T AsReadOnlyRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
+        public static ref readonly T AsRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
         {
             Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
             return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];

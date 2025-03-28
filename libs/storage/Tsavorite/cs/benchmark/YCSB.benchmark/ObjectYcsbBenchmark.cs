@@ -12,9 +12,9 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
-    internal class SpanByteYcsbBenchmark
+    internal class ObjectYcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
         static long InitCount;
@@ -24,14 +24,15 @@ namespace Tsavorite.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent, upsertPercent, rmwPercent;
-        readonly SessionSpanByteFunctions functions;
+        readonly SessionObjectFunctions functions;
         readonly Input[] input_;
 
-        readonly KeySpanByte[] init_keys_;
-        readonly KeySpanByte[] txn_keys_;
+        readonly FixedLengthKey[] init_keys_;
+        readonly FixedLengthKey[] txn_keys_;
+        readonly ObjectValue[] object_values;   // In parallel with init_keys_
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        readonly TsavoriteKV<ObjectStoreFunctions, ObjectAllocator<ObjectStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -39,7 +40,7 @@ namespace Tsavorite.benchmark
 
         internal const int kValueSize = 96;     // 100 minus 4-byte length prefix.
 
-        internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
+        internal ObjectYcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -52,11 +53,13 @@ namespace Tsavorite.benchmark
             this.testLoader = testLoader;
             init_keys_ = i_keys_;
             txn_keys_ = t_keys_;
+            if (testLoader.Options.UseObjectValues)
+                object_values = new ObjectValue[InitCount];
             numaStyle = testLoader.Options.NumaStyle;
             readPercent = testLoader.ReadPercent;
             upsertPercent = testLoader.UpsertPercent;
             rmwPercent = testLoader.RmwPercent;
-            functions = new SessionSpanByteFunctions();
+            functions = new SessionObjectFunctions();
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
@@ -96,7 +99,8 @@ namespace Tsavorite.benchmark
                 PreallocateLog = true,
                 MemorySize = 1L << 35,
                 RevivificationSettings = revivificationSettings,
-                CheckpointDir = testLoader.BackupPath
+                CheckpointDir = testLoader.BackupPath,
+                MaxInlineValueSize = testLoader.Options.UseOverflowValues ? 64 : 128
             };
 
             if (testLoader.Options.UseSmallMemoryLog)
@@ -107,7 +111,7 @@ namespace Tsavorite.benchmark
             }
 
             store = new(kvSettings
-                , StoreFunctions.Create()
+                , StoreFunctions.Create(SpanByteComparer.Instance, DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -145,7 +149,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionObjectFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -172,6 +176,7 @@ namespace Tsavorite.benchmark
                         unsafe
                         {
                             var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
+
                             var key = keyStruct.AsReadOnlySpan();
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
@@ -240,7 +245,7 @@ namespace Tsavorite.benchmark
             long deletes_done = 0;
 
             var di = testLoader.Options.DeleteAndReinsert;
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionObjectFunctions>(functions);
             var bContext = session.BasicContext;
 
             while (!done)
@@ -425,12 +430,12 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionObjectFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
             // The key vectors are not pinned, so copy to the stack
-            KeySpanByte keyStruct = default;
+            FixedLengthKey keyStruct = default;
             var key = keyStruct.AsReadOnlySpan();
 
             Span<byte> value = stackalloc byte[kValueSize];
@@ -451,7 +456,11 @@ namespace Tsavorite.benchmark
                         }
 
                         keyStruct = init_keys_[idx];
-                        uContext.Upsert(key, value, Empty.Default);
+
+                        if (object_values is null)
+                            uContext.Upsert(key, value, Empty.Default);
+                        else
+                            uContext.Upsert(key, object_values[idx] = new ObjectValue() { value = keyStruct.value }, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -473,12 +482,12 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionObjectFunctions>(functions);
             var bContext = session.BasicContext;
 
             // The key vectors are not pinned, so copy to the stack
-            KeySpanByte keyStruct = default;
-            var _key = keyStruct.AsReadOnlySpan();
+            FixedLengthKey keyStruct = default;
+            var key = keyStruct.AsReadOnlySpan();
 
             Span<byte> value = stackalloc byte[kValueSize];
 
@@ -496,7 +505,10 @@ namespace Tsavorite.benchmark
                     }
 
                     keyStruct = init_keys_[idx];
-                    bContext.Upsert(keyStruct.AsReadOnlySpan(), value, Empty.Default);
+                    if (object_values is null)
+                        bContext.Upsert(key, value, Empty.Default);
+                    else
+                        bContext.Upsert(key, object_values[idx] = new ObjectValue() { value = keyStruct.value }, Empty.Default);
                 }
             }
 
@@ -505,18 +517,18 @@ namespace Tsavorite.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(TestLoader testLoader, out KeySpanByte[] i_keys, out KeySpanByte[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out FixedLengthKey[] i_keys, out FixedLengthKey[] t_keys)
         {
             InitCount = YcsbConstants.kChunkSize * (testLoader.InitCount / YcsbConstants.kChunkSize);
             TxnCount = YcsbConstants.kChunkSize * (testLoader.TxnCount / YcsbConstants.kChunkSize);
 
-            i_keys = new KeySpanByte[InitCount];
-            t_keys = new KeySpanByte[TxnCount];
+            i_keys = new FixedLengthKey[InitCount];
+            t_keys = new FixedLengthKey[TxnCount];
         }
 
-        internal class KeySetter : IKeySetter<KeySpanByte>
+        internal class KeySetter : IKeySetter<FixedLengthKey>
         {
-            public void Set(KeySpanByte[] vector, long idx, long value) => vector[idx].value = value;
+            public void Set(FixedLengthKey[] vector, long idx, long value) => vector[idx].value = value;
         }
 
         #endregion

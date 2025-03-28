@@ -34,9 +34,6 @@ namespace Tsavorite.core
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
         public const int kLowestMaxInlineSizeBits = kMinPageSizeBits - 1;
 
-        /// <summary>Maximum number of bits for the size of a key or value overflow page</summary>
-        public const int kDefaultOverflowFixedPageSizeBits = 24;
-
         /// <summary>Maximum size of a string is 512MB</summary>
         public const int kMaxStringSizeBits = 29;
 
@@ -95,12 +92,6 @@ namespace Tsavorite.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
-
-        /// <summary>
-        /// Size of the page used for in-memory Keys larger than <see cref="MaxInlineKeySizeBits"/>, or for <see cref="SpanByteAllocator{TStoreFunctions}"/>,
-        /// values larger than <see cref="MaxInlineValueSizeBits"/>
-        /// </summary>
-        public int OverflowFixedPageSizeBits = kDefaultOverflowFixedPageSizeBits;
 
         /// <summary>
         /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.

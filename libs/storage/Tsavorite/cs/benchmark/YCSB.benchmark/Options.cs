@@ -11,9 +11,10 @@ namespace Tsavorite.benchmark
     {
         [Option('b', "benchmark", Required = false, Default = 0,
             HelpText = "Benchmark to run:" +
-                        "\n    0 = YCSB" +
-                        "\n    1 = YCSB with SpanByte" +
-                        "\n    2 = ConcurrentDictionary")]
+                        "\n    0 = YCSB with Fixed-length (long- and int-sized) SpanByte values" +
+                        "\n    1 = YCSB with longer SpanByte keys and values" +
+                        "\n    2 = YCSB with longer values that may also be represented as overflow byte[] or as Object" +
+                        "\n    3 = ConcurrentDictionary")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
@@ -90,6 +91,10 @@ namespace Tsavorite.benchmark
             HelpText = "Use Small MaxInlineValueSize in SpanByte benchmark to test (o)verflow (v)alue allocations")]
         public bool UseOverflowValues { get; set; }
 
+        [Option("obj", Required = false, Default = false,
+            HelpText = "Use (obj)ect values")]
+        public bool UseObjectValues { get; set; }
+
         [Option("hashpack", Required = false, Default = 2.0,
             HelpText = "The hash table packing; divide the number of keys by this to cause hash collisions")]
         public double HashPacking { get; set; }
@@ -120,7 +125,7 @@ namespace Tsavorite.benchmark
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
-                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; ov: {boolStr(UseOverflowValues)}; hp: {HashPacking};"
+                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; ov: {boolStr(UseOverflowValues)}; obj: {boolStr(UseObjectValues)}; hp: {HashPacking};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
                         + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(PeriodicCheckpointTryIncremental)}";
