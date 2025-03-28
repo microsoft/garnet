@@ -11,7 +11,7 @@ title: Research Papers
 * Badrish Chandramouli, Guna Prasaad, Donald Kossmann, Justin Levandoski, James Hunter, Mike Barnett. FASTER: An Embedded Concurrent Key-Value Store for State Management. <i>PVLDB 2018, Rio de Janeiro, Brazil, August 2018</i>
 [[pdf](https://www.microsoft.com/en-us/research/uploads/prod/2018/08/p809-chandramouli.pdf)]
 * Tianyu Li, Badrish Chandramouli, Sam Madden. Performant Almost-Latch-Free Data Structures Using Epoch Protection. In DaMoN, 2022. [[pdf](https://badrish.net/papers/epvs-damon2022.pdf)]
-* Konstantinos Kanellis, Badrish Chandramouli, Ted Hart, Shivaram Venkataraman. From FASTER to F2: Evolving Concurrent Key-Value Store Designs for Large Skewed Workloads. CoRR abs/2305.01516. [[pdf](https://arxiv.org/abs/2305.01516)]
+* Konstantinos Kanellis, Badrish Chandramouli, Ted Hart, Shivaram Venkataraman. From FASTER to F2: Evolving Concurrent Key-Value Store Designs for Large Skewed Workloads. <i>CoRR abs/2305.01516</i>. [[pdf](https://arxiv.org/abs/2305.01516)]
 
 ## Recovery
 
@@ -21,8 +21,8 @@ title: Research Papers
 
 ## Scale-Out
 
-* Chinmay Kulkarni, Badrish Chandramouli, Ryan Stutsman. Achieving High Throughput and Elasticity in a Larger-than-Memory Store. <i>Proc. VLDB Endow. Volume 14, Issue 8, 2021 (to appear)</i>
-[[arXiv:2006.03206](https://arxiv.org/pdf/2006.03206.pdf)]
+* Chinmay Kulkarni, Badrish Chandramouli, Ryan Stutsman. Achieving High Throughput and Elasticity in a Larger-than-Memory Store. <i>Proc. VLDB Endow. Volume 14, Issue 8, 2021.</i>
+[[pdf](https://arxiv.org/pdf/2006.03206.pdf)]
 
 ## Caching
 
