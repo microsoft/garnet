@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
@@ -430,6 +431,24 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("MIN", Description = "Pop minimum score with expired items")]
+        [TestCase("MAX", Description = "Pop maximum score with expired items")]
+        public async Task BasicBzmpopWithExpireItemsTest(string mode)
+        {
+            var key = "mykey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
+            await Task.Delay(300);
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"BZMPOP 1 1 {key} {mode}");
+            var expectedResponse = "$-1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
         public void BzmpopReturnTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -516,6 +535,24 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand($"{command} {key} 1");
             var expectedResponse = $"*3\r\n${key.Length}\r\n{key}\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", Description = "Pop minimum score with expired items")]
+        [TestCase("BZPOPMAX", Description = "Pop maximum score with expired items")]
+        public async Task BasicBzpopMinMaxWithExpireItemsTest(string command)
+        {
+            var key = "zsettestkey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
+            await Task.Delay(300);
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"{command} {key} 1");
+            var expectedResponse = "$-1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
