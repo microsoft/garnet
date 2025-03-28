@@ -49,7 +49,7 @@ namespace Tsavorite.test
             Random r = new(20);
             int i;
 
-            SectorAlignedBufferPool bufferPool = new(1, (int)device.SectorSize);
+            SectorAlignedMemoryPool bufferPool = new(recordSize: 1, (int)device.SectorSize);
             deltaLog.InitializeForWrites(bufferPool);
             for (i = 0; i < TotalCount; i++)
             {
@@ -82,7 +82,7 @@ namespace Tsavorite.test
                 }
             }
             ClassicAssert.AreEqual(TotalCount, i, $"i={i} and TotalCount={TotalCount}");
-            bufferPool.Free();
+            bufferPool.Dispose();
         }
     }
 }
