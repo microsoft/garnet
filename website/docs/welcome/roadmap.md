@@ -15,17 +15,16 @@ investigate include the following.
 ## Medium Term (~1-4 months)
 
 * Tsavorite v2
-  * Migrate to `Span<byte>` keys for main and object stores, and `Span<byte>` values for the main store.
-  * Use `Span<byte>` instead of SpanByte in API and `IFunctions` callbacks.
-  * Introduce the `LogRecord` abstraction for records in the `IFunctions` callbacks.
+  * Use `Span<byte>` instead of `SpanByte` in API and `ISessionFunctions` for (1) keys in main and object stores; and (2) values in main store.
+  * Introduce the `LogRecord` abstraction for records in the `ISessionFunctions` callbacks.
   * Implement Object Allocator to replace Generic Allocator.
     * Store keys and values inline or on the heap.
     * Flush pages to the same log (no separate object log).
-    * Fine-grained eviction of parts of page for better memory management.
+    * Fine-grained eviction of parts of a page for better memory management.
   * Unify the main and object stores based on Object Allocator.
-* Providing in-process access to the Garnet API for embedded use cases.
-* STREAM feature.
-* JSON module.
+* Provide in-process access to the Garnet API for embedded use cases.
+* Add Streams feature.
+* Add JSON module.
 
 ## Long Term (~1 year, depends on user contributions)
 
