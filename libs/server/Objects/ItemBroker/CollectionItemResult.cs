@@ -8,30 +8,39 @@ namespace Garnet.server
     /// </summary>
     internal readonly struct CollectionItemResult
     {
+        public CollectionItemResult(GarnetStatus status)
+        {
+            Status = status;
+        }
+
         public CollectionItemResult(byte[] key, byte[] item)
         {
             Key = key;
             Item = item;
+            Status = key == default ? GarnetStatus.NOTFOUND : GarnetStatus.OK;
         }
 
         public CollectionItemResult(byte[] key, byte[][] items)
         {
             Key = key;
             Items = items;
+            Status = key == default ? GarnetStatus.NOTFOUND : GarnetStatus.OK;
         }
 
         public CollectionItemResult(byte[] key, double score, byte[] item)
         {
             Key = key;
-            Score = score;
             Item = item;
+            Score = score;
+            Status = key == default ? GarnetStatus.NOTFOUND : GarnetStatus.OK;
         }
 
         public CollectionItemResult(byte[] key, double[] scores, byte[][] items)
         {
             Key = key;
-            Scores = scores;
             Items = items;
+            Scores = scores;
+            Status = key == default ? GarnetStatus.NOTFOUND : GarnetStatus.OK;
         }
 
         private CollectionItemResult(bool isForceUnblocked)
@@ -40,9 +49,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// True if item was found
+        /// Result status
         /// </summary>
-        internal bool Found => Key != default;
+        internal GarnetStatus Status { get; }
 
         /// <summary>
         /// Key of collection from which item was retrieved
