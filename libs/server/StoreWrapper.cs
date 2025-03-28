@@ -31,7 +31,7 @@ namespace Garnet.server
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
-        readonly IGarnetServer server;
+        readonly IGarnetServer[] servers;
         internal readonly long startupTime;
 
         /// <summary>
@@ -59,7 +59,7 @@ namespace Garnet.server
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp TcpServer => (GarnetServerTcp)server;
+        public IGarnetServer[] TcpServer => servers;
 
         /// <summary>
         /// Access control list governing all commands
@@ -130,7 +130,7 @@ namespace Garnet.server
         public StoreWrapper(
             string version,
             string redisProtocolVersion,
-            IGarnetServer server,
+            IGarnetServer[] servers,
             TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
@@ -145,7 +145,7 @@ namespace Garnet.server
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
-            this.server = server;
+            this.servers = servers;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.store = store;
             this.objectStore = objectStore;
@@ -154,7 +154,7 @@ namespace Garnet.server
             this.subscribeBroker = subscribeBroker;
             lastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
             this.customCommandManager = customCommandManager;
-            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, server, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
+            this.monitor = serverOptions.MetricsSamplingFrequency > 0 ? new GarnetServerMonitor(this, serverOptions, this.servers, loggerFactory?.CreateLogger("GarnetServerMonitor")) : null;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
@@ -225,10 +225,29 @@ namespace Garnet.server
         /// <returns></returns>
         public string GetIp()
         {
-            if (TcpServer.EndPoint is not IPEndPoint localEndpoint)
-                throw new NotImplementedException("Cluster mode for unix domain sockets has not been implemented");
+            IPEndPoint localEndPoint = null;
+            if (serverOptions.ClusterAnnounceEndpoint == null)
+            {
+                foreach (var server in servers)
+                {
+                    if (((GarnetServerTcp)server).EndPoint is IPEndPoint point)
+                    {
+                        localEndPoint = point;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                if (serverOptions.ClusterAnnounceEndpoint is IPEndPoint point)
+                    localEndPoint = point;
+            }
 
-            if (localEndpoint.Address.Equals(IPAddress.Any))
+            // Fail if we cannot advertise an endpoint for remote nodes to connect to
+            if (localEndPoint == null)
+                throw new GarnetException("Cluster mode requires definition of at least one TCP socket through either the --bind or --cluster-announce-ip options!");
+
+            if (localEndPoint.Address.Equals(IPAddress.Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
                 {
@@ -237,7 +256,7 @@ namespace Garnet.server
                     return endPoint.Address.ToString();
                 }
             }
-            else if (localEndpoint.Address.Equals(IPAddress.IPv6Any))
+            else if (localEndPoint.Address.Equals(IPAddress.IPv6Any))
             {
                 using (Socket socket = new(AddressFamily.InterNetworkV6, SocketType.Dgram, 0))
                 {
@@ -246,7 +265,7 @@ namespace Garnet.server
                     return endPoint.Address.ToString();
                 }
             }
-            return localEndpoint.Address.ToString();
+            return localEndPoint.Address.ToString();
         }
 
         internal FunctionsState CreateFunctionsState()

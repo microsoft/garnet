@@ -40,8 +40,16 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Required = false, HelpText = "IP address to bind server to (default: any)")]
+        [Option("bind", Required = false, HelpText = "Whitespace or comma separated string of IP addresses to bind server to (default: any)")]
         public string Address { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        public int ClusterAnnouncePort { get; set; }
+
+        [IpAddressValidation(false)]
+        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        public string ClusterAnnounceIp { get; set; }
 
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -617,9 +625,6 @@ namespace Garnet
             this.runtimeLogger = logger;
             foreach (var prop in typeof(Options).GetProperties())
             {
-                if (prop.Name.Equals("runtimeLogger"))
-                    continue;
-
                 // Ignore if property is not decorated with the OptionsAttribute or the ValidationAttribute
                 var validationAttr = prop.GetCustomAttributes(typeof(ValidationAttribute)).FirstOrDefault();
                 if (!Attribute.IsDefined(prop, typeof(OptionAttribute)) || validationAttr == null)
@@ -659,17 +664,20 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            EndPoint endpoint;
+            if (!Format.TryParseAddressList(Address, Port, out var endpoints, out _) || endpoints.Length == 0)
+                throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
+
+            EndPoint[] clusterAnnounceEndpoint = null;
+            if (ClusterAnnounceIp != null)
+            {
+                ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                    throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
+            }
+
             if (!string.IsNullOrEmpty(UnixSocketPath))
-            {
-                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
-            }
-            else
-            {
-                endpoint = Format.TryCreateEndpoint(Address, Port, useForBind: false).Result;
-                if (endpoint == null)
-                    throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
-            }
+                endpoints = [.. endpoints, new UnixDomainSocketEndPoint(UnixSocketPath)];
 
             // Unix file permission octal to UnixFileMode
             var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
@@ -723,7 +731,8 @@ namespace Garnet
             }
             return new GarnetServerOptions(logger)
             {
-                EndPoint = endpoint,
+                EndPoints = endpoints,
+                ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
