@@ -855,7 +855,7 @@ namespace Garnet.server
             }
 
             // Create a random seed
-            var seed = Random.Shared.Next();
+            var seed = RandomUtils.GenerateRandomSeed();
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };

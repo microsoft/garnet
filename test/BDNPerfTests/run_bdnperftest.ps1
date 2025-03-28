@@ -135,6 +135,10 @@ Write-Host " "
 Write-Host "** Current Test: $currentTest"
 Write-Host " "
 
+# Set a random seed for enabling deterministic benchmarking 
+$env:RANDOM_SEED = "0"
+Write-Output "RANDOM_SEED: $env:RANDOM_SEED"
+
 # Access the properties under the specific test in the config file
 $json = Get-Content -Raw -Path "$configFile" | ConvertFrom-Json
 $testProperties = $json.$currentTest

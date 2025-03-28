@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
@@ -666,7 +665,7 @@ namespace Garnet.server
             }
 
             // Create a random seed
-            var seed = Random.Shared.Next();
+            var seed = RandomUtils.GenerateRandomSeed();
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SRANDMEMBER };

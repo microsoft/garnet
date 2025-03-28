@@ -13,6 +13,27 @@ namespace Garnet.common
     {
         // Threshold of k / n for choosing the random picking algorithm
         private static readonly double KOverNThreshold = 0.1;
+        static readonly int RandomSeed = -1;
+
+        static RandomUtils()
+        {
+            var randomSeedValue = Environment.GetEnvironmentVariable("RANDOM_SEED");
+            if (string.IsNullOrEmpty(randomSeedValue)) return;
+
+            if (!int.TryParse(randomSeedValue, out var randomSeed) || randomSeed < 0)
+            {
+                throw new GarnetException(
+                    "Illegal value for environment variable RANDOM_SEED. Expected non-negative integer.");
+            }
+
+            RandomSeed = randomSeed;
+        }
+
+        /// <summary>
+        /// Generates a random seed or returns a set seed if specified in an environment variable.
+        /// </summary>
+        /// <returns>Seed</returns>
+        public static int GenerateRandomSeed() => RandomSeed == -1 ? Random.Shared.Next() : RandomSeed;
 
         /// <summary>
         /// Pick k indexes from a collection of n items

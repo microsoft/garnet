@@ -82,65 +82,65 @@ namespace BDN.benchmark.Operations
             SlowConsumeMessage("*4\r\n$4\r\nHSET\r\n$1\r\nf\r\n$1\r\nd\r\n$3\r\n5.5\r\n"u8);
         }
 
-        [Benchmark]
-        public void HSetDel()
-        {
-            Send(hSetDel);
-        }
+        //[Benchmark]
+        //public void HSetDel()
+        //{
+        //    Send(hSetDel);
+        //}
 
-        [Benchmark]
-        public void HExists()
-        {
-            Send(hExists);
-        }
+        //[Benchmark]
+        //public void HExists()
+        //{
+        //    Send(hExists);
+        //}
 
-        [Benchmark]
-        public void HGet()
-        {
-            Send(hGet);
-        }
+        //[Benchmark]
+        //public void HGet()
+        //{
+        //    Send(hGet);
+        //}
 
-        [Benchmark]
-        public void HGetAll()
-        {
-            Send(hGetAll);
-        }
+        //[Benchmark]
+        //public void HGetAll()
+        //{
+        //    Send(hGetAll);
+        //}
 
-        [Benchmark]
-        public void HIncrby()
-        {
-            Send(hIncrby);
-        }
+        //[Benchmark]
+        //public void HIncrby()
+        //{
+        //    Send(hIncrby);
+        //}
 
-        [Benchmark]
-        public void HIncrbyFloat()
-        {
-            Send(hIncrbyFloat);
-        }
+        //[Benchmark]
+        //public void HIncrbyFloat()
+        //{
+        //    Send(hIncrbyFloat);
+        //}
 
-        [Benchmark]
-        public void HKeys()
-        {
-            Send(hKeys);
-        }
+        //[Benchmark]
+        //public void HKeys()
+        //{
+        //    Send(hKeys);
+        //}
 
-        [Benchmark]
-        public void HLen()
-        {
-            Send(hLen);
-        }
+        //[Benchmark]
+        //public void HLen()
+        //{
+        //    Send(hLen);
+        //}
 
-        [Benchmark]
-        public void HMGet()
-        {
-            Send(hMGet);
-        }
+        //[Benchmark]
+        //public void HMGet()
+        //{
+        //    Send(hMGet);
+        //}
 
-        [Benchmark]
-        public void HMSet()
-        {
-            Send(hMSet);
-        }
+        //[Benchmark]
+        //public void HMSet()
+        //{
+        //    Send(hMSet);
+        //}
 
         [Benchmark]
         public void HRandField()
