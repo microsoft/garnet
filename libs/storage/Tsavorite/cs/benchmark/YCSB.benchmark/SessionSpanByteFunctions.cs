@@ -10,10 +10,7 @@ namespace Tsavorite.benchmark
     {
         /// <inheritdoc />
         public override bool ConcurrentReader(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
-        {
-            logRecord.ValueSpan.CopyTo(output.SpanByte.Span);
-            return true;
-        }
+            => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
 
         /// <inheritdoc />
         public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
@@ -38,6 +35,25 @@ namespace Tsavorite.benchmark
         {
             // This does not try to set ETag or Expiration
             srcValue.CopyTo(dstLogRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo) => throw new TsavoriteException("InitialUpdater not implemented for YCSB");
+
+        /// <inheritdoc/>
+        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        {
+            // This does not try to set ETag or Expiration
+            input.CopyTo(dstLogRecord.ValueSpan);
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        {
+            // This does not try to set ETag or Expiration
+            input.CopyTo(logRecord.ValueSpan);
             return true;
         }
     }

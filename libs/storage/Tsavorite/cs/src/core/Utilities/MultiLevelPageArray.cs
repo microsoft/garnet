@@ -44,15 +44,15 @@ namespace Tsavorite.core
 
         public int Allocate()
         {
-            if (book is null)
+            for (; tail == -1; _ = Thread.Yield())
             {
                 // Two-step process in case the element allocation throws; book will still be null.
                 var newBook = new TElement[MultiLevelPageArray.InitialBookSize][];
                 newBook[0] = new TElement[MultiLevelPageArray.ChapterSize];
 
                 // Multiple threads can hit this at the same time, so use Interlocked to ensure that only one thread sets book;
-                // the others must drop through to normal handling.
-                if (Interlocked.CompareExchange(ref book, newBook, null) is null)
+                // others will just drop through to normal handling as book will have been set by that one thread.
+                if (Interlocked.CompareExchange(ref book, newBook, null) == null)
                     return tail = 0;
             }
 
@@ -62,13 +62,13 @@ namespace Tsavorite.core
                 var originalChapter = originalTail >> MultiLevelPageArray.ChapterSizeBits;
                 if (originalChapter >= book.Length || book[originalChapter] is null)
                 {
-                    // One or more other threads has incremented tail into a new, not-yet-allocated page, and one owns the new-page "latch".
+                    // One or more other threads has incremented tail into a new, not-yet-allocated chapter, which means one owns the new-chapter "latch".
                     // Don't increment tail; just wait for that owning thread to allocate the new chapter.
                     _ = Thread.Yield();
                     continue;
                 }
 
-                // If we are here, we did not need to allocate a new chapter, or we own the new-page "latch". We'll return the incremented value of tail.
+                // If we are here, we did not need to allocate a new chapter, or we own the new-chapter "latch". We'll return the incremented value of tail.
                 var newTail = Interlocked.Increment(ref tail);
                 var newChapter = newTail >> MultiLevelPageArray.ChapterSizeBits;
 
@@ -121,7 +121,9 @@ namespace Tsavorite.core
             }
             catch
             {
-                // Restore tail to the last index on the last non-null chapter--that is, the chapter before chapterIndex.
+                // Restore tail to the last index on the last non-null chapter--that is, the chapter before chapterIndex (this cannot set it to -1 because
+                // we allocate the book and first chapter in a different block). This lets the "increment tail into next chapter" loop execute and if there
+                // are threads spinning in that, or others enter after this throw, one will be released to try again (possibly also encountering OOM and throwing).
                 tail = (newChapterIndex << MultiLevelPageArray.ChapterSizeBits) - 1;
                 throw;
             }
