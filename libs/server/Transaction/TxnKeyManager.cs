@@ -104,7 +104,12 @@ namespace Garnet.server
                 RespCommand.GEOHASH => SortedSetObjectKeys(SortedSetOperation.GEOHASH, inputCount),
                 RespCommand.GEODIST => SortedSetObjectKeys(SortedSetOperation.GEODIST, inputCount),
                 RespCommand.GEOPOS => SortedSetObjectKeys(SortedSetOperation.GEOPOS, inputCount),
-                RespCommand.GEOSEARCH => SortedSetObjectKeys(SortedSetOperation.GEOSEARCH, inputCount),
+                RespCommand.GEORADIUS => GeoCommands(RespCommand.GEORADIUS, inputCount),
+                RespCommand.GEORADIUS_RO => GeoCommands(RespCommand.GEORADIUS_RO, inputCount),
+                RespCommand.GEORADIUSBYMEMBER => GeoCommands(RespCommand.GEORADIUSBYMEMBER, inputCount),
+                RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, inputCount),
+                RespCommand.GEOSEARCH => GeoCommands(RespCommand.GEOSEARCH, inputCount),
+                RespCommand.GEOSEARCHSTORE => GeoCommands(RespCommand.GEOSEARCHSTORE, inputCount),
                 RespCommand.ZREVRANGE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
                 RespCommand.ZREVRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
@@ -197,9 +202,58 @@ namespace Garnet.server
             };
         }
 
-        private int SortedSetObjectKeys(SortedSetOperation command, int inputCount)
+        private int GeoCommands(RespCommand command, int inputCount)
         {
+            var idx = 0;
 
+            // GEOSEARCHSTORE dest key....
+            // While all other commands here start with GEOsomething key...
+            if (command == RespCommand.GEOSEARCHSTORE)
+            {
+                var destinationKey = respSession.parseState.GetArgSliceByRef(idx++);
+                SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                SaveKeyArgSlice(destinationKey);
+            }
+
+            // Either this is GEOSEARCHSTORE, and index 1 is sourcekey, or some other command and index 0 is sourcekey.
+            var key = respSession.parseState.GetArgSliceByRef(idx++);
+            SaveKeyEntryToLock(key, true, LockType.Shared);
+            SaveKeyArgSlice(key);
+
+            switch (command)
+            {
+                case RespCommand.GEOSEARCH:
+                case RespCommand.GEORADIUS_RO:
+                case RespCommand.GEORADIUSBYMEMBER_RO:
+                    return 1;
+                case RespCommand.GEOSEARCHSTORE:
+                    return 2;
+                case RespCommand.GEORADIUS:
+                case RespCommand.GEORADIUSBYMEMBER:
+                    // These commands may or may not store a result
+                    for (var i = idx; i < inputCount - 1; ++i)
+                    {
+                        var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                        if (span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STORE) ||
+                            span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.STOREDIST))
+                        {
+                            var destinationKey = respSession.parseState.GetArgSliceByRef(i + 1);
+                            SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                            SaveKeyArgSlice(destinationKey);
+                            break;
+                        }
+                    }
+
+                    return 1;
+                default:
+                    // Should never reach here.
+                    throw new NotSupportedException();
+            }
+        }
+
+        private int SortedSetObjectKeys(SortedSetOperation command, int inputCount, int sortedSetType = 0)
+        {
             return command switch
             {
                 SortedSetOperation.ZADD => SingleKey(1, true, LockType.Exclusive),
