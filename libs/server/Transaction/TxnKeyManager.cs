@@ -198,6 +198,7 @@ namespace Garnet.server
                 RespCommand.PUBLISH => 1,
                 RespCommand.SPUBLISH => 1,
                 RespCommand.SELECT => 1,
+                RespCommand.SWAPDB => 1,
                 _ => -1
             };
         }

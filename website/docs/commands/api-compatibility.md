@@ -291,7 +291,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
 |  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |
-|  | SWAPDB | ➖ |  |
+|  | [SWAPDB](server.md#swapdb) | ➕ |  |
 |  | SYNC | ➖ |  |
 |  | [TIME](server.md#time) | ➕ |  |
 | <span id="set">**SET**</span> | [SADD](data-structures.md#sadd) | ➕ |  |

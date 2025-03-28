@@ -187,6 +187,7 @@ namespace Garnet.server
         SPOP,
         SREM,
         SUNIONSTORE,
+        SWAPDB,
         UNLINK,
         ZADD,
         ZDIFFSTORE,
@@ -228,6 +229,7 @@ namespace Garnet.server
         PSUBSCRIBE,
         UNSUBSCRIBE,
         PUNSUBSCRIBE,
+
         ASKING,
         SELECT,
         ECHO,
@@ -392,6 +394,7 @@ namespace Garnet.server
             RespCommand.ASYNC,
             RespCommand.PING,
             RespCommand.SELECT,
+            RespCommand.SWAPDB,
             RespCommand.ECHO,
             RespCommand.MONITOR,
             RespCommand.MODULE_LOADCS,
@@ -548,6 +551,7 @@ namespace Garnet.server
                 RespCommand.FLUSHALL => false,
                 RespCommand.KEYS => false,
                 RespCommand.SCAN => false,
+                RespCommand.SWAPDB => false,
                 _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
             };
         }
@@ -1275,6 +1279,10 @@ namespace Garnet.server
                                                     }
                                                 }
                                             }
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SWAPDB\r\n"u8))
+                                        {
+                                            return RespCommand.SWAPDB;
                                         }
                                         break;
 
@@ -2604,7 +2612,7 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
-            if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
             return cmd;

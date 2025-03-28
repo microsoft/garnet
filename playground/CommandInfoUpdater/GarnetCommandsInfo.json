@@ -654,6 +654,16 @@
     ]
   },
   {
+    "Command": "LASTSAVE",
+    "Name": "LASTSAVE",
+    "Arity": -1,
+    "Flags": "Fast, Loading, Stale",
+    "AclCategories": "Admin, Dangerous, Fast",
+    "Tips": [
+      "nondeterministic_output"
+    ]
+  },
+  {
     "Command": "PURGEBP",
     "Name": "PURGEBP",
     "IsInternal": false,
@@ -741,6 +751,13 @@
         "Flags": "OW, Insert"
       }
     ]
+  },
+  {
+    "Command": "SAVE",
+    "Name": "SAVE",
+    "Arity": -1,
+    "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript",
+    "AclCategories": "Admin, Dangerous, Slow"
   },
   {
     "Command": "SETIFMATCH",
