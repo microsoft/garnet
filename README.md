@@ -63,8 +63,9 @@ processing concerns from storage details such as concurrency, storage tiering, a
 
 In addition to single-node execution, Garnet has a fully-featured cluster mode, which allows users to create and manage a sharded and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
 to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. Garnet's cluster mode design is currently _passive_: this means
-that it does not implement leader elction, and simply responds to cluster commands issued by a separate _control plane_. Users have to deploy a control plane (e.g., an operator in Kubernetes) to detect failures and request
-failover. This enables the flexibility of deploying Garnet over a variety of fabrics such as Kubernetes, Virtual Machine Scale Sets, and Service Fabric.
+that it does not implement leader elction, and simply responds to cluster commands issued by a separate _control plane_. Users have to deploy a control plane (such as an operator in Kubernetes) to detect failures and request
+failover. Garnet does not itself yet provide a control plane implementation. This separation of concerns allows users the flexibility of deploying Garnet over a variety of fabrics such as Kubernetes, Virtual Machine Scale Sets, 
+and Service Fabric.
 
 ## Next Steps
 
