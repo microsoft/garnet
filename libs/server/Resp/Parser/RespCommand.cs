@@ -31,6 +31,8 @@ namespace Garnet.server
         GEODIST,
         GEOHASH,
         GEOPOS,
+        GEORADIUS_RO,
+        GEORADIUSBYMEMBER_RO,
         GEOSEARCH,
         GET,
         GETBIT,
@@ -120,6 +122,8 @@ namespace Garnet.server
         FLUSHALL,
         FLUSHDB,
         GEOADD,
+        GEORADIUS,
+        GEORADIUSBYMEMBER,
         GEOSEARCHSTORE,
         GETDEL,
         GETEX,
@@ -1805,6 +1809,22 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ECHO))
             {
                 return RespCommand.ECHO;
+            }
+            else if (command.SequenceEqual(CmdStrings.GEORADIUS))
+            {
+                return RespCommand.GEORADIUS;
+            }
+            else if (command.SequenceEqual(CmdStrings.GEORADIUS_RO))
+            {
+                return RespCommand.GEORADIUS_RO;
+            }
+            else if (command.SequenceEqual(CmdStrings.GEORADIUSBYMEMBER))
+            {
+                return RespCommand.GEORADIUSBYMEMBER;
+            }
+            else if (command.SequenceEqual(CmdStrings.GEORADIUSBYMEMBER_RO))
+            {
+                return RespCommand.GEORADIUSBYMEMBER_RO;
             }
             else if (command.SequenceEqual(CmdStrings.REPLICAOF))
             {

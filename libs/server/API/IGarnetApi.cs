@@ -525,10 +525,13 @@ namespace Garnet.server
         /// Geospatial search and store in destination key.
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="opts"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
+        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref GeoSearchOptions opts,
+                                    ref ObjectInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Intersects multiple sorted sets and stores the result in the destination key.
@@ -1491,13 +1494,27 @@ namespace Garnet.server
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
         /// GEODIST: Returns the distance between two members in the geospatial index represented by the sorted set.
         /// GEOPOS: Returns the positions (longitude,latitude) of all the specified members in the sorted set.
-        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// GEORADIUS (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUS_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEORADIUSBYMEMBER_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="opts"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
+                                       ref ObjectInput input, ref SpanByteAndMemory output);
 
         #endregion
 

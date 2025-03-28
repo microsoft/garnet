@@ -23,6 +23,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> get => "get"u8;
         public static ReadOnlySpan<byte> SET => "SET"u8;
         public static ReadOnlySpan<byte> set => "set"u8;
+        public static ReadOnlySpan<byte> GEORADIUS => "GEORADIUS"u8;
+        public static ReadOnlySpan<byte> GEORADIUS_RO => "GEORADIUS_RO"u8;
+        public static ReadOnlySpan<byte> GEORADIUSBYMEMBER => "GEORADIUSBYMEMBER"u8;
+        public static ReadOnlySpan<byte> GEORADIUSBYMEMBER_RO => "GEORADIUSBYMEMBER_RO"u8;
+
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
@@ -121,7 +126,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CHANNELS => "CHANNELS"u8;
         public static ReadOnlySpan<byte> NUMPAT => "NUMPAT"u8;
         public static ReadOnlySpan<byte> NUMSUB => "NUMSUB"u8;
+        public static ReadOnlySpan<byte> FROMMEMBER => "FROMMEMBER"u8;
+        public static ReadOnlySpan<byte> STORE => "STORE"u8;
         public static ReadOnlySpan<byte> STOREDIST => "STOREDIST"u8;
+        public static ReadOnlySpan<byte> WITHCOORD => "WITHCOORD"u8;
         public static ReadOnlySpan<byte> WITHDIST => "WITHDIST"u8;
         public static ReadOnlySpan<byte> WITHHASH => "WITHHASH"u8;
         public static ReadOnlySpan<byte> LIB_NAME => "LIB-NAME"u8;
@@ -227,13 +235,20 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_ASYNC_PROTOCOL_CHANGE => "ERR protocol change is not allowed with pending async operations"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_FLOAT => "ERR min or max is not a float"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT => "ERR unsupported unit provided. please use M, KM, FT, MI"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_HEIGHT => "ERR need numeric height"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_HEIGHT_OR_WIDTH_NEGATIVE => "ERR height or width cannot be negative"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_RADIUS => "ERR need numeric radius"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_WIDTH => "ERR need numeric width"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_STRING => "ERR min or max not valid string range item"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_RADIUS_IS_NEGATIVE => "ERR radius cannot be negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_NEGATIVE => "ERR timeout is negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_NOT_POSITIVE => "ERR COUNT must be > 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_NO_INTERFACE => "ERR Module does not implement the required interface"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_MULTIPLE_INTERFACES => "ERR Multiple modules present"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
@@ -264,8 +279,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
-
-
+        public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         /// <summary>
         /// Response string templates
         /// </summary>
@@ -287,6 +301,8 @@ namespace Garnet.server
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
+        public const string GenericErrLonLat = "ERR invalid longitude,latitude pair {0:F6},{1:F6}";
+        public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
 
         /// <summary>
         /// Response errors while scripting

@@ -217,6 +217,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
+                                      ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.GeoSearchReadOnly(key, ref opts, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
         {
             garnetApi.WATCH(key, StoreType.Object);

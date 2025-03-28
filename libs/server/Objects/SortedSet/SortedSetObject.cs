@@ -34,7 +34,6 @@ namespace Garnet.server
         GEODIST,
         GEOPOS,
         GEOSEARCH,
-        GEOSEARCHSTORE,
         ZREVRANK,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
@@ -415,10 +414,6 @@ namespace Garnet.server
                         break;
                     case SortedSetOperation.GEOPOS:
                         GeoPosition(ref input, ref output.SpanByteAndMemory);
-                        break;
-                    case SortedSetOperation.GEOSEARCH:
-                    case SortedSetOperation.GEOSEARCHSTORE:
-                        GeoSearch(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SortedSetOperation.ZRANGE:
                         SortedSetRange(ref input, ref output.SpanByteAndMemory);
