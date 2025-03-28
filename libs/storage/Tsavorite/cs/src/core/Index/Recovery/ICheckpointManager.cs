@@ -60,9 +60,8 @@ namespace Tsavorite.core
         /// Commit log checkpoint (snapshot and fold-over)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="commitMetadata"></param>
-        /// <returns></returns>
-        void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
+        /// <param name="hlri"></param>
+        void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri);
 
         /// <summary>
         /// Cleanup log checkpoint
@@ -90,10 +89,9 @@ namespace Tsavorite.core
         /// Commit log incremental checkpoint (incremental snapshot)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="version"></param>
-        /// <param name="commitMetadata"></param>
+        /// <param name="hlri"></param>
         /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog);
+        void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog);
 
         /// <summary>
         /// Cleanup log incremental checkpoint (incremental snapshot)
@@ -111,12 +109,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
+        /// <param name="hlri">HybridLogRecoveryInfo</param>
         /// <param name="logToken">Token</param>
         /// <param name="deltaLog">Delta log</param>
         /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry. make sure the delta log points to the tail address immediately following the returned metadata.</param>
         /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
+        void GetLogCheckpointMetadataInfo(ref HybridLogRecoveryInfo hlri, Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference
