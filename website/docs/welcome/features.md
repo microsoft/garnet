@@ -30,6 +30,7 @@ title: Summary of Garnet Features
 
 ## Extensibility
 
+* Comprehensive Lua scripting support
 * Fast C# based extensibility (raw string and object operations)
 * Dynamic and static registration
 * Transactional multi-key stored procedures
