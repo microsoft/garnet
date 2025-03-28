@@ -6315,6 +6315,66 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GeoRadiusACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUS",
+                [DoGeoRadiusAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUS", ["foo", "0", "85", "10", "km"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusROACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUS_RO",
+                [DoGeoRadiusROAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusROAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUS_RO", ["foo", "0", "85", "10", "km"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusByMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUSBYMEMBER",
+                [DoGeoRadiusByMemberAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusByMemberAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUSBYMEMBER", ["foo", "bar", "10", "km"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusByMemberROACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUSBYMEMBER_RO",
+                [DoGeoRadiusByMemberROAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusByMemberROAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUSBYMEMBER_RO", ["foo", "bar", "10", "km"]);
+            }
+        }
+
+        [Test]
         public async Task GeoSearchACLsAsync()
         {
             await CheckCommandsAsync(
