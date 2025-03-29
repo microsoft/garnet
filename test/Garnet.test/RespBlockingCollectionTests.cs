@@ -656,16 +656,16 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("BLMOVE set foo RIGHT RIGHT 0");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("BLMOVE foo key LEFT LEFT 0");
+            response = lightClientRequest.SendCommand("BLMOVE list set LEFT LEFT 0");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("BLMOVE foo set LEFT LEFT 0");
+            response = lightClientRequest.SendCommand("BLMOVE list key LEFT LEFT 0");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("BRPOPLPUSH key foo 0");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = lightClientRequest.SendCommand("BRPOPLPUSH foo key 0");
+            response = lightClientRequest.SendCommand("BRPOPLPUSH list key 0");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("BLPOP key 0");
