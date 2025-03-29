@@ -457,12 +457,12 @@ namespace Garnet.server
                 dstKey = cmdArgs[0];
             }
 
+            var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
             {
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
-                var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
                 if (initial)
                     storageSession.txnManager.SaveKeyEntryToLock(asKey, false, LockType.Exclusive);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
@@ -477,6 +477,7 @@ namespace Garnet.server
                 _ = storageSession.txnManager.Run(true);
             }
 
+            var lockableContext = storageSession.txnManager.LockableContext;
             var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;
             IGarnetObject dstObj = null;
             byte[] arrDstKey = default;
@@ -490,10 +491,7 @@ namespace Garnet.server
                     if (!initial)
                         return false;
 
-                    var context = storageSession.txnManager.LockableContext;
-
-                    var keySlice = storageSession.scratchBufferManager.CreateArgSlice(key);
-                    statusOp = storageSession.GET(keySlice, out ArgSlice _, ref context);
+                    statusOp = storageSession.GET(asKey, out ArgSlice _, ref lockableContext);
 
                     if (statusOp != GarnetStatus.NOTFOUND)
                     {
@@ -511,7 +509,7 @@ namespace Garnet.server
                             return true;
                         }
 
-                        dstStatusOp = storageSession.GET(dstKey, out ArgSlice _, ref context);
+                        dstStatusOp = storageSession.GET(dstKey, out ArgSlice _, ref lockableContext);
                         if (dstStatusOp != GarnetStatus.NOTFOUND)
                         {
                             result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
@@ -543,13 +541,14 @@ namespace Garnet.server
                         if (currCount == 0)
                             return false;
 
+                        var isSuccessful = false;
                         switch (command)
                         {
                             case RespCommand.BLPOP:
                             case RespCommand.BRPOP:
-                                var isSuccessful = TryGetNextListItem(listObj, command, out var nextItem);
+                                isSuccessful = TryGetNextListItem(listObj, command, out var nextItem);
                                 result = new CollectionItemResult(key, nextItem);
-                                return isSuccessful;
+                                break;
                             case RespCommand.BLMOVE:
                                 ListObject dstList;
                                 var newObj = false;
@@ -577,8 +576,7 @@ namespace Garnet.server
                                     isSuccessful = storageSession.SET(arrDstKey, dstList, ref objectLockableContext) ==
                                                    GarnetStatus.OK;
                                 }
-
-                                return isSuccessful;
+                                break;
                             case RespCommand.BLMPOP:
                                 var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
                                 var popCount = *(int*)(cmdArgs[1].ptr);
@@ -592,11 +590,19 @@ namespace Garnet.server
                                 }
 
                                 result = new CollectionItemResult(key, items);
-                                return true;
+                                isSuccessful = true;
+                                break;
                             default:
                                 result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
                                 return initial;
                         }
+
+                        if (isSuccessful && listObj.LnkList.Count == 0)
+                        {
+                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                                                      ref lockableContext, ref objectLockableContext);
+                        }
+                        return isSuccessful;
                     case SortedSetObject setObj:
                         currCount = setObj.Count();
                         if (objectType != GarnetObjectType.SortedSet)
@@ -607,8 +613,13 @@ namespace Garnet.server
                         if (currCount == 0)
                             return false;
 
-                        return TryGetNextSetObjects(key, setObj, currCount, command, cmdArgs, out result);
-
+                        isSuccessful = TryGetNextSetObjects(key, setObj, currCount, command, cmdArgs, out result);
+                        if (isSuccessful && setObj.Count() == 0)
+                        {
+                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                                                      ref lockableContext, ref objectLockableContext);
+                        }
+                        return isSuccessful;
                     default:
                         result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
                         return initial;
