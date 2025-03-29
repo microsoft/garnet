@@ -414,6 +414,11 @@ namespace Garnet.test
             Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand($"EXISTS {key}");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -470,6 +475,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, pop[1][1].Length);
             ClassicAssert.AreEqual("two", pop[1][1][0].ToString());
             ClassicAssert.AreEqual(2, (int)(RedisValue)pop[1][1][1]);
+
+            ClassicAssert.IsFalse(db.KeyExists("a"));
+            ClassicAssert.IsTrue(db.KeyExists("b"));
         }
 
         [Test]
@@ -685,6 +693,10 @@ namespace Garnet.test
             Task.WaitAll([blockingLTask, blockingZTask], TimeSpan.FromSeconds(5));
             ClassicAssert.IsTrue(blockingLTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(blockingZTask.IsCompletedSuccessfully);
+
+            response = lightClientRequest.SendCommand("EXISTS list");
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }
 }
