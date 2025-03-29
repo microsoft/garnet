@@ -427,6 +427,10 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Try to get available item(s) from sorted set object based on command type and arguments
+        /// When run from initializer (initial = true), can return WRONGTYPE errors
+        /// </summary>
         private unsafe bool TryGetResult(byte[] key, StorageSession storageSession,
                                          RespCommand command, ArgSlice[] cmdArgs, bool initial,
                                          out int currCount, out CollectionItemResult result)
@@ -442,13 +446,13 @@ namespace Garnet.server
                 _ => throw new NotSupportedException()
             };
 
+            var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
             ArgSlice dstKey = default;
             if (command == RespCommand.BLMOVE)
             {
                 dstKey = cmdArgs[0];
             }
 
-            var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
             {
@@ -470,8 +474,6 @@ namespace Garnet.server
 
             var lockableContext = storageSession.txnManager.LockableContext;
             var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;
-            IGarnetObject dstObj = null;
-            byte[] arrDstKey = default;
 
             try
             {
@@ -482,40 +484,16 @@ namespace Garnet.server
                     if (!initial)
                         return false;
 
+                    // Check the string store as well to see if WRONGTYPE should be returned.
                     statusOp = storageSession.GET(asKey, out ArgSlice _, ref lockableContext);
 
                     if (statusOp != GarnetStatus.NOTFOUND)
                     {
                         result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
-                        return true;
-                    }
-
-                    if (command == RespCommand.BLMOVE)
-                    {
-                        arrDstKey = dstKey.ToArray();
-                        var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
-                        if (dstStatusOp != GarnetStatus.NOTFOUND && osDstObject.GarnetObject is not ListObject)
-                        {
-                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
-                            return true;
-                        }
-
-                        dstStatusOp = storageSession.GET(dstKey, out ArgSlice _, ref lockableContext);
-                        if (dstStatusOp != GarnetStatus.NOTFOUND)
-                        {
-                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
-                            return true;
-                        }
+                        return initial;
                     }
 
                     return false;
-                }
-
-                if (command == RespCommand.BLMOVE)
-                {
-                    arrDstKey = dstKey.ToArray();
-                    var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
-                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.GarnetObject;
                 }
 
                 // Check for type match between the observer and the actual object type
@@ -541,21 +519,46 @@ namespace Garnet.server
                                 result = new CollectionItemResult(key, nextItem);
                                 break;
                             case RespCommand.BLMOVE:
+                                var arrDstKey = dstKey.ToArray();
+                                var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
+
                                 ListObject dstList;
                                 var newObj = false;
-                                if (dstObj == null)
+
+                                if (dstStatusOp != GarnetStatus.NOTFOUND)
                                 {
-                                    dstList = new ListObject();
-                                    newObj = true;
-                                }
-                                else if (dstObj is ListObject tmpDstList)
-                                {
-                                    dstList = tmpDstList;
+                                    var dstObj = osDstObject.GarnetObject;
+
+                                    if (dstObj == null)
+                                    {
+                                        dstList = new ListObject();
+                                        newObj = true;
+                                    }
+                                    else if (dstObj is ListObject tmpDstList)
+                                    {
+                                        dstList = tmpDstList;
+                                    }
+                                    else
+                                    {
+                                        result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                                        return initial;
+                                    }
                                 }
                                 else
                                 {
-                                    result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
-                                    return initial;
+                                    if (initial)
+                                    {
+                                        // Check string store for wrongtype errors on initial run.
+                                        dstStatusOp = storageSession.GET(dstKey, out ArgSlice _, ref lockableContext);
+                                        if (dstStatusOp != GarnetStatus.NOTFOUND)
+                                        {
+                                            result = new CollectionItemResult(GarnetStatus.WRONGTYPE);
+                                            return initial;
+                                        }
+                                    }
+
+                                    dstList = new ListObject();
+                                    newObj = true;
                                 }
 
                                 isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
