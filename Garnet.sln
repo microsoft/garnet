@@ -107,7 +107,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Garnet.worker", "hosting\Wi
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Garnet.resources", "libs\resources\Garnet.resources.csproj", "{A48412B4-FD60-467E-A5D9-F155CAB4F907}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoOpModule", "playground\NoOpModule\NoOpModule.csproj", "{D4C9A1A0-7053-F072-21F5-4E0C5827136D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoOpModule", "modules\NoOpModule\NoOpModule.csproj", "{D4C9A1A0-7053-F072-21F5-4E0C5827136D}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "modules", "modules", "{D8A9CE6E-91B9-4B84-B44A-2BCF1161A793}"
 EndProject

@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Text;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -348,6 +349,28 @@ namespace Garnet.common
             WriteNewline(ref curr);
             item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write bulk string
+        /// </summary>
+        public static bool TryWriteBulkString(IEnumerable<byte[]> items, int lenght, ref byte* curr, byte* end)
+        {
+            var itemDigits = NumUtils.CountDigits(lenght);
+            int totalLen = 1 + itemDigits + 2 + lenght + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.WriteInt32(lenght, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            foreach (var item in items)
+            {
+                item.CopyTo(new Span<byte>(curr, item.Length));
+                curr += item.Length;
+            }
             WriteNewline(ref curr);
             return true;
         }

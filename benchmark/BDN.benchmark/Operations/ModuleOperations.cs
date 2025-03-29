@@ -33,7 +33,7 @@ namespace BDN.benchmark.Operations
         private void RegisterModules()
         {
             server.Register.NewModule(new NoOpModule.NoOpModule(), [], out _);
-            server.Register.NewModule(new GarnetJSON.Module(), [], out _);
+            server.Register.NewModule(new GarnetJSON.JsonModule(), [], out _);
         }
 
         public override void GlobalSetup()

@@ -19,7 +19,7 @@
     <ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\modules\GarnetJSON\GarnetJSON.csproj" />
-    <ProjectReference Include="..\..\playground\NoOpModule\NoOpModule.csproj" />
+    <ProjectReference Include="..\..\modules\NoOpModule\NoOpModule.csproj" />
   </ItemGroup>
 
   <ItemGroup>

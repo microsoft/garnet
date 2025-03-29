@@ -125,7 +125,7 @@ namespace BDN.benchmark.Operations
 
         private void RegisterModules()
         {
-            server.Register.NewModule(new GarnetJSON.Module(), [], out _);
+            server.Register.NewModule(new GarnetJSON.JsonModule(), [], out _);
         }
     }
 }

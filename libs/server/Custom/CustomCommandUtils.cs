@@ -3,7 +3,9 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using Garnet.common;
 
 namespace Garnet.server
@@ -81,6 +83,25 @@ namespace Garnet.server
                 var curr = ptr;
                 // NOTE: Expected to always have enough space to write into pre-allocated buffer
                 var success = RespWriteUtils.TryWriteBulkString(bulkString, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
+            }
+        }
+
+        /// <summary>
+        /// Create output as bulk string, from given Span
+        /// </summary>
+        public static unsafe void WriteBulkString(ref (IMemoryOwner<byte>, int) output, IEnumerable<byte[]> bulkStrings)
+        {
+            // Get space for bulk string
+            var stringLen = bulkStrings.Sum(x => x.Length);
+            var len = RespWriteUtils.GetBulkStringLength(stringLen);
+            output.Item1 = MemoryPool.Rent(len);
+            output.Item2 = len;
+            fixed (byte* ptr = output.Item1.Memory.Span)
+            {
+                var curr = ptr;
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.TryWriteBulkString(bulkStrings, stringLen, ref curr, ptr + len);
                 Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }

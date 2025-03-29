@@ -113,13 +113,13 @@ namespace GarnetJSON
 
             var parseState = input.parseState;
 
-            using var outputStream = new MemoryStream();
+            var outputArr = new List<byte[]>();
             var isSuccess = false;
             ReadOnlySpan<byte> errorMessage = default;
             if (parseState.Count == 0)
             {
                 ReadOnlySpan<byte> path = default;
-                isSuccess = garnetJsonObject.TryGet(path, outputStream, out errorMessage);
+                isSuccess = garnetJsonObject.TryGet(path, outputArr, out errorMessage);
             }
             else
             {
@@ -159,7 +159,7 @@ namespace GarnetJSON
                     }
                 }
 
-                isSuccess = garnetJsonObject.TryGet(paths, outputStream, out errorMessage, indent, newLine, space);
+                isSuccess = garnetJsonObject.TryGet(paths, outputArr, out errorMessage, indent, newLine, space);
             }
 
             if (!isSuccess)
@@ -168,13 +168,13 @@ namespace GarnetJSON
                 return true;
             }
 
-            if (outputStream.Length == 0)
+            if (outputArr.Count == 0)
             {
                 WriteNullBulkString(ref output);
             }
             else
             {
-                WriteBulkString(ref output, outputStream.GetBuffer().AsSpan(0, (int)outputStream.Length));
+                WriteBulkString(ref output, outputArr);
             }
             return true;
         }

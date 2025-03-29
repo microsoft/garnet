@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -41,6 +42,13 @@ namespace GarnetJSON
     {
         private static readonly JsonSerializerOptions DefaultJsonSerializerOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
         private static readonly JsonSerializerOptions IndentedJsonSerializerOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+        private static readonly byte[] OpenBoxBracket = Encoding.UTF8.GetBytes("[");
+        private static readonly byte[] CloseBoxBracket = Encoding.UTF8.GetBytes("]");
+        private static readonly byte[] OpenCurlyBracket = Encoding.UTF8.GetBytes("{");
+        private static readonly byte[] CloseCurlyBracket = Encoding.UTF8.GetBytes("}");
+        private static readonly byte[] Comma = Encoding.UTF8.GetBytes(",");
+        private static readonly byte[] DoubleQuotes = Encoding.UTF8.GetBytes("\"");
+        private static readonly byte[] DoubleQuotesColon = Encoding.UTF8.GetBytes("\":");
 
         private JsonNode? rootNode;
 
@@ -114,34 +122,33 @@ namespace GarnetJSON
         /// <param name="newLine">The string to use for new lines.</param>
         /// <param name="space">The string to use for spaces.</param>
         /// <returns>True if the operation is successful; otherwise, false.</returns>
-        public bool TryGet(ReadOnlySpan<ArgSlice> paths, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
+        public bool TryGet(ReadOnlySpan<ArgSlice> paths, List<byte[]> output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
         {
             if (paths.Length == 1)
             {
                 return TryGet(paths[0].ReadOnlySpan, output, out errorMessage, indent, newLine, space);
             }
 
-            output.WriteByte((byte)'{');
+            output.Add(OpenCurlyBracket);
             var isFirst = true;
             foreach (var item in paths)
             {
                 if (!isFirst)
                 {
-                    output.WriteByte((byte)',');
+                    output.Add(Comma);
                 }
                 isFirst = false;
 
-                output.WriteByte((byte)'"');
-                output.Write(item.ReadOnlySpan);
-                output.WriteByte((byte)'"');
-                output.WriteByte((byte)':');
+                output.Add(DoubleQuotes);
+                output.Add(item.ReadOnlySpan.ToArray());
+                output.Add(DoubleQuotesColon);
 
                 if (!TryGet(item.ReadOnlySpan, output, out errorMessage, indent, newLine, space))
                 {
                     return false;
                 }
             }
-            output.WriteByte((byte)'}');
+            output.Add(CloseCurlyBracket);
 
             errorMessage = default;
             return true;
@@ -158,7 +165,7 @@ namespace GarnetJSON
         /// <param name="newLine">The string to use for new lines. (ignored with generic format)</param>
         /// <param name="space">The string to use for spaces. (ignored with generic format)</param>
         /// <returns>True if the operation is successful; otherwise, false.</returns>
-        public bool TryGet(ReadOnlySpan<byte> path, Stream output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
+        public bool TryGet(ReadOnlySpan<byte> path, List<byte[]> output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
         {
             try
             {
@@ -170,26 +177,26 @@ namespace GarnetJSON
 
                 if (path.Length == 0)
                 {
-                    JsonSerializer.Serialize(output, rootNode, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions);
+                    output.Add(JsonSerializer.SerializeToUtf8Bytes(rootNode, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions));
                     return true;
                 }
 
                 var pathStr = Encoding.UTF8.GetString(path);
                 var result = rootNode.SelectNodes(pathStr);
 
-                output.WriteByte((byte)'[');
+                output.Add(OpenBoxBracket);
                 var isFirst = true;
                 foreach (var item in result)
                 {
                     if (!isFirst)
                     {
-                        output.WriteByte((byte)',');
+                        output.Add(Comma);
                     }
                     isFirst = false;
 
-                    JsonSerializer.Serialize(output, item, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions);
+                    output.Add(JsonSerializer.SerializeToUtf8Bytes(item, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions));
                 }
-                output.WriteByte((byte)']');
+                output.Add(CloseBoxBracket);
                 return true;
             }
             catch (JsonException ex)

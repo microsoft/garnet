@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -424,19 +426,28 @@ namespace Garnet.test
                 {
                     var deserializedObject = new GarnetJsonObject(binaryReader.ReadByte(), binaryReader);
 
-                    using var outputStream = new MemoryStream();
-                    deserializedObject.TryGet("$"u8, outputStream, out _);
-                    ClassicAssert.AreEqual("[{\"a\":1}]", Encoding.UTF8.GetString(outputStream.ToArray()));
+                    var output = new List<byte[]>();
+                    deserializedObject.TryGet("$"u8, output, out _);
+                    ClassicAssert.AreEqual("[{\"a\":1}]", Encoding.UTF8.GetString(output.SelectMany(x => x).ToArray()));
                 }
             }
         }
 
         [Test]
-        public void JsonModuleLoadTest()
+        [TestCase(true)]
+        [TestCase(false)]
+        public void JsonModuleLoadTest(bool loadFromDll)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.Execute("MODULE", "LOADCS", Path.Combine(binPath, "GarnetJSON.dll"));
+            if (loadFromDll)
+            {
+                db.Execute("MODULE", "LOADCS", Path.Combine(binPath, "GarnetJSON.dll"));
+            }
+            else
+            {
+                server.Register.NewModule(new JsonModule(), [], out _);
+            }
 
             var key = "key";
             db.Execute("JSON.SET", key, "$", "{\"a\": 1}");

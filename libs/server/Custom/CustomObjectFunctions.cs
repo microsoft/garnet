@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Text;
 using Tsavorite.core;
 
@@ -13,21 +14,35 @@ namespace Garnet.server
         /// <summary>
         /// Create output as simple string, from given string
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
+        /// <param name="simpleString">The simple string to write.</param>
         protected static void WriteSimpleString(ref (IMemoryOwner<byte>, int) output, string simpleString) => CustomCommandUtils.WriteSimpleString(ref output, simpleString);
 
         /// <summary>
         /// Create output as bulk string, from given Span
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
+        /// <param name="bulkString">The bulk string to write.</param>
         protected static void WriteBulkString(ref (IMemoryOwner<byte>, int) output, Span<byte> bulkString) => CustomCommandUtils.WriteBulkString(ref output, bulkString);
+
+        /// <summary>
+        /// Create output as bulk string, from given IEnumerable of byte arrays
+        /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
+        /// <param name="bulkStrings">The bulk strings to write.</param>
+        protected static void WriteBulkString(ref (IMemoryOwner<byte>, int) output, IEnumerable<byte[]> bulkStrings) => CustomCommandUtils.WriteBulkString(ref output, bulkStrings);
 
         /// <summary>
         /// Create null output as bulk string
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
         protected static void WriteNullBulkString(ref (IMemoryOwner<byte>, int) output) => CustomCommandUtils.WriteNullBulkString(ref output);
 
         /// <summary>
         /// Create output as error message, from given string
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
+        /// <param name="errorMessage">The error message to write.</param>
         protected static void WriteError(ref (IMemoryOwner<byte>, int) output, string errorMessage) => CustomCommandUtils.WriteError(ref output, errorMessage);
 
         /// <summary>
@@ -64,7 +79,7 @@ namespace Garnet.server
         /// Get first arg from input
         /// </summary>
         /// <param name="input">Object Store input</param>
-        /// <returns></returns>
+        /// <returns>First argument as a span</returns>
         protected static ReadOnlySpan<byte> GetFirstArg(ref ObjectInput input) => CustomCommandUtils.GetFirstArg(ref input);
 
         /// <summary>
@@ -73,6 +88,7 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="input">Input</param>
         /// <param name="output">Output</param>
+        /// <returns>True if an initial update is needed, otherwise false</returns>
         public virtual bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => throw new NotImplementedException();
 
         /// <summary>
@@ -108,41 +124,40 @@ namespace Garnet.server
         /// <returns>True if done, false if not found</returns>
         public virtual bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo) => throw new NotImplementedException();
 
-
         /// <summary>
         /// Aborts the execution of the current object store command and outputs
         /// an error message to indicate a wrong number of arguments for the given command.
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
         /// <param name="cmdName">Name of the command that caused the error message.</param>
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         public static bool AbortWithWrongNumberOfArguments(ref (IMemoryOwner<byte>, int) output, string cmdName)
         {
             var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
-
             return AbortWithErrorMessage(ref output, errorMessage);
         }
 
         /// <summary>
         /// Aborts the execution of the current object store command and outputs a given error message.
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
         /// <param name="errorMessage">Error message to print to result stream.</param>
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         public static bool AbortWithErrorMessage(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<byte> errorMessage)
         {
             CustomCommandUtils.WriteError(ref output, errorMessage);
-
             return true;
         }
 
         /// <summary>
         /// Aborts the execution of the current object store command and outputs a given error message.
         /// </summary>
+        /// <param name="output">The output buffer and its length.</param>
         /// <param name="errorMessage">Error message to print to result stream.</param>
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         public static bool AbortWithErrorMessage(ref (IMemoryOwner<byte>, int) output, string errorMessage)
         {
             CustomCommandUtils.WriteError(ref output, errorMessage);
-
             return true;
         }
 
@@ -154,7 +169,6 @@ namespace Garnet.server
         public static bool AbortWithSyntaxError(ref (IMemoryOwner<byte>, int) output)
         {
             CustomCommandUtils.WriteError(ref output, CmdStrings.RESP_SYNTAX_ERROR);
-
             return true;
         }
     }

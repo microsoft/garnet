@@ -9,7 +9,7 @@ namespace GarnetJSON
     /// <summary>
     /// Represents the GarnetJSON module.
     /// </summary>
-    public class Module : ModuleBase
+    public class JsonModule : ModuleBase
     {
         /// <summary>
         /// Initializes the JSON module.
