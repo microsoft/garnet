@@ -34,7 +34,7 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine AS runtime
 
 # Install dependencies
-RUN apk update && apk add --upgrade libaio gcompat
+RUN apk update && apk add --upgrade libaio gcompat lua5.4 && ln -sf /usr/lib/liblua-5.4.so.0 /usr/lib/liblua54.so
 
 RUN mkdir /data /app \
     && chown -R $APP_UID:$APP_UID /data /app
