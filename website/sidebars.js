@@ -40,6 +40,7 @@ const sidebars = {
 		{type: 'category', label: 'Diagnostics', items: ["logger", "metrics"]},
 		"research",
 			*/
+		{type: 'category', label: 'Research', items: ["research/papers"]},
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},
                         {type: 'link', label: 'License', href: 'https://github.com/microsoft/garnet/blob/main/LICENSE'},
