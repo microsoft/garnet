@@ -210,6 +210,11 @@ namespace Garnet.test
         [Test]
         public void ImportExportConfigAzure()
         {
+            if (!TestUtils.IsRunningAzureTests)
+            {
+                Assert.Ignore("Azure tests are disabled.");
+            }
+
             var AzureTestDirectory = $"{TestContext.CurrentContext.Test.MethodName.ToLowerInvariant()}";
             var configPath = $"{AzureTestDirectory}/test1.config";
             var AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
@@ -243,6 +248,52 @@ namespace Garnet.test
                 // Delete blob
                 deviceFactory.Delete(new FileDescriptor { directoryName = "" });
             }
+        }
+
+        [Test]
+        public void AzureStorageConfiguration()
+        {
+            // missing both storage-string and storage-service-uri
+            var args = new string[] { "--use-azure-storage", "true" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
+
+            // valid storage-string
+            args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage=true;"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // secure service-uri with managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // secure service-uri with workload-identity and no managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // insecure service-uri with managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "http://demo.blob.core.windows.net", "--storage-managed-identity", "demo"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 1);
+            ClassicAssert.AreEqual(invalidOptions[0], nameof(Options.AzureStorageServiceUri));
+
+            // using both storage-string and managed-identity
+            args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage", "--storage-managed-identity", "demo", "--storage-service-uri", "https://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
         }
 
         [Test]
