@@ -1305,6 +1305,21 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteEmptySet()
+        {
+            if (respProtocolVersion == 3)
+            {
+                while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteNull()
         {
             if (respProtocolVersion == 3)
@@ -1315,6 +1330,21 @@ namespace Garnet.server
             else
             {
                 while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteSetLength(int count)
+        {
+            if (respProtocolVersion == 3)
+            {
+                while (!RespWriteUtils.TryWriteSetLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
                     SendAndReset();
             }
         }
@@ -1405,6 +1435,28 @@ namespace Garnet.server
             }
 
             return header;
+        }
+
+        public GarnetObjectStoreOutput CreateDefaultObjectStoreOutput()
+        {
+            var output = new GarnetObjectStoreOutput
+            {
+                SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)),
+                OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
+            };
+
+            return output;
+        }
+
+        public GarnetObjectStoreOutput CreatePinnedObjectStoreOutput()
+        {
+            var output = new GarnetObjectStoreOutput
+            {
+                SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))),
+                OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
+            };
+
+            return output;
         }
 
         /// <summary>

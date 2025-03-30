@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -418,7 +417,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SetMembers(keyBytes, ref input, ref outputFooter);
 
@@ -471,7 +470,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SetIsMember(keyBytes, ref input, ref outputFooter);
 
@@ -534,10 +533,7 @@ namespace Garnet.server
                 // Prepare response
                 if (!parseState.TryGetInt(1, out countParameter) || countParameter < 0)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 if (countParameter == 0)
@@ -554,7 +550,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SetPop(keyBytes, ref input, ref outputFooter);
 
@@ -650,10 +646,7 @@ namespace Garnet.server
                 // Prepare response
                 if (!parseState.TryGetInt(1, out countParameter))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 if (countParameter == 0)
@@ -673,7 +666,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SetRandomMember(keyBytes, ref input, ref outputFooter);
 
@@ -730,29 +723,11 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (output == null || output.Count == 0)
                     {
-                        if (respProtocolVersion == 3)
-                        {
-                            while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        WriteEmptySet();
                     }
                     else
                     {
-                        if (respProtocolVersion == 3)
-                        {
-                            while (!RespWriteUtils.TryWriteSetLength(output.Count, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteArrayLength(output.Count, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        WriteSetLength(output.Count);
 
                         foreach (var item in output)
                         {
