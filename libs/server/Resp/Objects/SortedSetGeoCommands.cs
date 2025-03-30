@@ -85,7 +85,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
             var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref outputFooter);
 
@@ -166,7 +166,7 @@ namespace Garnet.server
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
 
