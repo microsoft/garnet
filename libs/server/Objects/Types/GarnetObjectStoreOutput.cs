@@ -26,6 +26,11 @@ namespace Garnet.server
         /// Wrong type of object
         /// </summary>
         WrongType = 1 << 1,
+
+        /// <summary>
+        /// RESP3 output
+        /// </summary>
+        RESP3 = 1 << 2,
     }
 
     /// <summary>
@@ -59,6 +64,11 @@ namespace Garnet.server
         /// True if output flag RemoveKey is set
         /// </summary>
         public bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
+
+        /// <summary>
+        /// True if output protocol is RESP3
+        /// </summary>
+        public bool IsResp3 => (OutputFlags & ObjectStoreOutputFlags.RESP3) == ObjectStoreOutputFlags.RESP3;
 
         public void ConvertToHeap()
         {
