@@ -1730,30 +1730,30 @@ namespace Garnet.server
             return RespCommand.NONE;
         }
 
-        private RespCommand ParseCustomCommand(ref int count, out bool success)
+        private bool TryParseCustomCommand(ReadOnlySpan<byte> command, out RespCommand cmd)
         {
-            var command = GetCommand(out success);
-            count -= 1;
-
             if (customCommandManagerSession.Match(command, out currentCustomTransaction))
             {
-                return RespCommand.CustomTxn;
+                cmd = RespCommand.CustomTxn;
+                return true;
             }
             else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
             {
-                return RespCommand.CustomProcedure;
+                cmd = RespCommand.CustomProcedure;
+                return true;
             }
             else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
             {
-                return RespCommand.CustomRawStringCmd;
+                cmd = RespCommand.CustomRawStringCmd;
+                return true;
             }
             else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
             {
-                return RespCommand.CustomObjCmd;
+                cmd = RespCommand.CustomObjCmd;
+                return true;
             }
-
-            count += 1;
-            return RespCommand.NONE;
+            cmd = RespCommand.NONE;
+            return false;
         }
 
         /// <summary>
@@ -1779,7 +1779,11 @@ namespace Garnet.server
             // Account for the command name being taken off the read head
             count -= 1;
 
-            if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
+            if (TryParseCustomCommand(command, out var cmd))
+            {
+                return cmd;
+            }
+            else if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
             }
@@ -1800,14 +1804,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1869,14 +1871,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1908,14 +1908,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1977,14 +1975,12 @@ namespace Garnet.server
                     return RespCommand.COMMAND;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2036,14 +2032,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2243,14 +2237,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2282,14 +2274,12 @@ namespace Garnet.server
                 }
                 else if (count >= 1)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                    var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
                         return RespCommand.NONE;
                     }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
 
                     count--;
 
@@ -2368,7 +2358,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -2401,14 +2391,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2472,7 +2460,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -2480,7 +2468,7 @@ namespace Garnet.server
                 }
 
                 count--;
-                AsciiUtils.ToUpperInPlace(subCommand);
+
                 if (subCommand.SequenceEqual(CmdStrings.LOADCS))
                 {
                     return RespCommand.MODULE_LOADCS;
@@ -2501,7 +2489,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -2509,7 +2497,7 @@ namespace Garnet.server
                 }
 
                 count--;
-                AsciiUtils.ToUpperInPlace(subCommand);
+
                 if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
                 {
                     return RespCommand.PUBSUB_CHANNELS;
@@ -2721,11 +2709,7 @@ namespace Garnet.server
 
             if (cmd == RespCommand.NONE)
             {
-                cmd = ParseCustomCommand(ref count, out success);
-                if (cmd == RespCommand.NONE)
-                {
-                    cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
-                }
+                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
             }
 
             // Parsing for command name was successful, but the command is unknown
