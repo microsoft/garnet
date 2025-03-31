@@ -217,35 +217,39 @@ namespace Garnet.test
             var configPath = $"{AzureTestDirectory}/test1.config";
             var AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
 
-            if (TestUtils.IsRunningAzureTests)
-            {
-                // Delete blob if exists
-                var deviceFactory = TestUtils.AzureStorageNamedDeviceFactoryCreator.Create(AzureTestDirectory);
-                deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+            // Delete blob if exists
+            var deviceFactory = TestUtils.AzureStorageNamedDeviceFactoryCreator.Create(AzureTestDirectory);
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(invalidOptions.Count, 0);
-                ClassicAssert.IsTrue(options.PageSize == "32m");
-                ClassicAssert.IsTrue(options.MemorySize == "16g");
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "32m");
+            ClassicAssert.IsTrue(options.MemorySize == "16g");
+            ClassicAssert.IsNull(options.AzureStorageServiceUri);
+            ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
+            ClassicAssert.IsFalse(options.UseAzureStorage);
 
-                var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(invalidOptions.Count, 0);
-                ClassicAssert.IsTrue(options.PageSize == "4m");
-                ClassicAssert.IsTrue(options.MemorySize == "128m");
+            var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo" };
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
+            ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
 
-                args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(invalidOptions.Count, 0);
-                ClassicAssert.IsTrue(options.PageSize == "4m");
-                ClassicAssert.IsTrue(options.MemorySize == "128m");
+            args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
+            ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
 
-                // Delete blob
-                deviceFactory.Delete(new FileDescriptor { directoryName = "" });
-            }
+            // Delete blob
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
         }
 
         [Test]
