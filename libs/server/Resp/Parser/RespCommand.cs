@@ -1730,6 +1730,32 @@ namespace Garnet.server
             return RespCommand.NONE;
         }
 
+        private RespCommand ParseCustomCommand(ref int count, out bool success)
+        {
+            var command = GetCommand(out success);
+            count -= 1;
+
+            if (customCommandManagerSession.Match(command, out currentCustomTransaction))
+            {
+                return RespCommand.CustomTxn;
+            }
+            else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
+            {
+                return RespCommand.CustomProcedure;
+            }
+            else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
+            {
+                return RespCommand.CustomRawStringCmd;
+            }
+            else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
+            {
+                return RespCommand.CustomObjCmd;
+            }
+
+            count += 1;
+            return RespCommand.NONE;
+        }
+
         /// <summary>
         /// Parses the receive buffer, starting from the current read head, for all command names that are
         /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
@@ -2515,47 +2541,22 @@ namespace Garnet.server
             {
                 return RespCommand.ZCOLLECT;
             }
-            else
+            // Note: The commands below are not slow path commands, so they should probably move to earlier.
+            else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
             {
-                // Custom commands should have never been set when we reach this point
-                // (they should have been executed and reset)
-                Debug.Assert(currentCustomTransaction == null);
-                Debug.Assert(currentCustomRawStringCommand == null);
-                Debug.Assert(currentCustomObjectCommand == null);
-                Debug.Assert(currentCustomProcedure == null);
-
-                if (customCommandManagerSession.Match(command, out currentCustomTransaction))
-                {
-                    return RespCommand.CustomTxn;
-                }
-                else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
-                {
-                    return RespCommand.CustomRawStringCmd;
-                }
-                else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
-                {
-                    return RespCommand.CustomObjCmd;
-                }
-                else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
-                {
-                    return RespCommand.CustomProcedure;
-                }
-                else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
-                {
-                    return RespCommand.SETIFMATCH;
-                }
-                else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
-                {
-                    return RespCommand.SETIFGREATER;
-                }
-                else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
-                {
-                    return RespCommand.GETWITHETAG;
-                }
-                else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
-                {
-                    return RespCommand.GETIFNOTMATCH;
-                }
+                return RespCommand.SETIFMATCH;
+            }
+            else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
+            {
+                return RespCommand.SETIFGREATER;
+            }
+            else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
+            {
+                return RespCommand.GETWITHETAG;
+            }
+            else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
+            {
+                return RespCommand.GETIFNOTMATCH;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
@@ -2720,7 +2721,11 @@ namespace Garnet.server
 
             if (cmd == RespCommand.NONE)
             {
-                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
+                cmd = ParseCustomCommand(ref count, out success);
+                if (cmd == RespCommand.NONE)
+                {
+                    cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
+                }
             }
 
             // Parsing for command name was successful, but the command is unknown
