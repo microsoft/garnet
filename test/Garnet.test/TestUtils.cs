@@ -452,7 +452,8 @@ namespace Garnet.test
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
-            string luaMemoryLimit = "")
+            string luaMemoryLimit = "",
+            EndPoint clusterAnnounceEndpoint = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -498,7 +499,8 @@ namespace Garnet.test
                     enableDisklessSync: enableDisklessSync,
                     replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                     luaMemoryMode: luaMemoryMode,
-                    luaMemoryLimit: luaMemoryLimit);
+                    luaMemoryLimit: luaMemoryLimit,
+                    clusterAnnounceEndpoint: clusterAnnounceEndpoint);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -559,7 +561,8 @@ namespace Garnet.test
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
-            string unixSocketPath = null)
+            string unixSocketPath = null,
+            EndPoint clusterAnnounceEndpoint = null)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -665,7 +668,8 @@ namespace Garnet.test
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
-                ReplicaDisklessSyncDelay = replicaDisklessSyncDelay
+                ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
+                ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
             };
 
             if (lowMemory)
