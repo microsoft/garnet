@@ -46,6 +46,8 @@ namespace Tsavorite.core
         readonly int fastCommitThrottleFreq;
         int commitCount;
 
+        public byte[] CommitCookie { get; set; }
+
         /// <summary>
         /// Create new instance of log commit manager
         /// </summary>
@@ -219,14 +221,15 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo info)
+        public virtual unsafe void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri)
         {
+            hlri.cookie = CommitCookie;
             var device = NextLogCheckpointDevice(logToken);
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
-            var commitMetadata = info.ToByteArray();
+            var commitMetadata = hlri.ToByteArray();
             writer.Write(commitMetadata.Length);
             writer.Write(commitMetadata);
 
@@ -250,6 +253,8 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog)
         {
+            hlri.cookie = CommitCookie;
+
             var commitMetadata = hlri.ToByteArray();
             deltaLog.Allocate(out var length, out var physicalAddress);
             if (length < commitMetadata.Length)
