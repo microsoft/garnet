@@ -322,6 +322,8 @@ namespace Tsavorite.core
                 LoopEnd:
                     break;
                 }
+
+                if (hlri.Deserialized) return;
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
