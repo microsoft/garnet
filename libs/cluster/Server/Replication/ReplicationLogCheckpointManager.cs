@@ -190,7 +190,7 @@ namespace Garnet.cluster
         public void CommiLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
         {
             var recoveryInfo = ConverMetadata(checkpointMetadata);
-            base.CommitLogCheckpoint(logToken, recoveryInfo);
+            CommitLogCheckpoint(logToken, recoveryInfo);
         }
 
         /// <summary>
@@ -200,7 +200,7 @@ namespace Garnet.cluster
         /// <param name="hlri"></param>
         public override unsafe void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri)
         {
-            hlri.cookie = CreateCookie();
+            CommitCookie = CreateCookie();
             base.CommitLogCheckpoint(logToken, hlri);
         }
 
@@ -212,7 +212,7 @@ namespace Garnet.cluster
         /// <param name="deltaLog"></param>
         public override unsafe void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog)
         {
-            hlri.cookie = CreateCookie();
+            CommitCookie = CreateCookie();
             base.CommitLogIncrementalCheckpoint(logToken, hlri, deltaLog);
         }
 

@@ -9,6 +9,15 @@ namespace Tsavorite.core
     {
         internal long lastVersion;
 
+        /// <summary>
+        /// Any additional (user specified) metadata to write out with commit
+        /// </summary>
+        public byte[] CommitCookie
+        {
+            get => checkpointManager.CommitCookie;
+            set => checkpointManager.CommitCookie = value;
+        }
+
         private byte[] recoveredCommitCookie;
         /// <summary>
         /// User-specified commit cookie persisted with last recovered commit
