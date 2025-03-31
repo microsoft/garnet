@@ -259,6 +259,11 @@ namespace Tsavorite.core
             checkpointManager.GetLogCheckpointMetadataInfo(ref this, token, deltaLog, scanDelta, recoverTo);
             if (!Deserialized)
                 throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
+            if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
+            {
+                // Adjust delta tail address to include the metadata record
+                deltaTailAddress = deltaLog.NextAddress;
+            }
             commitCookie = cookie;
         }
 
