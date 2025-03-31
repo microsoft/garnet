@@ -1783,7 +1783,16 @@ namespace Garnet.server
             {
                 return cmd;
             }
-            else if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
+            else
+            {
+                return SlowParseCommand(command, ref count, ref specificErrorMsg, out success);
+            }
+        }
+
+        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
+        {
+            success = true;
+            if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
             }
