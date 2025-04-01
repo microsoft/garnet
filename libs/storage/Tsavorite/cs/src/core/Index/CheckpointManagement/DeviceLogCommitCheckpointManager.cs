@@ -46,7 +46,10 @@ namespace Tsavorite.core
         readonly int fastCommitThrottleFreq;
         int commitCount;
 
-        public byte[] CommitCookie { get; set; }
+        /// <summary>
+        /// Any additional (user specified) metadata to write out with commit
+        /// </summary>
+        protected byte[] CommitCookie { get; private set; }
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -168,6 +171,9 @@ namespace Tsavorite.core
         #endregion
 
         #region ICheckpointManager
+
+        /// <inheritdoc />
+        public void AddCookie(byte[] cookie) => CommitCookie = cookie;
 
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
