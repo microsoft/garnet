@@ -15,10 +15,12 @@
     ./run_bdnperftest.ps1
     ./run_bdnperftest.ps1 BDN.benchmark.Operations.BasicOperations.*
     ./run_bdnperftest.ps1 Operations.BasicOperations    <-- can run this way but this is how specify in ci-bdnbenchmark.yml
+    ./run_bdnperftest.ps1 Operations.BasicOperations net9.0
 #>
 
 param (
-  [string]$currentTest = "BDN.benchmark.Operations.BasicOperations.*"
+  [string]$currentTest = "BDN.benchmark.Operations.BasicOperations.*",
+  [string]$framework = "net8.0"
 )
 
 $OFS = "`r`n"
@@ -57,7 +59,25 @@ function AnalyzeResult {
         return $false # the values are too different
     }
   }
- 
+
+################## DeleteResultRowsForSpecificValue ##################### 
+#  
+#  Deletes all rows in the results file for a specific value. This is used to delete all the .NET 8.0 results from the results file so only .NET 9.0 results are left (or visa versa)
+#  
+######################################################
+function DeleteResultRowsForSpecificValue {
+    param ($ValueInRowtoDelete, $ResultsFile)
+
+    # Read the content of the text file
+    $content = Get-Content $ResultsFile
+
+    # NOTE: The regex is looking for the value in the middle of the line, so it has to be surrounded by | characters which means it is only the lines that are part of the summary block and not every other line in the file that matches the value (aka .net80)
+    $filteredContent = $content | Where-Object { $_ -notmatch "\| $ValueInRowtoDelete \|" }
+
+    # Write the filtered content back to the text file
+    $filteredContent | Set-Content $ResultsFile
+  }
+  
 
 ######### ParseValueFromResults ###########
 #
@@ -95,7 +115,6 @@ param ($ResultsLine, $columnNum)
 # Set all the config options
 $configFile = "BDN_Benchmark_Config.json"
 $configuration = "Release"
-$framework = "net8.0"
 $allocatedColumn = "-1"   # last one is allocated, just to ensure in case other column gets added
 $acceptableAllocatedRange = "10"   # percent allowed variance when comparing expected vs actual found value - same for linux and windows.
 
@@ -192,8 +211,17 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
 
-Write-Output "**** ANALYZE THE RESULTS FILE $resultsFile ****"
+Write-Output "**** PREPARE THE RESULTS FILE $resultsFile SO ONLY HAS RESULTS FOR $framework ****"
+if ($framework -eq 'net8.0') {
+    Write-Output " Delete all the .NET 9.0 results from the results file"
+    DeleteResultRowsForSpecificValue ".NET 9.0" $resultsFile
+} else {
+    Write-Output " Delete all the .NET 8.0 results from the results file"
+    DeleteResultRowsForSpecificValue ".NET 8.0" $resultsFile
+}
 
+
+Write-Output "**** ANALYZE THE RESULTS FILE $resultsFile ****"
 # First check if results file is there and if not, error out gracefully
 if (-not (Test-Path -Path $resultsFile)) {
     Write-Error -Message "The test results file $resultsFile does not exist. Check to make sure the test was ran." -Category ObjectNotFound
