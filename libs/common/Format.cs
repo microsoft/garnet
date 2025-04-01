@@ -33,6 +33,8 @@ namespace Garnet.common
 #pragma warning disable format
     public static class Format
     {
+        static EndPoint[] defaultBindEndpoint(int port) => [new IPEndPoint(IPAddress.Any, port), new IPEndPoint(IPAddress.IPv6Any, port)];
+
         /// <summary>
         /// Parse address list string containing address separated by whitespace
         /// </summary>
@@ -49,7 +51,7 @@ namespace Garnet.common
             // Check if input null or empty
             if (string.IsNullOrEmpty(addressList) || string.IsNullOrWhiteSpace(addressList))
             {
-                endpoints = [new IPEndPoint(IPAddress.Any, port)];
+                endpoints = defaultBindEndpoint(port);
                 return true;
             }
 
@@ -83,7 +85,7 @@ namespace Garnet.common
         public static async Task<EndPoint[]> TryCreateEndpoint(string singleAddressOrHostname, int port, bool tryConnect = false, ILogger logger = null)
         {
             if (string.IsNullOrEmpty(singleAddressOrHostname) || string.IsNullOrWhiteSpace(singleAddressOrHostname))
-                return [new IPEndPoint(IPAddress.Any, port)];
+                return defaultBindEndpoint(port);
 
             if (singleAddressOrHostname[0] == '-')
                 singleAddressOrHostname = singleAddressOrHostname.Substring(1);
