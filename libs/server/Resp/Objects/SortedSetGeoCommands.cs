@@ -25,17 +25,69 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("GEOADD");
             }
 
+            GeoAddOptions ex = 0;
+
+            var currTokenIdx = 0;
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var sbKey = parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+
+            while (currTokenIdx < parseState.Count)
+            {
+                var byteOptions = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+
+                if (byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8))
+                {
+                    ex |= GeoAddOptions.CH;
+                }
+                else if (byteOptions.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
+                {
+                    ex |= GeoAddOptions.NX;
+                }
+                else if (byteOptions.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
+                {
+                    ex |= GeoAddOptions.XX;
+                }
+                else
+                {
+                    break;
+                }
+
+                ++currTokenIdx;
+            }
+
+            if (((ex & GeoAddOptions.NX) != 0) && ((ex & GeoAddOptions.XX) != 0))
+            {
+                //return AbortWithErrorMessage(CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE);
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            var memberStart = currTokenIdx;
+
+            // We need at least one member
+            do
+            {
+                if (currTokenIdx > parseState.Count - 3)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                }
+
+                if (!parseState.TryGetGeoLonLat(currTokenIdx, out _, out _, out currTokenIdx, out var error))
+                {
+                    return AbortWithErrorMessage(error);
+                }
+
+                // skip member
+                currTokenIdx++;
+            }
+            while (currTokenIdx < parseState.Count);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)ex);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoAdd(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref outputFooter);
 
             switch (status)
             {
