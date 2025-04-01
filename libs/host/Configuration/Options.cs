@@ -909,7 +909,7 @@ namespace Garnet
         RedisConf = 1,
     }
 
-    public class InvalidAzureConfiguration : Exception
+    public sealed class InvalidAzureConfiguration : Exception
     {
         public InvalidAzureConfiguration(string message) : base(message) { }
     }
