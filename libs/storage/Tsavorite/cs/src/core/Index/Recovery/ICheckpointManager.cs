@@ -31,9 +31,10 @@ namespace Tsavorite.core
     public interface ICheckpointManager : IDisposable
     {
         /// <summary>
-        /// Any additional (user specified) metadata to write out with commit
+        /// Add cookie to the metadata before commit
         /// </summary>
-        public byte[] CommitCookie { get; set; }
+        /// <param name="cookie"></param>
+        void AddCookie(byte[] cookie);
 
         /// <summary>
         /// Initialize index checkpoint

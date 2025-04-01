@@ -85,27 +85,6 @@ namespace Garnet.cluster
             return cookie;
         }
 
-        private unsafe int GetCookieData(HybridLogRecoveryInfo hlri, out long checkpointCoveredAddress, out string primaryReplId)
-        {
-            checkpointCoveredAddress = -1;
-            primaryReplId = null;
-
-            var bytesRead = sizeof(int);
-            fixed (byte* ptr = hlri.cookie)
-            {
-                if (hlri.cookie.Length < 4) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 4");
-                var cookieSize = *(int*)ptr;
-                bytesRead += cookieSize;
-
-                if (hlri.cookie.Length < 12) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 12");
-                checkpointCoveredAddress = *(long*)(ptr + 4);
-
-                if (hlri.cookie.Length < 52) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 52");
-                primaryReplId = Encoding.ASCII.GetString(ptr + 12, 40);
-            }
-            return bytesRead;
-        }
-
         private HybridLogRecoveryInfo ConverMetadata(byte[] checkpointMetadata)
         {
             var success = true;
@@ -200,7 +179,7 @@ namespace Garnet.cluster
         /// <param name="hlri"></param>
         public override unsafe void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri)
         {
-            CommitCookie = CreateCookie();
+            AddCookie(CreateCookie());
             base.CommitLogCheckpoint(logToken, hlri);
         }
 
@@ -212,7 +191,7 @@ namespace Garnet.cluster
         /// <param name="deltaLog"></param>
         public override unsafe void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog)
         {
-            CommitCookie = CreateCookie();
+            AddCookie(CreateCookie());
             base.CommitLogIncrementalCheckpoint(logToken, hlri, deltaLog);
         }
 
@@ -223,6 +202,27 @@ namespace Garnet.cluster
             var bytesRead = GetCookieData(hlri, out var RecoveredSafeAofAddress, out var RecoveredReplicationId);
             Debug.Assert(bytesRead == 52);
             return (RecoveredSafeAofAddress, RecoveredReplicationId);
+
+            unsafe int GetCookieData(HybridLogRecoveryInfo hlri, out long checkpointCoveredAddress, out string primaryReplId)
+            {
+                checkpointCoveredAddress = -1;
+                primaryReplId = null;
+
+                var bytesRead = sizeof(int);
+                fixed (byte* ptr = hlri.cookie)
+                {
+                    if (hlri.cookie.Length < 4) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 4");
+                    var cookieSize = *(int*)ptr;
+                    bytesRead += cookieSize;
+
+                    if (hlri.cookie.Length < 12) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 12");
+                    checkpointCoveredAddress = *(long*)(ptr + 4);
+
+                    if (hlri.cookie.Length < 52) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 52");
+                    primaryReplId = Encoding.ASCII.GetString(ptr + 12, 40);
+                }
+                return bytesRead;
+            }
         }
 
         public override void GetLogCheckpointMetadataInfo(ref HybridLogRecoveryInfo hlri, Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
