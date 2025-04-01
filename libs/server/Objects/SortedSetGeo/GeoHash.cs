@@ -6,8 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
 
-using Garnet.common;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -16,12 +14,26 @@ namespace Garnet.server
     public static class GeoHash
     {
         // Constraints from WGS 84 / Pseudo-Mercator (EPSG:3857)
-        private const double LongitudeMin = -180.0;
-        private const double LongitudeMax = 180.0;
+
+        /// <summary>
+        /// Minimum allowed longitude.
+        /// </summary>
+        public const double LongitudeMin = -180.0;
+        /// <summary>
+        /// Maximum allowed longitude.
+        /// </summary>
+        public const double LongitudeMax = 180.0;
 
         // TODO: These are "wrong" in a sense that according to EPSG:3857 latitude should be from -85.05112878 to 85.05112878
-        private const double LatitudeMin = -90.0;
-        private const double LatitudeMax = 90.0;
+
+        /// <summary>
+        /// Minimum allowed latitude.
+        /// </summary>
+        public const double LatitudeMin = -90.0;
+        /// <summary>
+        /// Maximum allowed latitude.
+        /// </summary>
+        public const double LatitudeMax = 90.0;
 
         /// <summary>
         /// The number of bits used for the precision of the geohash.
@@ -264,6 +276,26 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Find if a point is within radius of the given center point.
+        /// <paramref name="radius">Radius</paramref>
+        /// <paramref name="latCenterPoint">Center point latitude</paramref>
+        /// <paramref name="lonCenterPoint">Center point longitude</paramref>
+        /// <paramref name="lat">Point latitude</paramref>
+        /// <paramref name="lon">Point longitude</paramref>
+        /// <paramref name="distance">Distance</paramref>
+        /// </summary>
+        public static bool IsPointWithinRadius(double radius, double latCenterPoint, double lonCenterPoint, double lat, double lon, ref double distance)
+        {
+            distance = Distance(latCenterPoint, lonCenterPoint, lat, lon);
+            if (distance >= radius)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Find if a point is in the axis-aligned rectangle.
         /// when the distance between the searched point and the center point is less than or equal to 
         /// height/2 or width/2,
@@ -297,44 +329,32 @@ namespace Garnet.server
             return (latError, longError);
         }
 
-        public static double ConvertValueToMeters(double value, ReadOnlySpan<byte> units)
+        /// <summary>
+        /// Helper to convert kilometers, feet, or miles to meters.
+        /// </summary>
+        public static double ConvertValueToMeters(double value, GeoDistanceUnitType unit)
         {
-            if (units.EqualsUpperCaseSpanIgnoringCase("KM"u8))
+            return unit switch
             {
-                return value / 0.001;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("FT"u8))
-            {
-                return value / 3.28084;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("MI"u8))
-            {
-                return value / 0.000621371;
-            }
-
-            return value;
+                GeoDistanceUnitType.KM => value / 0.001,
+                GeoDistanceUnitType.FT => value / 3.28084,
+                GeoDistanceUnitType.MI => value / 0.000621371,
+                _ => value
+            };
         }
-
 
         /// <summary>
         /// Helper to convert meters to kilometers, feet, or miles
         /// </summary>
-        public static double ConvertMetersToUnits(double value, ReadOnlySpan<byte> units)
+        public static double ConvertMetersToUnits(double value, GeoDistanceUnitType unit)
         {
-            if (units.EqualsUpperCaseSpanIgnoringCase("KM"u8))
+            return unit switch
             {
-                return value * 0.001;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("FT"u8))
-            {
-                return value * 3.28084;
-            }
-            else if (units.EqualsUpperCaseSpanIgnoringCase("MI"u8))
-            {
-                return value * 0.000621371;
-            }
-
-            return value;
+                GeoDistanceUnitType.KM => value * 0.001,
+                GeoDistanceUnitType.FT => value * 3.28084,
+                GeoDistanceUnitType.MI => value * 0.000621371,
+                _ => value
+            };
         }
     }
 }

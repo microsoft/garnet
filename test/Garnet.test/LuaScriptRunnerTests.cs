@@ -737,6 +737,30 @@ namespace Garnet.test
             ClassicAssert.AreEqual("nil", res);
         }
 
+        [Test]
+        public void NeedsDisposeCheck()
+        {
+            foreach (var mode in Enum.GetValues<LuaMemoryManagementMode>())
+            {
+                foreach (var limit in new[] { null, "1m" })
+                {
+                    if (limit != null && mode == LuaMemoryManagementMode.Native)
+                    {
+                        continue;
+                    }
+
+                    var opts = new LuaOptions(mode, limit, Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, []);
+
+                    using var runner = new LuaRunner(opts, "return 1");
+
+                    runner.CompileForRunner();
+                    _ = runner.RunForRunner([], []);
+
+                    ClassicAssert.IsFalse(runner.NeedsDispose);
+                }
+            }
+        }
+
         private sealed class FakeLogger : ILogger, IDisposable
         {
             private readonly List<string> logs = new();

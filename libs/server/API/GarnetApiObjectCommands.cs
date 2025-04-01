@@ -169,6 +169,42 @@ namespace Garnet.server
         public GarnetStatus SortedSetIntersectStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
             => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
 
+        /// <inheritdoc />
+        public GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetExpire(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetExpire(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results)
+            => storageSession.SortedSetExpire(key, members, expireAt, expireOption, out results, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetPersist(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetPersist(ArgSlice key, ReadOnlySpan<ArgSlice> members, out int[] results)
+            => storageSession.SortedSetPersist(key, members, out results, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetTimeToLive(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn)
+            => storageSession.SortedSetTimeToLive(key, members, out expireIn, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input)
+            => storageSession.SortedSetCollect(keys, ref input, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCollect()
+            => storageSession.SortedSetCollect(ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys)
+            => storageSession.SortedSetCollect(keys, ref objectContext);
+
         #endregion
 
         #region Geospatial commands
@@ -182,9 +218,14 @@ namespace Garnet.server
             => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output)
-            => storageSession.GeoSearchStore(key, destinationKey, ref input, ref output, ref objectContext);
+        public GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
+                                      ref ObjectInput input, ref SpanByteAndMemory output)
+            => storageSession.GeoSearchReadOnly(key, ref opts, ref input, ref output, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref GeoSearchOptions opts,
+                                           ref ObjectInput input, ref SpanByteAndMemory output)
+            => storageSession.GeoSearchStore(key, destinationKey, ref opts, ref input, ref output, ref objectContext);
         #endregion
 
         #region List Methods

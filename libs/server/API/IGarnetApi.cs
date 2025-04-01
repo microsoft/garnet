@@ -525,10 +525,13 @@ namespace Garnet.server
         /// Geospatial search and store in destination key.
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="opts"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
+        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref GeoSearchOptions opts,
+                                    ref ObjectInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Intersects multiple sorted sets and stores the result in the destination key.
@@ -551,6 +554,65 @@ namespace Garnet.server
         /// <param name="aggregateType">The type of aggregation to perform (e.g., Sum, Min, Max).</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
         GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
+
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to set expiration for.</param>
+        /// <param name="expireAt">The expiration time.</param>
+        /// <param name="expireOption">The expiration option to apply.</param>
+        /// <param name="results">The results of the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results);
+
+        /// <summary>
+        /// Persists the specified sorted set member, removing any expiration time set on it.
+        /// </summary>
+        /// <param name="key">The key of the sorted set to persist.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Persists the specified sorted set members, removing any expiration time set on them.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to persist.</param>
+        /// <param name="results">The results of the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(ArgSlice key, ReadOnlySpan<ArgSlice> members, out int[] results);
+
+        /// <summary>
+        /// Deletes already expired members from the sorted set.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted set members to check for expiration.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input);
+
+        /// <summary>
+        /// Collects expired elements from the sorted set.
+        /// </summary>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect();
+
+        /// <summary>
+        /// Collects expired elements from the sorted set for the specified keys.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted sets to collect expired elements from.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys);
 
         #endregion
 
@@ -1406,6 +1468,24 @@ namespace Garnet.server
         /// <returns>Operation status</returns>
         GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
 
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to get the time to live for.</param>
+        /// <param name="expireIn">The output array containing the time to live for each member.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn);
+
         #endregion
 
         #region Geospatial Methods
@@ -1414,13 +1494,27 @@ namespace Garnet.server
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
         /// GEODIST: Returns the distance between two members in the geospatial index represented by the sorted set.
         /// GEOPOS: Returns the positions (longitude,latitude) of all the specified members in the sorted set.
-        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// GEORADIUS (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUS_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEORADIUSBYMEMBER_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="opts"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
+                                       ref ObjectInput input, ref SpanByteAndMemory output);
 
         #endregion
 
