@@ -79,6 +79,11 @@ namespace Garnet.common
                 categoryName,
                 formatter(state, exception));
 
+            if (exception != null)
+            {
+                msg += Environment.NewLine + exception.ToString();
+            }
+
             lock (lockObj)
             {
                 streamWriter.WriteLine(msg);
