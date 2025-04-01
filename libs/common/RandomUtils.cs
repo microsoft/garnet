@@ -14,6 +14,15 @@ namespace Garnet.common
         // Threshold of k / n for choosing the random picking algorithm
         private static readonly double KOverNThreshold = 0.1;
 
+        public static int GetRandomSeed()
+        {
+#if BENCHMARK
+            return 0;
+#else
+            return Random.Shared.Next();
+#endif
+        }
+
         /// <summary>
         /// Pick k indexes from a collection of n items
         /// </summary>

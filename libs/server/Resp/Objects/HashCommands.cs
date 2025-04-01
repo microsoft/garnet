@@ -264,7 +264,7 @@ namespace Garnet.server
             var countWithMetadata = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
 
             // Create a random seed
-            var seed = Random.Shared.Next();
+            var seed = RandomUtils.GetRandomSeed();
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };

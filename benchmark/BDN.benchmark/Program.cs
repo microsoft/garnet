@@ -30,11 +30,13 @@ public class BaseConfig : ManualConfig
         AddColumnProvider(DefaultColumnProviders.Instance);
         WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
 
-        var baseJob = Job.Default.WithGcServer(true);
+        var baseJob = Job.Default;
 
         Net8BaseJob = baseJob.WithRuntime(CoreRuntime.Core80)
+            .WithArguments([new MsBuildArgument("/p:DefineConstants=\"BENCHMARK\"")])
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
         Net9BaseJob = baseJob.WithRuntime(CoreRuntime.Core90)
+            .WithArguments([new MsBuildArgument("/p:DefineConstants=\"BENCHMARK\"")])
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
         AddJob(

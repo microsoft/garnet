@@ -311,7 +311,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Create a random seed
-            var seed = Random.Shared.Next();
+            var seed = RandomUtils.GetRandomSeed();
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
@@ -349,7 +349,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Create a random seed
-            var seed = Random.Shared.Next();
+            var seed = RandomUtils.GetRandomSeed();
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
