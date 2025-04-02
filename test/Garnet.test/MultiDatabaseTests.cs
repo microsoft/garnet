@@ -1011,6 +1011,10 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(db2DataBeforeRecovery, db2ReturnedData);
                 ClassicAssert.AreEqual(db2data.Length, db2ReturnedData.Length);
                 ClassicAssert.AreEqual(db2data, db2ReturnedData);
+
+                var db3 = redis.GetDatabase(2);
+                ClassicAssert.IsFalse(db3.KeyExists(db1Key));
+                ClassicAssert.IsFalse(db3.KeyExists(db2Key));
             }
         }
 
@@ -1058,6 +1062,10 @@ namespace Garnet.test
                 var db2ReturnedData = db2.StringGet(db2Key);
                 ClassicAssert.AreEqual(db2DataBeforeRecovery, db2ReturnedData);
                 ClassicAssert.AreEqual(db2data, db2ReturnedData);
+
+                var db3 = redis.GetDatabase(2);
+                ClassicAssert.IsFalse(db3.KeyExists(db1Key));
+                ClassicAssert.IsFalse(db3.KeyExists(db2Key));
             }
         }
 
@@ -1106,6 +1114,10 @@ namespace Garnet.test
                 value = db2.StringGet(db2Key);
                 ClassicAssert.IsTrue(value.HasValue);
                 ClassicAssert.AreEqual(db2data, value.ToString());
+
+                var db3 = redis.GetDatabase(2);
+                ClassicAssert.IsFalse(db3.KeyExists(db1Key));
+                ClassicAssert.IsFalse(db3.KeyExists(db2Key));
             }
         }
 
@@ -1154,6 +1166,10 @@ namespace Garnet.test
                 score = db2.SortedSetScore(db2Key, "db2:a");
                 ClassicAssert.IsTrue(score.HasValue);
                 ClassicAssert.AreEqual(-1, score.Value);
+
+                var db3 = redis.GetDatabase(2);
+                ClassicAssert.IsFalse(db3.KeyExists(db1Key));
+                ClassicAssert.IsFalse(db3.KeyExists(db2Key));
             }
         }
 

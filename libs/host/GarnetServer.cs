@@ -265,6 +265,9 @@ namespace Garnet
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
+            var maxDatabases = opts.EnableCluster ? 1 : opts.MaxDatabases;
+            logger.LogInformation("Max number of logical databases allowed on server: {maxDatabases}", maxDatabases);
+
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 

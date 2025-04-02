@@ -857,7 +857,7 @@ namespace Garnet.server
             // If size tracker exists and is stopped, start it (only if DB 0 size tracker is started as well)
             var db = databases.Map[dbId];
             if (sizeTrackersStarted)
-                db.ObjectStoreSizeTracker.Start(StoreWrapper.ctsCommit.Token);
+                db.ObjectStoreSizeTracker?.Start(StoreWrapper.ctsCommit.Token);
 
             activeDbIds.TryGetNextId(out var nextIdx);
             activeDbIds.TrySetValue(nextIdx, ref db.Id);
