@@ -175,7 +175,7 @@ namespace Garnet
                 Console.WriteLine($"""
                     {red}    _________
                        /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
-                       '. \   / .'      {normal}Listening on: {(opts.EndPoints.Length > 1 ? opts.EndPoints[0] + ", ..." : opts.EndPoints[0])}{red}
+                       '. \   / .'      {normal}Listening on: {(opts.EndPoints.Length > 1 ? opts.EndPoints[0] + $" and {opts.EndPoints.Length} more" : opts.EndPoints[0])}{red}
                          '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
                            '.'
                     {normal}
