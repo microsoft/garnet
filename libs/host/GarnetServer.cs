@@ -259,6 +259,8 @@ namespace Garnet
                 {
                     if (opts.EndPoints[i] is UnixDomainSocketEndPoint)
                     {
+                        ArgumentException.ThrowIfNullOrWhiteSpace(opts.UnixSocketPath, nameof(opts.UnixSocketPath));
+
                         // Delete existing unix socket file, if it exists.
                         File.Delete(opts.UnixSocketPath);
                     }
