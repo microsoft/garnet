@@ -171,11 +171,12 @@ namespace Garnet
                 var red = "\u001b[31m";
                 var magenta = "\u001b[35m";
                 var normal = "\u001b[0m";
+                var endpoints = string.Join(", ", opts.EndPoints.Select(x => x.ToString()));
 
                 Console.WriteLine($"""
                     {red}    _________
                        /_||___||_\      {normal}Garnet {version} {(IntPtr.Size == 8 ? "64" : "32")} bit; {(opts.EnableCluster ? "cluster" : "standalone")} mode{red}
-                       '. \   / .'      {normal}Listening on: {opts.EndPoints[0]}{red}
+                       '. \   / .'      {normal}Listening on: {endpoints}{red}
                          '.\ /.'        {magenta}https://aka.ms/GetGarnet{red}
                            '.'
                     {normal}

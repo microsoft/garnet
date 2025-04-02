@@ -40,7 +40,7 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Required = false, HelpText = "Whitespace or comma separated string of IP addresses to bind server to (default: any)")]
+        [Option("bind", Required = false, HelpText = "Whitespace or comma separated string of IP addresses to bind server to (default: loopback)")]
         public string Address { get; set; }
 
         [IntRangeValidation(0, 65535)]

@@ -17,7 +17,7 @@ namespace Garnet.server
         /// <summary>
         /// Endpoints to bind server to.
         /// </summary>
-        public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
+        public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379), new IPEndPoint(IPAddress.IPv6Loopback, 6379)];
 
         /// <summary>
         /// Cluster announce Endpoint
