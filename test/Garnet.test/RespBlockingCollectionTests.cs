@@ -3,17 +3,19 @@
 
 using System;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test
 {
     public class RespBlockingCollectionTests
     {
         GarnetServer server;
-        private TaskFactory taskFactory = new();
+        private static readonly Random random = Random.Shared;
 
         [SetUp]
         public void Setup()
@@ -43,24 +45,21 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand($"LPUSH {key} {value}");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"{blockingCmd} {key} 10", 3);
             expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var btResponse = lcr.SendCommand($"{blockingCmd} {key2} 30", 3);
                 var btExpectedResponse = $"*2\r\n${key2.Length}\r\n{key2}\r\n${value2.Length}\r\n{value2}\r\n";
-                var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
-                ClassicAssert.AreEqual(btExpectedResponse, btActualValue);
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -82,6 +81,50 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("BRPOP", "LPUSH", 0)]
+        [TestCase("BRPOP", "LPUSH", 0.5)]
+        [TestCase("BLPOP", "RPUSH", 0)]
+        [TestCase("BLPOP", "RPUSH", 0.5)]
+        public void MultiListBlockingPopTestSE(string blockingCmd, string pushCmd, double timeout)
+        {
+            var key = "mykey";
+
+            var keyCount = 64;
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+            var blockingTask = Task.Run(async () =>
+            {
+                for (var i = 0; i < keyCount; i++)
+                {
+                    using var lcr = TestUtils.CreateRequest();
+                    var btResponse = lcr.SendCommand($"{blockingCmd} {key} {timeout}", 3);
+                    var value = $"value{i}";
+                    var btExpectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+                    TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token);
+                }
+            }, cts.Token);
+
+            var releasingTask = Task.Run(async () =>
+            {
+                for (var i = 0; i < keyCount; i++)
+                {
+                    using var lcr = TestUtils.CreateRequest();
+                    var value = $"value{i}";
+                    lcr.SendCommand($"{pushCmd} {key} {value}");
+                    await Task.Delay(TimeSpan.FromMilliseconds(random.NextInt64(20, 100)), cts.Token);
+                }
+            }, cts.Token);
+
+            // Wait for all tasks to finish
+            if (!Task.WhenAll(blockingTask, releasingTask).Wait(TimeSpan.FromSeconds(60), cts.Token))
+                Assert.Fail("Items not retrieved in allotted time.");
+        }
+
+        [Test]
         public void BasicBlockingListMoveTest()
         {
             var srcKey1 = "mykey_src";
@@ -95,34 +138,29 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand($"LPUSH {srcKey1} {value1}");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"BLMOVE {srcKey1} {dstKey1} {OperationDirection.Right} {OperationDirection.Left} 10");
             expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LRANGE {srcKey1} 0 -1");
             expectedResponse = $"*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LRANGE {dstKey1} 0 -1", 2);
             expectedResponse = $"*1\r\n${value1.Length}\r\n{value1}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var btResponse = lcr.SendCommand($"BLMOVE {srcKey2} {dstKey2} {OperationDirection.Left} {OperationDirection.Right} 0");
                 var btExpectedResponse = $"${value2.Length}\r\n{value2}\r\n";
-                var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
-                ClassicAssert.AreEqual(btExpectedResponse, btActualValue);
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -144,13 +182,11 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand($"LRANGE {srcKey2} 0 -1");
             expectedResponse = $"*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LRANGE {dstKey2} 0 -1", 2);
             expectedResponse = $"*1\r\n${value2.Length}\r\n{value2}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -163,23 +199,20 @@ namespace Garnet.test
 
             byte[] response;
             string expectedResponse;
-            string actualValue;
 
             using var lightClientRequest = TestUtils.CreateRequest();
             for (var i = 0; i < keys.Length; i++)
             {
                 response = lightClientRequest.SendCommand($"LPUSH {keys[i]} {values[i]}");
                 expectedResponse = ":1\r\n";
-                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
 
             for (var i = 0; i < keys.Length; i++)
             {
                 response = lightClientRequest.SendCommand($"{blockingCmd} {string.Join(' ', keys)} 10", 3);
                 expectedResponse = $"*2\r\n${keys[i].Length}\r\n{keys[i]}\r\n${values[i].Length}\r\n{values[i]}\r\n";
-                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
         }
 
@@ -192,26 +225,23 @@ namespace Garnet.test
             var value1 = "myval";
             var value2 = "myval2";
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommands($"{blockingCmd} {key} 30", $"LPUSH {key} {value1}", 3, 1);
                 var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n:1\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
                 response = lcr.SendCommand($"LLEN {key}");
                 expectedResponse = ":1\r\n";
-                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
                 response = lcr.SendCommand($"LPOP {key}");
                 expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
-                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -246,34 +276,29 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommand($"LPUSH {srcKey1} {value1}");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"BRPOPLPUSH {srcKey1} {dstKey1} 10");
             expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LRANGE {srcKey1} 0 -1");
             expectedResponse = $"*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LRANGE {dstKey1} 0 -1", 2);
             expectedResponse = $"*1\r\n${value1.Length}\r\n{value1}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var btResponse = lcr.SendCommand($"BRPOPLPUSH {srcKey2} {dstKey2} 0");
                 var btExpectedResponse = $"${value2.Length}\r\n{value2}\r\n";
-                var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
-                ClassicAssert.AreEqual(btExpectedResponse, btActualValue);
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
             });
 
-            var releasingTask = taskFactory.StartNew(() =>
+            var releasingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -295,13 +320,11 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand($"LRANGE {srcKey2} 0 -1");
             expectedResponse = $"*0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand($"LRANGE {dstKey2} 0 -1", 2);
             expectedResponse = $"*1\r\n${value2.Length}\r\n{value2}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -315,8 +338,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"RPUSH {key} value1 value2 value3");
             var response = lightClientRequest.SendCommand($"BLMPOP 1 1 {key} {direction}");
             var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n${expectedValue.Length}\r\n{expectedValue}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -330,8 +352,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"RPUSH {keys[valueKeyIndex - 1]} {expectedValue}");
             var response = lightClientRequest.SendCommand($"BLMPOP 1 {keys.Length} {string.Join(" ", keys)} LEFT");
             var expectedResponse = $"*2\r\n${expectedKey.Length}\r\n{expectedKey}\r\n*1\r\n${expectedValue.Length}\r\n{expectedValue}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -340,8 +361,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("BLMPOP 1 1 nonexistentkey LEFT");
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -350,16 +370,15 @@ namespace Garnet.test
             var key = "blockingkey";
             var value = "testvalue";
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT");
                 var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n${value.Length}\r\n{value}\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -377,16 +396,15 @@ namespace Garnet.test
             var key = "countkey";
             var values = new[] { "value1", "value2", "value3", "value4" };
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT COUNT 3");
                 var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*3\r\n$6\r\nvalue1\r\n$6\r\nvalue2\r\n$6\r\nvalue3\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -409,8 +427,49 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
             var response = lightClientRequest.SendCommand($"BZMPOP 1 1 {key} {mode}");
             var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        [TestCase("MIN", Description = "Pop minimum score with expired items")]
+        [TestCase("MAX", Description = "Pop maximum score with expired items")]
+        public async Task BasicBzmpopWithExpireItemsTest(string mode)
+        {
+            var key = "mykey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
+            await Task.Delay(300);
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"BZMPOP 1 1 {key} {mode}");
+            var expectedResponse = "$-1\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void BzmpopReturnTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res = db.SortedSetAdd("a", [new SortedSetEntry("one", 1)]);
+            ClassicAssert.AreEqual(1, res);
+            res = db.SortedSetAdd("a", [new SortedSetEntry("two", 2)]);
+            ClassicAssert.AreEqual(1, res);
+            res = db.SortedSetAdd("b", [new SortedSetEntry("three", 3)]);
+            ClassicAssert.AreEqual(1, res);
+            var pop = db.Execute("BZMPOP", "10", "2", "a", "b", "MIN", "COUNT", "2");
+            ClassicAssert.AreEqual(2, pop.Length);
+            ClassicAssert.AreEqual("a", pop[0].ToString());
+            ClassicAssert.AreEqual(2, pop[1].Length);
+            ClassicAssert.AreEqual(2, pop[1][0].Length);
+            ClassicAssert.AreEqual("one", pop[1][0][0].ToString());
+            ClassicAssert.AreEqual(1, (int)(RedisValue)pop[1][0][1]);
+            ClassicAssert.AreEqual(2, pop[1][1].Length);
+            ClassicAssert.AreEqual("two", pop[1][1][0].ToString());
+            ClassicAssert.AreEqual(2, (int)(RedisValue)pop[1][1][1]);
         }
 
         [Test]
@@ -424,8 +483,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"ZADD {keys[valueKeyIndex - 1]} {expectedScore} {expectedValue}");
             var response = lightClientRequest.SendCommand($"BZMPOP 1 {keys.Length} {string.Join(" ", keys)} MIN");
             var expectedResponse = $"*2\r\n${expectedKey.Length}\r\n{expectedKey}\r\n*1\r\n*2\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -434,8 +492,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("BZMPOP 1 1 nonexistentkey MIN");
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -445,16 +502,15 @@ namespace Garnet.test
             var value = "testvalue";
             var score = 1.5;
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BZMPOP 30 1 {key} MIN COUNT 2");
                 var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${value.Length}\r\n{value}\r\n${score.ToString().Length}\r\n{score}\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -478,6 +534,23 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
             var response = lightClientRequest.SendCommand($"{command} {key} 1");
             var expectedResponse = $"*3\r\n${key.Length}\r\n{key}\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", Description = "Pop minimum score with expired items")]
+        [TestCase("BZPOPMAX", Description = "Pop maximum score with expired items")]
+        public async Task BasicBzpopMinMaxWithExpireItemsTest(string command)
+        {
+            var key = "zsettestkey";
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommand($"ZADD {key} 1.5 value1 2.5 value2 3.5 value3");
+            lightClientRequest.SendCommand($"ZPEXPIRE {key} 200 MEMBERS 3 value1 value2 value3");
+            await Task.Delay(300);
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"{command} {key} 1");
+            var expectedResponse = "$-1\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
@@ -493,8 +566,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand($"ZADD {keys[valueKeyIndex - 1]} {expectedScore} {expectedValue}");
             var response = lightClientRequest.SendCommand($"{command} {string.Join(" ", keys)} 1");
             var expectedResponse = $"*3\r\n${expectedKey.Length}\r\n{expectedKey}\r\n${expectedValue.Length}\r\n{expectedValue}\r\n${expectedScore.ToString().Length}\r\n{expectedScore}\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -506,16 +578,15 @@ namespace Garnet.test
             var value = "testvalue";
             var score = 2.5;
 
-            var blockingTask = taskFactory.StartNew(() =>
+            var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"{command} {key} 30");
                 var expectedResponse = $"*3\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n${score.ToString().Length}\r\n{score}\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var pushingTask = taskFactory.StartNew(() =>
+            var pushingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
@@ -535,8 +606,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand($"{command} nonexistentkey 1");
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }
 }

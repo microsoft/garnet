@@ -2,10 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -24,7 +27,7 @@ namespace Garnet.test
     [TestFixture(LuaMemoryManagementMode.Tracked, "", "")]
     [TestFixture(LuaMemoryManagementMode.Tracked, "13m", "")]
     [TestFixture(LuaMemoryManagementMode.Managed, "", "")]
-    [TestFixture(LuaMemoryManagementMode.Managed, "16m", "")]
+    [TestFixture(LuaMemoryManagementMode.Managed, "17m", "")]
     public class LuaScriptTests
     {
         /// <summary>
@@ -156,6 +159,28 @@ namespace Garnet.test
             {
                 // Best effort
             }
+        }
+
+        [Test]
+        public void KeysArgvResize()
+        {
+            const string KeysScript = "return KEYS[1] .. KEYS[2]";
+            const string ArgvScript = "return ARGV[1] .. ARGV[2]";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var twoKeys = (string)db.ScriptEvaluate(KeysScript, ["hello", "world"]);
+            ClassicAssert.AreEqual("helloworld", twoKeys);
+
+            var threeKeys = (string)db.ScriptEvaluate(KeysScript, ["fizz", "buzz", "foo"]);
+            ClassicAssert.AreEqual("fizzbuzz", threeKeys);
+
+            var twoArgv = (string)db.ScriptEvaluate(ArgvScript, [], ["a", "b"]);
+            ClassicAssert.AreEqual("ab", twoArgv);
+
+            var threeArgv = (string)db.ScriptEvaluate(ArgvScript, [], ["c", "d", "e"]);
+            ClassicAssert.AreEqual("cd", threeArgv);
         }
 
         [Test]
@@ -452,7 +477,8 @@ namespace Garnet.test
             var valueKey = "valueKey-";
             using var lightClientRequest = TestUtils.CreateRequest();
             var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$40\r\nreturn redis.call('set',KEYS[1],ARGV[1])\r\n";
-            var sha1SetScript = Encoding.ASCII.GetString(lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1)).Substring(5, 40);
+            var response = lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1);
+            var sha1SetScript = Encoding.ASCII.GetString(response, 5, 40);
 
             ClassicAssert.AreEqual("c686f316aaf1eb01d5a4de1b0b63cd233010e63d", sha1SetScript);
             for (var i = 0; i < 5000; i++)
@@ -460,14 +486,21 @@ namespace Garnet.test
                 var randPostFix = rnd.Next(1, 1000);
                 valueKey = $"{valueKey}{randPostFix}";
 
-                var r = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix} {valueKey}", 1);
+                response = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix} {valueKey}", 1);
                 // Check for error reply
-                ClassicAssert.IsTrue(r[0] != '-');
+                ClassicAssert.IsTrue(response[0] != '-');
 
-                var g = Encoding.ASCII.GetString(lightClientRequest.SendCommand($"get {nameKey}{randPostFix}", 1));
-                var fstEndOfLine = g.IndexOf('\n', StringComparison.OrdinalIgnoreCase) + 1;
-                var strKeyValue = g.Substring(fstEndOfLine, valueKey.Length);
-                ClassicAssert.IsTrue(strKeyValue == valueKey);
+                response = lightClientRequest.SendCommand($"get {nameKey}{randPostFix}", 1);
+
+                var fstEndOfLine = 0;
+                foreach (var chr in response)
+                {
+                    ++fstEndOfLine;
+                    if (chr == '\n')
+                        break;
+                }
+                var strKeyValue = Encoding.ASCII.GetString(response, fstEndOfLine, valueKey.Length);
+                ClassicAssert.AreEqual(valueKey, strKeyValue);
             }
         }
 
@@ -497,6 +530,77 @@ namespace Garnet.test
             var directReplyScript = "return { err = 'Failure' }";
             var excDirect = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate(directReplyScript));
             ClassicAssert.AreEqual("Failure", excDirect.Message);
+        }
+
+        [Test]
+        public void MiscMath()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // ATan2
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 2, 3)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2('a', 1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.atan2(1, 'b')"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.atan2(0.1, 0.2))");
+                ClassicAssert.AreEqual(Math.Round(Math.Atan2(0.1, 0.2), 14).ToString(), val);
+            }
+
+            // Cosh
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.cosh(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.cosh(0.1))");
+                ClassicAssert.AreEqual(Math.Round(Math.Cosh(0.1), 14).ToString(), val);
+            }
+
+            // Log10
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.log10(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.log10(0.1))");
+                ClassicAssert.AreEqual("-1.0", val);
+            }
+
+            // Pow
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 2, 3)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow('a', 1)"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.pow(1, 'b')"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.pow(0.1, 0.2))");
+                ClassicAssert.AreEqual(Math.Round(Math.Pow(0.1, 0.2), 14).ToString(), val);
+            }
+
+            // Sinh
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.sinh(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.sinh(0.1))");
+                ClassicAssert.AreEqual(Math.Round(Math.Sinh(0.1), 14).ToString(), val);
+            }
+
+            // Tanh
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh()"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh('a')"));
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("math.tanh(1, 2)"));
+
+                var val = (string)db.ScriptEvaluate("return tostring(math.tanh(0.2))");
+                ClassicAssert.AreEqual(Math.Round(Math.Tanh(0.2), 14).ToString(), val);
+            }
         }
 
         [Test]
@@ -576,7 +680,10 @@ namespace Garnet.test
             ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(warn\)] \|.*\| <.*> .* \^.*{Regex.Escape(noticeStr)}\^"));
             ClassicAssert.IsTrue(Regex.IsMatch(logLines, $@"\(errr\)] \|.*\| <.*> .* \^.*{Regex.Escape(warningStr)}\^"));
 
-            // More than 1 log line, and non-string values are legal
+            // Single number log arg is legal
+            _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123)");
+
+            // More than 1 log arg, and non-string values are legal
             _ = db.ScriptEvaluate("return redis.log(redis.LOG_DEBUG, 123, 456, 789)");
 
             var constantsDefined = (int[])db.ScriptEvaluate("return {redis.LOG_DEBUG, redis.LOG_VERBOSE, redis.LOG_NOTICE, redis.LOG_WARNING}");
@@ -915,7 +1022,7 @@ return redis.status_reply("OK")
             }
         }
 
-        private void DoErroneousRedisCall(IDatabase db, string[] args, string expectedError)
+        private static void DoErroneousRedisCall(IDatabase db, string[] args, string expectedError)
         {
             var exc = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return redis.call({string.Join(',', args)})"));
             ClassicAssert.IsNotNull(exc);
@@ -925,17 +1032,6 @@ return redis.status_reply("OK")
         [Test]
         public void RedisCallErrors()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently, as well as the environment variable setting in the CI.
-#if NET9_0_OR_GREATER
-            var legacyExceptionHandlingEnvVarName = "DOTNET_LegacyExceptionHandling";
-            var legacyExceptionHandlingEnvVarValue = Environment.GetEnvironmentVariable(legacyExceptionHandlingEnvVarName);
-            if (string.IsNullOrEmpty(legacyExceptionHandlingEnvVarValue))
-            {
-                Assert.Ignore($"Ignoring test when {legacyExceptionHandlingEnvVarName} environment variable is not set.");
-            }
-#endif
-
             // Testing that our error replies for redis.call match Redis behavior
             //
             // TODO: exact matching of the hash and line number would also be nice, but that is trickier
@@ -1209,6 +1305,7 @@ return foo";
         [Test]
         public void Issue939()
         {
+
             // See: https://github.com/microsoft/garnet/issues/939
             const string Script = @"
 local retArray = {}
@@ -1290,6 +1387,29 @@ return retArray";
             // Finally, check that nil is an illegal argument
             var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return redis.call('GET', nil)"));
             ClassicAssert.True(exc.Message.StartsWith("ERR Lua redis lib command arguments must be strings or integers"));
+        }
+
+        [Test]
+        public void Issue1079()
+        {
+            // Repeated submission of invalid Lua scripts shouldn't be cached, and thus should produce the same compilation error each time
+            //
+            // They also shouldn't break the session for future executions
+
+            const string BrokenScript = "return \"hello lua";
+            const string FixedScript = "return \"hello lua\"";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var brokenExc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
+            ClassicAssert.True(brokenExc1.Message.StartsWith("Compilation error: "));
+
+            var brokenExc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EVAL", BrokenScript, 0));
+            ClassicAssert.AreEqual(brokenExc1.Message, brokenExc2.Message);
+
+            var success = (string)db.Execute("EVAL", FixedScript, 0);
+            ClassicAssert.AreEqual("hello lua", success);
         }
 
         [TestCase(2)]
@@ -1741,10 +1861,892 @@ return count";
         }
 
         [Test]
+        public void Bit()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // tobit
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tobit"));
+
+                // Extra arguments are legal, but ignored
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tobit({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("tobit"));
+
+                // Rules are suprisingly subtle, so test a bunch of tricky values
+                (string Value, string Expected)[] expectedValues = [
+                    ("0", "0"),
+                    ("1", "1"),
+                    ("1.1", "1"),
+                    ("1.5", "2"),
+                    ("1.9", "2"),
+                    ("0.1", "0"),
+                    ("0.5", "0"),
+                    ("0.9", "1"),
+                    ("-1.1", "-1"),
+                    ("-1.5", "-2"),
+                    ("-1.9", "-2"),
+                    ("-0.1", "0"),
+                    ("-0.5", "0"),
+                    ("-0.9", "-1"),
+                    (int.MinValue.ToString(), int.MinValue.ToString()),
+                    (int.MaxValue.ToString(), int.MaxValue.ToString()),
+                    ((1L + int.MaxValue).ToString(), int.MinValue.ToString()),
+                    ((-1L + int.MinValue).ToString(), int.MaxValue.ToString()),
+                    (double.MaxValue.ToString(), "-1"),
+                    (double.MinValue.ToString(), "-1"),
+                    (float.MaxValue.ToString(), "-447893512"),
+                    (float.MinValue.ToString(), "-447893512"),
+                ];
+                foreach (var (value, expected) in expectedValues)
+                {
+                    var actual = (string)db.ScriptEvaluate($"return bit.tobit({value})");
+                    ClassicAssert.AreEqual(expected, actual, $"bit.tobit conversion for {value} was incorrect");
+                }
+            }
+
+            // tohex
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("tohex"));
+
+                // Extra arguments are legal, but ignored
+
+                var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex({})"));
+                ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains("tohex"));
+
+                var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.tohex(1, {})"));
+                ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains("tohex"));
+
+                // Make sure casing is handled correctly
+                for (var h = 0; h < 16; h++)
+                {
+                    var lower = (string)db.ScriptEvaluate($"return bit.tohex({h}, 1)");
+                    var upper = (string)db.ScriptEvaluate($"return bit.tohex({h}, -1)");
+
+                    ClassicAssert.AreEqual(h.ToString("x1"), lower);
+                    ClassicAssert.AreEqual(h.ToString("X1"), upper);
+                }
+
+                // Run through some weird values
+                (string Value, int? N, string Expected)[] expectedValues = [
+                    ("0", null, "00000000"),
+                    ("0", 16, "00000000"),
+                    ("0", -8, "00000000"),
+                    ("123456", null, "0001e240"),
+                    ("123456", 5, "1e240"),
+                    ("123456", -5, "1E240"),
+                    (int.MinValue.ToString(), null, "80000000"),
+                    (int.MaxValue.ToString(), null, "7fffffff"),
+                    ((1L + int.MaxValue).ToString(), null, "80000000"),
+                    ((-1L + int.MinValue).ToString(), null, "7fffffff"),
+                    (double.MaxValue.ToString(), 1, "f"),
+                    (double.MinValue.ToString(), -1, "F"),
+                    (float.MaxValue.ToString(), null, "e54daff8"),
+                    (float.MinValue.ToString(), null, "e54daff8"),
+                ];
+                foreach (var (value, length, expected) in expectedValues)
+                {
+                    var actual = length != null ?
+                        (string)db.ScriptEvaluate($"return bit.tohex({value},{length})") :
+                        (string)db.ScriptEvaluate($"return bit.tohex({value})");
+
+                    ClassicAssert.AreEqual(expected, actual, $"bit.tohex result for ({value},{length}) was incorrect");
+                }
+            }
+
+            // bswap
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bswap"));
+
+                // Extra arguments are legal, but ignored
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bswap({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bswap"));
+
+                // Just brute force a bunch of trial values
+                foreach (var a in new[] { 0, 1, 2, 4 })
+                {
+                    foreach (var b in new[] { 8, 16, 32, 128 })
+                    {
+                        foreach (var c in new[] { 0, 2, 8, 32, })
+                        {
+                            foreach (var d in new[] { 1, 4, 16, 64 })
+                            {
+                                var input = a | (b << 8) | (c << 16) | (d << 32);
+                                var expected = BinaryPrimitives.ReverseEndianness(input);
+
+                                var actual = (int)db.ScriptEvaluate($"return bit.bswap({input})");
+                                ClassicAssert.AreEqual(expected, actual);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // bnot
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("bnot"));
+
+                // Extra arguments are legal, but ignored
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return bit.bnot({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("bnot"));
+
+                foreach (var input in new int[] { 0, 1, 2, 4, 8, 32, 64, 128, 256, 0x70F0_F0F0, 0x6BCD_EF01, int.MinValue, int.MaxValue, -1 })
+                {
+                    var expected = ~input;
+
+                    var actual = (int)db.ScriptEvaluate($"return bit.bnot({input})");
+                    ClassicAssert.AreEqual(expected, actual);
+                }
+            }
+
+            // band, bor, bxor
+            {
+                (int Base, string Name, Func<int, int, int> Op)[] ops = [
+                    (0, "bor", static (a, b) => a | b),
+                    (-1, "band", static (a, b) => a & b),
+                    (0, "bxor", static (a, b) => a ^ b),
+                ];
+
+                foreach (var op in ops)
+                {
+                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
+
+                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
+
+                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
+
+                    var badType3Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, 2, {{}})"));
+                    ClassicAssert.True(badType3Exc.Message.Contains("bad argument") && badType3Exc.Message.Contains(op.Name));
+
+                    // Gin up some unusual values and test them in different combinations
+                    var nextArg = 0x0102_0304;
+                    for (var numArgs = 1; numArgs <= 4; numArgs++)
+                    {
+                        var args = new List<int>();
+                        while (args.Count < numArgs)
+                        {
+                            args.Add(nextArg);
+                            nextArg *= 2;
+                            nextArg += args.Count;
+                        }
+
+                        var expected = op.Base;
+                        foreach (var arg in args)
+                        {
+                            expected = op.Op(expected, arg);
+                        }
+
+                        var actual = (int)db.ScriptEvaluate($"return bit.{op.Name}({string.Join(", ", args)})");
+                        ClassicAssert.AreEqual(expected, actual);
+                    }
+                }
+            }
+
+            // lshift, rshift, arshift, rol, ror
+            {
+                (string Name, Func<int, int, int> Op)[] ops = [
+                    ("lshift", static (x, n) => x << n),
+                    ("rshift", static (x, n) => (int)((uint)x >> n)),
+                    ("arshift", static (x, n) => x >> n),
+                    ("rol", static (x, n) => (int)BitOperations.RotateLeft((uint)x, n)),
+                    ("ror", static (x, n) => (int)BitOperations.RotateRight((uint)x, n)),
+                ];
+
+                foreach (var op in ops)
+                {
+                    var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}()"));
+                    ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains(op.Name));
+
+                    var badType1Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}({{}})"));
+                    ClassicAssert.True(badType1Exc.Message.Contains("bad argument") && badType1Exc.Message.Contains(op.Name));
+
+                    var badType2Exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return bit.{op.Name}(1, {{}})"));
+                    ClassicAssert.True(badType2Exc.Message.Contains("bad argument") && badType2Exc.Message.Contains(op.Name));
+
+                    // Extra args are allowed, but ignored
+
+                    for (var shift = 0; shift < 16; shift++)
+                    {
+                        const int Value = 0x1234_5678;
+
+                        var expected = op.Op(Value, shift);
+                        var actual = (int)db.ScriptEvaluate($"return bit.{op.Name}({Value}, {shift})");
+
+                        ClassicAssert.AreEqual(expected, actual, $"Incorrect value for bit.{op.Name}({Value}, {shift})");
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void CJson()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Encoding
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("encode"));
+
+                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode(1, 2)"));
+                ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("encode"));
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.encode((function() end))"));
+                ClassicAssert.True(badTypeExc.Message.Contains("Cannot serialise"));
+
+                var nilResp = (string)db.ScriptEvaluate("return cjson.encode(nil)");
+                ClassicAssert.AreEqual("null", nilResp);
+
+                var boolResp = (string)db.ScriptEvaluate("return cjson.encode(true)");
+                ClassicAssert.AreEqual("true", boolResp);
+
+                var doubleResp = (string)db.ScriptEvaluate("return cjson.encode(1.23)");
+                ClassicAssert.AreEqual("1.23", doubleResp);
+
+                var simpleStrResp = (string)db.ScriptEvaluate("return cjson.encode('hello')");
+                ClassicAssert.AreEqual("\"hello\"", simpleStrResp);
+
+                var encodedStrResp = (string)db.ScriptEvaluate("return cjson.encode('\"foo\" \\\\bar\\\\')");
+                ClassicAssert.AreEqual("\"\\\"foo\\\" \\\\bar\\\\\"", encodedStrResp);
+
+                var emptyTableResp = (string)db.ScriptEvaluate("return cjson.encode({})");
+                ClassicAssert.AreEqual("{}", emptyTableResp);
+
+                var keyedTableResp = (string)db.ScriptEvaluate("return cjson.encode({key=123})");
+                ClassicAssert.AreEqual("{\"key\":123}", keyedTableResp);
+
+                var indexedTableResp = (string)db.ScriptEvaluate("return cjson.encode({123, 'foo'})");
+                ClassicAssert.AreEqual("[123,\"foo\"]", indexedTableResp);
+
+                var mixedTableResp = (string)db.ScriptEvaluate("local ret = {123}; ret.bar = 'foo'; return cjson.encode(ret)");
+                ClassicAssert.AreEqual("{\"1\":123,\"bar\":\"foo\"}", mixedTableResp);
+
+                // Ordering here is undefined, just doing the brute force approach for ease of implementation
+                var nestedTableResp = (string)db.ScriptEvaluate("return cjson.encode({num=1,str='hello',arr={1,2,3,4},obj={foo='bar'}})");
+                string[] nestedTableRespParts = [
+                    "\"arr\":[1,2,3,4]",
+                    "\"num\":1",
+                    "\"str\":\"hello\"",
+                    "\"obj\":{\"foo\":\"bar\"}",
+                ];
+                var possibleNestedTableResps = new List<string>();
+                for (var a = 0; a < nestedTableRespParts.Length; a++)
+                {
+                    for (var b = 0; b < nestedTableRespParts.Length; b++)
+                    {
+                        for (var c = 0; c < nestedTableRespParts.Length; c++)
+                        {
+                            for (var d = 0; d < nestedTableRespParts.Length; d++)
+                            {
+                                if (a == b || a == c || a == d || b == c || b == d || c == d)
+                                {
+                                    continue;
+                                }
+
+                                possibleNestedTableResps.Add($"{{{nestedTableRespParts[a]},{nestedTableRespParts[b]},{nestedTableRespParts[c]},{nestedTableRespParts[d]}}}");
+                            }
+                        }
+                    }
+                }
+                ClassicAssert.True(possibleNestedTableResps.Contains(nestedTableResp));
+
+                var nestArrayResp = (string)db.ScriptEvaluate("return cjson.encode({1,'hello',{1,2,3,4},{foo='bar'}})");
+                ClassicAssert.AreEqual("[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]", nestArrayResp);
+
+                var deeplyNestedButLegal =
+                    (string)db.ScriptEvaluate(
+@"local nested = 1
+for x = 1, 1000 do
+    local newNested = {}
+    newNested[1] = nested;
+    nested = newNested
+end
+
+return cjson.encode(nested)");
+                ClassicAssert.AreEqual(new string('[', 1000) + 1 + new string(']', 1000), deeplyNestedButLegal);
+
+                var deeplyNestedExc =
+                ClassicAssert.Throws<RedisServerException>(
+                    () => db.ScriptEvaluate(
+@"local nested = 1
+    for x = 1, 1001 do
+        local newNested = {}
+        newNested[1] = nested;
+        nested = newNested
+    end
+
+    return cjson.encode(nested)"));
+                ClassicAssert.True(deeplyNestedExc.Message.Contains("Cannot serialise, excessive nesting (1001)"));
+            }
+
+            // Decoding
+            {
+                var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode()"));
+                ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("decode"));
+
+                var twoArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode(1, 2)"));
+                ClassicAssert.True(twoArgExc.Message.Contains("bad argument") && twoArgExc.Message.Contains("decode"));
+
+                var badTypeExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode({})"));
+                ClassicAssert.True(badTypeExc.Message.Contains("bad argument") && badTypeExc.Message.Contains("decode"));
+
+                var badFormatExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cjson.decode('hello world')"));
+                ClassicAssert.True(badFormatExc.Message.Contains("Expected value but found invalid token"));
+
+                var nullDecode = (string)db.ScriptEvaluate("return type(cjson.decode('null'))");
+                ClassicAssert.AreEqual("nil", nullDecode);
+
+                var numberDecode = (string)db.ScriptEvaluate("return cjson.decode(123)");
+                ClassicAssert.AreEqual("123", numberDecode);
+
+                var bool1Decode = (string)db.ScriptEvaluate("return type(cjson.decode('true'))");
+                ClassicAssert.AreEqual("boolean", bool1Decode);
+
+                var bool2Decode = (string)db.ScriptEvaluate("return type(cjson.decode('false'))");
+                ClassicAssert.AreEqual("boolean", bool2Decode);
+
+                var stringDecode = (string)db.ScriptEvaluate("return cjson.decode('\"hello world\"')");
+                ClassicAssert.AreEqual("hello world", stringDecode);
+
+                var mapDecode = (string)db.ScriptEvaluate("return cjson.decode('{\"hello\":\"world\"}').hello");
+                ClassicAssert.AreEqual("world", mapDecode);
+
+                var arrayDecode = (string)db.ScriptEvaluate("return cjson.decode('[123]')[1]");
+                ClassicAssert.AreEqual("123", arrayDecode);
+
+                var complexMapDecodeArr = (string[])db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').arr");
+                ClassicAssert.True(complexMapDecodeArr.SequenceEqual(["1", "2", "3", "4"]));
+                var complexMapDecodeNum = (string)db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').num");
+                ClassicAssert.AreEqual("1", complexMapDecodeNum);
+                var complexMapDecodeStr = (string)db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').str");
+                ClassicAssert.AreEqual("hello", complexMapDecodeStr);
+                var complexMapDecodeObj = (string)db.ScriptEvaluate("return cjson.decode('{\"arr\":[1,2,3,4],\"num\":1,\"str\":\"hello\",\"obj\":{\"foo\":\"bar\"}}').obj.foo");
+                ClassicAssert.AreEqual("bar", complexMapDecodeObj);
+
+                var complexArrDecodeNum = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[1]");
+                ClassicAssert.AreEqual("1", complexArrDecodeNum);
+                var complexArrDecodeStr = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[2]");
+                ClassicAssert.AreEqual("hello", complexArrDecodeStr);
+                var complexArrDecodeArr = (string[])db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[3]");
+                ClassicAssert.True(complexArrDecodeArr.SequenceEqual(["1", "2", "3", "4"]));
+                var complexArrDecodeObj = (string)db.ScriptEvaluate("return cjson.decode('[1,\"hello\",[1,2,3,4],{\"foo\":\"bar\"}]')[4].foo");
+                ClassicAssert.AreEqual("bar", complexArrDecodeObj);
+
+                // Redis cuts us off at 1000 levels of recursion, so check that we're matching that
+                var deeplyNestedButLegal = (RedisResult[])db.ScriptEvaluate($"return cjson.decode('{new string('[', 1000)}{new string(']', 1000)}')");
+                var deeplyNestedButLegalCur = deeplyNestedButLegal;
+                for (var i = 1; i < 1000; i++)
+                {
+                    ClassicAssert.AreEqual(1, deeplyNestedButLegalCur.Length);
+                    deeplyNestedButLegalCur = (RedisResult[])deeplyNestedButLegalCur[0];
+                }
+                ClassicAssert.AreEqual(0, deeplyNestedButLegalCur.Length);
+
+                var deeplyNestedExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"return cjson.decode('{new string('[', 1001)}{new string(']', 1001)}')"));
+                ClassicAssert.True(deeplyNestedExc.Message.Contains("Found too many nested data structures"));
+            }
+        }
+
+        [Test]
+        public void CMsgPackPack()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.pack()"));
+            ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("pack"));
+
+            // Multiple args are legal, and concat
+
+            var nullResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(nil)");
+            ClassicAssert.True(nullResp.SequenceEqual(new byte[] { 0xC0 }));
+
+            var trueResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(true)");
+            ClassicAssert.True(trueResp.SequenceEqual(new byte[] { 0xC3 }));
+
+            var falseResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(false)");
+            ClassicAssert.True(falseResp.SequenceEqual(new byte[] { 0xC2 }));
+
+            var tinyUInt1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(0)");
+            ClassicAssert.True(tinyUInt1Resp.SequenceEqual(new byte[] { 0x00 }));
+
+            var tinyUInt2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(127)");
+            ClassicAssert.True(tinyUInt2Resp.SequenceEqual(new byte[] { 0x7F }));
+
+            var tinyInt1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-1)");
+            ClassicAssert.True(tinyInt1Resp.SequenceEqual(new byte[] { 0xFF }));
+
+            var tinyInt2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-32)");
+            ClassicAssert.True(tinyInt2Resp.SequenceEqual(new byte[] { 0xE0 }));
+
+            var smallUInt1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(128)");
+            ClassicAssert.True(smallUInt1Resp.SequenceEqual(new byte[] { 0xCC, 0x80 }));
+
+            var smallUInt2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(255)");
+            ClassicAssert.True(smallUInt2Resp.SequenceEqual(new byte[] { 0xCC, 0xFF }));
+
+            var smallInt1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-33)");
+            ClassicAssert.True(smallInt1Resp.SequenceEqual(new byte[] { 0xD0, 0xDF }));
+
+            var smallInt2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-128)");
+            ClassicAssert.True(smallInt2Resp.SequenceEqual(new byte[] { 0xD0, 0x80 }));
+
+            var midUInt1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(32768)");
+            ClassicAssert.True(midUInt1Resp.SequenceEqual(new byte[] { 0xCD, 0x80, 0x00 }));
+
+            var midUInt2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(65535)");
+            ClassicAssert.True(midUInt2Resp.SequenceEqual(new byte[] { 0xCD, 0xFF, 0xFF }));
+
+            var midInt1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-129)");
+            ClassicAssert.True(midInt1Resp.SequenceEqual(new byte[] { 0xD1, 0xFF, 0x7F }));
+
+            var midInt2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-32768)");
+            ClassicAssert.True(midInt2Resp.SequenceEqual(new byte[] { 0xD1, 0x80, 0x00 }));
+
+            var uint1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(2147483648)");
+            ClassicAssert.True(uint1Resp.SequenceEqual(new byte[] { 0xCE, 0x80, 0x00, 0x00, 0x00 }));
+
+            var uint2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(4294967295)");
+            ClassicAssert.True(uint2Resp.SequenceEqual(new byte[] { 0xCE, 0xFF, 0xFF, 0xFF, 0xFF }));
+
+            var int1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-32769)");
+            ClassicAssert.True(int1Resp.SequenceEqual(new byte[] { 0xD2, 0xFF, 0xFF, 0x7F, 0xFF }));
+
+            var int2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-2147483648)");
+            ClassicAssert.True(int2Resp.SequenceEqual(new byte[] { 0xD2, 0x80, 0x00, 0x00, 0x00 }));
+
+            var bigUIntResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(4294967296)");
+            ClassicAssert.True(bigUIntResp.SequenceEqual(new byte[] { 0xCF, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00 }));
+
+            var bigIntResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(-2147483649)");
+            ClassicAssert.True(bigIntResp.SequenceEqual(new byte[] { 0xD3, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0xFF, 0xFF, 0xFF }));
+
+            var floatResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(0.1)");
+            ClassicAssert.True(floatResp.SequenceEqual(new byte[] { 0xCB, 0x3F, 0xB9, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9A }));
+
+            var tinyString1Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('')");
+            ClassicAssert.True(tinyString1Resp.SequenceEqual(new byte[] { 0xA0, }));
+
+            var tinyString2Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('{new string('0', 31)}')");
+            ClassicAssert.True(tinyString2Resp.SequenceEqual(new byte[] { 0xBF }.Concat(Enumerable.Repeat((byte)'0', 31))));
+
+            var shortString1Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('{new string('a', 32)}')");
+            ClassicAssert.True(shortString1Resp.SequenceEqual(new byte[] { 0xD9, 0x20 }.Concat(Enumerable.Repeat((byte)'a', 32))));
+
+            var shortString2Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('{new string('a', 255)}')");
+            ClassicAssert.True(shortString2Resp.SequenceEqual(new byte[] { 0xD9, 0xFF }.Concat(Enumerable.Repeat((byte)'a', 255))));
+
+            var midString1Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('{new string('b', 256)}')");
+            ClassicAssert.True(midString1Resp.SequenceEqual(new byte[] { 0xDA, 0x01, 0x00 }.Concat(Enumerable.Repeat((byte)'b', 256))));
+
+            var midString2Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('{new string('b', 65535)}')");
+            ClassicAssert.True(midString2Resp.SequenceEqual(new byte[] { 0xDA, 0xFF, 0xFF }.Concat(Enumerable.Repeat((byte)'b', 65535))));
+
+            var longStringResp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack('{new string('c', 65536)}')");
+            ClassicAssert.True(longStringResp.SequenceEqual(new byte[] { 0xDB, 0x00, 0x01, 0x00, 0x00 }.Concat(Enumerable.Repeat((byte)'c', 65536))));
+
+            var emptyTableResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack({})");
+            ClassicAssert.True(emptyTableResp.SequenceEqual(new byte[] { 0x90 }));
+
+            var smallArray1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack({1})");
+            ClassicAssert.True(smallArray1Resp.SequenceEqual(new byte[] { 0x91, 0x01 }));
+
+            var smallArray2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15})");
+            ClassicAssert.True(smallArray2Resp.SequenceEqual(new byte[] { 0x9F, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F }));
+
+            var midArray1Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack({{{string.Join(", ", Enumerable.Repeat(1, 16))}}})");
+            ClassicAssert.True(midArray1Resp.SequenceEqual(new byte[] { 0xDC, 0x00, 0x10 }.Concat(Enumerable.Repeat((byte)0x01, 16))));
+
+            var midArray2Resp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack({{{string.Join(", ", Enumerable.Repeat(2, ushort.MaxValue))}}})");
+            ClassicAssert.True(midArray2Resp.SequenceEqual(new byte[] { 0xDC, 0xFF, 0xFF }.Concat(Enumerable.Repeat((byte)0x02, ushort.MaxValue))));
+
+            var bigArrayResp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack({{{string.Join(", ", Enumerable.Repeat(3, ushort.MaxValue + 1))}}})");
+            ClassicAssert.True(bigArrayResp.SequenceEqual(new byte[] { 0xDD, 0x00, 0x01, 0x00, 0x00 }.Concat(Enumerable.Repeat((byte)0x03, ushort.MaxValue + 1))));
+
+            var smallMap1Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack({a=1})");
+            ClassicAssert.True(smallMap1Resp.SequenceEqual(new byte[] { 0x81, 0xA1, 0x61, 0x01 }));
+
+            var smallMap2Resp = (byte[])db.ScriptEvaluate("return cmsgpack.pack({a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8,i=9,j=10,k=11,l=12,m=13,n=14,o=15})");
+            ClassicAssert.AreEqual(46, smallMap2Resp.Length);
+            ClassicAssert.AreEqual(0x8F, smallMap2Resp[0]);
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x61, 0x01 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x62, 0x02 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x63, 0x03 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x64, 0x04 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x65, 0x05 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x66, 0x06 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x67, 0x07 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x68, 0x08 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x69, 0x09 }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x6A, 0x0A }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x6B, 0x0B }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x6C, 0x0C }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x6D, 0x0D }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x6E, 0x0E }));
+            ClassicAssert.AreNotEqual(-1, smallMap2Resp.AsSpan().IndexOf(new byte[] { 0xA1, 0x6F, 0x0F }));
+
+            var midKeys = string.Join(", ", Enumerable.Range(0, 16).Select(static x => $"m_{(char)('A' + x)}={x}"));
+            var midMapResp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack({{ {midKeys} }})");
+            ClassicAssert.AreEqual(83, midMapResp.Length);
+            ClassicAssert.AreEqual(0xDE, midMapResp[0]);
+            ClassicAssert.AreEqual(0, midMapResp[1]);
+            ClassicAssert.AreEqual(16, midMapResp[2]);
+            for (var val = 0; val < 16; val++)
+            {
+                var keyPart = (byte)('A' + val);
+                var expected = new byte[] { 0xA3, (byte)'m', (byte)'_', keyPart, (byte)val };
+                ClassicAssert.AreNotEqual(-1, midMapResp.AsSpan().IndexOf(expected));
+            }
+
+            var bigKeys = string.Join(", ", Enumerable.Range(0, ushort.MaxValue + 1).Select(static x => $"f_{x:X4}=4"));
+            var bigMapResp = (byte[])db.ScriptEvaluate($"return cmsgpack.pack({{ {bigKeys} }})");
+            ClassicAssert.AreEqual(524_293, bigMapResp.Length);
+            ClassicAssert.AreEqual(0xDF, bigMapResp[0]);
+            ClassicAssert.AreEqual(0, bigMapResp[1]);
+            ClassicAssert.AreEqual(1, bigMapResp[2]);
+            ClassicAssert.AreEqual(0, bigMapResp[3]);
+            ClassicAssert.AreEqual(0, bigMapResp[4]);
+            for (var val = 0; val <= ushort.MaxValue; val++)
+            {
+                var keyStr = val.ToString("X4");
+
+                var expected = new byte[] { 0xA6, (byte)'f', (byte)'_', (byte)keyStr[0], (byte)keyStr[1], (byte)keyStr[2], (byte)keyStr[3], 4 };
+                ClassicAssert.AreNotEqual(-1, bigMapResp.AsSpan().IndexOf(expected));
+            }
+
+            var complexResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack({4, { key='value', arr={5, 6} }, true, 1.23})");
+            ClassicAssert.AreEqual(30, complexResp.Length);
+            ClassicAssert.AreEqual(0x94, complexResp[0]);
+            ClassicAssert.AreEqual(0x04, complexResp[1]);
+            var complexNestedMap = complexResp.AsSpan().Slice(2, 18);
+            ClassicAssert.AreEqual(0x82, complexNestedMap[0]);
+            complexNestedMap = complexNestedMap[1..];
+            ClassicAssert.AreNotEqual(-1, complexNestedMap.IndexOf(new byte[] { 0b1010_0011, (byte)'k', (byte)'e', (byte)'y', 0b1010_0101, (byte)'v', (byte)'a', (byte)'l', (byte)'u', (byte)'e' }));
+            ClassicAssert.AreNotEqual(-1, complexNestedMap.IndexOf(new byte[] { 0b1010_0011, (byte)'a', (byte)'r', (byte)'r', 0b1001_0010, 0x05, 0x06 }));
+            ClassicAssert.AreEqual(0xC3, complexResp[20]);
+            ClassicAssert.AreEqual(0xCB, complexResp[21]);
+            ClassicAssert.AreEqual(1.23, BinaryPrimitives.ReadDoubleBigEndian(complexResp.AsSpan()[22..]));
+
+            var concatedResp = (byte[])db.ScriptEvaluate("return cmsgpack.pack(1, 2, 3, 4, {5})");
+            ClassicAssert.True(concatedResp.SequenceEqual(new byte[] { 0x01, 0x02, 0x03, 0x04, 0b1001_0001, 0x05 }));
+
+            // Rather than an error, Redis converts a too deeply nested object into a null (very strange)
+            //
+            // We match that behavior
+
+            var infiniteNestMap = (byte[])db.ScriptEvaluate("local a = {}; a.ref = a; return cmsgpack.pack(a)");
+            ClassicAssert.True(infiniteNestMap.SequenceEqual(new byte[] { 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0x81, 0xA3, 0x72, 0x65, 0x66, 0xC0 }));
+
+            var infiniteNestArr = (byte[])db.ScriptEvaluate("local a = {}; a[1] = a; return cmsgpack.pack(a)");
+            ClassicAssert.True(infiniteNestArr.SequenceEqual(new byte[] { 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0x91, 0xC0 }));
+        }
+
+        [Test]
+        public void CMsgPackUnpack()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var noArgExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack()"));
+            ClassicAssert.True(noArgExc.Message.Contains("bad argument") && noArgExc.Message.Contains("unpack"));
+
+            // Multiple arguments are allowed, but ignored
+
+            // Table ends before it should
+            var badDataExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return cmsgpack.unpack('\\220\\0\\96')"));
+            ClassicAssert.True(badDataExc.Message.Contains("Missing bytes in input"));
+
+            var nullResp = (string)db.ScriptEvaluate($"return type(cmsgpack.unpack({ToLuaString(0xC0)}))");
+            ClassicAssert.AreEqual("nil", nullResp);
+
+            var trueResp = (string)db.ScriptEvaluate($"return type(cmsgpack.unpack({ToLuaString(0xC3)}))");
+            ClassicAssert.AreEqual("boolean", trueResp);
+
+            var falseResp = (string)db.ScriptEvaluate($"return type(cmsgpack.unpack({ToLuaString(0xC2)}))");
+            ClassicAssert.AreEqual("boolean", falseResp);
+
+            var tinyUInt1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x00)})");
+            ClassicAssert.AreEqual(0, tinyUInt1Resp);
+
+            var tinyUInt2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x7F)})");
+            ClassicAssert.AreEqual(127, tinyUInt2Resp);
+
+            var tinyInt1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xFF)})");
+            ClassicAssert.AreEqual(-1, tinyInt1Resp);
+
+            var tinyInt2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xE0)})");
+            ClassicAssert.AreEqual(-32, tinyInt2Resp);
+
+            var smallUInt1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCC, 0x80)})");
+            ClassicAssert.AreEqual(128, smallUInt1Resp);
+
+            var smallUInt2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCC, 0xFF)})");
+            ClassicAssert.AreEqual(255, smallUInt2Resp);
+
+            var smallInt1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD0, 0xDF)})");
+            ClassicAssert.AreEqual(-33, smallInt1Resp);
+
+            var smallInt2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD0, 0x80)})");
+            ClassicAssert.AreEqual(-128, smallInt2Resp);
+
+            var midUInt1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCD, 0x80, 0x00)})");
+            ClassicAssert.AreEqual(32768, midUInt1Resp);
+
+            var midUInt2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCD, 0xFF, 0xFF)})");
+            ClassicAssert.AreEqual(65535, midUInt2Resp);
+
+            var midInt1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD1, 0xFF, 0x7F)})");
+            ClassicAssert.AreEqual(-129, midInt1Resp);
+
+            var midInt2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD1, 0x80, 0x00)})");
+            ClassicAssert.AreEqual(-32768, midInt2Resp);
+
+            var uint1Resp = (long)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCE, 0x80, 0x00, 0x00, 0x00)})");
+            ClassicAssert.AreEqual(2147483648, uint1Resp);
+
+            var uint2Resp = (long)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCE, 0xFF, 0xFF, 0xFF, 0xFF)})");
+            ClassicAssert.AreEqual(4294967295L, uint2Resp);
+
+            var int1Resp = (long)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD2, 0xFF, 0xFF, 0x7F, 0xFF)})");
+            ClassicAssert.AreEqual(-32769, int1Resp);
+
+            var int2Resp = (long)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD2, 0x80, 0x00, 0x00, 0x00)})");
+            ClassicAssert.AreEqual(-2147483648, int2Resp);
+
+            var bigUIntResp = (long)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xCF, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00)})");
+            ClassicAssert.AreEqual(4294967296L, bigUIntResp);
+
+            var bigIntResp = (long)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xD3, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0xFF, 0xFF, 0xFF)})");
+            ClassicAssert.AreEqual(-2147483649L, bigIntResp);
+
+            var floatResp = (string)db.ScriptEvaluate($"return tostring(cmsgpack.unpack({ToLuaString(0xCB, 0x3F, 0xB9, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9A)}))");
+            ClassicAssert.AreEqual("0.1", floatResp);
+
+            var tinyString1Resp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0xA0)})");
+            ClassicAssert.AreEqual("", tinyString1Resp);
+
+            var tinyString2Resp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xBF }.Concat(Enumerable.Repeat((byte)'0', 31)).ToArray())})");
+            ClassicAssert.AreEqual(new string('0', 31), tinyString2Resp);
+
+            var shortString1Resp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xD9, 0x20 }.Concat(Enumerable.Repeat((byte)'a', 32)).ToArray())})");
+            ClassicAssert.AreEqual(new string('a', 32), shortString1Resp);
+
+            var shortString2Resp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xD9, 0xFF }.Concat(Enumerable.Repeat((byte)'a', 255)).ToArray())})");
+            ClassicAssert.AreEqual(new string('a', 255), shortString2Resp);
+
+            var midString1Resp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xDA, 0x01, 0x00 }.Concat(Enumerable.Repeat((byte)'b', 256)).ToArray())})");
+            ClassicAssert.AreEqual(new string('b', 256), midString1Resp);
+
+            var midString2Resp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xDA, 0xFF, 0xFF }.Concat(Enumerable.Repeat((byte)'b', 65535)).ToArray())})");
+            ClassicAssert.AreEqual(new string('b', 65535), midString2Resp);
+
+            var longStringResp = (string)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xDB, 0x00, 0x01, 0x00, 0x00 }.Concat(Enumerable.Repeat((byte)'c', 65536)).ToArray())})");
+            ClassicAssert.AreEqual(new string('c', 65536), longStringResp);
+
+            var emptyTableResp = (int)db.ScriptEvaluate($"return #cmsgpack.unpack({ToLuaString(0x90)})");
+            ClassicAssert.AreEqual(0, emptyTableResp);
+
+            var smallArray1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x91, 0x01)})[1]");
+            ClassicAssert.AreEqual(1, smallArray1Resp);
+
+            var smallArray2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x9F, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F)})[14]");
+            ClassicAssert.AreEqual(14, smallArray2Resp);
+
+            var midArray1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xDC, 0x00, 0x10 }.Concat(Enumerable.Repeat((byte)0x01, 16)).ToArray())})[16]");
+            ClassicAssert.AreEqual(1, midArray1Resp);
+
+            var midArray2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xDC, 0xFF, 0xFF }.Concat(Enumerable.Repeat((byte)0x02, ushort.MaxValue)).ToArray())})[1000]");
+            ClassicAssert.AreEqual(2, midArray2Resp);
+
+            var bigArrayResp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(new byte[] { 0xDD, 0x00, 0x01, 0x00, 0x00 }.Concat(Enumerable.Repeat((byte)0x03, ushort.MaxValue + 1)).ToArray())})[20000]");
+            ClassicAssert.AreEqual(3, bigArrayResp);
+
+            var smallMap1Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x81, 0xA1, 0x61, 0x01)}).a");
+            ClassicAssert.AreEqual(1, smallMap1Resp);
+
+            var smallMap2Resp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x8F, 0xA1, 0x61, 0x01, 0xA1, 0x62, 0x02, 0xA1, 0x63, 0x03, 0xA1, 0x64, 0x04, 0xA1, 0x65, 0x05, 0xA1, 0x66, 0x06, 0xA1, 0x67, 0x07, 0xA1, 0x68, 0x08, 0xA1, 0x69, 0x09, 0xA1, 0x6A, 0x0A, 0xA1, 0x6B, 0x0B, 0xA1, 0x6C, 0x0C, 0xA1, 0x6D, 0x0D, 0xA1, 0x6E, 0x0E, 0xA1, 0x6F, 0x0F)}).o");
+            ClassicAssert.AreEqual(15, smallMap2Resp);
+
+            var midMapBytes = new List<byte> { 0xDE, 0x00, 0x10 };
+            for (var val = 0; val < 16; val++)
+            {
+                var keyPart = (byte)('A' + val);
+                midMapBytes.AddRange([0xA3, (byte)'m', (byte)'_', keyPart, (byte)val]);
+            }
+            var midMapResp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(midMapBytes.ToArray())}).m_F");
+            ClassicAssert.AreEqual(5, midMapResp);
+
+            var bigMapBytes = new List<byte> { 0xDF, 0x00, 0x01, 0x00, 0x00 };
+            for (var val = 0; val <= ushort.MaxValue; val++)
+            {
+                var keyStr = val.ToString("X4");
+
+                bigMapBytes.AddRange([0xA6, (byte)'f', (byte)'_', (byte)keyStr[0], (byte)keyStr[1], (byte)keyStr[2], (byte)keyStr[3], 4]);
+            }
+            var bigMapRes = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(bigMapBytes.ToArray())}).f_0123");
+            ClassicAssert.AreEqual(4, bigMapRes);
+
+            var nestedResp = (int)db.ScriptEvaluate($"return cmsgpack.unpack({ToLuaString(0x94, 0x04, 0x82, 0b1010_0011, (byte)'k', (byte)'e', (byte)'y', 0b1010_0101, (byte)'v', (byte)'a', (byte)'l', (byte)'u', (byte)'e', 0b1010_0011, (byte)'a', (byte)'r', (byte)'r', 0b1001_0010, 0x05, 0x06, 0xC3, 0xCB, 0x3F, 0xF3, 0xAE, 0x14, 0x7A, 0xE1, 0x47, 0xAE)})[2].arr[2]");
+            ClassicAssert.AreEqual(6, nestedResp);
+
+            var multiResp = (int[])db.ScriptEvaluate($"local a, b, c, d, e = cmsgpack.unpack({ToLuaString(0x01, 0x02, 0x03, 0x04, 0b1001_0001, 0x05)}); return {{e[1], d, c, b, a}}");
+            ClassicAssert.True(multiResp.SequenceEqual([5, 4, 3, 2, 1]));
+
+            // Helper for encoding a byte array into something that can be passed to Lua
+            static string ToLuaString(params byte[] data)
+            {
+                var ret = new StringBuilder();
+                _ = ret.Append('\'');
+
+                foreach (var b in data)
+                {
+                    _ = ret.Append($"\\{b}");
+                }
+
+                _ = ret.Append('\'');
+
+                return ret.ToString();
+            }
+        }
+
+        [Test]
+        public void Struct()
+        {
+            // Redis struct.pack/unpack/size is a subset of Lua's string.pack/unpack/packsize; so just testing for basic functionality
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var packRes = (byte[])db.ScriptEvaluate("return struct.pack('HH', 1, 2)");
+            ClassicAssert.True(packRes.SequenceEqual(new byte[] { 0x01, 0x00, 0x02, 0x00 }));
+
+            var unpackRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\\01\\00\\02\\00') }");
+            ClassicAssert.True(unpackRes.SequenceEqual([1, 2, 5]));
+
+            var sizeRes = (int)db.ScriptEvaluate("return struct.size('HH')");
+            ClassicAssert.AreEqual(4, sizeRes);
+        }
+
+        [Test]
+        public void MathFunctions()
+        {
+            // There are a number of "weird" math functions Redis supports that don't have direct .NET equivalents
+            //
+            // Doing some basic testing on these implementations
+            //
+            // We don't actually guarantee bit-for-bit or char-for-char equivalence, but "close" is worth attempting
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Frexp
+            {
+                var a = (string)db.ScriptEvaluate("local a,b = math.frexp(0); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("0|0", a);
+
+                var b = (string)db.ScriptEvaluate("local a,b = math.frexp(1); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("0.5|1", b);
+
+                var c = (string)db.ScriptEvaluate($"local a,b = math.frexp({double.MaxValue}); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("1|1024", c);
+
+                var d = (string)db.ScriptEvaluate($"local a,b = math.frexp({double.MinValue}); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("-1|1024", d);
+
+                var e = (string)db.ScriptEvaluate("local a,b = math.frexp(1234.56); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("0.6028125|11", e);
+
+                var f = (string)db.ScriptEvaluate("local a,b = math.frexp(-7890.12); return tostring(a)..'|'..tostring(b)");
+                ClassicAssert.AreEqual("-0.9631494140625|13", f);
+            }
+
+            // Ldexp
+            {
+                var a = (string)db.ScriptEvaluate("return tostring(math.ldexp(0, 0))");
+                ClassicAssert.AreEqual("0", a);
+
+                var b = (string)db.ScriptEvaluate("return tostring(math.ldexp(1, 1))");
+                ClassicAssert.AreEqual("2", b);
+
+                var c = (string)db.ScriptEvaluate("return tostring(math.ldexp(0, 1))");
+                ClassicAssert.AreEqual("0", c);
+
+                var d = (string)db.ScriptEvaluate("return tostring(math.ldexp(1, 0))");
+                ClassicAssert.AreEqual("1", d);
+
+                var e = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MaxValue}, 0))");
+                ClassicAssert.AreEqual("1.7976931348623e+308", e);
+
+                var f = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MaxValue}, 1))");
+                ClassicAssert.AreEqual("inf", f);
+
+                var g = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MinValue}, 0))");
+                ClassicAssert.AreEqual("-1.7976931348623e+308", g);
+
+                var h = (string)db.ScriptEvaluate($"return tostring(math.ldexp({double.MinValue}, 1))");
+                ClassicAssert.AreEqual("-inf", h);
+
+                var i = (string)db.ScriptEvaluate($"return tostring(math.ldexp(1.234, 1.234))");
+                ClassicAssert.AreEqual("2.468", i);
+
+                var j = (string)db.ScriptEvaluate($"return tostring(math.ldexp(-5.6798, 9.0123))");
+                ClassicAssert.AreEqual("-2908.0576", j);
+            }
+        }
+
+        [Test]
+        public void Maxn()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var empty = (int)db.ScriptEvaluate("return table.maxn({})");
+            ClassicAssert.AreEqual(0, empty);
+
+            var single = (int)db.ScriptEvaluate("return table.maxn({4})");
+            ClassicAssert.AreEqual(1, single);
+
+            var multiple = (int)db.ScriptEvaluate("return table.maxn({-1, 1, 2, 5})");
+            ClassicAssert.AreEqual(4, multiple);
+
+            var keyed = (int)db.ScriptEvaluate("return table.maxn({foo='bar',fizz='buzz',hello='world'})");
+            ClassicAssert.AreEqual(0, keyed);
+
+            var mixed = (int)db.ScriptEvaluate("return table.maxn({-1, 1, foo='bar', 3})");
+            ClassicAssert.AreEqual(3, mixed);
+
+            var allNegative = (int)db.ScriptEvaluate("local x = {}; x[-1] = 1; x[-2]=2; return table.maxn(x)");
+            ClassicAssert.AreEqual(0, allNegative);
+        }
+
+        [Test]
+        public void LoadString()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var basic = (int)db.ScriptEvaluate("local x = loadstring('return 123'); return x()");
+            ClassicAssert.AreEqual(123, basic);
+
+            var rejectNullExc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("local x = loadstring('return \"\\0\"'); return x()"));
+            ClassicAssert.True(rejectNullExc.Message.Contains("bad argument to loadstring, interior null byte"));
+        }
+
+        [Test]
         [Ignore("Long running, disabled by default")]
         public void StressTimeouts()
         {
-            // Psuedo-repeatably random
+            // Pseudo-repeatably random
             const int SEED = 2025_01_30_00;
 
             const int DurationMS = 60 * 60 * 1_000;

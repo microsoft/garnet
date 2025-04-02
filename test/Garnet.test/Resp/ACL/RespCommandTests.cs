@@ -1463,6 +1463,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterFlushAllACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER FLUSHALL",
+                [DoClusterFlushAllAsync]
+            );
+
+            static async Task DoClusterFlushAllAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["FLUSHALL"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterFailReplicationOffsetACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -6286,6 +6315,66 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GeoRadiusACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUS",
+                [DoGeoRadiusAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUS", ["foo", "0", "85", "10", "km"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusROACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUS_RO",
+                [DoGeoRadiusROAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusROAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUS_RO", ["foo", "0", "85", "10", "km"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusByMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUSBYMEMBER",
+                [DoGeoRadiusByMemberAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusByMemberAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUSBYMEMBER", ["foo", "bar", "10", "km"]);
+            }
+        }
+
+        [Test]
+        public async Task GeoRadiusByMemberROACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEORADIUSBYMEMBER_RO",
+                [DoGeoRadiusByMemberROAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoRadiusByMemberROAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("GEORADIUSBYMEMBER_RO", ["foo", "bar", "10", "km"]);
+            }
+        }
+
+        [Test]
         public async Task GeoSearchACLsAsync()
         {
             await CheckCommandsAsync(
@@ -6959,6 +7048,165 @@ namespace Garnet.test.Resp.ACL
                 ClassicAssert.AreEqual(2, val.Length);
                 ClassicAssert.IsNull(val[0]);
                 ClassicAssert.IsNull(val[1]);
+            }
+        }
+
+        [Test]
+        public async Task ZExpireACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZEXPIRE",
+                [DoZExpireAsync]
+            );
+
+            static async Task DoZExpireAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZEXPIRE", ["foo", "1", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZPExpireACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZPEXPIRE",
+                [DoZPExpireAsync]
+            );
+
+            static async Task DoZPExpireAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZPEXPIRE", ["foo", "1", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZEXPIREAT",
+                [DoZExpireAtAsync]
+            );
+
+            static async Task DoZExpireAtAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds().ToString(), "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZPExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZPEXPIREAT",
+                [DoZPExpireAtAsync]
+            );
+
+            static async Task DoZPExpireAtAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZPEXPIREAT", ["foo", DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds().ToString(), "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZEXPIRETIME",
+                [DoZExpireTimeAsync]
+            );
+
+            static async Task DoZExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZEXPIRETIME", ["foo", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZPExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZPEXPIRETIME",
+                [DoZPExpireTimeAsync]
+            );
+
+            static async Task DoZPExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZPEXPIRETIME", ["foo", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZTTLACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZTTL",
+                [DoZETTLAsync]
+            );
+
+            static async Task DoZETTLAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZTTL", ["foo", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZPTTLACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZPTTL",
+                [DoZPETTLAsync]
+            );
+
+            static async Task DoZPETTLAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZPTTL", ["foo", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZPersistACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZPERSIST",
+                [DoZPersistAsync]
+            );
+
+            static async Task DoZPersistAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("ZPERSIST", ["foo", "MEMBERS", "1", "bar"]);
+                ClassicAssert.AreEqual(1, val.Length);
+                ClassicAssert.AreEqual("-2", val[0]);
+            }
+        }
+
+        [Test]
+        public async Task ZCollectACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZCOLLECT",
+                [DoZCollectAsync]
+            );
+
+            static async Task DoZCollectAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("ZCOLLECT", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
             }
         }
 

@@ -1194,13 +1194,13 @@ namespace Garnet.test
             var server = redis.GetServers().First();
             db.HashSet("myhash", [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")]);
 
-            var result = db.Execute("HEXPIRE", "myhash", "1", "FIELDS", "2", "field1", "field2");
+            var result = db.Execute("HPEXPIRE", "myhash", "500", "FIELDS", "2", "field1", "field2");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
             ClassicAssert.AreEqual(1, (long)results[1]);
 
-            result = db.Execute("HEXPIRE", "myhash", "3", "FIELDS", "2", "field3", "field4");
+            result = db.Execute("HPEXPIRE", "myhash", "1500", "FIELDS", "2", "field3", "field4");
             results = (RedisResult[])result;
             ClassicAssert.AreEqual(2, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);
@@ -1208,7 +1208,7 @@ namespace Garnet.test
 
             var orginalMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
 
-            await Task.Delay(1200);
+            await Task.Delay(600);
 
             var newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1220,7 +1220,7 @@ namespace Garnet.test
             ClassicAssert.Less(newMemory, orginalMemory);
             orginalMemory = newMemory;
 
-            await Task.Delay(2200);
+            await Task.Delay(1100);
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.AreEqual(newMemory, orginalMemory);
@@ -1313,8 +1313,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("HSET myhash field1 myvalue", bytesSent);
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1326,21 +1325,17 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommandChunks("HSET myhash field1 field1value field2 field2value field3 field3value field4 field4value", bytesSent);
             var expectedResponse = ":4\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":680\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // multiple get
-            var result = lightClientRequest.SendCommand("HMGET myhash field1 field2", 3);
+            response = lightClientRequest.SendCommand("HMGET myhash field1 field2", 3);
             expectedResponse = "*2\r\n$11\r\nfield1value\r\n$11\r\nfield2value\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         [TestCase(10)]
@@ -1351,34 +1346,26 @@ namespace Garnet.test
 
             var response = lightClientRequest.SendCommandChunks("HSET myhashone field1 field1value field2 field2value", bytesPerSend);
             var expectedResponse = ":2\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var result = lightClientRequest.SendCommandChunks("HGET myhashone field1", bytesPerSend);
+            response = lightClientRequest.SendCommandChunks("HGET myhashone field1", bytesPerSend);
             expectedResponse = "$11\r\nfield1value\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("HSET myhash field1 field1value field2 field2value field3 field3value field4 field4value", bytesPerSend);
             expectedResponse = ":4\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //get all keys
+            response = lightClientRequest.SendCommandChunks("HGETALL myhash", bytesPerSend, 9);
             expectedResponse = "*8\r\n$6\r\nfield1\r\n$11\r\nfield1value\r\n$6\r\nfield2\r\n$11\r\nfield2value\r\n$6\r\nfield3\r\n$11\r\nfield3value\r\n$6\r\nfield4\r\n$11\r\nfield4value\r\n";
-            result = lightClientRequest.SendCommandChunks("HGETALL myhash", bytesPerSend, 9);
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //get only keys
+            response = lightClientRequest.SendCommandChunks("HKEYS myhash", bytesPerSend, 5);
             expectedResponse = "*4\r\n$6\r\nfield1\r\n$6\r\nfield2\r\n$6\r\nfield3\r\n$6\r\nfield4\r\n";
-            result = lightClientRequest.SendCommandChunks("HKEYS myhash", bytesPerSend, 5);
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
-
-
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public void CanSetAndGetMultiplePairsSecondUseCaseLC()
@@ -1387,15 +1374,13 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field1 field1value field2 field2value");
             var expectedResponse = ":2\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // only update one field
             lightClientRequest.SendCommand("HSET myhash field1 field1valueupdated");
-            var result = lightClientRequest.SendCommand("HGET myhash field1");
+            response = lightClientRequest.SendCommand("HGET myhash field1");
             expectedResponse = "$18\r\nfield1valueupdated\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1404,31 +1389,25 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field1 field1value field2 field2value");
             var expectedResponse = ":2\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":408\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            var result = lightClientRequest.SendCommand("HDEL myhash field1");
+            response = lightClientRequest.SendCommand("HDEL myhash field1");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":272\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //HDEL with nonexisting key
-            result = lightClientRequest.SendCommand("HDEL foo bar");
+            response = lightClientRequest.SendCommand("HDEL foo bar");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public void CanDoGetAllLC()
@@ -1436,13 +1415,12 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field1 field1value field2 field2value field3 field3value field4 field4value");
             var expectedResponse = ":4\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             //get all keys
             expectedResponse = "*8\r\n$6\r\nfield1\r\n$11\r\nfield1value\r\n$6\r\nfield2\r\n$11\r\nfield2value\r\n$6\r\nfield3\r\n$11\r\nfield3value\r\n$6\r\nfield4\r\n$11\r\nfield4value\r\n";
-            var result = lightClientRequest.SendCommand("HGETALL myhash", 9);
-            actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            response = lightClientRequest.SendCommand("HGETALL myhash", 9);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1451,32 +1429,27 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field1 myvalue");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get an existing field
             response = lightClientRequest.SendCommand("HEXISTS myhash field1");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get an nonexisting field
             response = lightClientRequest.SendCommand("HEXISTS myhash field0");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //non existing hash
             response = lightClientRequest.SendCommand("HEXISTS foo field0");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HEXISTS foo");
             expectedResponse = FormatWrongNumOfArgsError("HEXISTS");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1485,38 +1458,32 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field1 myvalue");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get an existing field
             response = lightClientRequest.SendCommand("HSTRLEN myhash field1");
             expectedResponse = ":7\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get an nonexisting field
             response = lightClientRequest.SendCommand("HSTRLEN myhash field0");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //non existing hash
             response = lightClientRequest.SendCommand("HSTRLEN foo field0");
             expectedResponse = ":0\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo");
             expectedResponse = FormatWrongNumOfArgsError("HSTRLEN");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //too many paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo field0 field1");
             expectedResponse = FormatWrongNumOfArgsError("HSTRLEN");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1525,26 +1492,21 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field1 1");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":264\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // do hincrby
             response = lightClientRequest.SendCommand("HINCRBY myhash field1 4");
             expectedResponse = ":5\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":264\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         [Test]
         public void CanDoIncrByFloatLC()
@@ -1552,44 +1514,36 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash field 10.50");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":264\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HINCRBYFLOAT myhash field 0.1");
             expectedResponse = "$4\r\n10.6\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":264\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // exponential notation
             response = lightClientRequest.SendCommand("HSET myhash field2 5.0e3");
             expectedResponse = ":1\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":392\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("HINCRBYFLOAT myhash field2 2.0e2", "PING HELLO");
             expectedResponse = "$4\r\n5200\r\n$5\r\nHELLO\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
             expectedResponse = ":392\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1598,31 +1552,26 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HMSET coin heads obverse tails reverse edge null");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Check correct case when not an integer value in COUNT parameter
             response = lightClientRequest.SendCommand("HRANDFIELD coin A WITHVALUES");
             expectedResponse = "-ERR value is not an integer or out of range.\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Check correct error message when incorrect number of parameters
             response = lightClientRequest.SendCommand("HRANDFIELD");
             expectedResponse = FormatWrongNumOfArgsError("HRANDFIELD");
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-
-            for (int i = 0; i < 3; i++)
+            for (var i = 0; i < 3; i++)
             {
                 response = lightClientRequest.SendCommand("HRANDFIELD coin 3 WITHVALUES", 7);
                 expectedResponse = "*6\r\n"; // 3 keyvalue pairs
-                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
 
-            for (int i = 0; i < 3; i++)
+            for (var i = 0; i < 3; i++)
             {
                 string s = Encoding.ASCII.GetString(lightClientRequest.SendCommand("HRANDFIELD coin", 1));
                 int startIndexField = s.IndexOf('\n') + 1;
@@ -1636,8 +1585,7 @@ namespace Garnet.test
             {
                 response = lightClientRequest.SendCommand("HRANDFIELD coin -5 WITHVALUES", 11);
                 expectedResponse = "*10\r\n"; // 5 keyvalue pairs
-                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                ClassicAssert.AreEqual(expectedResponse, actualValue);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
         }
 
@@ -1647,13 +1595,11 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HMSET coin heads obverse tails reverse edge null");
             var expectedResponse = "+OK\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("HGET coin nokey", "PING", 1, 1);
             expectedResponse = "$-1\r\n+PONG\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1662,10 +1608,8 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HGET foo bar", "PING", 1, 1);
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
         #endregion
 
 
@@ -1675,68 +1619,66 @@ namespace Garnet.test
         public async Task CanFailWhenUseMultiWatchTest()
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res;
 
-            string key = "myhash";
+            var key = "myhash";
 
-            res = lightClientRequest.SendCommand($"HSET {key} field1 1");
-            string expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var response = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"WATCH {key}");
+            response = lightClientRequest.SendCommand($"WATCH {key}");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand("MULTI");
+            response = lightClientRequest.SendCommand("MULTI");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"HINCRBY {key} field1 2");
+            response = lightClientRequest.SendCommand($"HINCRBY {key} field1 2");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             await Task.Run(() => UpdateHashMap(key));
 
-            res = lightClientRequest.SendCommand("EXEC");
+            response = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "*-1";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This sequence should work
-            res = lightClientRequest.SendCommand("MULTI");
+            response = lightClientRequest.SendCommand("MULTI");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"HSET {key} field2 2");
+            response = lightClientRequest.SendCommand($"HSET {key} field2 2");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This should commit
-            res = lightClientRequest.SendCommand("EXEC", 2);
+            response = lightClientRequest.SendCommand("EXEC", 2);
             expectedResponse = "*1\r\n:1\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // HMSET within MULTI/EXEC
-            res = lightClientRequest.SendCommand("MULTI");
+            response = lightClientRequest.SendCommand("MULTI");
             expectedResponse = "+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            res = lightClientRequest.SendCommand($"HMSET {key} field4 4");
+            response = lightClientRequest.SendCommand($"HMSET {key} field4 4");
             expectedResponse = "+QUEUED\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // This should commit
-            res = lightClientRequest.SendCommand("EXEC", 2);
+            response = lightClientRequest.SendCommand("EXEC", 2);
             expectedResponse = "*1\r\n+OK\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
-
 
         private static void UpdateHashMap(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            byte[] res = lightClientRequest.SendCommand($"HSET {keyName} field3 3");
-            string expectedResponse = ":1\r\n";
-            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            var response = lightClientRequest.SendCommand($"HSET {keyName} field3 3");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         #endregion
@@ -1749,8 +1691,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HRANDFIELD foo -5 WITHVALUES", "PING", 1, 1);
             var expectedResponse = "*0\r\n+PONG\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1759,8 +1700,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HRANDFIELD foo", "PING", 1, 1);
             var expectedResponse = "$-1\r\n+PONG\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1769,8 +1709,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HVALS foo", "PING HELLO", 1, 1);
             var expectedResponse = "*0\r\n$5\r\nHELLO\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1779,8 +1718,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBY foo", "PING HELLO", 1, 1);
             var expectedResponse = $"{FormatWrongNumOfArgsError("HINCRBY")}$5\r\nHELLO\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1789,8 +1727,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBYFLOAT foo", "PING HELLO", 1, 1);
             var expectedResponse = $"{FormatWrongNumOfArgsError("HINCRBYFLOAT")}$5\r\nHELLO\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1799,13 +1736,11 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand($"HSET myhash int64 {1L + int.MaxValue}");
             var expectedResponse = ":1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HINCRBY myhash int64 1");
             expectedResponse = $":{2L + int.MaxValue}\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
         #endregion
 

@@ -3,10 +3,11 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Garnet.common;
+using System.Threading;
 using KeraLua;
 using Microsoft.Extensions.Logging;
 
@@ -20,12 +21,13 @@ namespace Garnet.server
     /// </summary>
     internal struct LuaStateWrapper : IDisposable
     {
-        private const int LUA_MINSTACK = 20;
+        internal const int LUA_MINSTACK = 20;
 
-        private SingleWriterMultiReaderLock hookLock;
+        private readonly ILuaAllocator customAllocator;
 
         private GCHandle customAllocatorHandle;
 
+        private int stateUpdateLock;
         private nint state;
         private int curStackSize;
 
@@ -36,13 +38,20 @@ namespace Garnet.server
         /// </summary>
         internal int StackTop { get; private set; }
 
+        /// <summary>
+        /// If execution has left this wrapper in a dangerous (but not illegal) state, this will be set.
+        /// 
+        /// At the next convenient point, this <see cref="LuaStateWrapper"/> should be disposed and recreated.
+        /// </summary>
+        internal bool NeedsDispose { get; private set; }
+
         internal unsafe LuaStateWrapper(LuaMemoryManagementMode memMode, int? memLimitBytes, ILogger logger)
         {
             // As an emergency thing, we need a logger (any logger) if Lua is going to panic
             // TODO: Consider a better way to do this?
             LuaStateWrapperTrampolines.PanicLogger ??= logger;
 
-            ILuaAllocator customAllocator =
+            customAllocator =
                 (memMode, memLimitBytes) switch
                 {
                     (LuaMemoryManagementMode.Native, null) => null,
@@ -51,8 +60,6 @@ namespace Garnet.server
                     (LuaMemoryManagementMode.Managed, _) => new LuaLimitedManagedAllocator(memLimitBytes.Value),
                     _ => throw new InvalidOperationException($"Unexpected mode/limit combination: {memMode}/{memLimitBytes}")
                 };
-
-            hookLock = new();
 
             if (customAllocator != null)
             {
@@ -80,22 +87,20 @@ namespace Garnet.server
         public void Dispose()
         {
             // Synchronize with respect to hook'ing
-            hookLock.WriteLock();
-            try
+            while (Interlocked.CompareExchange(ref stateUpdateLock, 1, 0) != 0)
             {
-                // make sure we only close once
-                if (state != 0)
-                {
-
-                    NativeMethods.Close(state);
-                    state = 0;
-                }
-            }
-            finally
-            {
-                hookLock.WriteUnlock();
+                _ = Thread.Yield();
             }
 
+            // make sure we only close once
+            if (state != 0)
+            {
+
+                NativeMethods.Close(state);
+                state = 0;
+            }
+
+            _ = Interlocked.Exchange(ref stateUpdateLock, 0);
 
             if (customAllocatorHandle.IsAllocated)
             {
@@ -119,27 +124,29 @@ namespace Garnet.server
         /// <summary>
         /// Ensure there's enough space on the Lua stack for <paramref name="additionalCapacity"/> more items.
         /// 
-        /// Throws if there is not.
+        /// Returns false if space cannot be obtained.
         /// 
         /// Maintains <see cref="StackTop"/> to avoid unnecessary p/invokes.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ForceMinimumStackCapacity(int additionalCapacity)
+        internal bool TryEnsureMinimumStackCapacity(int additionalCapacity)
         {
             var availableSpace = curStackSize - StackTop;
 
             if (availableSpace >= additionalCapacity)
             {
-                return;
+                return true;
             }
 
             var needed = additionalCapacity - availableSpace;
             if (!NativeMethods.CheckStack(state, needed))
             {
-                throw new GarnetException("Could not reserve additional capacity on the Lua stack");
+                return false;
             }
 
             curStackSize += additionalCapacity;
+
+            return true;
         }
 
         /// <summary>
@@ -157,14 +164,20 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all CheckBuffer calls into Lua.
+        /// Call when the Lua runtime calls back into .NET code AND we know enough details about the caller
+        /// to elide some p/invoke.
+        /// 
+        /// Calls from user provided scripts should go through <see cref="CallFromLuaEntered(nint)"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly bool CheckBuffer(int index, out ReadOnlySpan<byte> str)
+        internal void KnownCallFromLuaEntered(IntPtr luaStatePtr, [ConstantExpected] int knownArgumentCount)
         {
-            AssertLuaStackIndexInBounds(index);
+            Debug.Assert(luaStatePtr == state, "Unexpected Lua state presented");
+            Debug.Assert(knownArgumentCount is >= 0 and <= LUA_MINSTACK, "known argument must be >= 0 and <= LUA_MINSTACK");
+            Debug.Assert(NativeMethods.GetTop(state) == knownArgumentCount, "knowArgumentCount is incorrect");
 
-            return NativeMethods.CheckBuffer(state, index, out str);
+            StackTop = knownArgumentCount;
+            curStackSize = LUA_MINSTACK;
         }
 
         /// <summary>
@@ -184,12 +197,16 @@ namespace Garnet.server
         /// If the string is a constant, consider registering it in the constructor and using <see cref="PushConstantString"/> instead.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void PushBuffer(ReadOnlySpan<byte> buffer)
+        internal bool TryPushBuffer(ReadOnlySpan<byte> buffer)
         {
             AssertLuaStackNotFull();
 
-            _ = ref NativeMethods.PushBuffer(state, buffer);
+            EnterInfallibleAllocationRegion();
+
+            NativeMethods.PushBuffer(state, buffer);
             UpdateStackTop(1);
+
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -284,40 +301,20 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// This should be used for all Calls into Lua.
-        /// 
-        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Call(int args, int rets)
-        {
-            // We have to copy this off, as once we PCall curStackTop could be modified
-            var oldStackTop = StackTop;
-
-            NativeMethods.Call(state, args, rets);
-
-            if (rets < 0)
-            {
-                StackTop = NativeMethods.GetTop(state);
-                AssertLuaStackExpected();
-            }
-            else
-            {
-                var newPosition = oldStackTop - (args + 1) + rets;
-                var update = newPosition - StackTop;
-                UpdateStackTop(update);
-            }
-        }
-
-        /// <summary>
         /// This should be used for all RawSetIntegers into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// 
+        /// Takes <paramref name="tableArraySize"/>, the size of the array portion of the table being updated.
+        /// 
+        /// Incorrectly specifying this <paramref name="tableArraySize"/> cause OOMs which lead to crashes.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void RawSetInteger(int stackIndex, int tableIndex)
+        internal void RawSetInteger(int tableArraySize, int stackIndex, int tableIndex)
         {
             AssertLuaStackIndexInBounds(stackIndex);
+
+            Debug.Assert(tableIndex >= 1 && tableIndex <= tableArraySize, "Assigning index in table could cause allocation");
 
             NativeMethods.RawSetInteger(state, stackIndex, tableIndex);
             UpdateStackTop(-1);
@@ -329,9 +326,12 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void RawSet(int stackIndex)
+        internal void RawSet(int tableRecordCount, int stackIndex, ref int setRecordCount)
         {
             AssertLuaStackIndexInBounds(stackIndex);
+
+            setRecordCount++;
+            Debug.Assert(tableRecordCount >= 1 && setRecordCount <= tableRecordCount, "Assigning key in table could cause allocation");
 
             NativeMethods.RawSet(state, stackIndex);
             UpdateStackTop(-2);
@@ -378,14 +378,21 @@ namespace Garnet.server
         /// This should be used for all Refs into Lua.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// 
+        /// Note this will CRASH if there is insufficient memory to create the ref.
+        /// Accordingly, there should only be a fixed number of these calls against any <see cref="LuaStateWrapper"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int Ref()
+        internal bool TryRef(out int ret)
         {
-            var ret = NativeMethods.Ref(state, (int)LuaRegistry.Index);
+            AssertLuaStackNotEmpty();
+
+            EnterInfallibleAllocationRegion();
+
+            ret = NativeMethods.Ref(state, (int)LuaRegistry.Index);
             UpdateStackTop(-1);
 
-            return ret;
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -403,12 +410,16 @@ namespace Garnet.server
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CreateTable(int numArr, int numRec)
+        internal bool TryCreateTable(int numArr, int numRec)
         {
             AssertLuaStackNotFull();
 
+            EnterInfallibleAllocationRegion();
+
             NativeMethods.CreateTable(state, numArr, numRec);
             UpdateStackTop(1);
+
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -431,49 +442,108 @@ namespace Garnet.server
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
-        internal void SetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
+        internal bool TrySetGlobal(ReadOnlySpan<byte> nullTerminatedGlobalName)
         {
             AssertLuaStackNotEmpty();
+
+            EnterInfallibleAllocationRegion();
 
             NativeMethods.SetGlobal(state, nullTerminatedGlobalName);
 
             UpdateStackTop(-1);
+
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
         /// This should be used for all LoadBuffers into Lua.
         /// 
-        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled.
+        /// Note that this is different from pushing a buffer, as the loaded buffer is compiled and executed.
         /// 
         /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LuaStatus LoadBuffer(ReadOnlySpan<byte> buffer)
         {
-            AssertLuaStackNotFull();
+            AssertLuaStackNotFull(2);
 
+            // Note that https://www.lua.org/source/5.4/lauxlib.c.html#luaL_loadbufferx is implemented in terms of
+            // a PCall, so we don't have to worry about crashes.
             var ret = NativeMethods.LoadBuffer(state, buffer);
 
-            UpdateStackTop(1);
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
 
             return ret;
         }
 
         /// <summary>
-        /// Call when value at index is KNOWN to be a string or number
+        /// This should be used for all LoadStrings into Lua.
+        /// 
+        /// Note that this is different from pushing or loading buffer, as the loaded buffer is compiled but NOT executed.
+        /// 
+        /// Maintains <see cref="curStackSize"/> and <see cref="StackTop"/> to minimize p/invoke calls.
+        /// </summary>
+        internal LuaStatus LoadString(ReadOnlySpan<byte> buffer)
+        {
+            AssertLuaStackNotFull(2);
+
+            // Note that https://www.lua.org/source/5.4/lauxlib.h.html#luaL_loadbuffer is implemented in terms of
+            // a PCall, so we don't have to worry about crashes.
+            var ret = NativeMethods.LoadString(state, buffer);
+
+            if (ret != LuaStatus.OK)
+            {
+                StackTop = NativeMethods.GetTop(state);
+            }
+            else
+            {
+                UpdateStackTop(1);
+            }
+
+            AssertLuaStackExpected();
+
+            return ret;
+        }
+
+        /// <summary>
+        /// Call to convert a number on the stack to a string in the same slot.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryNumberToString(int stackIndex, out ReadOnlySpan<byte> str)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+
+            Debug.Assert(Type(stackIndex) is LuaType.Number, "Called with non-number");
+
+            EnterInfallibleAllocationRegion();
+
+            var convRes = NativeMethods.CheckBuffer(state, stackIndex, out str);
+            Debug.Assert(convRes, "Conversion failed, this should not happen");
+
+            return TryExitInfallibleAllocationRegion();
+        }
+
+        /// <summary>
+        /// Call when value at index is KNOWN to be a string.
         /// 
         /// <paramref name="str"/> only remains valid as long as the buffer remains on the stack,
         /// use with care.
-        /// 
-        /// Note that is changes the value on the stack to be a string if it returns true, regardless of
-        /// what it was originally.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly void KnownStringToBuffer(int stackIndex, out ReadOnlySpan<byte> str)
         {
             AssertLuaStackIndexInBounds(stackIndex);
 
-            Debug.Assert(Type(stackIndex) is LuaType.String or LuaType.Number, "Called with non-string, non-number");
+            Debug.Assert(Type(stackIndex) is LuaType.String, "Called with non-string");
 
             NativeMethods.KnownStringToBuffer(state, stackIndex, out str);
         }
@@ -517,6 +587,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void PushCFunction(delegate* unmanaged[Cdecl]<nint, int> function)
         {
+            AssertLuaStackNotFull();
+
             NativeMethods.PushCFunction(state, (nint)function);
             UpdateStackTop(1);
         }
@@ -524,12 +596,16 @@ namespace Garnet.server
         /// <summary>
         /// Call to register a function in the Lua global namespace.
         /// </summary>
-        internal unsafe void Register(ReadOnlySpan<byte> nullTerminatedName, delegate* unmanaged[Cdecl]<nint, int> function)
+        internal unsafe bool TryRegister(ReadOnlySpan<byte> nullTerminatedName, delegate* unmanaged[Cdecl]<nint, int> function)
         {
             PushCFunction(function);
 
+            EnterInfallibleAllocationRegion();
+
             NativeMethods.SetGlobal(state, nullTerminatedName);
             UpdateStackTop(-1);
+
+            return TryExitInfallibleAllocationRegion();
         }
 
         /// <summary>
@@ -550,7 +626,7 @@ namespace Garnet.server
             AssertLuaStackIndexInBounds(tableIndex);
 
             // Will always remove 1 key, and _may_ push 2 new values for a net growth of 1
-            AssertLuaStackNotFull(1);
+            AssertLuaStackNotFull();
 
             var ret = NativeMethods.Next(state, tableIndex);
 
@@ -581,6 +657,32 @@ namespace Garnet.server
             UpdateStackTop(1);
         }
 
+        /// <summary>
+        /// This should be used for all Removes into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Remove(int stackIndex)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+
+            NativeMethods.Rotate(state, stackIndex, -1);
+            NativeMethods.Pop(state, 1);
+
+            UpdateStackTop(-1);
+        }
+
+        /// <summary>
+        /// This should be used for all Rotates into Lua.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void Rotate(int stackIndex, int n)
+        {
+            AssertLuaStackIndexInBounds(stackIndex);
+            Debug.Assert(Math.Abs(n) <= (StackTop - stackIndex), "Rotation cannot be larger than slice being rotated");
+
+            NativeMethods.Rotate(state, stackIndex, n);
+        }
+
         // Rarely used
 
         /// <summary>
@@ -592,20 +694,21 @@ namespace Garnet.server
         /// </summary>
         internal unsafe bool TrySetHook(delegate* unmanaged[Cdecl]<nint, nint, void> hook, LuaHookMask mask, int count)
         {
-            hookLock.ReadLock();
-            try
+            while (Interlocked.CompareExchange(ref stateUpdateLock, 1, 0) != 0)
             {
-                if (state == 0)
-                {
-                    return false;
-                }
+                _ = Thread.Yield();
+            }
 
-                NativeMethods.SetHook(state, hook, mask, count);
-            }
-            finally
+            if (state == 0)
             {
-                hookLock.ReadUnlock();
+                _ = Interlocked.Exchange(ref stateUpdateLock, 0);
+
+                return false;
             }
+
+            NativeMethods.SetHook(state, hook, mask, count);
+
+            _ = Interlocked.Exchange(ref stateUpdateLock, 0);
 
             return true;
         }
@@ -622,28 +725,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Clear the stack and raise an error with the given message.
-        /// </summary>
-        internal int RaiseError(string msg)
-        {
-            ClearStack();
-
-            var b = Encoding.UTF8.GetBytes(msg);
-            PushBuffer(b);
-            return RaiseErrorFromStack();
-        }
-
-        /// <summary>
-        /// Raise an error, where the top of the stack is the error message.
-        /// </summary>
-        internal readonly int RaiseErrorFromStack()
-        {
-            Debug.Assert(StackTop != 0, "Expected error message on the stack");
-
-            return NativeMethods.Error(state);
-        }
-
-        /// <summary>
         /// Helper to update <see cref="StackTop"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -651,6 +732,46 @@ namespace Garnet.server
         {
             StackTop += by;
             AssertLuaStackExpected();
+        }
+
+        /// <summary>
+        /// Enter a region where allocation calls against the <see cref="customAllocator"/> cannot fail.
+        /// 
+        /// Must be paired with a call to <see cref="TryExitInfallibleAllocationRegion"/>, which indicates if
+        /// an OOM should be raised.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private readonly void EnterInfallibleAllocationRegion()
+        {
+            if (customAllocator == null)
+            {
+                return;
+            }
+
+            customAllocator.EnterInfallibleAllocationRegion();
+        }
+
+        /// <summary>
+        /// Exit a previously entered infallible allocation region.
+        /// 
+        /// If an allocation occurred that SHOULD have failed, false is returned.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryExitInfallibleAllocationRegion()
+        {
+            if (customAllocator == null)
+            {
+                return true;
+            }
+
+            var ret = customAllocator.TryExitInfallibleAllocationRegion();
+
+            if (!ret)
+            {
+                NeedsDispose = true;
+            }
+
+            return ret;
         }
 
         // Conditional compilation checks
@@ -758,28 +879,45 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         internal static unsafe nint LuaAllocateBytes(nint udPtr, nint ptr, nuint osize, nuint nsize)
         {
-            // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
-
-            var handle = (GCHandle)udPtr;
-            Debug.Assert(handle.IsAllocated, "GCHandle should always be valid");
-
-            var customAllocator = (ILuaAllocator)handle.Target;
-
-            if (ptr != IntPtr.Zero)
+            try
             {
-                // Now osize is the size used to (re)allocate ptr last
+                // See: https://www.lua.org/manual/5.4/manual.html#lua_Alloc
 
-                ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+                var handle = (GCHandle)udPtr;
+                Debug.Assert(handle.IsAllocated, "GCHandle should always be valid");
 
-                if (nsize == 0)
+                var customAllocator = (ILuaAllocator)handle.Target;
+
+                if (ptr != IntPtr.Zero)
                 {
-                    customAllocator.Free(ref dataRef, (int)osize);
+                    // Now osize is the size used to (re)allocate ptr last
 
-                    return 0;
+                    ref var dataRef = ref Unsafe.AsRef<byte>((void*)ptr);
+
+                    if (nsize == 0)
+                    {
+                        customAllocator.Free(ref dataRef, (int)osize);
+
+                        return 0;
+                    }
+                    else
+                    {
+                        ref var ret = ref customAllocator.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
+                        if (failed)
+                        {
+                            return 0;
+                        }
+
+                        var retPtr = (nint)Unsafe.AsPointer(ref ret);
+
+                        return retPtr;
+                    }
                 }
                 else
                 {
-                    ref var ret = ref customAllocator.ResizeAllocation(ref dataRef, (int)osize, (int)nsize, out var failed);
+                    // Now osize is the size of the object being allocated, but nsize is the desired size
+
+                    ref var ret = ref customAllocator.AllocateNew((int)nsize, out var failed);
                     if (failed)
                     {
                         return 0;
@@ -790,19 +928,11 @@ namespace Garnet.server
                     return retPtr;
                 }
             }
-            else
+            catch (Exception e)
             {
-                // Now osize is the size of the object being allocated, but nsize is the desired size
+                PanicLogger?.LogCritical(e, "Exception raised in LuaAllocateBytes, this is likely to crash the process");
 
-                ref var ret = ref customAllocator.AllocateNew((int)nsize, out var failed);
-                if (failed)
-                {
-                    return 0;
-                }
-
-                var retPtr = (nint)Unsafe.AsPointer(ref ret);
-
-                return retPtr;
+                throw;
             }
         }
     }

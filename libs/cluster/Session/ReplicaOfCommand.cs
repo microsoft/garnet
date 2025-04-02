@@ -24,19 +24,22 @@ namespace Garnet.cluster
             var addressSpan = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var portSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-            //Turn of replication and make replica into a primary but do not delete data
+            // Turn of replication and make replica into a primary but do not delete data
             if (addressSpan.EqualsUpperCaseSpanIgnoringCase("NO"u8) &&
                 portSpan.EqualsUpperCaseSpanIgnoringCase("ONE"u8))
             {
+                var acquiredLock = false;
                 try
                 {
-                    if (!clusterProvider.replicationManager.StartRecovery())
+                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
+                    acquiredLock = true;
+
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
@@ -44,7 +47,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    clusterProvider.replicationManager.SuspendRecovery();
+                    if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
                 }
             }
             else
@@ -68,8 +71,8 @@ namespace Garnet.cluster
                 }
 
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, out var errorMessage) :
-                    clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true, out errorMessage);
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, tryAddReplica: true, out var errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
 
                 if (!success)
                 {

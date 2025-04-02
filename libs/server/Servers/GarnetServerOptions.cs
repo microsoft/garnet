@@ -137,9 +137,9 @@ namespace Garnet.server
         public int CompactionFrequencySecs = 0;
 
         /// <summary>
-        /// Hash collection frequency in seconds. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation.
+        /// Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.
         /// </summary>
-        public int HashCollectFrequencySecs = 0;
+        public int ExpiredObjectCollectionFrequencySecs = 0;
 
         /// <summary>
         /// Hybrid log compaction type.
@@ -447,11 +447,31 @@ namespace Garnet.server
         public UnixFileMode UnixSocketPermission { get; set; }
 
         /// <summary>
+        /// Epoch instance used by server
+        /// </summary>
+        public LightEpoch Epoch;
+
+        /// <summary>
+        /// Common state machine driver used by Garnet
+        /// </summary>
+        public StateMachineDriver StateMachineDriver;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
         {
             this.logger = logger;
+        }
+
+        /// <summary>
+        /// Initialize Garnet server options
+        /// </summary>
+        /// <param name="loggerFactory"></param>
+        public void Initialize(ILoggerFactory loggerFactory = null)
+        {
+            Epoch = new LightEpoch();
+            StateMachineDriver = new(Epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
         }
 
         /// <summary>
@@ -466,15 +486,16 @@ namespace Garnet.server
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
 
-            KVSettings<SpanByte, SpanByte> kvSettings = new(baseDir: null, logger: logger);
-
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
-            kvSettings = new()
+
+            KVSettings<SpanByte, SpanByte> kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
                 PageSize = 1L << PageSizeBits(),
+                Epoch = Epoch,
+                StateMachineDriver = StateMachineDriver,
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
@@ -618,23 +639,26 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the object store log
         /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILoggerFactory loggerFactory, out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
         {
             objReadCacheHeapMemorySize = default;
 
             if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
 
-            KVSettings<byte[], IGarnetObject> kvSettings = new(baseDir: null, logger: logger);
-
             var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
-            kvSettings = new()
+            KVSettings<byte[], IGarnetObject> kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = ObjectStoreMutablePercent / 100.0,
-                PageSize = 1L << ObjectStorePageSizeBits()
+                PageSize = 1L << ObjectStorePageSizeBits(),
+                Epoch = Epoch,
+                StateMachineDriver = StateMachineDriver,
+                loggerFactory = loggerFactory,
+                logger = loggerFactory?.CreateLogger("TsavoriteKV  [obj]")
             };
+
             logger?.LogInformation("[Object Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
             logger?.LogInformation("[Object Store] Each page can hold ~{PageSize} key-value pairs of objects", kvSettings.PageSize / 24);
 

@@ -46,25 +46,14 @@ namespace Tsavorite.core
             where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             CheckIsNotAcquiredLockable(sessionFunctions);
+            sessionFunctions.Ctx.isAcquiredLockable = true;
+        }
 
-            while (true)
-            {
-                // Checkpoints cannot complete while we have active locking sessions.
-                while (IsInPreparePhase())
-                {
-                    if (store.epoch.ThisInstanceProtected())
-                        store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctions>(sessionFunctions);
-                    Thread.Yield();
-                }
-
-                store.IncrementNumLockingSessions();
-                sessionFunctions.Ctx.isAcquiredLockable = true;
-
-                if (!IsInPreparePhase())
-                    break;
-                InternalReleaseLockable(sessionFunctions);
-                _ = Thread.Yield();
-            }
+        internal void LocksAcquired<TSessionFunctions>(TSessionFunctions sessionFunctions, long txnVersion)
+            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            CheckIsAcquiredLockable(sessionFunctions);
+            sessionFunctions.Ctx.txnVersion = txnVersion;
         }
 
         internal void ReleaseLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
@@ -73,15 +62,8 @@ namespace Tsavorite.core
             CheckIsAcquiredLockable(sessionFunctions);
             if (TotalLockCount > 0)
                 throw new TsavoriteException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseLockable(sessionFunctions);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
-            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
             sessionFunctions.Ctx.isAcquiredLockable = false;
-            store.DecrementNumLockingSessions();
+            sessionFunctions.Ctx.txnVersion = 0;
         }
 
         internal void CheckIsAcquiredLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
@@ -545,16 +527,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public void ResetRevivificationStats() => ctx.ResetRevivificationStats();
-
-        /// <summary>
-        /// Return true if Tsavorite State Machine is in PREPARE state
-        /// </summary>
-        internal bool IsInPreparePhase()
-        {
-            var storeState = store.stateMachineDriver.SystemState;
-            return storeState.Phase == Phase.PREPARE || storeState.Phase == Phase.PREPARE_GROW;
-        }
-
         #endregion Other Operations
     }
 }

@@ -20,7 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
@@ -45,5 +44,9 @@
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
 		<None Include="..\..\README.md" Pack="true" PackagePath="/"/>
   </ItemGroup>
+
+	<PropertyGroup>
+		<NoWarn>$(NoWarn);NU5118</NoWarn>
+	</PropertyGroup>
 
 </Project>

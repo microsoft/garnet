@@ -59,6 +59,7 @@ namespace Garnet.server
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
                 RespCommand.FORCEGC => NetworkFORCEGC(),
                 RespCommand.HCOLLECT => NetworkHCOLLECT(ref storageApi),
+                RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
                 RespCommand.ACL_GETUSER => NetworkAclGetUser(),
@@ -642,6 +643,36 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkZCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZCOLLECT));
+            }
+
+            var keys = parseState.Parameters;
+
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
+            var input = new ObjectInput(header);
+
+            var status = storageApi.SortedSetCollect(keys, ref input);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
         private bool NetworkProcessClusterCommand(RespCommand command)
         {
             if (clusterSession == null)
@@ -818,7 +849,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
+            if (!storeWrapper.TakeCheckpoint(false, logger))
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
@@ -853,7 +884,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);
+            var success = storeWrapper.TakeCheckpoint(true, logger);
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))

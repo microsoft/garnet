@@ -59,7 +59,7 @@ namespace Garnet.test
             {
                 runner.CompileForRunner();
                 var ex = Assert.Throws<GarnetException>(() => runner.RunForRunner());
-                ClassicAssert.AreEqual("ERR Lua encountered an error: [string \"os.exit();\"]:1: attempt to index a nil value (global 'os')", ex.Message);
+                ClassicAssert.AreEqual("ERR Lua encountered an error: [string \"os.exit();\"]:1: attempt to call a nil value (field 'exit')", ex.Message);
             }
 
             // Try to include a new .net library
@@ -512,7 +512,7 @@ namespace Garnet.test
         public void RedisLogDisabled()
         {
             // Just because it's hard to test in LuaScriptTests, doing this here
-            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable), "redis.log(redis.LOG_WARNING, 'foo')");
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable, []), "redis.log(redis.LOG_WARNING, 'foo')");
 
             runner.CompileForRunner();
 
@@ -525,12 +525,240 @@ namespace Garnet.test
         {
             // Just because it's hard to test in LuaScriptTests, doing this here
             using var logger = new FakeLogger();
-            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent), "redis.log(redis.LOG_WARNING, 'foo')", logger: logger);
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, []), "redis.log(redis.LOG_WARNING, 'foo')", logger: logger);
 
             runner.CompileForRunner();
             _ = runner.RunForRunner();
 
             ClassicAssert.IsFalse(logger.Logs.Any(static x => x.Contains("redis.log")));
+        }
+
+        [Test]
+        public void AllowedFunctions()
+        {
+            List<string> globalFuncs = ["xpcall", "tostring", "setmetatable", "next", "assert", "tonumber", "rawequal", "collectgarbage", "getmetatable", "rawset", "pcall", "coroutine", "type", "_G", "select", "unpack", "gcinfo", "pairs", "rawget", "loadstring", "ipairs", "_VERSION", "load", "error"];
+            var exportedFuncs =
+                new Dictionary<string, List<string>>
+                {
+                    ["bit"] = ["tobit", "tohex", "bnot", "bor", "band", "bxor", "lshift", "rshift", "arshift", "rol", "ror", "bswap"],
+                    ["cjson"] = ["encode", "decode"],
+                    ["cmsgpack"] = ["pack", "unpack"],
+                    ["math"] = ["abs", "acos", "asin", "atan", "atan2", "ceil", "cos", "cosh", "deg", "exp", "floor", "fmod", "frexp", "huge", "ldexp", "log", "log10", "max", "min", "modf", "pi", "pow", "rad", "random", "randomseed", "sin", "sinh", "sqrt", "tan", "tanh"],
+                    ["os"] = ["clock"],
+                    ["redis"] = ["call", "pcall", "error_reply", "status_reply", "sha1hex", "log", "LOG_DEBUG", "LOG_VERBOSE", "LOG_NOTICE", "LOG_WARNING", "setresp", "set_repl", "REPL_ALL", "REPL_AOF", "REPL_REPLICA", "REPL_SLAVE", "REPL_NONE", "replicate_commands", "breakpoint", "debug", "acl_check_cmd", "REDIS_VERSION", "REDIS_VERSION_NUM"],
+                    ["string"] = ["byte", "char", "dump", "find", "format", "gmatch", "gsub", "len", "lower", "match", "rep", "reverse", "sub", "upper"],
+                    ["struct"] = ["pack", "unpack", "size"],
+                    ["table"] = ["concat", "insert", "maxn", "remove", "sort"],
+                };
+
+            // Check the supported globals
+            {
+                using var allRunner =
+                    new LuaRunner(
+                        new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, []),
+                        @$"local ret = {{ }}
+                            for k, v in pairs(_G) do
+                            table.insert(ret, k)
+                            end
+                            return ret"
+                    );
+
+                allRunner.CompileForRunner();
+                // __readonly is special and fine to leak, so ignore it
+                var allDefined = ((object[])allRunner.RunForRunner()).Select(static x => (string)x).Except(["__readonly"]).ToList();
+
+                var expected = globalFuncs.Concat(exportedFuncs.Keys);
+
+                var missing = expected.Except(allDefined).ToList();
+
+                // ARGV, KEYS, and redis are always available
+                var extra = allDefined.Except(expected).Except(["ARGV", "KEYS", "redis"]).ToList();
+
+                ClassicAssert.AreEqual(0, missing.Count, $"Missing globals: {string.Join(", ", missing)}");
+                ClassicAssert.AreEqual(0, extra.Count, $"Extra globals: {string.Join(", ", extra)}");
+
+                foreach (var globalFunc in globalFuncs)
+                {
+                    // These are special, just ignore them
+                    if (globalFunc is "type" or "_G" or "_VERSION")
+                    {
+                        continue;
+                    }
+
+                    var everythingExceptGlobalFunc = expected.Except([globalFunc]);
+
+                    using var withoutRunner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, everythingExceptGlobalFunc),
+                            $"return type({globalFunc})"
+                        );
+
+                    withoutRunner.CompileForRunner();
+                    var withoutDefined = (string)withoutRunner.RunForRunner();
+
+                    ClassicAssert.AreEqual("nil", withoutDefined, $"Global {globalFunc} available when it shouldn't have been");
+
+                    using var withRunner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, ["type", globalFunc]),
+                            $"return type({globalFunc})"
+                        );
+
+                    withRunner.CompileForRunner();
+                    var withDefined = (string)withRunner.RunForRunner();
+
+                    ClassicAssert.AreNotEqual("nil", withDefined, $"Global {globalFunc} not available when it should have been");
+                }
+            }
+
+            // Check for the supported Lua functions which are under names in globals
+
+            foreach (var (funcGroup, funcs) in exportedFuncs)
+            {
+                // Get all the keys under the funcGroup
+                {
+                    using var runner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, [funcGroup, "pairs", "table.insert"]),
+                            @$"local ret = {{ }}
+                               for k, v in pairs({funcGroup}) do
+                                table.insert(ret, k)
+                               end
+                               return ret"
+                        );
+
+                    runner.CompileForRunner();
+                    // __readonly is special and fine to leak, so ignore it
+                    var defined = ((object[])runner.RunForRunner()).Select(static x => (string)x).Except(["__readonly"]).ToList();
+
+                    var missing = funcs.Except(defined).ToList();
+                    var extra = defined.Except(funcs).ToList();
+
+                    ClassicAssert.AreEqual(0, missing.Count, $"Missing funcs in {funcGroup}: {string.Join(", ", missing)}");
+                    ClassicAssert.AreEqual(0, extra.Count, $"Extra funcs in {funcGroup}: {string.Join(", ", extra)}");
+                }
+
+                // Check all expected funcs are defined
+                {
+                    var allTypes = string.Join(", ", funcs.Select(x => $"type({funcGroup}.{x})"));
+
+                    using var runner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, [funcGroup, "type"]),
+                            $"return {{ {allTypes} }}"
+                        );
+
+                    runner.CompileForRunner();
+                    var defined = (object[])runner.RunForRunner();
+
+                    for (var i = 0; i < funcs.Count; i++)
+                    {
+                        var forFunc = funcs[i];
+                        var funcType = (string)defined[i];
+
+                        ClassicAssert.AreNotEqual("nil", funcType, $"{funcGroup}.{forFunc} is not defined when it should be");
+                    }
+                }
+
+                // Check NOT including top level group causes all functions to be unavailable
+                {
+                    var otherGroups = exportedFuncs.Keys.Except(["_G", funcGroup]);
+
+                    using var runner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, [.. otherGroups, "type"]),
+                            $"return type({funcGroup})"
+                        );
+
+                    runner.CompileForRunner();
+                    var defined = (string)runner.RunForRunner();
+
+                    ClassicAssert.AreEqual("nil", defined, $"{funcGroup} is defined when it should not be");
+                }
+
+                // Check allowing just the one func
+                foreach (var func in funcs)
+                {
+                    using var runner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, [$"{funcGroup}.{func}", "type"]),
+                            $"return type({funcGroup}.{func})"
+                        );
+
+                    runner.CompileForRunner();
+                    var defined = (string)runner.RunForRunner();
+
+                    ClassicAssert.AreNotEqual("nil", defined, $"{funcGroup}.{func} is not defined when it should be");
+                }
+
+                // Check that disallowing just the one func in the group works
+                foreach (var func in funcs)
+                {
+                    var others = funcs.Except([func]).Select(x => $"{funcGroup}.{x}");
+
+                    string typeStatement;
+                    if (others.Any())
+                    {
+                        typeStatement = $"type({funcGroup}.{func})";
+                    }
+                    else
+                    {
+                        // If a group of function is completely removed, the table is nulled out
+                        typeStatement = $"type({funcGroup})";
+                    }
+
+                    using var runner =
+                        new LuaRunner(
+                            new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, [.. others, "type"]),
+                            $"return {typeStatement}"
+                        );
+
+                    runner.CompileForRunner();
+                    var defined = (string)runner.RunForRunner();
+
+                    ClassicAssert.AreEqual("nil", defined, $"{funcGroup}.{func} is defined when it should not be");
+                }
+            }
+        }
+
+        [Test]
+        public void InternalFunctionsIgnoredInAllowedFunctions()
+        {
+            // Check if an internal implementation detail (garnet_call in this case) can be allowed
+            using var allRunner =
+                   new LuaRunner(
+                       new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, ["tostring", "garnet_call"]),
+                       @$"return tostring(garnet_call)"
+                   );
+
+            allRunner.CompileForRunner();
+
+            var res = (string)allRunner.RunForRunner();
+            ClassicAssert.AreEqual("nil", res);
+        }
+
+        [Test]
+        public void NeedsDisposeCheck()
+        {
+            foreach (var mode in Enum.GetValues<LuaMemoryManagementMode>())
+            {
+                foreach (var limit in new[] { null, "1m" })
+                {
+                    if (limit != null && mode == LuaMemoryManagementMode.Native)
+                    {
+                        continue;
+                    }
+
+                    var opts = new LuaOptions(mode, limit, Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, []);
+
+                    using var runner = new LuaRunner(opts, "return 1");
+
+                    runner.CompileForRunner();
+                    _ = runner.RunForRunner([], []);
+
+                    ClassicAssert.IsFalse(runner.NeedsDispose);
+                }
+            }
         }
 
         private sealed class FakeLogger : ILogger, IDisposable

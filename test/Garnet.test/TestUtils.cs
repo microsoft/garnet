@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -10,6 +11,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -23,6 +25,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -41,12 +44,36 @@ namespace Garnet.test
         public long ReadCacheTailAddress;
     }
 
+    /// <summary>
+    /// Get all attributes that start with given prefix.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Parameter)]
+    public sealed class ValuesPrefixAttribute : NUnitAttribute, IParameterDataSource
+    {
+        readonly string prefix;
+
+        public ValuesPrefixAttribute(string prefix)
+        {
+            this.prefix = prefix;
+        }
+
+        public IEnumerable GetData(IParameterInfo parameter)
+        {
+            return new ValuesAttribute()
+                .GetData(parameter)
+                .Cast<object>()
+                .Where(e => e.ToString().StartsWith(prefix));
+        }
+    }
+
     internal static class TestUtils
     {
+        public static readonly int TestPort = 33278;
+
         /// <summary>
         /// Test server end point
         /// </summary>
-        public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, 33278);
+        public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, TestPort);
 
         /// <summary>
         /// Whether to use a test progress logger
@@ -90,6 +117,12 @@ namespace Garnet.test
                 }
                 return false;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
+        {
+            ClassicAssert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response, 0, expectedResponse.Length));
         }
 
         /// <summary>
@@ -182,7 +215,7 @@ namespace Garnet.test
         /// </summary>
         public static GarnetServer CreateGarnetServer(
             string logCheckpointDir,
-            EndPoint endpoint = null,
+            EndPoint[] endpoints = null,
             bool disablePubSub = false,
             bool tryRecover = false,
             bool lowMemory = false,
@@ -221,6 +254,7 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
+            IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
@@ -270,7 +304,7 @@ namespace Garnet.test
                 EnableStorageTier = logCheckpointDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = endpoint ?? EndPoint,
+                EndPoints = endpoints ?? ([EndPoint]),
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
@@ -305,7 +339,7 @@ namespace Garnet.test
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold
@@ -416,6 +450,7 @@ namespace Garnet.test
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "")
         {
@@ -461,12 +496,13 @@ namespace Garnet.test
                     enableLua: enableLua,
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
+                    replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit);
 
                 ClassicAssert.IsNotNull(opts);
 
-                if (opts.EndPoint is IPEndPoint ipEndpoint)
+                if (opts.EndPoints[0] is IPEndPoint ipEndpoint)
                 {
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
@@ -516,11 +552,13 @@ namespace Garnet.test
             bool enableLua = false,
             bool asyncReplay = false,
             bool enableDisklessSync = false,
+            int replicaDisklessSyncDelay = 1,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             TimeSpan? luaTimeout = null,
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
+            IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null)
         {
             if (useAzureStorage)
@@ -574,7 +612,7 @@ namespace Garnet.test
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = endpoint,
+                EndPoints = [endpoint],
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
@@ -624,10 +662,10 @@ namespace Garnet.test
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
-                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, logger) : null,
+                LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
-                ReplicaDisklessSyncDelay = 1
+                ReplicaDisklessSyncDelay = replicaDisklessSyncDelay
             };
 
             if (lowMemory)
@@ -740,7 +778,7 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false, EndPoint endPoint = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -753,7 +791,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(EndPoint, new(), tlsOptions: sslOptions);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

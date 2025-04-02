@@ -171,11 +171,11 @@ namespace Garnet.test
 
             var expectedResponse = ":0\r\n";
             var response = lightClientRequest.SendCommandChunks("SETBIT mykey 7 1", bytesPerSend);
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             expectedResponse = ":1\r\n";
             response = lightClientRequest.SendCommandChunks("GETBIT mykey 7", bytesPerSend);
-            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test, Order(5)]
@@ -2074,6 +2074,9 @@ namespace Garnet.test
             db.StringSet(key, "foobar");
 
             long count = db.StringBitCount(key);
+            ClassicAssert.AreEqual(26, count);
+
+            count = db.StringBitCount(key, 0, int.MaxValue);
             ClassicAssert.AreEqual(26, count);
 
             count = db.StringBitCount(key, 0, 0);

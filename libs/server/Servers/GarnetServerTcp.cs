@@ -62,6 +62,9 @@ namespace Garnet.server
         /// <param name="networkBufferSize"></param>
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
+        /// <param name="networkConnectionLimit"></param>
+        /// <param name="unixSocketPath"></param>
+        /// <param name="unixSocketPermission"></param>
         /// <param name="logger"></param>
         public GarnetServerTcp(
             EndPoint endpoint,
@@ -160,23 +163,43 @@ namespace Garnet.server
                     try
                     {
                         handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+                        ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_GarnetServerTcp_Handler_Created);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
-
-                        handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
-                        IncrementConnectionsReceived();
-                        return true;
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "Error starting network handler");
-                        Interlocked.Decrement(ref activeHandlerCount);
+                        logger?.LogError(ex, "Error creating and registering network handler");
+
+                        // We need to decrement the active handler count and dispose because the handler was not added to the activeHandlers dictionary.
+                        _ = Interlocked.Decrement(ref activeHandlerCount);
+                        // We did not start the handler, so we need to call DisposeResources() to clean up resources.
+                        handler?.DisposeResources();
+                        // Dispose the handler
                         handler?.Dispose();
+                        return true;
+                    }
+
+                    try
+                    {
+                        IncrementConnectionsReceived();
+                        handler.Start(tlsOptions?.TlsServerOptions, remoteEndpointName);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Error calling Start on network handler");
+
+                        // Dispose the socket if we get an exception while starting.
+                        // The resources will be disposed (including updating activeHandlerCount and totalConnectionsDisposed)
+                        // when the handler is removed from the activeHandlers dictionary as part of socket exception
+                        // handling in TcpNetworkHandlerBase.Start(), which will call NetworkHandler.DisposeImpl().
+                        handler.Dispose();
+                        return true;
                     }
                 }
                 else
                 {
-                    Interlocked.Decrement(ref activeHandlerCount);
+                    _ = Interlocked.Decrement(ref activeHandlerCount);
                     e.AcceptSocket.Dispose();
                 }
             }

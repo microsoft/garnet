@@ -229,7 +229,7 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
-            txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
+            txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.StateMachineDriver, storeWrapper.serverOptions.EnableCluster, logger);
             storageSession.txnManager = txnManager;
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
@@ -721,13 +721,26 @@ namespace Garnet.server
                 RespCommand.ZINTERSTORE => SortedSetIntersectStore(ref storageApi),
                 RespCommand.ZUNION => SortedSetUnion(ref storageApi),
                 RespCommand.ZUNIONSTORE => SortedSetUnionStore(ref storageApi),
+                RespCommand.ZEXPIRE => SortedSetExpire(cmd, ref storageApi),
+                RespCommand.ZPEXPIRE => SortedSetExpire(cmd, ref storageApi),
+                RespCommand.ZEXPIREAT => SortedSetExpire(cmd, ref storageApi),
+                RespCommand.ZPEXPIREAT => SortedSetExpire(cmd, ref storageApi),
+                RespCommand.ZTTL => SortedSetTimeToLive(cmd, ref storageApi),
+                RespCommand.ZPTTL => SortedSetTimeToLive(cmd, ref storageApi),
+                RespCommand.ZEXPIRETIME => SortedSetTimeToLive(cmd, ref storageApi),
+                RespCommand.ZPEXPIRETIME => SortedSetTimeToLive(cmd, ref storageApi),
+                RespCommand.ZPERSIST => SortedSetPersist(ref storageApi),
                 //SortedSet for Geo Commands
                 RespCommand.GEOADD => GeoAdd(ref storageApi),
                 RespCommand.GEOHASH => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEODIST => GeoCommands(cmd, ref storageApi),
                 RespCommand.GEOPOS => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEOSEARCH => GeoCommands(cmd, ref storageApi),
-                RespCommand.GEOSEARCHSTORE => GeoSearchStore(ref storageApi),
+                RespCommand.GEORADIUS => GeoSearchCommands(cmd, ref storageApi),
+                RespCommand.GEORADIUS_RO => GeoSearchCommands(cmd, ref storageApi),
+                RespCommand.GEORADIUSBYMEMBER => GeoSearchCommands(cmd, ref storageApi),
+                RespCommand.GEORADIUSBYMEMBER_RO => GeoSearchCommands(cmd, ref storageApi),
+                RespCommand.GEOSEARCH => GeoSearchCommands(cmd, ref storageApi),
+                RespCommand.GEOSEARCHSTORE => GeoSearchCommands(cmd, ref storageApi),
                 //HLL Commands
                 RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
                 RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
@@ -1189,6 +1202,21 @@ namespace Garnet.server
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteNull()
+        {
+            if (respProtocolVersion == 3)
+            {
+                while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
             }
         }
 
