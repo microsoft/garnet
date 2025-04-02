@@ -49,7 +49,7 @@ namespace Garnet.common
             // Check if input null or empty
             if (string.IsNullOrEmpty(addressList) || string.IsNullOrWhiteSpace(addressList))
             {
-                endpoints = [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)];
+                endpoints = Socket.OSSupportsIPv6 ? [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)] : [new IPEndPoint(IPAddress.Loopback, port)];
                 return true;
             }
 
@@ -83,13 +83,13 @@ namespace Garnet.common
         public static async Task<EndPoint[]> TryCreateEndpoint(string singleAddressOrHostname, int port, bool tryConnect = false, ILogger logger = null)
         {
             if (string.IsNullOrEmpty(singleAddressOrHostname) || string.IsNullOrWhiteSpace(singleAddressOrHostname))
-                return [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)];
+                return Socket.OSSupportsIPv6 ? [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)] : [new IPEndPoint(IPAddress.Loopback, port)];
 
             if (singleAddressOrHostname[0] == '-')
                 singleAddressOrHostname = singleAddressOrHostname.Substring(1);
 
             if (singleAddressOrHostname.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
-                return [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)];
+                return Socket.OSSupportsIPv6 ? [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)] : [new IPEndPoint(IPAddress.Loopback, port)];
 
             if (IPAddress.TryParse(singleAddressOrHostname, out var ipAddress))
                 return [new IPEndPoint(ipAddress, port)];
