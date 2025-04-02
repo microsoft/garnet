@@ -69,11 +69,10 @@ namespace Garnet.cluster
                 if (clusterEndpoint.Address.ToString() != currentConfig.LocalNodeIp || clusterEndpoint.Port != currentConfig.LocalNodePort)
                 {
                     logger?.LogInformation(
-                        "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {address}:{opts.Port}",
+                        "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {endpoint}",
                         currentConfig.LocalNodeIp,
                         currentConfig.LocalNodePort,
-                        clusterEndpoint,
-                        clusterEndpoint.Port);
+                        clusterEndpoint);
                 }
             }
             else
