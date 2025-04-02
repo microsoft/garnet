@@ -97,7 +97,7 @@ namespace Garnet.test
             var unixSocketEndpoint = new UnixDomainSocketEndPoint(unixSocketPath);
 
             // Given the reasonable expectation that the UnixDomainSocketEndPoint already has the path in it, make sure caller is aware the path must also be specified in unixSocketPath
-            _ = Assert.Throws<ArgumentNullException>(() => 
+            _ = Assert.Throws<ArgumentNullException>(() =>
             {
                 using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, [unixSocketEndpoint], enableTLS: useTls /*, unixSocketPath: unixSocketPath */);
             }, "Value cannot be null. (Parameter 'UnixSocketPath')");
