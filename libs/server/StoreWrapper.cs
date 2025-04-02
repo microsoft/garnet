@@ -259,7 +259,7 @@ namespace Garnet.server
         /// Get IP
         /// </summary>
         /// <returns></returns>
-        public string GetIp()
+        public IPEndPoint GetClusterEndpoint()
         {
             IPEndPoint localEndPoint = null;
             if (serverOptions.ClusterAnnounceEndpoint == null)
@@ -289,7 +289,7 @@ namespace Garnet.server
                 {
                     socket.Connect("8.8.8.8", 65530);
                     var endPoint = socket.LocalEndPoint as IPEndPoint;
-                    return endPoint.Address.ToString();
+                    return endPoint;
                 }
             }
             else if (localEndPoint.Address.Equals(IPAddress.IPv6Any))
@@ -298,10 +298,10 @@ namespace Garnet.server
                 {
                     socket.Connect("2001:4860:4860::8888", 65530);
                     var endPoint = socket.LocalEndPoint as IPEndPoint;
-                    return endPoint.Address.ToString();
+                    return endPoint;
                 }
             }
-            return localEndPoint.Address.ToString();
+            return localEndPoint;
         }
 
         internal void Recover()

@@ -246,6 +246,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
         {
@@ -278,7 +279,8 @@ namespace Garnet.test.cluster
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
-                certificates: certificates);
+                certificates: certificates,
+                clusterAnnounceEndpoint: clusterAnnounceEndpoint);
 
             return new GarnetServer(opts, loggerFactory);
         }
