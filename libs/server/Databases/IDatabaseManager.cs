@@ -21,9 +21,9 @@ namespace Garnet.server
     public interface IDatabaseManager : IDisposable
     {
         /// <summary>
-        /// Reference to default database (DB 0)
+        /// Default database (DB 0)
         /// </summary>
-        public ref GarnetDatabase DefaultDatabase { get; }
+        public GarnetDatabase DefaultDatabase { get; }
 
         /// <summary>
         /// Store (of DB 0)
@@ -66,8 +66,8 @@ namespace Garnet.server
         /// <param name="dbId">Database ID</param>
         /// <param name="success">Database was found or added successfully</param>
         /// <param name="added">True if database was added</param>
-        /// <returns>Reference to retrieved or added database</returns>
-        public ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
+        /// <returns>Retrieved or added database</returns>
+        public GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
@@ -209,8 +209,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">DB Id</param>
         /// <param name="found">True if database was found</param>
-        /// <returns>Reference to database</returns>
-        public ref GarnetDatabase TryGetDatabase(int dbId, out bool found);
+        /// <returns>Retrieved database</returns>
+        public GarnetDatabase TryGetDatabase(int dbId, out bool found);
 
         /// <summary>
         /// Flush database with specified ID

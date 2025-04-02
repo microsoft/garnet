@@ -440,15 +440,15 @@ namespace Garnet.cluster
         internal bool BumpAndWaitForEpochTransition()
         {
             BumpCurrentEpoch();
-            foreach (var server in storeWrapper.TcpServers)
+            foreach (var server in storeWrapper.Servers)
             {
                 while (true)
                 {
-                retry:
+                    retry:
                     Thread.Yield();
                     // Acquire latest bumped epoch
                     var currentEpoch = GarnetCurrentEpoch;
-                    var sessions = server.ActiveClusterSessions();
+                    var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
                     foreach (var s in sessions)
                     {
                         var entryEpoch = s.LocalCurrentEpoch;

@@ -21,13 +21,13 @@ namespace Garnet.server
     internal abstract class DatabaseManagerBase : IDatabaseManager
     {
         /// <inheritdoc/>
-        public abstract ref GarnetDatabase DefaultDatabase { get; }
+        public abstract GarnetDatabase DefaultDatabase { get; }
 
         /// <inheritdoc/>
         public abstract int DatabaseCount { get; }
 
         /// <inheritdoc/>
-        public abstract ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
+        public abstract GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
 
         /// <inheritdoc/>
         public abstract bool TryPauseCheckpoints(int dbId);
@@ -89,7 +89,7 @@ namespace Garnet.server
         public abstract GarnetDatabase[] GetDatabasesSnapshot();
 
         /// <inheritdoc/>
-        public abstract ref GarnetDatabase TryGetDatabase(int dbId, out bool found);
+        public abstract GarnetDatabase TryGetDatabase(int dbId, out bool found);
 
         /// <inheritdoc/>
         public abstract void FlushDatabase(bool unsafeTruncateLog, int dbId = 0);
@@ -165,7 +165,7 @@ namespace Garnet.server
         /// <param name="db">Database to recover</param>
         /// <param name="storeVersion">Store version</param>
         /// <param name="objectStoreVersion">Object store version</param>
-        protected void RecoverDatabaseCheckpoint(ref GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
+        protected void RecoverDatabaseCheckpoint(GarnetDatabase db, out long storeVersion, out long objectStoreVersion)
         {
             storeVersion = 0;
             objectStoreVersion = 0;
@@ -211,7 +211,7 @@ namespace Garnet.server
         {
             try
             {
-                DoCompaction(ref db);
+                DoCompaction(db);
                 var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
                 var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
@@ -244,21 +244,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
         /// <returns>True if acquired a lock</returns>
-        protected bool TryPauseCheckpoints(ref GarnetDatabase db)
+        protected bool TryPauseCheckpoints(GarnetDatabase db)
             => db.CheckpointingLock.TryWriteLock();
 
         /// <summary>
         /// Release existing checkpointing lock for 
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
-        protected void ResumeCheckpoints(ref GarnetDatabase db)
+        protected void ResumeCheckpoints(GarnetDatabase db)
             => db.CheckpointingLock.WriteUnlock();
 
         /// <summary>
         /// Recover a single database from AOF
         /// </summary>
         /// <param name="db">Database to recover</param>
-        protected void RecoverDatabaseAOF(ref GarnetDatabase db)
+        protected void RecoverDatabaseAOF(GarnetDatabase db)
         {
             if (db.AppendOnlyFile == null) return;
 
@@ -274,12 +274,12 @@ namespace Garnet.server
         /// <param name="db">Database to replay</param>
         /// <param name="untilAddress">Tail address</param>
         /// <returns>Tail address</returns>
-        protected long ReplayDatabaseAOF(AofProcessor aofProcessor, ref GarnetDatabase db, long untilAddress = -1)
+        protected long ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, long untilAddress = -1)
         {
             long replicationOffset = 0;
             try
             {
-                replicationOffset = aofProcessor.Recover(ref db, untilAddress);
+                replicationOffset = aofProcessor.Recover(db, untilAddress);
                 db.LastSaveTime = DateTimeOffset.UtcNow;
             }
             catch (Exception ex)
@@ -296,7 +296,7 @@ namespace Garnet.server
         /// Reset database
         /// </summary>
         /// <param name="db">Database to reset</param>
-        protected void ResetDatabase(ref GarnetDatabase db)
+        protected void ResetDatabase(GarnetDatabase db)
         {
             try
             {
@@ -321,7 +321,7 @@ namespace Garnet.server
         /// <param name="db">Database to enqueue commit for</param>
         /// <param name="entryType">AOF entry type</param>
         /// <param name="version">Store version</param>
-        protected void EnqueueDatabaseCommit(ref GarnetDatabase db, AofEntryType entryType, long version)
+        protected void EnqueueDatabaseCommit(GarnetDatabase db, AofEntryType entryType, long version)
         {
             if (db.AppendOnlyFile == null) return;
 
@@ -341,7 +341,7 @@ namespace Garnet.server
         /// <param name="db">Database to flush</param>
         /// <param name="unsafeTruncateLog">Truncate log</param>
         /// <param name="truncateAof">Truncate AOF log</param>
-        protected void FlushDatabase(ref GarnetDatabase db, bool unsafeTruncateLog, bool truncateAof = true)
+        protected void FlushDatabase(GarnetDatabase db, bool unsafeTruncateLog, bool truncateAof = true)
         {
             db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
@@ -355,7 +355,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to grow store indexes for</param>
         /// <returns>True if both store indexes are maxed out</returns>
-        protected bool GrowIndexesIfNeeded(ref GarnetDatabase db)
+        protected bool GrowIndexesIfNeeded(GarnetDatabase db)
         {
             var indexesMaxedOut = true;
 
@@ -398,14 +398,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
         /// <param name="logger">Logger</param>
-        protected void DoCompaction(ref GarnetDatabase db, ILogger logger = null)
+        protected void DoCompaction(GarnetDatabase db, ILogger logger = null)
         {
             try
             {
                 // Periodic compaction -> no need to compact before checkpointing
                 if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
-                DoCompaction(ref db, StoreWrapper.serverOptions.CompactionMaxSegments,
+                DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments,
                     StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
                     StoreWrapper.serverOptions.CompactionType, StoreWrapper.serverOptions.CompactionForceDelete);
             }
@@ -452,7 +452,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void DoCompaction(ref GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
+        private void DoCompaction(GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
         {
             if (compactionType == LogCompactionType.None) return;
 
@@ -479,7 +479,7 @@ namespace Garnet.server
                         mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
-                            CompactionCommitAof(ref db);
+                            CompactionCommitAof(db);
                             mainStoreLog.Truncate();
                         }
                         break;
@@ -488,7 +488,7 @@ namespace Garnet.server
                         mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
-                            CompactionCommitAof(ref db);
+                            CompactionCommitAof(db);
                             mainStoreLog.Truncate();
                         }
                         break;
@@ -525,7 +525,7 @@ namespace Garnet.server
                             new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
-                            CompactionCommitAof(ref db);
+                            CompactionCommitAof(db);
                             objectStoreLog.Truncate();
                         }
                         break;
@@ -535,7 +535,7 @@ namespace Garnet.server
                             new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
-                            CompactionCommitAof(ref db);
+                            CompactionCommitAof(db);
                             objectStoreLog.Truncate();
                         }
                         break;
@@ -547,7 +547,7 @@ namespace Garnet.server
             }
         }
 
-        private void CompactionCommitAof(ref GarnetDatabase db)
+        private void CompactionCommitAof(GarnetDatabase db)
         {
             // If we are the primary, we commit the AOF.
             // If we are the replica, we commit the AOF only if fast commit is disabled

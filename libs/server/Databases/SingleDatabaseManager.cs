@@ -16,12 +16,12 @@ namespace Garnet.server
     internal class SingleDatabaseManager : DatabaseManagerBase
     {
         /// <inheritdoc/>
-        public override ref GarnetDatabase DefaultDatabase => ref defaultDatabase;
+        public override GarnetDatabase DefaultDatabase => defaultDatabase;
 
         /// <inheritdoc/>
         public override int DatabaseCount => 1;
 
-        GarnetDatabase defaultDatabase;
+        readonly GarnetDatabase defaultDatabase;
 
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :
             base(createDatabaseDelegate, storeWrapper)
@@ -37,17 +37,17 @@ namespace Garnet.server
 
         public SingleDatabaseManager(SingleDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate, src.StoreWrapper, createDefaultDatabase: false)
         {
-            CopyDatabases(src, enableAof);
+            defaultDatabase = new GarnetDatabase(src.DefaultDatabase, enableAof);
         }
 
         /// <inheritdoc/>
-        public override ref GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added)
+        public override GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             success = true;
             added = false;
-            return ref DefaultDatabase;
+            return defaultDatabase;
         }
 
         /// <inheritdoc/>
@@ -73,11 +73,11 @@ namespace Garnet.server
                     }
 
                     if (storeVersion > 0 || objectStoreVersion > 0)
-                        DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                        defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
                 }
                 else
                 {
-                    RecoverDatabaseCheckpoint(ref DefaultDatabase, out storeVersion, out objectStoreVersion);
+                    RecoverDatabaseCheckpoint(defaultDatabase, out storeVersion, out objectStoreVersion);
                 }
             }
             catch (TsavoriteNoHybridLogException ex)
@@ -111,7 +111,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return TryPauseCheckpoints(ref DefaultDatabase);
+            return TryPauseCheckpoints(defaultDatabase);
         }
 
         /// <inheritdoc/>
@@ -119,16 +119,16 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            ResumeCheckpoints(ref DefaultDatabase);
+            ResumeCheckpoints(defaultDatabase);
         }
 
         /// <inheritdoc/>
         public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
         {
-            if (!TryPauseCheckpointsContinuousAsync(DefaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
                 return false;
 
-            var checkpointTask = TakeCheckpointAsync(DefaultDatabase, logger: logger, token: token).ContinueWith(
+            var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(
                 t =>
                 {
                     try
@@ -139,16 +139,16 @@ namespace Garnet.server
                             var objectStoreTailAddress = t.Result.Item2;
 
                             if (storeTailAddress.HasValue)
-                                DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                                defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
                             if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                                DefaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+                                defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
-                            DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                            defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
                         }
                     }
                     finally
                     {
-                        ResumeCheckpoints(DefaultDatabase.Id);
+                        ResumeCheckpoints(defaultDatabase.Id);
                     }
                 }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
 
@@ -178,21 +178,21 @@ namespace Garnet.server
             try
             {
                 // If an external task has taken a checkpoint beyond the provided entryTime return
-                if (!checkpointsPaused || DefaultDatabase.LastSaveTime > entryTime)
+                if (!checkpointsPaused || defaultDatabase.LastSaveTime > entryTime)
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var result = await TakeCheckpointAsync(DefaultDatabase, logger: Logger);
+                var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger);
 
                 var storeTailAddress = result.Item1;
                 var objectStoreTailAddress = result.Item2;
 
                 if (storeTailAddress.HasValue)
-                    DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                    defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
                 if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                    DefaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+                    defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
-                DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
             finally
             {
@@ -207,7 +207,7 @@ namespace Garnet.server
             var aofSize = AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
             if (aofSize <= aofSizeLimit) return;
 
-            if (!TryPauseCheckpointsContinuousAsync(DefaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
                 return;
 
             logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
@@ -215,21 +215,21 @@ namespace Garnet.server
 
             try
             {
-                var result = await TakeCheckpointAsync(DefaultDatabase, logger: logger, token: token);
+                var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
 
                 var storeTailAddress = result.Item1;
                 var objectStoreTailAddress = result.Item2;
 
                 if (storeTailAddress.HasValue)
-                    DefaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
+                    defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
                 if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                    DefaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+                    defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
-                DefaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
+                defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
             finally
             {
-                ResumeCheckpoints(DefaultDatabase.Id);
+                ResumeCheckpoints(defaultDatabase.Id);
             }
         }
 
@@ -264,7 +264,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverAOF() => RecoverDatabaseAOF(ref DefaultDatabase);
+        public override void RecoverAOF() => RecoverDatabaseAOF(defaultDatabase);
 
         /// <inheritdoc/>
         public override long ReplayAOF(long untilAddress = -1)
@@ -278,7 +278,7 @@ namespace Garnet.server
 
             try
             {
-                return ReplayDatabaseAOF(aofProcessor, ref DefaultDatabase, untilAddress);
+                return ReplayDatabaseAOF(aofProcessor, defaultDatabase, untilAddress);
             }
             finally
             {
@@ -287,10 +287,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(ref DefaultDatabase);
+        public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(defaultDatabase);
 
         public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
-            GrowIndexesIfNeeded(ref DefaultDatabase);
+            GrowIndexesIfNeeded(defaultDatabase);
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>
@@ -301,7 +301,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            ResetDatabase(ref DefaultDatabase);
+            ResetDatabase(defaultDatabase);
         }
 
         /// <inheritdoc/>
@@ -316,18 +316,18 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            EnqueueDatabaseCommit(ref DefaultDatabase, entryType, version);
+            EnqueueDatabaseCommit(defaultDatabase, entryType, version);
         }
 
-        public override GarnetDatabase[] GetDatabasesSnapshot() => [DefaultDatabase];
+        public override GarnetDatabase[] GetDatabasesSnapshot() => [defaultDatabase];
 
         /// <inheritdoc/>
-        public override ref GarnetDatabase TryGetDatabase(int dbId, out bool found)
+        public override GarnetDatabase TryGetDatabase(int dbId, out bool found)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             found = true;
-            return ref DefaultDatabase;
+            return defaultDatabase;
         }
 
         /// <inheritdoc/>
@@ -337,7 +337,7 @@ namespace Garnet.server
 
             var safeTruncateAof = StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF;
 
-            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog, !safeTruncateAof);
+            FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
             if (safeTruncateAof)
                 SafeTruncateAOF(AofEntryType.FlushDb, unsafeTruncateLog);
@@ -348,7 +348,7 @@ namespace Garnet.server
         {
             var safeTruncateAof = StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF;
 
-            FlushDatabase(ref DefaultDatabase, unsafeTruncateLog, !safeTruncateAof);
+            FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
             if (safeTruncateAof)
                 SafeTruncateAOF(AofEntryType.FlushAll, unsafeTruncateLog);
@@ -369,22 +369,17 @@ namespace Garnet.server
                 StoreWrapper.GarnetObjectSerializer);
         }
 
-        private void CopyDatabases(SingleDatabaseManager src, bool enableAof)
-        {
-            DefaultDatabase = new GarnetDatabase(ref src.DefaultDatabase, enableAof);
-        }
-
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
             CancellationToken token = default)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            var checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
+            var checkpointsPaused = TryPauseCheckpoints(defaultDatabase);
 
             while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
             {
                 await Task.Yield();
-                checkpointsPaused = TryPauseCheckpoints(ref DefaultDatabase);
+                checkpointsPaused = TryPauseCheckpoints(defaultDatabase);
             }
 
             return checkpointsPaused;
@@ -401,7 +396,7 @@ namespace Garnet.server
                     storeVersion = 0,
                     sessionID = -1,
                     unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                    databaseId = (byte)DefaultDatabase.Id
+                    databaseId = (byte)defaultDatabase.Id
                 };
                 AppendOnlyFile?.Enqueue(header, out _);
             }

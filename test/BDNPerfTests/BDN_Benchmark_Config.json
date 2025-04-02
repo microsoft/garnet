@@ -433,7 +433,7 @@
     "expected_SelectUnselect_AOF": 0,
     "expected_SelectUnselect_None": 0,
 	"expected_SwapDb_ACL": 0,
-    "expected_SwapDb_AOF": 0,
-    "expected_SwapDb_None": 0
+    "expected_SwapDb_AOF": 5600,
+    "expected_SwapDb_None": 5600
   }
 }

@@ -14,7 +14,7 @@ namespace Garnet.server
     /// <summary>
     /// Represents a logical database in Garnet
     /// </summary>
-    public struct GarnetDatabase : IDisposable
+    public class GarnetDatabase : IDisposable
     {
         /// <summary>
         /// Default size for version map
@@ -117,7 +117,7 @@ namespace Garnet.server
             ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
         }
 
-        public GarnetDatabase(ref GarnetDatabase srcDb, bool enableAof) : this()
+        public GarnetDatabase(GarnetDatabase srcDb, bool enableAof) : this()
         {
             Id = srcDb.Id;
             MainStore = srcDb.MainStore;
@@ -138,12 +138,6 @@ namespace Garnet.server
             LastSaveObjectStoreTailAddress = 0;
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);
         }
-
-        /// <summary>
-        /// Returns true if current struct hasn't been initialized
-        /// </summary>
-        /// <returns>True if default struct</returns>
-        public bool IsDefault() => MainStore == null;
 
         /// <summary>
         /// Dispose method
@@ -172,10 +166,5 @@ namespace Garnet.server
 
             disposed = true;
         }
-
-        /// <summary>
-        /// Dummy database to return by default
-        /// </summary>
-        internal static GarnetDatabase Empty;
     }
 }

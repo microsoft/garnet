@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -33,13 +32,12 @@ namespace Garnet.server
         internal readonly string version;
         internal readonly string redisProtocolVersion;
         readonly IGarnetServer[] servers;
-        readonly GarnetServerTcp[] tcpServers;
         internal readonly long startupTime;
 
         /// <summary>
         /// Default database (DB 0)
         /// </summary>
-        public ref GarnetDatabase DefaultDatabase => ref databaseManager.DefaultDatabase;
+        public GarnetDatabase DefaultDatabase => databaseManager.DefaultDatabase;
 
         /// <summary>
         /// Store (of DB 0)
@@ -77,9 +75,9 @@ namespace Garnet.server
         public readonly SubscribeBroker subscribeBroker;
 
         /// <summary>
-        /// Get TCP servers
+        /// Get servers
         /// </summary>
-        public GarnetServerTcp[] TcpServers => tcpServers;
+        public IGarnetServer[] Servers => servers;
 
         /// <summary>
         /// Access control list governing all commands
@@ -164,7 +162,6 @@ namespace Garnet.server
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
             this.servers = servers;
-            this.tcpServers = servers.OfType<GarnetServerTcp>().ToArray();
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
@@ -267,9 +264,9 @@ namespace Garnet.server
             IPEndPoint localEndPoint = null;
             if (serverOptions.ClusterAnnounceEndpoint == null)
             {
-                foreach (var server in tcpServers)
+                foreach (var server in servers)
                 {
-                    if (server.EndPoint is IPEndPoint point)
+                    if (server is GarnetServerTcp tcpServer && tcpServer.EndPoint is IPEndPoint point)
                     {
                         localEndPoint = point;
                         break;
@@ -526,7 +523,7 @@ namespace Garnet.server
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
             {
-                database = GarnetDatabase.Empty;
+                database = default;
                 return false;
             }
 
@@ -545,7 +542,7 @@ namespace Garnet.server
         {
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
             {
-                database = GarnetDatabase.Empty;
+                database = default;
                 added = false;
                 return false;
             }

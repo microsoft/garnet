@@ -70,7 +70,7 @@ namespace Garnet.server
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
 
             // Switch current contexts to match the default database
-            SwitchActiveDatabaseContext(ref storeWrapper.DefaultDatabase, true);
+            SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
 
             parseState.Initialize();
             storeInput.parseState = parseState;
@@ -105,13 +105,13 @@ namespace Garnet.server
         /// <param name="db">Database to recover</param>
         /// <param name="untilAddress">Tail address for recovery</param>
         /// <returns>Tail address</returns>
-        public long Recover(ref GarnetDatabase db, long untilAddress = -1)
+        public long Recover(GarnetDatabase db, long untilAddress = -1)
         {
             logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
-            return RecoverReplay(ref db, untilAddress);
+            return RecoverReplay(db, untilAddress);
         }
 
-        private long RecoverReplay(ref GarnetDatabase db, long untilAddress)
+        private long RecoverReplay(GarnetDatabase db, long untilAddress)
         {
             // Begin replay for specified database
             logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
@@ -121,7 +121,7 @@ namespace Garnet.server
 
                 // Fetch the database AOF and update the current database context for the processor
                 var appendOnlyFile = db.AppendOnlyFile;
-                SwitchActiveDatabaseContext(ref db);
+                SwitchActiveDatabaseContext(db);
 
                 // Set the tail address for replay recovery to the tail address of the AOF if none specified
                 if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
@@ -358,7 +358,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void SwitchActiveDatabaseContext(ref GarnetDatabase db, bool initialSetup = false)
+        private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
         {
             // Switch the session's context to match the specified database, if necessary
             if (respServerSession.activeDbId != db.Id)

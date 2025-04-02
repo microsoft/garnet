@@ -19,7 +19,7 @@ namespace Garnet.server
     /// <summary>
     /// Represents a logical database session in Garnet
     /// </summary>
-    internal struct GarnetDatabaseSession : IDisposable
+    internal class GarnetDatabaseSession : IDisposable
     {
         /// <summary>
         /// Database ID
@@ -58,12 +58,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns true if current struct hasn't been initialized
-        /// </summary>
-        /// <returns>True if default struct</returns>
-        public bool IsDefault() => StorageSession == null;
-
-        /// <summary>
         /// Dispose method
         /// </summary>
         public void Dispose()
@@ -75,10 +69,5 @@ namespace Garnet.server
 
             disposed = true;
         }
-
-        /// <summary>
-        /// Instance of empty database session
-        /// </summary>
-        internal static GarnetDatabaseSession Empty;
     }
 }
