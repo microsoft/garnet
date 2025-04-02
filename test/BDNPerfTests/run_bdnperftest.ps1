@@ -219,6 +219,7 @@ if ($framework -eq 'net8.0') {
     Write-Output " Delete all the .NET 8.0 results from the results file"
     DeleteResultRowsForSpecificValue ".NET 8.0" $resultsFile
 }
+Write-Output " "
 
 
 Write-Output "**** ANALYZE THE RESULTS FILE $resultsFile ****"
