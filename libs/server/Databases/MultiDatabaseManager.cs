@@ -607,7 +607,7 @@ namespace Garnet.server
                 databaseMapSnapshot[dbId1].Id = dbId1;
                 databaseMapSnapshot[dbId2].Id = dbId2;
 
-                var sessions = StoreWrapper.TcpServer?.ActiveConsumers().ToArray();
+                var sessions = StoreWrapper.TcpServers?.SelectMany(s => s.ActiveConsumers()).ToArray();
                 if (sessions == null) return true;
                 if (sessions.Length > 1) return false;
 

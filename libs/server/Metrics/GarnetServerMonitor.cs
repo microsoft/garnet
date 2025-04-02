@@ -28,7 +28,7 @@ namespace Garnet.server
 
         readonly StoreWrapper storeWrapper;
         readonly GarnetServerOptions opts;
-        readonly IGarnetServer server;
+        readonly IGarnetServer[] servers;
         readonly TimeSpan monitorSamplingFrequency;
         public long monitor_iterations;
 
@@ -48,11 +48,11 @@ namespace Garnet.server
 
         SingleWriterMultiReaderLock rwLock = new();
 
-        public GarnetServerMonitor(StoreWrapper storeWrapper, GarnetServerOptions opts, IGarnetServer server, ILogger logger = null)
+        public GarnetServerMonitor(StoreWrapper storeWrapper, GarnetServerOptions opts, IGarnetServer[] servers, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
             this.opts = opts;
-            this.server = server;
+            this.servers = servers;
             this.logger = logger;
             monitorSamplingFrequency = TimeSpan.FromSeconds(opts.MetricsSamplingFrequency);
             monitor_iterations = 0;
@@ -94,14 +94,17 @@ namespace Garnet.server
 
         public string GetAllLocksets()
         {
-            string result = "";
-            var sessions = ((GarnetServerBase)server).ActiveConsumers();
-            foreach (var s in sessions)
+            var result = "";
+            foreach (var server in servers)
             {
-                var session = (RespServerSession)s;
-                var lockset = session.txnManager.GetLockset();
-                if (lockset != "")
-                    result += session.StoreSessionID + ": " + lockset + "\n";
+                var sessions = ((GarnetServerBase)server).ActiveConsumers();
+                foreach (var s in sessions)
+                {
+                    var session = (RespServerSession)s;
+                    var lockset = session.txnManager.GetLockset();
+                    if (lockset != "")
+                        result += session.StoreSessionID + ": " + lockset + "\n";
+                }
             }
             return result;
         }
@@ -180,16 +183,18 @@ namespace Garnet.server
                 globalMetrics.globalSessionMetrics.Reset();
                 globalMetrics.historySessionMetrics.Reset();
 
-                var garnetServer = ((GarnetServerBase)server);
-                var sessions = garnetServer.ActiveConsumers();
-                foreach (var s in sessions)
+                foreach (var garnetServer in servers.Cast<GarnetServerBase>())
                 {
-                    var session = (RespServerSession)s;
-                    session.GetSessionMetrics.Reset();
-                }
+                    var sessions = garnetServer.ActiveConsumers();
+                    foreach (var s in sessions)
+                    {
+                        var session = (RespServerSession)s;
+                        session.GetSessionMetrics.Reset();
+                    }
 
-                garnetServer.ResetConnectionsReceived();
-                garnetServer.ResetConnectionsDiposed();
+                    garnetServer.ResetConnectionsReceived();
+                    garnetServer.ResetConnectionsDiposed();
+                }
 
                 storeWrapper.clusterProvider?.ResetGossipStats();
 
@@ -209,9 +214,12 @@ namespace Garnet.server
                     {
                         logger?.LogInformation("Resetting server-side stats {eventType}", eventType);
 
-                        var sessions = ((GarnetServerBase)server).ActiveConsumers();
-                        foreach (var entry in sessions)
-                            ((RespServerSession)entry).ResetLatencyMetrics(eventType);
+                        foreach (var server in servers)
+                        {
+                            var sessions = ((GarnetServerBase)server).ActiveConsumers();
+                            foreach (var entry in sessions)
+                                ((RespServerSession)entry).ResetLatencyMetrics(eventType);
+                        }
 
                         rwLock.WriteLock();
                         try
@@ -233,9 +241,12 @@ namespace Garnet.server
         {
             if (opts.LatencyMonitor)
             {
-                var sessions = ((GarnetServerBase)server).ActiveConsumers();
-                foreach (var entry in sessions)
-                    ((RespServerSession)entry).ResetAllLatencyMetrics();
+                foreach (var server in servers)
+                {
+                    var sessions = ((GarnetServerBase)server).ActiveConsumers();
+                    foreach (var entry in sessions)
+                        ((RespServerSession)entry).ResetAllLatencyMetrics();
+                }
             }
         }
 
@@ -254,14 +265,17 @@ namespace Garnet.server
 
                     monitor_iterations++;
 
-                    var garnetServer = ((GarnetServerBase)server);
-                    globalMetrics.total_connections_received = garnetServer.TotalConnectionsReceived;
-                    globalMetrics.total_connections_disposed = garnetServer.TotalConnectionsDisposed;
-                    globalMetrics.total_connections_active = garnetServer.get_conn_active();
+                    foreach (var server in servers)
+                    {
+                        var garnetServer = ((GarnetServerBase)server);
+                        globalMetrics.total_connections_received = garnetServer.TotalConnectionsReceived;
+                        globalMetrics.total_connections_disposed = garnetServer.TotalConnectionsDisposed;
+                        globalMetrics.total_connections_active = garnetServer.get_conn_active();
 
-                    UpdateInstantaneousMetrics();
-                    UpdateAllMetricsHistory();
-                    UpdateAllMetrics(server);
+                        UpdateInstantaneousMetrics();
+                        UpdateAllMetricsHistory();
+                        UpdateAllMetrics(server);
+                    }
 
                     //Reset & Cleanup
                     ResetStats();

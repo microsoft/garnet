@@ -40,6 +40,53 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// </summary>
+        /// <param name="format">The format string for the error message.</param>
+        /// <param name="arg0">The first argument to format.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithErrorMessage(string format, object arg0)
+        {
+            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(format, arg0)));
+        }
+
+        /// <summary>
+        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// </summary>
+        /// <param name="format">The format string for the error message.</param>
+        /// <param name="arg0">The first argument to format.</param>
+        /// <param name="arg1">The second argument to format.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithErrorMessage(string format, object arg0, object arg1)
+        {
+            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(format, arg0, arg1)));
+        }
+
+        /// <summary>
+        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// </summary>
+        /// <param name="format">The format string for the error message.</param>
+        /// <param name="arg0">The first argument to format.</param>
+        /// <param name="arg1">The second argument to format.</param>
+        /// <param name="arg2">The third argument to format.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithErrorMessage(string format, object arg0, object arg1, object arg2)
+        {
+            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(format, arg0, arg1, arg2)));
+        }
+
+        /// <summary>
+        /// Aborts the execution of the current object store command and outputs a given error message.
+        /// </summary>
+        /// <param name="format">The format string for the error message.</param>
+        /// <param name="args">The arguments to format.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithErrorMessage(string format, params object[] args)
+        {
+            return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(format, args)));
+        }
+
+        /// <summary>
         /// Tries to parse the input as "LEFT" or "RIGHT" and returns the corresponding OperationDirection.
         /// If parsing fails, returns OperationDirection.Unknown.
         /// </summary>

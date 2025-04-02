@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -132,7 +134,7 @@ namespace Garnet.test
 
             // No import path, include command line args
             // Check that all invalid options flagged
-            args = ["--bind", "1.1.1.257", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
+            args = ["--bind", "1.1.1.257 127.0.0.1 -::1", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
             ClassicAssert.IsFalse(exitGracefully);
@@ -164,7 +166,7 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.AreEqual("127.0.0.1", options.Address);
+            ClassicAssert.AreEqual("127.0.0.1 -::1", options.Address);
             ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
             ClassicAssert.AreEqual(6379, options.Port);
             ClassicAssert.AreEqual("20gb", options.MemorySize);
@@ -718,6 +720,31 @@ namespace Garnet.test
             string[] args = ["--unixsocketperm", "888"];
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
+        }
+
+        [Test]
+        public async Task MultiTcpSocketTest()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            var hostname = TestUtils.GetHostName();
+            var addresses = Dns.GetHostAddresses(hostname);
+            addresses = [.. addresses, IPAddress.IPv6Loopback, IPAddress.Loopback];
+
+            var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints);
+            server.Start();
+
+            var clients = endpoints.Select(endpoint => TestUtils.GetGarnetClientSession(endPoint: endpoint)).ToArray();
+            foreach (var client in clients)
+            {
+                client.Connect();
+                var result = await client.ExecuteAsync("PING");
+                ClassicAssert.AreEqual("PONG", result);
+                client.Dispose();
+            }
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 }

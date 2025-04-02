@@ -217,6 +217,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
+                                      ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.GeoSearchReadOnly(key, ref opts, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
         {
             garnetApi.WATCH(key, StoreType.Object);
@@ -241,6 +249,20 @@ namespace Garnet.server
                 garnetApi.WATCH(key, StoreType.Object);
             }
             return garnetApi.SortedSetIntersectLength(keys, limit, out count);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetTimeToLive(key, ref input, ref outputFooter);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetTimeToLive(key, members, out expireIn);
         }
 
         #endregion

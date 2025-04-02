@@ -68,10 +68,12 @@ namespace Garnet.test
 
     internal static class TestUtils
     {
+        public static readonly int TestPort = 33278;
+
         /// <summary>
         /// Test server end point
         /// </summary>
-        public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, 33278);
+        public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, TestPort);
 
         /// <summary>
         /// Whether to use a test progress logger
@@ -213,7 +215,7 @@ namespace Garnet.test
         /// </summary>
         public static GarnetServer CreateGarnetServer(
             string logCheckpointDir,
-            EndPoint endpoint = null,
+            EndPoint[] endpoints = null,
             bool disablePubSub = false,
             bool tryRecover = false,
             bool lowMemory = false,
@@ -302,7 +304,7 @@ namespace Garnet.test
                 EnableStorageTier = logCheckpointDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = endpoint ?? EndPoint,
+                EndPoints = endpoints ?? ([EndPoint]),
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
@@ -501,7 +503,7 @@ namespace Garnet.test
 
                 ClassicAssert.IsNotNull(opts);
 
-                if (opts.EndPoint is IPEndPoint ipEndpoint)
+                if (opts.EndPoints[0] is IPEndPoint ipEndpoint)
                 {
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
@@ -611,7 +613,7 @@ namespace Garnet.test
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
                 CheckpointDir = checkpointDir,
-                EndPoint = endpoint,
+                EndPoints = [endpoint],
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
@@ -777,7 +779,7 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false, EndPoint endPoint = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -790,7 +792,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(EndPoint, new(), tlsOptions: sslOptions);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)
