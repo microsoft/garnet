@@ -149,7 +149,7 @@ namespace Tsavorite.test.recovery.sumstore
             }
 
             if (testCommitCookie)
-                store1.AddCookie(commitCookie);
+                store1.AddCookieDelegate(() => commitCookie);
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();

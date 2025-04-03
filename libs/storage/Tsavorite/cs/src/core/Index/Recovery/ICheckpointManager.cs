@@ -31,6 +31,12 @@ namespace Tsavorite.core
     public interface ICheckpointManager : IDisposable
     {
         /// <summary>
+        /// Add create cookie action
+        /// </summary>
+        /// <param name="createCookieAction"></param>
+        void AddCookieDelegate(Func<byte[]> createCookieAction);
+
+        /// <summary>
         /// Get current cookie
         /// </summary>
         /// <returns></returns>

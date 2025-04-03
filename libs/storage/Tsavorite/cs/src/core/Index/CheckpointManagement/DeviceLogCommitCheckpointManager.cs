@@ -31,6 +31,8 @@ namespace Tsavorite.core
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
 
+        protected Func<byte[]> createCookieDelegate;
+
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
 
@@ -173,7 +175,10 @@ namespace Tsavorite.core
         #region ICheckpointManager
 
         /// <inheritdoc />
-        public virtual byte[] GetCookie() => null;
+        public void AddCookieDelegate(Func<byte[]> createCookieAction) => this.createCookieDelegate = createCookieAction;
+
+        /// <inheritdoc />
+        public byte[] GetCookie() => createCookieDelegate == null ? null : createCookieDelegate();
 
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)

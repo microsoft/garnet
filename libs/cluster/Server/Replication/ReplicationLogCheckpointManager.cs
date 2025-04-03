@@ -11,13 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ReplicationLogCheckpointManager(
-        INamedDeviceFactoryCreator deviceFactoryCreator,
-        ICheckpointNamingScheme checkpointNamingScheme,
-        bool isMainStore,
-        bool removeOutdated = false,
-        int fastCommitThrottleFreq = 0,
-        ILogger logger = null) : DeviceLogCommitCheckpointManager(deviceFactoryCreator, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger), IDisposable
+    internal sealed class ReplicationLogCheckpointManager : DeviceLogCommitCheckpointManager, IDisposable
     {
         public long CurrentSafeAofAddress = 0;
         public long RecoveredSafeAofAddress = 0;
@@ -25,13 +19,47 @@ namespace Garnet.cluster
         public string CurrentReplicationId = string.Empty;
         public string RecoveredReplicationId = string.Empty;
 
-        readonly bool isMainStore = isMainStore;
+        readonly bool isMainStore;
         public Action<bool, long, long, bool> checkpointVersionShiftStart;
         public Action<bool, long, long, bool> checkpointVersionShiftEnd;
 
-        readonly bool safelyRemoveOutdated = removeOutdated;
+        readonly bool safelyRemoveOutdated;
 
-        readonly ILogger logger = logger;
+        readonly ILogger logger;
+
+        public ReplicationLogCheckpointManager(
+            INamedDeviceFactoryCreator deviceFactoryCreator,
+            ICheckpointNamingScheme checkpointNamingScheme,
+            bool isMainStore,
+            bool safelyRemoveOutdated = false,
+            int fastCommitThrottleFreq = 0,
+            ILogger logger = null)
+            : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger)
+        {
+            this.isMainStore = isMainStore;
+            this.safelyRemoveOutdated = safelyRemoveOutdated;
+            this.createCookieDelegate = CreateCookie;
+            this.logger = logger;
+
+            // Pre-append cookie in commitMetadata.
+            // cookieMetadata 52 bytes
+            // 1. 4 bytes to track size of cookie
+            // 2. 8 bytes for checkpointCoveredAddress
+            // 3. 40 bytes for primaryReplicationId
+            unsafe byte[] CreateCookie()
+            {
+                var cookie = new byte[sizeof(int) + sizeof(long) + CurrentReplicationId.Length];
+                var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentReplicationId);
+                fixed (byte* ptr = cookie)
+                fixed (byte* pridPtr = primaryReplIdBytes)
+                {
+                    *(int*)ptr = sizeof(long) + CurrentReplicationId.Length;
+                    *(long*)(ptr + 4) = CurrentSafeAofAddress;
+                    Buffer.MemoryCopy(pridPtr, ptr + 12, primaryReplIdBytes.Length, primaryReplIdBytes.Length);
+                }
+                return cookie;
+            }
+        }
 
         public override void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming)
             => checkpointVersionShiftStart?.Invoke(isMainStore, oldVersion, newVersion, isStreaming);
@@ -62,31 +90,6 @@ namespace Garnet.cluster
         }
 
         #region ICheckpointManager
-
-        /// <summary>
-        /// Pre-append cookie in commitMetadata.
-        /// cookieMetadata 52 bytes
-        /// 1. 4 bytes to track size of cookie
-        /// 2. 8 bytes for checkpointCoveredAddress
-        /// 3. 40 bytes for primaryReplicationId
-        /// </summary>
-        /// <returns></returns>
-        private unsafe byte[] CreateCookie()
-        {
-            var cookie = new byte[sizeof(int) + sizeof(long) + CurrentReplicationId.Length];
-            var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentReplicationId);
-            fixed (byte* ptr = cookie)
-            fixed (byte* pridPtr = primaryReplIdBytes)
-            {
-                *(int*)ptr = sizeof(long) + CurrentReplicationId.Length;
-                *(long*)(ptr + 4) = CurrentSafeAofAddress;
-                Buffer.MemoryCopy(pridPtr, ptr + 12, primaryReplIdBytes.Length, primaryReplIdBytes.Length);
-            }
-            return cookie;
-        }
-
-        /// <inheritdoc />
-        public override byte[] GetCookie() => CreateCookie();
 
         private HybridLogRecoveryInfo ConverMetadata(byte[] checkpointMetadata)
         {
