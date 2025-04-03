@@ -198,15 +198,24 @@ namespace Garnet.cluster
             base.CommitLogIncrementalCheckpoint(logToken, commitMetadata, deltaLog);
         }
 
+        /// <summary>
+        /// Retrieve RecoveredSafeAofAddress and RecoveredReplicationId for checkpoint
+        /// </summary>
+        /// <param name="logToken"></param>
+        /// <param name="deltaLog"></param>
+        /// <param name="scanDelta"></param>
+        /// <param name="recoverTo"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
         public unsafe (long, string) GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
-            var hlri = new HybridLogRecoveryInfo();
-            GetLogCheckpointMetadataInfo(ref hlri, logToken, deltaLog, scanDelta, recoverTo);
+            var metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo);
+            var hlri = ConverMetadata(metadata);
             var bytesRead = GetCookieData(hlri, out var RecoveredSafeAofAddress, out var RecoveredReplicationId);
             Debug.Assert(bytesRead == 52);
             return (RecoveredSafeAofAddress, RecoveredReplicationId);
 
-            unsafe int GetCookieData(HybridLogRecoveryInfo hlri, out long checkpointCoveredAddress, out string primaryReplId)
+            static unsafe int GetCookieData(HybridLogRecoveryInfo hlri, out long checkpointCoveredAddress, out string primaryReplId)
             {
                 checkpointCoveredAddress = -1;
                 primaryReplId = null;
@@ -228,9 +237,10 @@ namespace Garnet.cluster
             }
         }
 
-        public override void GetLogCheckpointMetadataInfo(ref HybridLogRecoveryInfo hlri, Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
+        public override byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             byte[] metadata = null;
+            HybridLogRecoveryInfo hlri;
             if (deltaLog != null && scanDelta)
             {
                 // Try to get latest valid metadata from delta-log
@@ -258,7 +268,7 @@ namespace Garnet.cluster
                 LoopEnd:
                     break;
                 }
-                if (hlri.Deserialized) return;
+                if (metadata != null) return metadata;
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
@@ -275,6 +285,7 @@ namespace Garnet.cluster
 
             body = body.AsSpan().Slice(sizeof(int), size).ToArray();
             hlri = ConverMetadata(body);
+            return hlri.ToByteArray();
         }
 
         #endregion
