@@ -31,10 +31,10 @@ namespace Tsavorite.core
     public interface ICheckpointManager : IDisposable
     {
         /// <summary>
-        /// Add cookie to the metadata before commit
+        /// Get current cookie
         /// </summary>
-        /// <param name="cookie"></param>
-        void AddCookie(byte[] cookie);
+        /// <returns></returns>
+        byte[] GetCookie();
 
         /// <summary>
         /// Initialize index checkpoint
@@ -66,8 +66,8 @@ namespace Tsavorite.core
         /// Commit log checkpoint (snapshot and fold-over)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="hlri"></param>
-        void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri);
+        /// <param name="commitMetadata"></param>
+        void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
         /// Cleanup log checkpoint
@@ -95,9 +95,9 @@ namespace Tsavorite.core
         /// Commit log incremental checkpoint (incremental snapshot)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="hlri"></param>
+        /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog);
+        void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog);
 
         /// <summary>
         /// Cleanup log incremental checkpoint (incremental snapshot)
