@@ -173,7 +173,7 @@ namespace Tsavorite.core
         #region ICheckpointManager
 
         /// <inheritdoc />
-        public void AddCookie(byte[] cookie) => CommitCookie = cookie;
+        public virtual byte[] GetCookie() => null;
 
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
@@ -227,15 +227,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri)
+        public virtual unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
-            hlri.cookie = CommitCookie;
             var device = NextLogCheckpointDevice(logToken);
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
             using var writer = new BinaryWriter(ms);
-            var commitMetadata = hlri.ToByteArray();
             writer.Write(commitMetadata.Length);
             writer.Write(commitMetadata);
 
@@ -257,11 +255,8 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog)
+        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog)
         {
-            hlri.cookie = CommitCookie;
-
-            var commitMetadata = hlri.ToByteArray();
             deltaLog.Allocate(out var length, out var physicalAddress);
             if (length < commitMetadata.Length)
             {

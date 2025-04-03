@@ -85,6 +85,9 @@ namespace Garnet.cluster
             return cookie;
         }
 
+        /// <inheritdoc />
+        public override byte[] GetCookie() => CreateCookie();
+
         private HybridLogRecoveryInfo ConverMetadata(byte[] checkpointMetadata)
         {
             var success = true;
@@ -168,31 +171,31 @@ namespace Garnet.cluster
         /// <param name="checkpointMetadata"></param>
         public void CommiLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
         {
+            // TODO: convert is not needed after deprecating old format
+            //  byte commit metadata send from the primary should be following the new unified format
             var recoveryInfo = ConverMetadata(checkpointMetadata);
-            CommitLogCheckpoint(logToken, recoveryInfo);
+            CommitLogCheckpoint(logToken, recoveryInfo.ToByteArray());
         }
 
         /// <summary>
         /// Commit log checkpoint metadata and append cookie
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="hlri"></param>
-        public override unsafe void CommitLogCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri)
+        /// <param name="commitMetadata"></param>
+        public override unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
-            AddCookie(CreateCookie());
-            base.CommitLogCheckpoint(logToken, hlri);
+            base.CommitLogCheckpoint(logToken, commitMetadata);
         }
 
         /// <summary>
         /// Commit incremental log checkpoint metadata and append cookie
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="hlri"></param>
+        /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
-        public override unsafe void CommitLogIncrementalCheckpoint(Guid logToken, HybridLogRecoveryInfo hlri, DeltaLog deltaLog)
+        public override unsafe void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog)
         {
-            AddCookie(CreateCookie());
-            base.CommitLogIncrementalCheckpoint(logToken, hlri, deltaLog);
+            base.CommitLogIncrementalCheckpoint(logToken, commitMetadata, deltaLog);
         }
 
         public unsafe (long, string) GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
