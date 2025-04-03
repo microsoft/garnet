@@ -723,11 +723,11 @@ namespace Garnet.server
         /// Parse geo longitude and latitude from parse state at specified index.
         /// </summary>
         /// <param name="parseState">The parse state</param>
-        /// <param name="currIdx">The argument index</param>
-        /// <param name="lon"></param>
-        /// <param name="lat"></param>
+        /// <param name="currIdx">The first argument index</param>
+        /// <param name="lon">Longitude</param>
+        /// <param name="lat">Latitude</param>
         /// <param name="idx">Outgoing argument index</param>
-        /// <param name="error"></param>
+        /// <param name="error">Error if failed</param>
         /// <returns>True if value parsed successfully</returns>
         internal static bool TryGetGeoLonLat(this SessionParseState parseState, int currIdx, out double lon, out double lat,
                                              out int idx, out ReadOnlySpan<byte> error)

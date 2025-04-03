@@ -6,9 +6,9 @@ namespace Garnet.server
     internal enum GeoAddOptions : byte
     {
         None = 0,
-        NX = 1,
-        XX = 2,
-        CH = 4
+        NX = 1 << 0,
+        XX = 1 << 1,
+        CH = 1 << 2
     }
 
     /// <summary>

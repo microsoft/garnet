@@ -25,7 +25,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("GEOADD");
             }
 
-            GeoAddOptions ex = 0;
+            GeoAddOptions addOption = 0;
 
             var currTokenIdx = 0;
             // Get the key for SortedSet
@@ -33,19 +33,19 @@ namespace Garnet.server
 
             while (currTokenIdx < parseState.Count)
             {
-                var byteOptions = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                var addOptionSpan = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
 
-                if (byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8))
+                if (addOptionSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CH))
                 {
-                    ex |= GeoAddOptions.CH;
+                    addOption |= GeoAddOptions.CH;
                 }
-                else if (byteOptions.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
+                else if (addOptionSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
                 {
-                    ex |= GeoAddOptions.NX;
+                    addOption |= GeoAddOptions.NX;
                 }
-                else if (byteOptions.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
+                else if (addOptionSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
                 {
-                    ex |= GeoAddOptions.XX;
+                    addOption |= GeoAddOptions.XX;
                 }
                 else
                 {
@@ -55,7 +55,7 @@ namespace Garnet.server
                 ++currTokenIdx;
             }
 
-            if (((ex & GeoAddOptions.NX) != 0) && ((ex & GeoAddOptions.XX) != 0))
+            if (((addOption & GeoAddOptions.NX) != 0) && ((addOption & GeoAddOptions.XX) != 0))
             {
                 //return AbortWithErrorMessage(CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE);
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
@@ -83,7 +83,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)ex);
+            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
