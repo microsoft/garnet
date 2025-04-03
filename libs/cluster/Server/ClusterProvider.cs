@@ -444,7 +444,7 @@ namespace Garnet.cluster
             {
                 while (true)
                 {
-                    retry:
+                retry:
                     Thread.Yield();
                     // Acquire latest bumped epoch
                     var currentEpoch = GarnetCurrentEpoch;
