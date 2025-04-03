@@ -288,7 +288,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual void GetLogCheckpointMetadataInfo(ref HybridLogRecoveryInfo hlri, Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1)
+        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1)
         {
             byte[] metadata = null;
             if (deltaLog != null && scanDelta)
@@ -310,6 +310,7 @@ namespace Tsavorite.core
                                     Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
 
+                            var hlri = new HybridLogRecoveryInfo();
                             using (StreamReader s = new(new MemoryStream(metadata)))
                             {
                                 hlri.Initialize(s);
@@ -323,8 +324,7 @@ namespace Tsavorite.core
                 LoopEnd:
                     break;
                 }
-
-                if (hlri.Deserialized) return;
+                if (metadata != null) return metadata;
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
@@ -339,11 +339,7 @@ namespace Tsavorite.core
                 ReadInto(device, 0, out body, size + sizeof(int));
             device.Dispose();
 
-            metadata = body.AsSpan().Slice(sizeof(int), size).ToArray();
-            using (StreamReader s = new(new MemoryStream(metadata)))
-            {
-                hlri.Initialize(s);
-            }
+            return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
 
         /// <inheritdoc />

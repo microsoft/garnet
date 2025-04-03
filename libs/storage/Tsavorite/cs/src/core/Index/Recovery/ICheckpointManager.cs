@@ -115,13 +115,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Retrieve commit metadata for specified log checkpoint
         /// </summary>
-        /// <param name="hlri">HybridLogRecoveryInfo</param>
         /// <param name="logToken">Token</param>
         /// <param name="deltaLog">Delta log</param>
         /// <param name="scanDelta"> whether or not to scan through the delta log to acquire latest entry. make sure the delta log points to the tail address immediately following the returned metadata.</param>
         /// <param name="recoverTo"> version upper bound to scan for in the delta log. Function will return the largest version metadata no greater than the given version.</param>
         /// <returns>Metadata, or null if invalid</returns>
-        void GetLogCheckpointMetadataInfo(ref HybridLogRecoveryInfo hlri, Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
+        byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1);
 
         /// <summary>
         /// Get list of index checkpoint tokens, in order of usage preference

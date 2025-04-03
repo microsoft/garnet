@@ -235,9 +235,11 @@ namespace Tsavorite.core
         /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
         internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            checkpointManager.GetLogCheckpointMetadataInfo(ref this, token, deltaLog, scanDelta, recoverTo);
-            if (!Deserialized)
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
+            if (metadata == null)
                 throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
+            using StreamReader s = new(new MemoryStream(metadata));
+            Initialize(s);
         }
 
         /// <summary>
@@ -255,10 +257,11 @@ namespace Tsavorite.core
 
         internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            commitCookie = null;
-            checkpointManager.GetLogCheckpointMetadataInfo(ref this, token, deltaLog, scanDelta, recoverTo);
-            if (!Deserialized)
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
+            if (metadata == null)
                 throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
+            using StreamReader s = new(new MemoryStream(metadata));
+            Initialize(s);
             if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
             {
                 // Adjust delta tail address to include the metadata record
