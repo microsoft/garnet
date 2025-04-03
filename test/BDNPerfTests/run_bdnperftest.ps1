@@ -60,25 +60,6 @@ function AnalyzeResult {
     }
   }
 
-################## DeleteResultRowsForSpecificValue ##################### 
-#  
-#  Deletes all rows in the results file for a specific value. This is used to delete all the .NET 8.0 results from the results file so only .NET 9.0 results are left (or visa versa)
-#  
-######################################################
-function DeleteResultRowsForSpecificValue {
-    param ($ValueInRowtoDelete, $ResultsFile)
-
-    # Read the content of the text file
-    $content = Get-Content $ResultsFile
-
-    # NOTE: The regex is looking for the value in the middle of the line, so it has to be surrounded by | characters which means it is only the lines that are part of the summary block and not every other line in the file that matches the value (aka .net80)
-    $filteredContent = $content | Where-Object { $_ -notmatch "\| $ValueInRowtoDelete \|" }
-
-    # Write the filtered content back to the text file
-    $filteredContent | Set-Content $ResultsFile
-  }
-  
-
 ######### ParseValueFromResults ###########
 #
 # Takes the line from the results file and returns the value from the requested column
@@ -210,17 +191,6 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
-
-Write-Output "**** PREPARE THE RESULTS FILE $resultsFile SO ONLY HAS RESULTS FOR $framework ****"
-if ($framework -eq 'net8.0') {
-    Write-Output " Delete all the .NET 9.0 results from the results file"
-    DeleteResultRowsForSpecificValue ".NET 9.0" $resultsFile
-} else {
-    Write-Output " Delete all the .NET 8.0 results from the results file"
-    DeleteResultRowsForSpecificValue ".NET 8.0" $resultsFile
-}
-Write-Output " "
-
 
 Write-Output "**** ANALYZE THE RESULTS FILE $resultsFile ****"
 # First check if results file is there and if not, error out gracefully
