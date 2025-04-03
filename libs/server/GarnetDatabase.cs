@@ -25,47 +25,47 @@ namespace Garnet.server
         /// <summary>
         /// Database ID
         /// </summary>
-        public int Id;
+        public int Id { get; }
 
         /// <summary>
         /// Main Store
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore { get; }
 
         /// <summary>
         /// Object Store
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore { get; }
 
         /// <summary>
         /// Epoch instance used by server
         /// </summary>
-        public LightEpoch Epoch;
+        public LightEpoch Epoch { get; }
 
         /// <summary>
         /// Common state machine driver used by Garnet
         /// </summary>
-        public StateMachineDriver StateMachineDriver;
+        public StateMachineDriver StateMachineDriver { get; }
 
         /// <summary>
         /// Size Tracker for Object Store
         /// </summary>
-        public CacheSizeTracker ObjectStoreSizeTracker;
+        public CacheSizeTracker ObjectStoreSizeTracker { get; }
 
         /// <summary>
         /// Device used for AOF logging
         /// </summary>
-        public IDevice AofDevice;
+        public IDevice AofDevice { get; }
 
         /// <summary>
         /// AOF log
         /// </summary>
-        public TsavoriteLog AppendOnlyFile;
+        public TsavoriteLog AppendOnlyFile { get; }
 
         /// <summary>
         /// Version map
         /// </summary>
-        public WatchVersionMap VersionMap;
+        public WatchVersionMap VersionMap { get; }
 
         /// <summary>
         /// Tail address of main store log at last save
@@ -117,9 +117,9 @@ namespace Garnet.server
             ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
         }
 
-        public GarnetDatabase(GarnetDatabase srcDb, bool enableAof) : this()
+        public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
         {
-            Id = srcDb.Id;
+            Id = id;
             MainStore = srcDb.MainStore;
             ObjectStore = srcDb.ObjectStore;
             Epoch = srcDb.Epoch;
@@ -129,6 +129,13 @@ namespace Garnet.server
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             MainStoreIndexMaxedOut = srcDb.MainStoreIndexMaxedOut;
             ObjectStoreIndexMaxedOut = srcDb.ObjectStoreIndexMaxedOut;
+
+            if (copyLastSaveData)
+            {
+                LastSaveTime = srcDb.LastSaveTime;
+                LastSaveStoreTailAddress = srcDb.LastSaveStoreTailAddress;
+                LastSaveObjectStoreTailAddress = srcDb.LastSaveObjectStoreTailAddress;
+            }
         }
 
         public GarnetDatabase()

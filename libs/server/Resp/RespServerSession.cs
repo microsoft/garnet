@@ -241,7 +241,7 @@ namespace Garnet.server
             var maxDbs = storeWrapper.serverOptions.MaxDatabases;
 
             databaseSessions = new ExpandableMap<GarnetDatabaseSession>(1, 0, maxDbs - 1);
-            if (!databaseSessions.TrySetValue(0, ref dbSession))
+            if (!databaseSessions.TrySetValue(0, dbSession))
                 throw new GarnetException("Failed to set initial database session in database sessions map");
 
             // Set the current active session to the default session
@@ -1393,13 +1393,8 @@ namespace Garnet.server
             if (!success) return false;
 
             // Swap the sessions in the session map
-            var tmp = dbSession1;
-            databaseSessions.Map[dbId1] = dbSession2;
-            databaseSessions.Map[dbId2] = tmp;
-
-            // Update the database IDs in the session instances
-            databaseSessions.Map[dbId1].Id = dbId1;
-            databaseSessions.Map[dbId2].Id = dbId2;
+            databaseSessions.Map[dbId1] = new GarnetDatabaseSession(dbId1, dbSession2);
+            databaseSessions.Map[dbId2] = new GarnetDatabaseSession(dbId2, dbSession1);
 
             // If Lua is enabled, switch the database sessions in the script cache
             if (storeWrapper.serverOptions.EnableLua)

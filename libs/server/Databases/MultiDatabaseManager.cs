@@ -601,12 +601,9 @@ namespace Garnet.server
             try
             {
                 var databaseMapSnapshot = databases.Map;
-                var tmp = db1;
-                databaseMapSnapshot[dbId1] = db2;
-                databaseMapSnapshot[dbId2] = tmp;
-
-                databaseMapSnapshot[dbId1].Id = dbId1;
-                databaseMapSnapshot[dbId2].Id = dbId2;
+                var enableAof = StoreWrapper.serverOptions.EnableAOF;
+                databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
+                databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
 
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)
@@ -847,7 +844,7 @@ namespace Garnet.server
         /// <returns></returns>
         private bool TryAddDatabase(int dbId, GarnetDatabase db)
         {
-            if (!databases.TrySetValue(dbId, ref db))
+            if (!databases.TrySetValue(dbId, db))
                 return false;
 
             HandleDatabaseAdded(dbId);
@@ -866,7 +863,7 @@ namespace Garnet.server
                 db.ObjectStoreSizeTracker?.Start(StoreWrapper.ctsCommit.Token);
 
             activeDbIds.TryGetNextId(out var nextIdx);
-            activeDbIds.TrySetValue(nextIdx, ref db.Id);
+            activeDbIds.TrySetValue(nextIdx, db.Id);
 
             activeDbIds.mapLock.ReadLock();
             try
@@ -890,7 +887,7 @@ namespace Garnet.server
             switch (src)
             {
                 case SingleDatabaseManager sdbm:
-                    var defaultDbCopy = new GarnetDatabase(sdbm.DefaultDatabase, enableAof);
+                    var defaultDbCopy = new GarnetDatabase(0, sdbm.DefaultDatabase, enableAof);
                     TryAddDatabase(0, defaultDbCopy);
                     return;
                 case MultiDatabaseManager mdbm:
@@ -901,7 +898,7 @@ namespace Garnet.server
                     for (var i = 0; i < activeDbIdsMapSize; i++)
                     {
                         var dbId = activeDbIdsMapSnapshot[i];
-                        var dbCopy = new GarnetDatabase(databasesMapSnapshot[dbId], enableAof);
+                        var dbCopy = new GarnetDatabase(dbId, databasesMapSnapshot[dbId], enableAof);
                         TryAddDatabase(dbId, dbCopy);
                     }
 

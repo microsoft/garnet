@@ -37,7 +37,7 @@ namespace Garnet.server
 
         public SingleDatabaseManager(SingleDatabaseManager src, bool enableAof) : this(src.CreateDatabaseDelegate, src.StoreWrapper, createDefaultDatabase: false)
         {
-            defaultDatabase = new GarnetDatabase(src.DefaultDatabase, enableAof);
+            defaultDatabase = new GarnetDatabase(0, src.DefaultDatabase, enableAof);
         }
 
         /// <inheritdoc/>
