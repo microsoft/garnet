@@ -251,6 +251,15 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Just for fuzzing and testing purposes, do not use otherwise.
+        /// </summary>
+        internal RespServerSession() : base(null)
+        {
+            customCommandManagerSession = new(new());
+            storeWrapper = new("", "", [], null, null, null, null, null, new(), null);
+        }
+
         internal void SetUserHandle(UserHandle userHandle)
         {
             this._userHandle = userHandle;

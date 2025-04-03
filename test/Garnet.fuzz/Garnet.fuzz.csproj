@@ -3,6 +3,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+		<DelaySign>false</DelaySign>
   </PropertyGroup>
 
 	<ItemGroup>
@@ -10,7 +13,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\main\GarnetServer\GarnetServer.csproj" />
+	  <ProjectReference Include="..\..\main\GarnetServer\GarnetServer.csproj" />
 	</ItemGroup>
 	
 </Project>

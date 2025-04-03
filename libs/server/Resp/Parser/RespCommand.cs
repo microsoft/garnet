@@ -2614,6 +2614,66 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Version of <see cref="ParseRespCommandBuffer(ReadOnlySpan{byte})"/> for fuzzing.
+        /// 
+        /// Expects (and allows) partial commands.
+        /// 
+        /// Returns true if a command was succesfully parsed
+        /// </summary>
+        internal bool FuzzParseCommandBuffer(ReadOnlySpan<byte> buffer, out RespCommand cmd)
+        {
+            var oldRecvBufferPtr = recvBufferPtr;
+            var oldReadHead = readHead;
+            var oldBytesRead = bytesRead;
+
+            try
+            {
+                // Slap the buffer in
+                recvBufferPtr = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(buffer));
+                readHead = 0;
+                bytesRead = buffer.Length;
+
+                // Duplicate check in ProcessMessages
+                if ((bytesRead - readHead) >= 4)
+                {
+                    cmd = ParseCommand(writeErrorOnFailure: false, out _);
+                }
+                else
+                {
+                    cmd = RespCommand.INVALID;
+                }
+
+                return cmd != RespCommand.INVALID;
+            }
+            finally
+            {
+                // Validate state post-fuzz
+                if (readHead > buffer.Length)
+                {
+                    throw new InvalidOperationException("readHead was left past end of buffer");
+                }
+
+                if (!buffer.IsEmpty)
+                {
+                    if (Unsafe.IsAddressLessThan(ref Unsafe.AsRef<byte>(recvBufferPtr), ref MemoryMarshal.GetReference(buffer)))
+                    {
+                        throw new InvalidOperationException("recvBufferPtr was left before buffer");
+                    }
+
+                    if (Unsafe.IsAddressGreaterThan(ref Unsafe.AsRef<byte>(recvBufferPtr), ref Unsafe.Add(ref MemoryMarshal.GetReference(buffer), buffer.Length)))
+                    {
+                        throw new InvalidOperationException("recvBufferPtr was left after buffer");
+                    }
+                }
+
+                // Remove references to temporary buffer
+                recvBufferPtr = oldRecvBufferPtr;
+                readHead = oldReadHead;
+                bytesRead = oldBytesRead;
+            }
+        }
+
+        /// <summary>
         /// Parses the command from the given input buffer.
         /// </summary>
         /// <param name="writeErrorOnFailure">If true, when a parsing error occurs an error response will written.</param>

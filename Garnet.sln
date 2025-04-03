@@ -114,7 +114,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoOpModule", "playground\No
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ETag", "samples\ETag\ETag.csproj", "{4FBA1587-BAFC-49F8-803A-D1CF431A26F5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Garnet.fuzz", "Garnet.fuzz\Garnet.fuzz.csproj", "{7A42F7AA-EE93-49B1-8711-A1D6D948F5FC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Garnet.fuzz", "test\Garnet.fuzz\Garnet.fuzz.csproj", "{7A42F7AA-EE93-49B1-8711-A1D6D948F5FC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
