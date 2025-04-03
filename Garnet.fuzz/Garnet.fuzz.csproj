@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommandLineParser" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\main\GarnetServer\GarnetServer.csproj" />
+	</ItemGroup>
+	
+</Project>
