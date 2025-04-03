@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using Garnet.common.Parsing;
 using Garnet.server;
 
 namespace Garnet.fuzz.Targets
@@ -16,10 +17,11 @@ namespace Garnet.fuzz.Targets
         public static void Fuzz(ReadOnlySpan<byte> input)
         {
             var session = new RespServerSession();
-            var success = session.FuzzParseCommandBuffer(input, out var cmd);
 
             try
             {
+                var success = session.FuzzParseCommandBuffer(input, out var cmd);
+
                 if (success)
                 {
                     // Validate (slowly) that the input buffer SHOULD have been parsed this way
@@ -118,7 +120,7 @@ namespace Garnet.fuzz.Targets
                     }
                 }
             }
-            catch (Exception e) when (e is not FuzzerValidationException)
+            catch (Exception e) when (e is not (FuzzerValidationException or RespParsingException))
             {
                 IFuzzerTarget.RaiseErrorForInput(e, input);
             }
