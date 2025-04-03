@@ -120,8 +120,13 @@ namespace Garnet.fuzz.Targets
                     }
                 }
             }
-            catch (Exception e) when (e is not (FuzzerValidationException or RespParsingException))
+            catch (RespParsingException)
             {
+                // Intentional parsing errors are expected and fine
+            }
+            catch (Exception e) when (e is not FuzzerValidationException)
+            {
+                // Wrapping any unexpected exception with some additional context for local debugging purposes
                 IFuzzerTarget.RaiseErrorForInput(e, input);
             }
         }
