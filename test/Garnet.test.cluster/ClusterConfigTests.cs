@@ -3,11 +3,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using Garnet.cluster;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
@@ -103,6 +105,35 @@ namespace Garnet.test.cluster
             Assert.That(nodesResult.Nodes.Count == nbInstances - 1, "A node should've been removed from the cluster.");
             Assert.That(nodesResult.Nodes.ElementAt(0).IsMyself);
             Assert.That(nodesResult.Nodes.ElementAt(0).EndPoint.ToIPEndPoint().Port == 7000, "Expected the node to be replying to be the one with port 7000.");
+        }
+
+        [Test, Order(2)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterAnnounceRecoverTest()
+        {
+            context.CreateInstances(1);
+            context.CreateConnection();
+
+            var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
+            var origin = config.Origin;
+
+            var clusterNodesEndpoint = origin.ToIPEndPoint();
+            ClassicAssert.AreEqual("127.0.0.1", clusterNodesEndpoint.Address.ToString());
+            ClassicAssert.AreEqual(ClusterTestContext.Port, clusterNodesEndpoint.Port);
+
+            ClassicAssert.IsTrue(IPAddress.TryParse("127.0.0.2", out var ipAddress));
+            var announcePort = clusterNodesEndpoint.Port + 10000;
+            var clusterAnnounceEndpoint = new IPEndPoint(ipAddress, announcePort);
+            context.nodes[0].Dispose(false);
+            context.nodes[0] = context.CreateInstance(context.clusterTestUtils.GetEndPoint(0), cleanClusterConfig: false, tryRecover: true, clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+            context.nodes[0].Start();
+            context.CreateConnection();
+
+            config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
+            origin = config.Origin;
+            clusterNodesEndpoint = origin.ToIPEndPoint();
+            ClassicAssert.AreEqual(clusterAnnounceEndpoint.Address.ToString(), clusterNodesEndpoint.Address.ToString());
+            ClassicAssert.AreEqual(clusterAnnounceEndpoint.Port, clusterNodesEndpoint.Port);
         }
     }
 }

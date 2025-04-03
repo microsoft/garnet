@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Net;
 using System.Threading;
 using Garnet.common;
 using Garnet.server.TLS;
@@ -50,20 +49,7 @@ namespace Garnet.cluster
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
-            IPEndPoint endpoint = null;
-            foreach (var endPoint in opts.EndPoints)
-            {
-                if (endPoint is IPEndPoint _endpoint)
-                {
-                    endpoint = _endpoint;
-                    break;
-                }
-            }
-
-            if (endpoint == null)
-                throw new GarnetException("No valid IPEndPoint found in endPoint list");
-
-            var address = clusterProvider.storeWrapper.GetIp();
+            var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 
             this.logger = logger;
             var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
@@ -80,14 +66,13 @@ namespace Garnet.cluster
                 var config = ClusterUtils.ReadDevice(clusterConfigDevice, pool, logger);
                 currentConfig = ClusterConfig.FromByteArray(config);
                 // Used to update endpoint if it change when running inside a container.
-                if (address != currentConfig.LocalNodeIp || endpoint.Port != currentConfig.LocalNodePort)
+                if (clusterEndpoint.Address.ToString() != currentConfig.LocalNodeIp || clusterEndpoint.Port != currentConfig.LocalNodePort)
                 {
                     logger?.LogInformation(
-                        "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {address}:{opts.Port}",
+                        "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {endpoint}",
                         currentConfig.LocalNodeIp,
                         currentConfig.LocalNodePort,
-                        address,
-                        endpoint.Port);
+                        clusterEndpoint);
                 }
             }
             else
@@ -97,7 +82,7 @@ namespace Garnet.cluster
             }
 
             clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
-            InitLocal(address, endpoint.Port, recoverConfig);
+            InitLocal(clusterEndpoint.Address.ToString(), clusterEndpoint.Port, recoverConfig);
             logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
             clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
