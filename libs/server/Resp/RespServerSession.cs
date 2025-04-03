@@ -991,7 +991,41 @@ namespace Garnet.server
             return true;
         }
 
-        Span<byte> GetCommand(out bool success)
+        ReadOnlySpan<byte> GetCommand(out bool success)
+        {
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
+            {
+                success = false;
+                return default;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
+            {
+                success = false;
+                return default;
+            }
+
+            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            var result = new ReadOnlySpan<byte>(recvBufferPtr + readHead, length);
+            readHead += length + 2;
+            success = true;
+
+            return result;
+        }
+
+        ReadOnlySpan<byte> GetUpperCaseCommand(out bool success)
         {
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
@@ -1022,6 +1056,7 @@ namespace Garnet.server
             readHead += length + 2;
             success = true;
 
+            AsciiUtils.ToUpperInPlace(result);
             return result;
         }
 
