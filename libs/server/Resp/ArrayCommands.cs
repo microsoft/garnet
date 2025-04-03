@@ -263,7 +263,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SWAPDB
+        /// SWAPDB index1 index2
         /// </summary>
         /// <returns></returns>
         private bool NetworkSWAPDB()

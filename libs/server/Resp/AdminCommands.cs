@@ -574,6 +574,10 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// COMMITAOF [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkCOMMITAOF()
         {
             if (parseState.Count > 1)

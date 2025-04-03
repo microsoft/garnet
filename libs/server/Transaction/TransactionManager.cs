@@ -140,11 +140,6 @@ namespace Garnet.server
             Reset(false);
         }
 
-        internal void SetGarnetAPIs()
-        {
-
-        }
-
         internal void Reset(bool isRunning)
         {
             if (isRunning)
