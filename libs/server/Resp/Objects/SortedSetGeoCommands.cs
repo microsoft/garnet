@@ -71,13 +71,13 @@ namespace Garnet.server
                     return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
 
-                if (!parseState.TryGetGeoLonLat(currTokenIdx, out _, out _, out currTokenIdx, out var error))
+                if (!parseState.TryGetGeoLonLat(currTokenIdx, out _, out _, out var error))
                 {
                     return AbortWithErrorMessage(error);
                 }
 
-                // skip member
-                currTokenIdx++;
+                // move past lonlat and skip member
+                currTokenIdx += 3;
             }
             while (currTokenIdx < parseState.Count);
 

@@ -256,12 +256,12 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!parseState.TryGetGeoLonLat(currTokenIdx, out searchOpts.lon, out searchOpts.lat,
-                                                    out currTokenIdx, out error))
+                    if (!parseState.TryGetGeoLonLat(currTokenIdx, out searchOpts.lon, out searchOpts.lat, out error))
                     {
                         return false;
                     }
 
+                    currTokenIdx += 2;
                     searchOpts.origin = GeoOriginType.FromLonLat;
                 }
 
@@ -328,11 +328,12 @@ namespace Garnet.server
                         }
 
                         // Read coordinates
-                        if (!parseState.TryGetGeoLonLat(currTokenIdx, out searchOpts.lon, out searchOpts.lat, out currTokenIdx, out error))
+                        if (!parseState.TryGetGeoLonLat(currTokenIdx, out searchOpts.lon, out searchOpts.lat, out error))
                         {
                             return false;
                         }
 
+                        currTokenIdx += 2;
                         searchOpts.origin = GeoOriginType.FromLonLat;
                         continue;
                     }
@@ -723,21 +724,19 @@ namespace Garnet.server
         /// Parse geo longitude and latitude from parse state at specified index.
         /// </summary>
         /// <param name="parseState">The parse state</param>
-        /// <param name="currIdx">The first argument index</param>
+        /// <param name="idx">The first argument index</param>
         /// <param name="lon">Longitude</param>
         /// <param name="lat">Latitude</param>
-        /// <param name="idx">Outgoing argument index</param>
         /// <param name="error">Error if failed</param>
         /// <returns>True if value parsed successfully</returns>
-        internal static bool TryGetGeoLonLat(this SessionParseState parseState, int currIdx, out double lon, out double lat,
-                                             out int idx, out ReadOnlySpan<byte> error)
+        internal static bool TryGetGeoLonLat(this SessionParseState parseState, int idx, out double lon, out double lat,
+                                             out ReadOnlySpan<byte> error)
         {
             error = default;
             lat = default;
-            idx = currIdx;
 
             if (!parseState.TryGetDouble(idx++, out lon) ||
-                !parseState.TryGetDouble(idx++, out lat))
+                !parseState.TryGetDouble(idx, out lat))
             {
                 error = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
                 return false;

@@ -54,8 +54,9 @@ namespace Garnet.server
 
                 while (currTokenIdx < count)
                 {
-                    var res = input.parseState.TryGetGeoLonLat(currTokenIdx, out var longitude, out var latitude, out currTokenIdx, out _);
+                    var res = input.parseState.TryGetGeoLonLat(currTokenIdx, out var longitude, out var latitude, out _);
                     Debug.Assert(res);
+                    currTokenIdx += 2;
                     var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
