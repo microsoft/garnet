@@ -38,21 +38,7 @@ namespace Tsavorite.devices
 
         internal static ServiceClients GetServiceClients(string connectionString)
         {
-            var aggressiveOptions = new BlobClientOptions();
-            aggressiveOptions.Retry.MaxRetries = 0;
-            aggressiveOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
-            aggressiveOptions.AddPolicy(new ServerTimeoutPolicy(2), HttpPipelinePosition.PerCall);
-
-            var defaultOptions = new BlobClientOptions();
-            defaultOptions.Retry.MaxRetries = 0;
-            defaultOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(16);
-            defaultOptions.AddPolicy(new ServerTimeoutPolicy(15), HttpPipelinePosition.PerCall);
-
-            var withRetriesOptions = new BlobClientOptions();
-            withRetriesOptions.Retry.MaxRetries = 10;
-            withRetriesOptions.Retry.Mode = RetryMode.Exponential;
-            withRetriesOptions.Retry.Delay = TimeSpan.FromSeconds(1);
-            withRetriesOptions.Retry.MaxDelay = TimeSpan.FromSeconds(30);
+            var (aggressiveOptions, defaultOptions, withRetriesOptions) = GetBlobClientOptions();
 
             return new ServiceClients()
             {
@@ -60,6 +46,40 @@ namespace Tsavorite.devices
                 Aggressive = new BlobServiceClient(connectionString, aggressiveOptions),
                 WithRetries = new BlobServiceClient(connectionString, withRetriesOptions),
             };
+        }
+
+        internal static ServiceClients GetServiceClients(string serviceUrl, TokenCredential credential)
+        {
+            var (aggressiveOptions, defaultOptions, withRetriesOptions) = GetBlobClientOptions();
+            var serviceUri = new Uri(serviceUrl);
+
+            return new ServiceClients()
+            {
+                Default = new BlobServiceClient(serviceUri, credential, defaultOptions),
+                Aggressive = new BlobServiceClient(serviceUri, credential, aggressiveOptions),
+                WithRetries = new BlobServiceClient(serviceUri, credential, withRetriesOptions),
+            };
+        }
+
+        private static (BlobClientOptions AggressiveOptions, BlobClientOptions DefaultOptions, BlobClientOptions WithRetriesOptions) GetBlobClientOptions()
+        {
+            var AggressiveOptions = new BlobClientOptions();
+            AggressiveOptions.Retry.MaxRetries = 0;
+            AggressiveOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
+            AggressiveOptions.AddPolicy(new ServerTimeoutPolicy(2), HttpPipelinePosition.PerCall);
+
+            var DefaultOptions = new BlobClientOptions();
+            DefaultOptions.Retry.MaxRetries = 0;
+            DefaultOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(16);
+            DefaultOptions.AddPolicy(new ServerTimeoutPolicy(15), HttpPipelinePosition.PerCall);
+
+            var WithRetriesOptions = new BlobClientOptions();
+            WithRetriesOptions.Retry.MaxRetries = 10;
+            WithRetriesOptions.Retry.Mode = RetryMode.Exponential;
+            WithRetriesOptions.Retry.Delay = TimeSpan.FromSeconds(1);
+            WithRetriesOptions.Retry.MaxDelay = TimeSpan.FromSeconds(30);
+
+            return (AggressiveOptions, DefaultOptions, WithRetriesOptions);
         }
 
         public struct ContainerClients
