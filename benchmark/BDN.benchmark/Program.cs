@@ -18,6 +18,8 @@ BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
     .Run(args, new BaseConfig());
 #endif
 
+
+
 public class BaseConfig : ManualConfig
 {
     public Job Net8BaseJob { get; }
@@ -32,14 +34,21 @@ public class BaseConfig : ManualConfig
 
         var baseJob = Job.Default.WithGcServer(true);
 
-        Net8BaseJob = baseJob.WithRuntime(CoreRuntime.Core80)
-            .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
-        Net9BaseJob = baseJob.WithRuntime(CoreRuntime.Core90)
-            .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
-
-        AddJob(
-            Net8BaseJob.WithId(".NET 8"),
-            Net9BaseJob.WithId(".NET 9")
-            );
+        var runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription;
+        switch (runtime)
+        {
+            case string r when r.Contains("8.0"):
+                AddJob(baseJob.WithRuntime(CoreRuntime.Core80)
+                    .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
+                    .WithId(".NET 8"));
+                break;
+            case string r when r.Contains("9.0"):
+                AddJob(baseJob.WithRuntime(CoreRuntime.Core90)
+                    .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
+                    .WithId(".NET 9"));
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported runtime: {runtime}");
+        }
     }
 }
