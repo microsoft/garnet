@@ -61,25 +61,25 @@ namespace Tsavorite.devices
             };
         }
 
-        private static (BlobClientOptions aggressiveOptions, BlobClientOptions defaultOptions, BlobClientOptions withRetriesOptions) GetBlobClientOptions()
+        private static (BlobClientOptions AggressiveOptions, BlobClientOptions DefaultOptions, BlobClientOptions WithRetriesOptions) GetBlobClientOptions()
         {
-            var aggressiveOptions = new BlobClientOptions();
-            aggressiveOptions.Retry.MaxRetries = 0;
-            aggressiveOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
-            aggressiveOptions.AddPolicy(new ServerTimeoutPolicy(2), HttpPipelinePosition.PerCall);
+            var AggressiveOptions = new BlobClientOptions();
+            AggressiveOptions.Retry.MaxRetries = 0;
+            AggressiveOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
+            AggressiveOptions.AddPolicy(new ServerTimeoutPolicy(2), HttpPipelinePosition.PerCall);
 
-            var defaultOptions = new BlobClientOptions();
-            defaultOptions.Retry.MaxRetries = 0;
-            defaultOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(16);
-            defaultOptions.AddPolicy(new ServerTimeoutPolicy(15), HttpPipelinePosition.PerCall);
+            var DefaultOptions = new BlobClientOptions();
+            DefaultOptions.Retry.MaxRetries = 0;
+            DefaultOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(16);
+            DefaultOptions.AddPolicy(new ServerTimeoutPolicy(15), HttpPipelinePosition.PerCall);
 
-            var withRetriesOptions = new BlobClientOptions();
-            withRetriesOptions.Retry.MaxRetries = 10;
-            withRetriesOptions.Retry.Mode = RetryMode.Exponential;
-            withRetriesOptions.Retry.Delay = TimeSpan.FromSeconds(1);
-            withRetriesOptions.Retry.MaxDelay = TimeSpan.FromSeconds(30);
+            var WithRetriesOptions = new BlobClientOptions();
+            WithRetriesOptions.Retry.MaxRetries = 10;
+            WithRetriesOptions.Retry.Mode = RetryMode.Exponential;
+            WithRetriesOptions.Retry.Delay = TimeSpan.FromSeconds(1);
+            WithRetriesOptions.Retry.MaxDelay = TimeSpan.FromSeconds(30);
 
-            return (aggressiveOptions, defaultOptions, withRetriesOptions);
+            return (AggressiveOptions, DefaultOptions, WithRetriesOptions);
         }
 
         public struct ContainerClients
