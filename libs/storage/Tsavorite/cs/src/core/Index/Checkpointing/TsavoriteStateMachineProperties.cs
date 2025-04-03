@@ -9,12 +9,6 @@ namespace Tsavorite.core
     {
         internal long lastVersion;
 
-        /// <summary>
-        /// Add cookie to the metadata before commit
-        /// </summary>
-        /// <param name="cookie"></param>
-        public void AddCookie(byte[] cookie) => checkpointManager.AddCookie(cookie);
-
         private byte[] recoveredCommitCookie;
         /// <summary>
         /// User-specified commit cookie persisted with last recovered commit
