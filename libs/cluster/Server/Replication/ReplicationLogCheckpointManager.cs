@@ -181,27 +181,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Commit log checkpoint metadata and append cookie
-        /// </summary>
-        /// <param name="logToken"></param>
-        /// <param name="commitMetadata"></param>
-        public override unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
-        {
-            base.CommitLogCheckpoint(logToken, commitMetadata);
-        }
-
-        /// <summary>
-        /// Commit incremental log checkpoint metadata and append cookie
-        /// </summary>
-        /// <param name="logToken"></param>
-        /// <param name="commitMetadata"></param>
-        /// <param name="deltaLog"></param>
-        public override unsafe void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog)
-        {
-            base.CommitLogIncrementalCheckpoint(logToken, commitMetadata, deltaLog);
-        }
-
-        /// <summary>
         /// Retrieve RecoveredSafeAofAddress and RecoveredReplicationId for checkpoint
         /// </summary>
         /// <param name="logToken"></param>
