@@ -1,6 +1,6 @@
 <Project>
 	<!-- VersionPrefix property for builds and packages -->
 	<PropertyGroup>
-		<VersionPrefix>1.0.61</VersionPrefix>
+		<VersionPrefix>1.0.62</VersionPrefix>
 	</PropertyGroup>
 </Project>
