@@ -232,7 +232,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
+        public unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -247,7 +247,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CleanupLogCheckpoint(Guid logToken)
+        public unsafe void CleanupLogCheckpoint(Guid logToken)
         {
             if (removeOutdated)
             {
