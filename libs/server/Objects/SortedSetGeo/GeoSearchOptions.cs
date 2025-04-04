@@ -1,5 +1,16 @@
-﻿namespace Garnet.server
+﻿using System;
+
+namespace Garnet.server
 {
+    [Flags]
+    internal enum GeoAddOptions : byte
+    {
+        None = 0,
+        NX = 1 << 0,
+        XX = 1 << 1,
+        CH = 1 << 2
+    }
+
     /// <summary>
     /// Distance Unit for GeoSearch
     /// </summary>

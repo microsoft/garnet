@@ -227,11 +227,11 @@ namespace Garnet.server
         /// <param name="destIdx"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        public static unsafe bool TryGetGeoSearchOptions(this SessionParseState parseState,
-                                                         RespCommand command,
-                                                         out GeoSearchOptions searchOpts,
-                                                         out int destIdx,
-                                                         out ReadOnlySpan<byte> error)
+        public static bool TryGetGeoSearchOptions(this SessionParseState parseState,
+                                                  RespCommand command,
+                                                  out GeoSearchOptions searchOpts,
+                                                  out int destIdx,
+                                                  out ReadOnlySpan<byte> error)
         {
             error = default;
             searchOpts = default;
@@ -256,23 +256,12 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
-                        !parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat))
+                    if (!parseState.TryGetGeoLonLat(currTokenIdx, out searchOpts.lon, out searchOpts.lat, out error))
                     {
-                        error = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
                         return false;
                     }
 
-                    if ((searchOpts.lon < GeoHash.LongitudeMin) ||
-                        (searchOpts.lat < GeoHash.LatitudeMin) ||
-                        (searchOpts.lon > GeoHash.LongitudeMax) ||
-                        (searchOpts.lat > GeoHash.LatitudeMax))
-                    {
-                        error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrLonLat,
-                                                     searchOpts.lon, searchOpts.lat));
-                        return false;
-                    }
-
+                    currTokenIdx += 2;
                     searchOpts.origin = GeoOriginType.FromLonLat;
                 }
 
@@ -339,24 +328,12 @@ namespace Garnet.server
                         }
 
                         // Read coordinates
-                        if (!parseState.TryGetDouble(currTokenIdx++, out searchOpts.lon) ||
-                            !parseState.TryGetDouble(currTokenIdx++, out searchOpts.lat)
-                           )
+                        if (!parseState.TryGetGeoLonLat(currTokenIdx, out searchOpts.lon, out searchOpts.lat, out error))
                         {
-                            error = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
                             return false;
                         }
 
-                        if ((searchOpts.lon < GeoHash.LongitudeMin) ||
-                            (searchOpts.lat < GeoHash.LatitudeMin) ||
-                            (searchOpts.lon > GeoHash.LongitudeMax) ||
-                            (searchOpts.lat > GeoHash.LatitudeMax))
-                        {
-                            error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrLonLat,
-                                                            searchOpts.lon, searchOpts.lat));
-                            return false;
-                        }
-
+                        currTokenIdx += 2;
                         searchOpts.origin = GeoOriginType.FromLonLat;
                         continue;
                     }
@@ -739,6 +716,40 @@ namespace Garnet.server
                 value = GeoDistanceUnitType.FT;
             else
                 return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Parse geo longitude and latitude from parse state at specified index.
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The first argument index</param>
+        /// <param name="lon">Longitude</param>
+        /// <param name="lat">Latitude</param>
+        /// <param name="error">Error if failed</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetGeoLonLat(this SessionParseState parseState, int idx, out double lon, out double lat,
+                                             out ReadOnlySpan<byte> error)
+        {
+            error = default;
+            lat = default;
+
+            if (!parseState.TryGetDouble(idx++, out lon) ||
+                !parseState.TryGetDouble(idx, out lat))
+            {
+                error = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                return false;
+            }
+
+            if ((lon < GeoHash.LongitudeMin) ||
+                (lat < GeoHash.LatitudeMin) ||
+                (lon > GeoHash.LongitudeMax) ||
+                (lat > GeoHash.LatitudeMax))
+            {
+                error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrLonLat, lon, lat));
+                return false;
+            }
 
             return true;
         }

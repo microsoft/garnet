@@ -25,17 +25,69 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("GEOADD");
             }
 
+            GeoAddOptions addOption = 0;
+
+            var currTokenIdx = 0;
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var sbKey = parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+
+            while (currTokenIdx < parseState.Count)
+            {
+                var addOptionSpan = parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+
+                if (addOptionSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CH))
+                {
+                    addOption |= GeoAddOptions.CH;
+                }
+                else if (addOptionSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
+                {
+                    addOption |= GeoAddOptions.NX;
+                }
+                else if (addOptionSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
+                {
+                    addOption |= GeoAddOptions.XX;
+                }
+                else
+                {
+                    break;
+                }
+
+                ++currTokenIdx;
+            }
+
+            if (((addOption & GeoAddOptions.NX) != 0) && ((addOption & GeoAddOptions.XX) != 0))
+            {
+                //return AbortWithErrorMessage(CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE);
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
+            var memberStart = currTokenIdx;
+
+            // We need at least one member
+            do
+            {
+                if (currTokenIdx > parseState.Count - 3)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                }
+
+                if (!parseState.TryGetGeoLonLat(currTokenIdx, out _, out _, out var error))
+                {
+                    return AbortWithErrorMessage(error);
+                }
+
+                // move past lonlat and skip member
+                currTokenIdx += 3;
+            }
+            while (currTokenIdx < parseState.Count);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoAdd(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref outputFooter);
 
             switch (status)
             {
@@ -88,14 +140,26 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var op =
-                command switch
-                {
-                    RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
-                    RespCommand.GEODIST => SortedSetOperation.GEODIST,
-                    RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
-                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                };
+            SortedSetOperation op;
+
+            switch (command)
+            {
+                case RespCommand.GEOHASH:
+                    op = SortedSetOperation.GEOHASH;
+                    break;
+                case RespCommand.GEOPOS:
+                    op = SortedSetOperation.GEOPOS;
+                    break;
+                case RespCommand.GEODIST:
+                    op = SortedSetOperation.GEODIST;
+                    if (parseState.Count > 3 && !parseState.TryGetGeoDistanceUnit(3, out _))
+                    {
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_GEO_DISTANCE_UNIT);
+                    }
+                    break;
+                default:
+                    throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}");
+            }
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
