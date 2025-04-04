@@ -1283,7 +1283,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.RequiredBytes, result.page);
                 result.freeBuffer1.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);

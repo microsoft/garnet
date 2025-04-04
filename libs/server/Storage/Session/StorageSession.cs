@@ -31,7 +31,7 @@ namespace Garnet.server
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
-        readonly int sectorAlignedMemoryPoolAlignment = 32;
+        readonly uint sectorAlignedMemoryPoolAlignment = 32;
 
         internal SessionParseState parseState;
 
