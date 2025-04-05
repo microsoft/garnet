@@ -495,7 +495,61 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
+        // todo: remove this test once transactions across databases are supported
         [Test]
+        public void MultiDatabaseSelectDatabaseInTransactionDisabledTestLC()
+        {
+            var db1Key1 = "db1:key1";
+            var db2Key1 = "db2:key1";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand($"MULTI");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
+            var queuedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SELECT 0");
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SELECT 1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SELECT_IN_TXN_UNSUPPORTED)}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
+            queuedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"EXEC");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_EXEC_ABORT)}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db1Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db2Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SELECT 1");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db1Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db2Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        [Ignore("Currently not supporting SELECT in a transaction")]
         public void MultiDatabaseSelectInTransactionTestLC()
         {
             var db1Key1 = "db1:key1";
@@ -664,7 +718,58 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
+        // todo: remove this test once transactions across databases are supported
         [Test]
+        public void MultiDatabaseSwapDatabasesInTransactionDisabledTestLC()
+        {
+            var db1Key1 = "db1:key1";
+            var db2Key1 = "db2:key1";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand($"MULTI");
+            var expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SET {db1Key1} db1:value1");
+            var queuedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SWAPDB 0 1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SWAPDB_IN_TXN_UNSUPPORTED)}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SET {db2Key1} db2:value1");
+            queuedResponse = "+QUEUED\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(queuedResponse, response);
+
+            response = lightClientRequest.SendCommand($"EXEC");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_EXEC_ABORT)}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db1Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db2Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"SELECT 1");
+            expectedResponse = "+OK\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db1Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand($"GET {db2Key1}");
+            expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        [Ignore("Currently not supporting SWAPDB in a transaction")]
         public void MultiDatabaseSwapDatabasesInTransactionTestLC()
         {
             var db2Key1 = "db2:key1";
