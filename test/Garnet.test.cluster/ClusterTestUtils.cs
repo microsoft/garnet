@@ -2771,13 +2771,7 @@ namespace Garnet.test.cluster
                         continue;
                     var field = line.Trim().Split(':');
 
-                    // Remove 'db0.' prefix
-                    var sepIdx = field[0].IndexOf('.');
-                    if (sepIdx == -1)
-                        continue;
-                    var key = field[0].Substring(sepIdx + 1);
-
-                    if (!Enum.TryParse(key, ignoreCase: true, out StoreInfoItem type))
+                    if (!Enum.TryParse(field[0], ignoreCase: true, out StoreInfoItem type))
                         continue;
 
                     if (infoItems.Contains(type))
@@ -2804,7 +2798,7 @@ namespace Garnet.test.cluster
                 var result = server.Info(section);
                 ClassicAssert.AreEqual(1, result.Length, "section does not exist");
                 foreach (var item in result[0])
-                    if (item.Key.Equals($"db0.{segment}"))
+                    if (item.Key.Equals(segment))
                         return item.Value;
                 Assert.Fail($"Segment not available for {section} section");
                 return "";

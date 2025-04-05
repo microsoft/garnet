@@ -1000,7 +1000,7 @@ using System.Threading.Tasks;
             }
         }
 
-        public static StoreAddressInfo GetStoreAddressInfo(IServer server, int dbId = 0, bool includeReadCache = false, bool isObjectStore = false)
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false, bool isObjectStore = false)
         {
             StoreAddressInfo result = default;
             var info = isObjectStore ? server.Info("OBJECTSTORE") : server.Info("STORE");
@@ -1008,19 +1008,19 @@ using System.Threading.Tasks;
             {
                 foreach (var entry in section)
                 {
-                    if (entry.Key.Equals($"db{dbId}.Log.BeginAddress"))
+                    if (entry.Key.Equals($"Log.BeginAddress"))
                         result.BeginAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"db{dbId}.Log.HeadAddress"))
+                    else if (entry.Key.Equals($"Log.HeadAddress"))
                         result.HeadAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"db{dbId}.Log.SafeReadOnlyAddress"))
+                    else if (entry.Key.Equals($"Log.BeginAddress"))
                         result.ReadOnlyAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"db{dbId}.Log.TailAddress"))
+                    else if (entry.Key.Equals($"Log.BeginAddress"))
                         result.TailAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"db{dbId}.Log.MemorySizeBytes"))
+                    else if (entry.Key.Equals($"Log.BeginAddress"))
                         result.MemorySize = long.Parse(entry.Value);
-                    else if (includeReadCache && entry.Key.Equals($"db{dbId}.ReadCache.BeginAddress"))
+                    else if (includeReadCache && entry.Key.Equals($"Log.BeginAddress"))
                         result.ReadCacheBeginAddress = long.Parse(entry.Value);
-                    else if (includeReadCache && entry.Key.Equals($"db{dbId}.ReadCache.TailAddress"))
+                    else if (includeReadCache && entry.Key.Equals($"Log.BeginAddress"))
                         result.ReadCacheTailAddress = long.Parse(entry.Value);
                 }
             }
