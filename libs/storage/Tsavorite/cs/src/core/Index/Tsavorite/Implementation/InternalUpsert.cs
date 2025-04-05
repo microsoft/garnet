@@ -12,8 +12,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
-        /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
-        /// else inserts a new record with 'key' and 'value'.
+        /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists, else inserts a new record with 'key' and 'value'.
         /// </summary>
         /// <param name="key">key of the record.</param>
         /// <param name="keyHash"></param>
@@ -195,6 +194,145 @@ namespace Tsavorite.core
             return status;
         }
 
+        /// <summary>
+        /// Upsert operation. Replaces the data corresponding to the passed LogRecord's 'key', if one exists, else inserts a new record with the LogRecord's data.
+        /// </summary>
+        /// <param name="inputLogRecord">The record to update or insert.</param>
+        /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
+        /// <returns>
+        /// <list type="table">
+        ///     <listheader>
+        ///     <term>Value</term>
+        ///     <term>Description</term>
+        ///     </listheader>
+        ///     <item>
+        ///     <term>SUCCESS</term>
+        ///     <term>The value has been successfully replaced(or inserted)</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>RETRY_LATER</term>
+        ///     <term>Cannot  be processed immediately due to system state. Add to pending list and retry later</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>CPR_SHIFT_DETECTED</term>
+        ///     <term>A shift in version has been detected. Synchronize immediately to avoid violating CPR consistency.</term>
+        ///     </item>
+        /// </list>
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord inputLogRecord,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSourceLogRecord : ISourceLogRecord
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            var latchOperation = LatchOperation.None;
+
+            var keyHash = storeFunctions.GetKeyHashCode64(inputLogRecord.Key);
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
+            pendingContext.keyHash = keyHash;
+
+            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
+                SplitBuckets(stackCtx.hei.hash);
+
+            if (!FindOrCreateTagAndTryEphemeralXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out OperationStatus status))
+                return status;
+
+            // This is the "source" record in the main log if any, not the inputLogRecord.
+            LogRecord srcLogRecord = default;
+
+            // We must use try/finally to ensure unlocking even in the presence of exceptions.
+            try
+            {
+                // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
+                if (!TryFindRecordForUpdate(inputLogRecord.Key, ref stackCtx, hlogBase.ReadOnlyAddress, out status))
+                    return status;
+
+                // Note: Upsert does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert
+
+                // If there is a readcache record, use it as the CopyUpdater source.
+                if (stackCtx.recSrc.HasReadCacheSrc)
+                {
+                    srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+                    goto CreateNewRecord;
+                }
+
+                // Check for CPR consistency after checking if source is readcache.
+                if (sessionFunctions.Ctx.phase != Phase.REST)
+                {
+                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    switch (latchDestination)
+                    {
+                        case LatchDestination.Retry:
+                            goto LatchRelease;
+                        case LatchDestination.CreateNewRecord:
+                            if (stackCtx.recSrc.HasMainLogSrc)
+                                srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+                            goto CreateNewRecord;
+
+                        default:
+                            Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
+                            break;
+                    }
+                }
+
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
+                {
+                    srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+
+                    // Mutable Region: If the record is not deleted or is in the revivifiable range, try to update the record in-place
+                    if (!srcLogRecord.Info.Tombstone || (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress()))
+                    {
+                        if (TryRevivifyInChain(ref inputLogRecord, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx, out status)
+                                || status != OperationStatus.SUCCESS)
+                            goto LatchRelease;
+                    }
+                    goto CreateNewRecord;
+                }
+                if (stackCtx.recSrc.HasMainLogSrc)
+                {
+                    // Safe Read-Only Region: Create a record in the mutable region, but set srcRecordInfo in case we are eliding.
+                    srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+                    goto CreateNewRecord;
+                }
+
+                // No record exists, or readonly or below. Drop through to create new record.
+                Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Transactional-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
+
+            CreateNewRecord:
+                status = CreateNewRecordUpsert(ref inputLogRecord, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx);
+                if (!OperationStatusUtils.IsAppend(status))
+                {
+                    // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
+                    Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
+                    if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
+                        CreatePendingUpsertContext(ref inputLogRecord, ref pendingContext, sessionFunctions, ref stackCtx);
+                }
+                goto LatchRelease;
+            }
+            finally
+            {
+                stackCtx.HandleNewRecordOnException(this);
+                EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+            }
+
+        LatchRelease:
+            if (latchOperation != LatchOperation.None)
+            {
+                switch (latchOperation)
+                {
+                    case LatchOperation.Shared:
+                        HashBucket.ReleaseSharedLatch(ref stackCtx.hei);
+                        break;
+                    case LatchOperation.Exclusive:
+                        HashBucket.ReleaseExclusiveLatch(ref stackCtx.hei);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            return status;
+        }
+
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
         private void CreatePendingUpsertContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TOutput output, TContext userContext,
@@ -202,20 +340,26 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.UPSERT;
-            if (pendingContext.key == default)
-                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
-            if (pendingContext.input == default)
-                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
+            pendingContext.Serialize(key, ref input, valueSpan: srcStringValue, valueObject: srcObjectValue, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+        }
 
-            if (srcObjectValue is not null)
-                pendingContext.valueObject = srcObjectValue;
-            else if (pendingContext.valueSpan == default)
-                pendingContext.valueSpan = hlogBase.GetSpanByteHeapContainer(srcStringValue);
-
-            pendingContext.output = output;
-            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
-
-            pendingContext.userContext = userContext;
+        private void CreatePendingUpsertContext<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord inputLogRecord,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            pendingContext.type = OperationType.UPSERT;
+            if (!pendingContext.IsSet)
+            {
+                if (inputLogRecord.AsLogRecord(out var logRecord))
+                    pendingContext.Serialize(ref logRecord, hlogBase.bufferPool, valueSerializer: null);
+                else
+                {
+                    _ = inputLogRecord.AsDiskLogRecord(out var diskLogRecord);
+                    pendingContext.Serialize(ref diskLogRecord);
+                }
+            }
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
@@ -266,6 +410,49 @@ namespace Tsavorite.core
             return false;
         }
 
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord inputLogRecord, ref LogRecord logRecord,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out OperationStatus status)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
+                goto NeedNewRecord;
+
+            // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
+            var ok = false;
+            try
+            {
+                logRecord.ClearOptionals();
+                logRecord.InfoRef.ClearTombstone();
+
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
+                hlog.PopulateRecordSizeInfo(ref sizeInfo);
+
+                if (logRecord.TrySetValueLength(ref sizeInfo))
+                {
+                    logRecord.CopyFrom(ref inputLogRecord, copyKey: false);
+                    ok = true;
+
+                    // Success
+                    MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                    return true;
+                }
+                // Did not revivify; restore the tombstone and leave the deleted record there.
+            }
+            finally
+            {
+                if (!ok)
+                    logRecord.InfoRef.SetTombstone();
+            }
+
+        NeedNewRecord:
+            // Successful non-revivification; move to CreateNewRecord
+            status = OperationStatus.SUCCESS;
+            return false;
+        }
+
         private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
             // See explanatory comments in CheckCPRConsistencyRMW.
@@ -293,7 +480,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create a new record for Upsert
+        /// Create a new record for Upsert from a source Key, Value, and Input
         /// </summary>
         /// <param name="key">The record Key</param>
         /// <param name="srcLogRecord">The source record, if <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/> and
@@ -374,12 +561,10 @@ namespace Tsavorite.core
                     // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
                     srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
 
-                    // If we're here we have MainLogSrc so AsLogRecord is quick.
-                    var inMemoryLogRecord = srcLogRecord.AsLogRecord();
                     if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                        _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                        _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
                     else
-                        DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
+                        DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
                 }
                 else if (stackCtx.recSrc.HasMainLogSrc)
                     srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
@@ -392,6 +577,77 @@ namespace Tsavorite.core
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
             DisposeRecord(ref newLogRecord, DisposeReason.SingleWriterCASFailed);
+
+            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
+            return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
+        }
+
+        /// <summary>
+        /// Create a new record for Upsert from a source LogRecord, which may be in-memory or on-disk
+        /// </summary>
+        /// <param name="inputLogRecord">The log record to copy from</param>
+        /// <param name="srcLogRecord">The source record, if <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/> and
+        /// it is either too small or is in readonly region, or is in readcache</param>
+        /// <param name="pendingContext">Information about the operation context</param>
+        /// <param name="sessionFunctions">The current session</param>
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
+        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
+        private OperationStatus CreateNewRecordUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord inputLogRecord,
+                ref LogRecord srcLogRecord, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
+            hlog.PopulateRecordSizeInfo(ref sizeInfo);
+
+            AllocateOptions allocOptions = new()
+            {
+                recycle = true,
+                elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
+            };
+
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+                return status;
+
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            if (allocOptions.elideSourceRecord)
+                newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
+            stackCtx.SetNewRecord(newLogicalAddress);
+
+            hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
+            newLogRecord.SetFillerLength(allocatedSize);
+            newLogRecord.CopyFrom(ref inputLogRecord, copyKey: false);
+
+            // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
+            // If the current record can be elided then we can freelist it; detach it by swapping its .PreviousAddress into newRecordInfo.
+            var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
+            if (success)
+            {
+                // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
+                // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
+                if (allocOptions.elideSourceRecord)
+                {
+                    // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
+                    srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
+
+                    if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
+                        _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
+                    else
+                        DisposeRecord(ref srcLogRecord, DisposeReason.Elided);
+                }
+                else if (stackCtx.recSrc.HasMainLogSrc)
+                    srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
+
+                stackCtx.ClearNewRecord();
+                pendingContext.logicalAddress = newLogicalAddress;
+                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
+            }
+
+            // CAS failed
+            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+            // Do not dispose record, because we want inputLogRecord to continue having a valid ValueObject.
+            //DisposeRecord(ref newLogRecord, DisposeReason.SingleWriterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

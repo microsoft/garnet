@@ -222,15 +222,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.RMW;
-            if (pendingContext.key == default)
-                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
-            if (pendingContext.input == default)
-                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
-
-            pendingContext.output = output;
-            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
-
-            pendingContext.userContext = userContext;
+            pendingContext.Serialize(key, ref input, valueSpan:default, valueObject:null, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
@@ -497,8 +489,8 @@ namespace Tsavorite.core
                         // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
                         srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
 
-                        // If we're here we have MainLogSrc so AsLogRecord is quick.
-                        var inMemoryLogRecord = srcLogRecord.AsLogRecord();
+                        // If we're here we have MainLogSrc so AsLogRecord is a simple reassignment guaranteed to succeed.
+                        _ = srcLogRecord.AsLogRecord(out var inMemoryLogRecord);
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                             _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
                         else

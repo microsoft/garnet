@@ -50,9 +50,8 @@ namespace Tsavorite.core
                 while (iter1.GetNext())
                 {
                     var key = iter1.Key;
-                    var value = iter1.GetReadOnlyValue();
 
-                    if (!iter1.Info.Tombstone && !cf.IsDeleted(key, value))
+                    if (!iter1.Info.Tombstone && !cf.IsDeleted(in iter1))
                     {
                         var iter1AsLogSource = iter1 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
                         var status = storebContext.CompactionCopyToTail(ref iter1AsLogSource, ref input, ref output, iter1.CurrentAddress, iter1.NextAddress);
@@ -101,13 +100,13 @@ namespace Tsavorite.core
                 {
                     while (iter1.GetNext())
                     {
-                        var key = iter1.Key;
-                        var value = iter1.GetReadOnlyValue();
-
-                        if (iter1.Info.Tombstone || cf.IsDeleted(key, value))
-                            _ = tempbContext.Delete(key);
+                        if (iter1.Info.Tombstone || cf.IsDeleted(in iter1))
+                            _ = tempbContext.Delete(iter1.Key);
                         else
-                            _ = tempbContext.Upsert(key, value);    // TODO needs ETag and Expiration as well
+                        {
+                            var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
+                            _ = tempbContext.Upsert(ref iterLogRecord);
+                        }
                     }
                     // Ensure address is at record boundary
                     untilAddress = originalUntilAddress = iter1.NextAddress;

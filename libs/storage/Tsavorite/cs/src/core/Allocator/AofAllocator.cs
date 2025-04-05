@@ -142,9 +142,6 @@ namespace Tsavorite.core
         public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
 
         /// <inheritdoc/>
-        public readonly int GetInitialRecordIOSize() => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for AofAllocator");
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -14,16 +15,26 @@ namespace Tsavorite.core
         {
             // User provided information
             internal OperationType type;
-            internal RecordInfo recordInfo;
-            internal SpanByteHeapContainer key;
-            internal SpanByteHeapContainer valueSpan;
-            internal IHeapObject valueObject;
+
+            /// <summary>
+            /// DiskLogRecord carries either the input to RUMD operations or a log record image. It is used for:
+            /// <list type="bullet">
+            ///     <item>Pending RUMD operations; in this case it contains only the key for all operations, and values for Upsert.
+            ///         Optionals (ETag and Expiration) are presumed to be carried in <see cref="input"/></item>
+            ///     <item>For pending ConditionalCopy operations, where it is one of:
+            ///         <list type="bullet">
+            ///             <item>A <see cref="DiskLogRecord"/> created by serializing from an in-memory <see cref="LogRecord"/></item>
+            ///             <item>A <see cref="DiskLogRecord"/> retrieved from the disk, for operations such as Compact</item>
+            ///         </list>
+            ///     </item>
+            /// </list>
+            /// </summary>
+            internal DiskLogRecord diskLogRecord;
+
             internal IHeapContainer<TInput> input;
             internal TOutput output;
             internal TContext userContext;
             internal long keyHash;
-            internal long eTag;
-            internal long expiration;
 
             // Some additional information about the previous attempt
             internal long id;
@@ -89,57 +100,158 @@ namespace Tsavorite.core
 
             public void Dispose()
             {
-                key?.Dispose();
-                key = default;
-                valueSpan?.Dispose();
-                valueSpan = default;
+                diskLogRecord.Dispose();
+                diskLogRecord = default;
                 input?.Dispose();
                 input = default;
             }
+
+            #region Serialized Record Creation
+            /// <summary>
+            /// Serialize for RUMD operations
+            /// </summary>
+            /// <param name="key">Record key</param>
+            /// <param name="input">Input to the operation</param>
+            /// <param name="valueSpan">Record value as a Span, if Upsert</param>
+            /// <param name="valueObject">Record value as an object, if Upsert</param>
+            /// <param name="output">Output from the operation</param>
+            /// <param name="userContext">User context for the operation</param>
+            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
+            /// <param name="bufferPool">Allocator for backing storage</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Serialize<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TOutput output, TContext userContext,
+                    TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
+                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            {
+                diskLogRecord.Serialize(key, valueSpan, valueObject, bufferPool);
+                CopyIOC(ref input, output, userContext, sessionFunctions);
+            }
+
+            /// <summary>
+            /// Serialize a <see cref="LogRecord"/> and Input, Output, and userContext into the local <see cref="DiskLogRecord"/> for Pending operations
+            /// </summary>
+            /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
+            /// <param name="input">Input to the operation</param>
+            /// <param name="output">Output from the operation</param>
+            /// <param name="userContext">User context for the operation</param>
+            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
+            /// <param name="bufferPool">Allocator for backing storage</param>
+            /// <param name="valueSerializer">Serializer for value object (if any); if null, the object is to be held as an object (e.g. for Pending IO operations)
+            ///     rather than serialized to a byte stream (e.g. for out-of-process operations)</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Serialize<TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions,
+                    SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            {
+                diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+                CopyIOC(ref input, output, userContext, sessionFunctions);
+            }
+
+            /// <summary>
+            /// Copy a <see cref="DiskLogRecord"/> and Input, Output, and userContext into the local <see cref="DiskLogRecord"/> for Pending operations
+            /// </summary>
+            /// <param name="diskLogRecord">The log record. This may be either in-memory or from disk IO</param>
+            /// <param name="input">Input to the operation</param>
+            /// <param name="output">Output from the operation</param>
+            /// <param name="userContext">User context for the operation</param>
+            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Serialize<TSessionFunctionsWrapper>(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions)
+                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            {
+                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset diskLogRecord");
+                this.diskLogRecord = diskLogRecord;
+                CopyIOC(ref input, output, userContext, sessionFunctions);
+            }
+
+            private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions) 
+                    where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            {
+                if (this.input == default)
+                    this.input = new StandardHeapContainer<TInput>(ref input);
+                this.output = output;
+                sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);
+                this.userContext = userContext;
+            }
+
+            /// <summary>
+            /// Serialize for Compact, Pending Operations, etc.
+            /// </summary>
+            /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
+            /// <param name="bufferPool">Allocator for backing storage</param>
+            /// <param name="valueSerializer">Serializer for value object (if any); if null, the object is to be held as an object (e.g. for Pending IO operations)
+            ///     rather than serialized to a byte stream (e.g. for out-of-process operations)</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Serialize(ref LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+                => diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+
+            /// <summary>
+            /// Serialize for Compact, Pending Operations, etc.
+            /// </summary>
+            /// <param name="diskLogRecord">The log record. This may be either in-memory or from disk IO</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Serialize(ref DiskLogRecord diskLogRecord)
+            {
+                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset diskLogRecord");
+                this.diskLogRecord = diskLogRecord;
+            }
+
+            #endregion // Serialized Record Creation
 
             #region ISourceLogRecord
             /// <inheritdoc/>
             public readonly bool ValueIsObject => (operationFlags & kIsObjectRecord) != 0;
             /// <inheritdoc/>
-            public readonly ref RecordInfo InfoRef => throw new TsavoriteException("Cannot call InfoRef on PendingContext"); // Cannot return ref to 'this'
+            public readonly ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
             /// <inheritdoc/>
-            public readonly RecordInfo Info => recordInfo;
+            public readonly RecordInfo Info => diskLogRecord.Info;
 
             /// <inheritdoc/>
-            public readonly bool IsSet => !recordInfo.IsNull;
+            public readonly bool IsSet => diskLogRecord.IsSet;
 
             /// <inheritdoc/>
-            public readonly ReadOnlySpan<byte> Key => key.Get().ReadOnlySpan;
+            public readonly ReadOnlySpan<byte> Key => diskLogRecord.Key;
 
             /// <inheritdoc/>
-            public readonly bool IsPinnedKey => true;
+            public readonly bool IsPinnedKey => diskLogRecord.IsPinnedKey;
 
             /// <inheritdoc/>
-            public byte* PinnedKeyPointer => key.Get().ToPointer();
+            public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
 
             /// <inheritdoc/>
-            public readonly unsafe Span<byte> ValueSpan => valueObject is null ? valueSpan.Get().Span : throw new TsavoriteException("Cannot use ValueSpan on an Object value");
+            public readonly unsafe Span<byte> ValueSpan => diskLogRecord.ValueSpan;
 
             /// <inheritdoc/>
-            public readonly IHeapObject ValueObject => valueObject;
+            public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
 
             /// <inheritdoc/>
-            public bool IsPinnedValue => true;
+            public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
 
             /// <inheritdoc/>
-            public byte* PinnedValuePointer => valueSpan.Get().ToPointer();
+            public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
 
             /// <inheritdoc/>
-            public readonly long ETag => recordInfo.HasETag ? eTag : LogRecord.NoETag;
+            public readonly long ETag => diskLogRecord.ETag;
 
             /// <inheritdoc/>
-            public readonly long Expiration => recordInfo.HasExpiration ? expiration : 0;
+            public readonly long Expiration => diskLogRecord.Expiration;
 
             /// <inheritdoc/>
             public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for PendingContext
 
             /// <inheritdoc/>
-            public readonly LogRecord AsLogRecord() => throw new TsavoriteException("PendingContext cannot be converted to AsLogRecord");
+            public readonly bool AsLogRecord(out LogRecord logRecord)
+            {
+                logRecord = default;
+                return false;
+            }
+
+            /// <inheritdoc/>
+            public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
+            {
+                diskLogRecord = this.diskLogRecord;
+                return true;
+            }
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

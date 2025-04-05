@@ -47,8 +47,7 @@ namespace Tsavorite.core
                 {
                     try
                     {
-                        RecordInfo dummyRecordInfo = default;   // TryCopyToTail only needs this for readcache record invalidation.
-                        status = TryCopyToTail(ref pendingContext, ref srcLogRecord, ref input, ref output, ref stackCtx, ref dummyRecordInfo, sessionFunctions, writeReason);
+                        status = TryCopyToTail(ref srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx, writeReason);
                     }
                     finally
                     {
@@ -131,32 +130,18 @@ namespace Tsavorite.core
             pendingContext.writeReason = writeReason;
             pendingContext.InitialEntryAddress = Constants.kInvalidAddress;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-
-            // if pendingContext.IsSet, then we are reissuing IO after previously doing so, and srcLogRecord is probably pendingContext.
-            if (!pendingContext.IsSet)
-            {
-                pendingContext.recordInfo = srcLogRecord.Info;
-                Debug.Assert(pendingContext.key == default, "Key unexpectedly set");
-                pendingContext.key = hlogBase.GetSpanByteHeapContainer(srcLogRecord.Key);
-                Debug.Assert(pendingContext.input == default, "Input unexpectedly set");
-                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
-                Debug.Assert(pendingContext.valueSpan == default, "ValueSpan unexpectedly set");
-                Debug.Assert(pendingContext.valueObject is null, "ValueObject unexpectedly set");
-                if (srcLogRecord.ValueIsObject)
-                    pendingContext.valueObject = srcLogRecord.ValueObject;
-                else
-                    pendingContext.valueSpan = hlogBase.GetSpanByteHeapContainer(srcLogRecord.ValueSpan);
-
-                pendingContext.output = output;
-                sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
-
-                pendingContext.eTag = srcLogRecord.ETag;
-                pendingContext.expiration = srcLogRecord.Expiration;
-            }
-
-            pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
+            if (!pendingContext.IsSet)
+            {
+                if (srcLogRecord.AsLogRecord(out var logRecord))
+                    pendingContext.Serialize(ref logRecord, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
+                else
+                {
+                    _ = srcLogRecord.AsDiskLogRecord(out var diskLogRecord);
+                    pendingContext.Serialize(ref diskLogRecord, ref input, ref output, userContext, sessionFunctions);
+                }
+            }
             return OperationStatus.RECORD_ON_DISK;
         }
     }

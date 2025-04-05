@@ -19,15 +19,16 @@ namespace Tsavorite.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
-        where TStoreFunctions : IStoreFunctions
-        where TAllocator : IAllocator<TStoreFunctions>
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
+                Status status, SectorAlignedBufferPool bufferPool)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             // Note: vector is never null
             if (maxIndex >= vector.Length - 1)
                 Array.Resize(ref vector, vector.Length * kReallocMultuple);
             ++maxIndex;
-            vector[maxIndex].TransferFrom(ref pendingContext, status);
+            vector[maxIndex].TransferFrom(ref pendingContext, status, bufferPool);
         }
 
         /// <summary>
@@ -104,13 +105,13 @@ namespace Tsavorite.core
         /// </summary>
         public Status Status;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
+                Status status, SectorAlignedBufferPool bufferPool)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
-            keyContainer = pendingContext.key;
-            pendingContext.key = null;
+            keyContainer = new SpanByteHeapContainer(pendingContext.Key, bufferPool);
             inputContainer = pendingContext.input;
             pendingContext.input = null;
 

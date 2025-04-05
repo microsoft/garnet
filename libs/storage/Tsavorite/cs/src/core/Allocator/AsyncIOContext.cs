@@ -19,9 +19,9 @@ namespace Tsavorite.core
         public long id;
 
         /// <summary>
-        /// Key
+        /// Key; this is a shallow copy of the key in pendingContext, pointing to its diskLogRecord
         /// </summary>
-        public SpanByteHeapContainer request_key;
+        public PinnedSpanByte request_key;
 
         /// <summary>
         /// Logical address
@@ -89,7 +89,13 @@ namespace Tsavorite.core
             request.completionEvent = this;
         }
 
-        internal void Prepare(SpanByteHeapContainer request_key, long logicalAddress)
+        /// <summary>
+        /// Prepares to issue an async IO. <paramref name="request_key"/>
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="request_key"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
+        /// </remarks>
+        internal void Prepare(PinnedSpanByte request_key, long logicalAddress)
         {
             request.Dispose();
             request.request_key = request_key;

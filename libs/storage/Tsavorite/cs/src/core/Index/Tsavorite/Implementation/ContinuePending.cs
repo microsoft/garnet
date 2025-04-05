@@ -34,14 +34,13 @@ namespace Tsavorite.core
         {
             var diskRecord = new DiskLogRecord((long)request.record.GetValidPointer());
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.key.Get().ReadOnlySpan, diskRecord.Key))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, diskRecord.Key))
                 goto NotFound;
 
             if (request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress)
             {
                 SpinWaitUntilClosed(request.logicalAddress);
 
-                // TODO If !IsNoKey, verify the keys are the same.
                 OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(diskRecord.Key));
 
                 while (true)
@@ -137,7 +136,7 @@ namespace Tsavorite.core
                                 status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
                                                                pendingContext.userContext, ref stackCtx, WriteReason.CopyToTail);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
-                                    && TryCopyToReadCache(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(), ref stackCtx))
+                                    && TryCopyToReadCache(ref diskRecord, sessionFunctions, ref pendingContext, ref stackCtx))
                                 status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
                         }
                         else

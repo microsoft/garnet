@@ -123,19 +123,22 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
-                                                       ref RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
+                                                       ref RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             for (; ; Thread.Yield())
             {
-                if (!TryBlockAllocate(readCacheBase, recordSizeInfo.ActualInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
                     if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.AbsoluteAddress)
+                    {
+                        allocatedSize = recordSizeInfo.AllocatedInlineRecordSize;
                         return true;
+                    }
 
                     // This allocation is below the necessary address so abandon it and repeat the loop.
                     ReadCacheAbandonRecord(newPhysicalAddress);
@@ -149,6 +152,7 @@ namespace Tsavorite.core
             }
 
             newPhysicalAddress = 0;
+            allocatedSize = 0;
             return false;
         }
 

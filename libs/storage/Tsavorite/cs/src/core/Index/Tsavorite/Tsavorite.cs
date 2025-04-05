@@ -553,6 +553,22 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord diskLogRecord, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            OperationStatus internalStatus;
+
+            do
+                internalStatus = InternalUpsert(ref diskLogRecord, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
                                                                           TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>

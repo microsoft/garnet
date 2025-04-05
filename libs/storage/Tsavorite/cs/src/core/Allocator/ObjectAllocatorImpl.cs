@@ -27,15 +27,9 @@ namespace Tsavorite.core
         {
             internal readonly ObjectIdMap objectIdMap { get; init; }
 
-            public ObjectPage()
-            {
-                objectIdMap = new();
-            }
+            public ObjectPage() => objectIdMap = new();
 
-            internal readonly void Clear()
-            {
-                objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
-            }
+            internal readonly void Clear() => objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
         }
 
         internal ObjectPage[] values;
@@ -257,7 +251,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) serializedBytes)
         {
-            // Do nothing; we don't create a HeapObject for SpanByteAllocator
             var stream = new MemoryStream(serializedBytes.array);
             _ = stream.Seek(serializedBytes.offset, SeekOrigin.Begin);
             var valueSerializer = storeFunctions.BeginDeserializeValue(stream);

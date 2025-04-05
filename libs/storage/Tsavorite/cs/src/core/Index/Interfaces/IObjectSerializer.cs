@@ -22,7 +22,7 @@ namespace Tsavorite.core
         /// Serialize object
         /// </summary>
         /// <param name="obj"></param>
-        void Serialize(ref T obj);
+        void Serialize(ref T obj);  // TODO this does not need to be 'ref'
 
         /// <summary>
         /// End serialization to given stream

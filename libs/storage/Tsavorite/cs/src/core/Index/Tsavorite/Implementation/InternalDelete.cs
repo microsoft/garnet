@@ -237,9 +237,9 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.DELETE;
-            if (pendingContext.key == default)
-                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
-            pendingContext.userContext = userContext;
+            TInput input = default;
+            TOutput output = default;
+            pendingContext.Serialize(key, ref input, valueSpan: default, valueObject: null, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }

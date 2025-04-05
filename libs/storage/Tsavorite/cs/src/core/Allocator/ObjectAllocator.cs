@@ -138,13 +138,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetInitialRecordIOSize() => RecordInfo.GetLength()
-            + (1 << LogSettings.kDefaultMaxInlineKeySizeBits)
-            + ObjectIdMap.ObjectIdSize
-            + sizeof(long) * 2;                             // ETag and Expiration
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>

@@ -328,7 +328,18 @@ namespace Tsavorite.core
         public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
 
         /// <inheritdoc/>
-        public LogRecord AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
+        public bool AsLogRecord(out LogRecord logRecord)
+        {
+            logRecord = default;
+            return false;
+        }
+
+        /// <inheritdoc/>
+        public bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
+        {
+            diskLogRecord = this.diskLogRecord;
+            return true;
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

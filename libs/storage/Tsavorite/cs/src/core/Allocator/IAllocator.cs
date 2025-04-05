@@ -63,9 +63,6 @@ namespace Tsavorite.core
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
         LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);
 
-        /// <summary>Return the initial IO size when reading a record for this allocator</summary>
-        int GetInitialRecordIOSize();
-
         /// <summary>Dispose an in-memory log record</summary>
         void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason);
 

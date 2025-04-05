@@ -369,8 +369,9 @@ namespace Tsavorite.test
 
         private struct EvenCompactionFunctions : ICompactionFunctions
         {
-            public readonly bool IsDeleted(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value) => value.AsRef<ValueStruct>().vfield1 % 2 != 0;
-            public readonly bool IsDeleted(ReadOnlySpan<byte> key, IHeapObject value) => false;
+            public bool IsDeleted<TSourceLogRecord>(in TSourceLogRecord logRecord)
+                where TSourceLogRecord : ISourceLogRecord
+                => logRecord.ValueSpan.AsRef<ValueStruct>().vfield1 % 2 != 0;
         }
     }
 }

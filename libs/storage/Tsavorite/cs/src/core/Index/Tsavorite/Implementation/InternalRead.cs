@@ -173,8 +173,7 @@ namespace Tsavorite.core
                     CreatePendingReadContext(srcLogRecord.Key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                 return status;
             }
-            if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache
-                    && TryCopyToReadCache(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref stackCtx))
+            if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && TryCopyToReadCache(ref srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
             {
                 // Copy to read cache is "best effort"; we don't return an error if it fails.
                 return OperationStatus.SUCCESS | OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -325,15 +324,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;
-            if (!pendingContext.IsNoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
-                pendingContext.key = hlogBase.GetSpanByteHeapContainer(key);
-            if (pendingContext.input == default)
-                pendingContext.input = hlogBase.GetInputHeapContainer(ref input);
-
-            pendingContext.output = output;
-            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
-
-            pendingContext.userContext = userContext;
+            pendingContext.Serialize(key, ref input, valueSpan: default, valueObject: null, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
             pendingContext.logicalAddress = logicalAddress;
         }
     }

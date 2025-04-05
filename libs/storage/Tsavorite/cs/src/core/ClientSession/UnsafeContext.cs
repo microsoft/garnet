@@ -236,6 +236,16 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert<TSourceLogRecord>(ref TSourceLogRecord diskLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
+            return clientSession.store.ContextUpsert<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions,
+                                                     BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(ref diskLogRecord, sessionFunctions);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
             => RMW(key, ref input, ref output, out _, userContext);
 

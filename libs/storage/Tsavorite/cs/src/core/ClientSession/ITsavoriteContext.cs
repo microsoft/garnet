@@ -284,6 +284,14 @@ namespace Tsavorite.core
         Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
+        /// Upsert operation
+        /// </summary>
+        /// <param name="diskLogRecord">Log record that was read from disk</param>
+        /// <returns></returns>
+        Status Upsert<TSourceLogRecord>(ref TSourceLogRecord diskLogRecord)
+            where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>

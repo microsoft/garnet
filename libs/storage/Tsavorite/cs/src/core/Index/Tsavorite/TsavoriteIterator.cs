@@ -229,7 +229,10 @@ namespace Tsavorite.core
                     _ = tempbContext.Delete(key);
             }
             else
-                _ = tempbContext.Upsert(key, mainKvIter.GetReadOnlyValue());    // TODO needs ETag and Expiration
+            {
+                var iterLogRecord = mainKvIter as ISourceLogRecord;     // Can't use 'ref' on a 'using' variable
+                _ = tempbContext.Upsert(ref iterLogRecord);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -300,7 +303,10 @@ namespace Tsavorite.core
         public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
 
         /// <inheritdoc/>
-        public LogRecord AsLogRecord() => throw new TsavoriteException("Iterators cannot be converted to AsLogRecord");
+        public bool AsLogRecord(out LogRecord logRecord) => CurrentIter.AsLogRecord(out logRecord);
+
+        /// <inheritdoc/>
+        public bool AsDiskLogRecord(out DiskLogRecord diskLogRecord) => CurrentIter.AsDiskLogRecord(out diskLogRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

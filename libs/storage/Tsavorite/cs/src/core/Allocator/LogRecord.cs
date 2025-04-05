@@ -117,7 +117,7 @@ namespace Tsavorite.core
         public byte* PinnedValuePointer => IsPinnedValue ? (byte*)ValueAddress : null;
 
         /// <inheritdoc/>
-        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : LogRecord.NoETag;
+        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : NoETag;
         /// <inheritdoc/>
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
@@ -138,7 +138,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord AsLogRecord() => this;
+        public readonly bool AsLogRecord(out LogRecord logRecord)
+        {
+            logRecord = this;
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
+        {
+            diskLogRecord = default;
+            return false;
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -188,7 +199,7 @@ namespace Tsavorite.core
 
         internal readonly int* ValueObjectIdAddress => (int*)ValueAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int* GetValueObjectIdAddress(long physicalAddress) => (int*)LogRecord.GetValueAddress(physicalAddress);
+        internal static int* GetValueObjectIdAddress(long physicalAddress) => (int*)GetValueAddress(physicalAddress);
 
         /// <summary>The value object id (index into the object values array)</summary>
         internal readonly int ValueObjectId
@@ -439,8 +450,8 @@ namespace Tsavorite.core
             return true;
         }
 
-        private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
-        private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
+        private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
+        private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
 
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
@@ -492,7 +503,7 @@ namespace Tsavorite.core
             var usedSize = (int)(fillerAddress - physicalAddress);
             var fillerSize = allocatedSize - usedSize;
 
-            if (fillerSize >= LogRecord.FillerLengthSize)
+            if (fillerSize >= FillerLengthSize)
             {
                 InfoRef.SetHasFiller(); // must do this first, for zero-init
                 *(int*)fillerAddress = fillerSize;
@@ -524,7 +535,7 @@ namespace Tsavorite.core
             }
 
             // We're adding an ETag where there wasn't one before.
-            const int growth = LogRecord.ETagSize;
+            const int growth = ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var fillerLen = GetFillerLength(fillerLenAddress) - growth;
@@ -544,22 +555,22 @@ namespace Tsavorite.core
             var expiration = 0L;
             if (Info.HasExpiration)
             {
-                address -= LogRecord.ExpirationSize;
+                address -= ExpirationSize;
                 expiration = *(long*)address;
             }
 
             *(long*)address = eTag;
             InfoRef.SetHasETag();
-            address += LogRecord.ETagSize;
+            address += ETagSize;
 
             if (Info.HasExpiration)
             {
                 *(long*)address = expiration;           // will be 0 or a valid expiration
-                address += LogRecord.ExpirationSize;    // repositions to fillerAddress
+                address += ExpirationSize;    // repositions to fillerAddress
             }
 
             //  - Set the new (reduced) FillerLength if there is still space for it.
-            if (fillerLen >= LogRecord.FillerLengthSize)
+            if (fillerLen >= FillerLengthSize)
                 *(int*)address = fillerLen;
             else
                 InfoRef.ClearHasFiller();
@@ -574,7 +585,7 @@ namespace Tsavorite.core
             if (!Info.HasETag)
                 return true;
 
-            const int growth = -LogRecord.ETagSize;
+            const int growth = -ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var fillerLen = GetFillerLength(fillerLenAddress) - growth; // This will be negative, so adds ETagSize to it
@@ -591,20 +602,20 @@ namespace Tsavorite.core
             var expirationSize = 0;
             if (Info.HasExpiration)
             {
-                expirationSize = LogRecord.ExpirationSize;
+                expirationSize = ExpirationSize;
                 address -= expirationSize;
                 expiration = *(long*)address;
                 *(long*)address = 0L;  // To ensure zero-init
             }
 
             // Expiration will be either zero or a valid expiration, and we have not changed the info.HasExpiration flag
-            address -= LogRecord.ETagSize;
+            address -= ETagSize;
             *(long*)address = expiration;       // will be 0 or a valid expiration
             address += expirationSize;          // repositions to fillerAddress if expirationSize is nonzero
             InfoRef.ClearHasETag();
 
             //  - Set the new (increased) FillerLength if there is space for it.
-            if (fillerLen >= LogRecord.FillerLengthSize)
+            if (fillerLen >= FillerLengthSize)
             {
                 InfoRef.SetHasFiller();         // May already be set, but will definitely now be true since we opened up more than FillerLengthSize bytes
                 *(int*)address = fillerLen;
@@ -625,7 +636,7 @@ namespace Tsavorite.core
             }
 
             // We're adding an Expiration where there wasn't one before.
-            const int growth = LogRecord.ExpirationSize;
+            const int growth = ExpirationSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var fillerLen = GetFillerLength(fillerLenAddress) - growth;
@@ -643,10 +654,10 @@ namespace Tsavorite.core
             //  - Set Expiration where filler space used to be
             InfoRef.SetHasExpiration();
             *(long*)fillerLenAddress = expiration;
-            fillerLenAddress += LogRecord.ExpirationSize;
+            fillerLenAddress += ExpirationSize;
 
             //  - Set the new (reduced) FillerLength if there is still space for it.
-            if (fillerLen >= LogRecord.FillerLengthSize)
+            if (fillerLen >= FillerLengthSize)
                 *(int*)fillerLenAddress = fillerLen;
             else
                 InfoRef.ClearHasFiller();
@@ -661,7 +672,7 @@ namespace Tsavorite.core
             if (!Info.HasExpiration)
                 return true;
 
-            const int growth = -LogRecord.ETagSize;
+            const int growth = -ETagSize;
             var recordLen = ActualRecordSize;
             var fillerLenAddress = physicalAddress + recordLen;
             var fillerLen = GetFillerLength(fillerLenAddress) - growth; // This will be negative, so adds ExpirationSize to it
@@ -673,12 +684,12 @@ namespace Tsavorite.core
                 *(int*)fillerLenAddress = 0;
 
             //  - Remove Expiration and clear the Expiration bit; this will be the new fillerLenAddress
-            fillerLenAddress -= LogRecord.ExpirationSize;
+            fillerLenAddress -= ExpirationSize;
             *(long*)fillerLenAddress = 0;
             InfoRef.ClearHasExpiration();
 
             //  - Set the new (increased) FillerLength if there is space for it.
-            if (fillerLen >= LogRecord.FillerLengthSize)
+            if (fillerLen >= FillerLengthSize)
             {
                 InfoRef.SetHasFiller();         // May already be set, but will definitely now be true since we opened up more than FillerLengthSize bytes
                 *(int*)fillerLenAddress = fillerLen;
@@ -775,14 +786,14 @@ namespace Tsavorite.core
 
             if (Info.HasExpiration)
             {
-                address -= LogRecord.ExpirationSize;
+                address -= ExpirationSize;
                 *(long*)address = 0L;
                 InfoRef.ClearHasExpiration();
             }
             if (Info.HasETag)
             {
                 *(long*)address = 0L;
-                address -= LogRecord.ETagSize;
+                address -= ETagSize;
                 InfoRef.ClearHasETag();
             }
 
@@ -796,19 +807,68 @@ namespace Tsavorite.core
 
             // Set new key size
             if (Info.KeyIsInline)
-                *(int*)KeyAddress = newKeySize;
+                SpanField.GetInlineLengthRef(KeyAddress) = newKeySize;
 
             // Re-get ValueAddress due to the new KeyAddress and assign it all available space, unless it is already overflow, in which case the space after the overflow allocation pointer is filler space.
             valueAddress = ValueAddress;
             var spaceToEndOfRecord = allocatedRecordSize - (int)(valueAddress - physicalAddress) + newValueSize;
             if (Info.ValueIsInline)
-                *(int*)valueAddress = spaceToEndOfRecord;
-            else if (spaceToEndOfRecord - SpanField.OverflowInlineSize > LogRecord.FillerLengthSize)
+                SpanField.GetInlineLengthRef(valueAddress) = spaceToEndOfRecord;
+            else if (spaceToEndOfRecord - SpanField.OverflowInlineSize > FillerLengthSize)
             {
                 InfoRef.SetHasFiller(); // must do this first, for zero-init
                 address = valueAddress + SpanField.OverflowInlineSize;  // FillerAddress
                 *(int*)address = spaceToEndOfRecord - SpanField.OverflowInlineSize;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void CopyFrom<TSourceLogRecord>(ref TSourceLogRecord inputLogRecord, bool copyKey)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var allocatedRecordSize = GetInlineRecordSizes().allocatedSize;
+
+            // This is called after we have just allocated this LogRecord (e.g. Upsert) or have ensured the size is sufficient (e.g. reviv) via TrySetValueLength.
+            if (copyKey)
+            {
+                Debug.Assert(SpanField.GetInlineLengthRef(KeyAddress) == inputLogRecord.Key.Length, $"Key size {*(int*)KeyAddress} does not match diskLogRecord.Key.Length {inputLogRecord.Key.Length}");
+                inputLogRecord.Key.CopyTo(SpanField.AsInlineSpan(KeyAddress));
+            }
+            Debug.Assert(inputLogRecord.Info.ValueIsInline == Info.ValueIsInline, $"diskLogRecord ValueIsInline {inputLogRecord.Info.ValueIsInline} does not match this.ValueIsInline {this.Info.ValueIsInline}");
+            Debug.Assert(inputLogRecord.ValueIsObject == this.ValueIsObject, $"diskLogRecord ValueIsObject {inputLogRecord.ValueIsObject} does not match this.ValueIsObject {this.ValueIsObject}");
+            if (!inputLogRecord.Info.ValueIsObject)
+                inputLogRecord.ValueSpan.CopyTo(SpanField.AsInlineSpan(ValueAddress));
+            else
+            {
+                var objectId = SpanField.GetObjectIdRef(ValueAddress);
+                Debug.Assert(objectId != ObjectIdMap.InvalidObjectId, "ObjectIdRef was not set");
+                objectIdMap.Set(objectId, inputLogRecord.ValueObject);
+            }
+
+            // Set optionals. Use local address calculation to avoid multiple "if"s.
+            var address = GetOptionalStartAddress();
+
+            Debug.Assert(inputLogRecord.Info.HasETag == Info.HasETag, $"diskLogRecord HasETag {inputLogRecord.Info.HasETag} does not match this.HasETag {this.Info.HasETag}");
+            if (inputLogRecord.Info.HasETag)
+            {
+                *(long*)address = inputLogRecord.ETag;
+                address += ETagLen;
+            }
+            Debug.Assert(inputLogRecord.Info.HasExpiration == Info.HasExpiration, $"diskLogRecord HasExpiration {inputLogRecord.Info.HasExpiration} does not match this.HasExpiration {this.Info.HasExpiration}");
+            if (inputLogRecord.Info.HasExpiration)
+            {
+                *(long*)address = inputLogRecord.Expiration;
+                address += ExpirationLen;
+            }
+
+            var fillerLen = allocatedRecordSize - (int)(address - physicalAddress);
+            if (fillerLen >= FillerLengthSize)
+            {
+                *(int*)address = fillerLen;
+                InfoRef.SetHasFiller();
+            }
+            else
+                InfoRef.ClearHasFiller();
         }
 
         public override readonly string ToString()

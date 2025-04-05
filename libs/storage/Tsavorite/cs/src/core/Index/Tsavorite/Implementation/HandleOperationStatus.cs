@@ -141,7 +141,7 @@ namespace Tsavorite.core
 
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
-                request.request_key = pendingContext.key;
+                request.request_key = PinnedSpanByte.FromPinnedSpan(pendingContext.Key);
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;
@@ -150,7 +150,7 @@ namespace Tsavorite.core
                 else
                     request.callbackQueue = sessionCtx.readyResponses;
 
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetInitialRecordIOSize(), request);
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, DiskLogRecord.InitialIOSize, request);
                 return new(StatusCode.Pending);
             }
             else

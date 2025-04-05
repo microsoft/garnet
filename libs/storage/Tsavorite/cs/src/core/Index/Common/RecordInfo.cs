@@ -295,11 +295,13 @@ namespace Tsavorite.core
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
+        // Note: KeyIsOveflow bit is not needed as it is the negation of KeyIsInline
         public readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
         public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
         public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
         public bool KeyIsOverflow => !KeyIsInline;
 
+        // Note: ValueIsOveflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
         public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
         public void SetValueIsInline() => word = (word & ~kValueIsObjectBitMask) | kValueIsInlineBitMask;
 

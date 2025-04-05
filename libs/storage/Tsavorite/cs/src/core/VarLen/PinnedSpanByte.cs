@@ -37,6 +37,9 @@ namespace Tsavorite.core
             set => length = value;
         }
 
+        /// <summary>Correlates to ReadOnlySpan.IsEmpty</summary>
+        public readonly bool IsEmpty => Length == 0;
+
         /// <summary>
         /// Get pointer to the start of the slice
         /// </summary>

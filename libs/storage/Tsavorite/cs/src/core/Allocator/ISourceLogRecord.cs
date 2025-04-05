@@ -8,8 +8,6 @@ namespace Tsavorite.core
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
     public unsafe interface ISourceLogRecord
     {
-        ReadOnlySpan<byte> GetReadOnlyValue() => default;   // TODO remove
-
         /// <summary>Whether this is a record for an object or a Span{byte} value</summary>
         bool ValueIsObject { get; }
 
@@ -55,9 +53,13 @@ namespace Tsavorite.core
         /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
         void ClearValueObject(Action<IHeapObject> disposer);
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is a <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.
-        /// Should throw if the TSourceLogRecord is not a <see cref="LogRecord"/>.</summary>
-        LogRecord AsLogRecord();
+        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is an instance of <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.</summary>
+        /// <returns>True if this is a <see cref="LogRecord"/>, with the output <paramref name="logRecord"/> set; else false.</returns>
+        bool AsLogRecord(out LogRecord logRecord);
+
+        /// <summary>A shim to "convert" a TSourceLogRecord generic type this is an instance of <see cref="DiskLogRecord"/> to a <see cref="DiskLogRecord"/> type.</summary>
+        /// <returns>True if this is a <see cref="DiskLogRecord"/>, with the output <paramref name="diskLogRecord"/> set; else false.</returns>
+        bool AsDiskLogRecord(out DiskLogRecord diskLogRecord);
 
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();

@@ -11,43 +11,29 @@ namespace Tsavorite.core
         /// Copy a record from the disk to the read cache.
         /// </summary>
         /// <param name="pendingContext"></param>
-        /// <param name="srcLogRecord"></param>
-        /// <param name="input"></param>
+        /// <param name="inputLogRecord">Input log record that was IO'd from disk</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="sessionFunctions"></param>
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
-        internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        ref TSourceLogRecord srcLogRecord, ref TInput input, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+        internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord inputLogRecord, TSessionFunctionsWrapper sessionFunctions,
+                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            var sizeInfo = new RecordSizeInfo() { FieldInfo = srcLogRecord.GetRecordFieldInfo() };
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, ref sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _))
+            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, ref sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out _))
                 return false;
-            var newLogRecord = WriteNewRecordInfo(srcLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
-
-            UpsertInfo upsertInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
-                KeyHash = stackCtx.hei.hash,
-            };
 
             // Even though readcache records are immutable, we have to initialize the lengths
             readcache.InitializeValue(newPhysicalAddress, ref sizeInfo);
-
-            TOutput output = default;
-            if (!sessionFunctions.SingleCopyWriter(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref upsertInfo, WriteReason.CopyToReadCache))
-            {
-                stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-                return false;
-            }
+            newLogRecord.SetFillerLength(allocatedSize);
+            newLogRecord.CopyFrom(ref inputLogRecord, copyKey: false);
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
@@ -66,15 +52,14 @@ namespace Tsavorite.core
                 //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
                 //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
                 //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
-                success = EnsureNoNewMainLogRecordWasSpliced(srcLogRecord.Key, stackCtx.recSrc, pendingContext.InitialLatestLogicalAddress, ref failStatus);
+                success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, stackCtx.recSrc, pendingContext.InitialLatestLogicalAddress, ref failStatus);
             }
 
             if (success)
             {
                 if (success)
                     newLogRecord.InfoRef.UnsealAndValidate();
-                pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcLogRecord.GetReadOnlyValue(), ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                pendingContext.logicalAddress = Constants.kInvalidAddress;  // We aren't doing anything with this; and we never expose readcache addresses
                 stackCtx.ClearNewRecord();
                 return true;
             }

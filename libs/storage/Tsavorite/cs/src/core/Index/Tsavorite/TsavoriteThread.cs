@@ -96,7 +96,7 @@ namespace Tsavorite.core
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
-                    completedOutputs.TransferFrom(ref pendingContext, status);
+                    completedOutputs.TransferFrom(ref pendingContext, status, hlogBase.bufferPool);
                 }
                 if (!status.IsPending)
                     pendingContext.Dispose();
@@ -114,11 +114,9 @@ namespace Tsavorite.core
             newRequest = default;
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-            // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
+            // Otherwise the key is already in the pendingContext *and* the key in diskLogRecord has been verified to match.
             DiskLogRecord diskLogRecord = new((long)request.record.GetValidPointer());
-            if (pendingContext.IsNoKey && pendingContext.key == default)
-                pendingContext.key = hlogBase.GetSpanByteHeapContainer(diskLogRecord.Key);
-            var key = pendingContext.key.Get();
+            var key = diskLogRecord.Key;
 
             OperationStatus internalStatus = pendingContext.type switch
             {
