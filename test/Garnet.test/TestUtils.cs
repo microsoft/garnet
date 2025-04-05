@@ -1012,15 +1012,15 @@ using System.Threading.Tasks;
                         result.BeginAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals($"Log.HeadAddress"))
                         result.HeadAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"Log.BeginAddress"))
+                    else if (entry.Key.Equals($"Log.SafeReadOnlyAddress"))
                         result.ReadOnlyAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"Log.BeginAddress"))
+                    else if (entry.Key.Equals($"Log.TailAddress"))
                         result.TailAddress = long.Parse(entry.Value);
-                    else if (entry.Key.Equals($"Log.BeginAddress"))
+                    else if (entry.Key.Equals($"Log.MemorySizeBytes"))
                         result.MemorySize = long.Parse(entry.Value);
-                    else if (includeReadCache && entry.Key.Equals($"Log.BeginAddress"))
+                    else if (includeReadCache && entry.Key.Equals($"ReadCache.BeginAddress"))
                         result.ReadCacheBeginAddress = long.Parse(entry.Value);
-                    else if (includeReadCache && entry.Key.Equals($"Log.BeginAddress"))
+                    else if (includeReadCache && entry.Key.Equals($"ReadCache.TailAddress"))
                         result.ReadCacheTailAddress = long.Parse(entry.Value);
                 }
             }
