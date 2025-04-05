@@ -27,6 +27,9 @@ namespace Garnet.server
         public abstract int DatabaseCount { get; }
 
         /// <inheritdoc/>
+        public abstract int MaxDatabaseId { get; }
+
+        /// <inheritdoc/>
         public abstract GarnetDatabase TryGetOrAddDatabase(int dbId, out bool success, out bool added);
 
         /// <inheritdoc/>
@@ -244,14 +247,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
         /// <returns>True if acquired a lock</returns>
-        protected bool TryPauseCheckpoints(GarnetDatabase db)
+        protected static bool TryPauseCheckpoints(GarnetDatabase db)
             => db.CheckpointingLock.TryWriteLock();
 
         /// <summary>
         /// Release existing checkpointing lock for 
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
-        protected void ResumeCheckpoints(GarnetDatabase db)
+        protected static void ResumeCheckpoints(GarnetDatabase db)
             => db.CheckpointingLock.WriteUnlock();
 
         /// <summary>
@@ -321,7 +324,7 @@ namespace Garnet.server
         /// <param name="db">Database to enqueue commit for</param>
         /// <param name="entryType">AOF entry type</param>
         /// <param name="version">Store version</param>
-        protected void EnqueueDatabaseCommit(GarnetDatabase db, AofEntryType entryType, long version)
+        protected static void EnqueueDatabaseCommit(GarnetDatabase db, AofEntryType entryType, long version)
         {
             if (db.AppendOnlyFile == null) return;
 
@@ -341,7 +344,7 @@ namespace Garnet.server
         /// <param name="db">Database to flush</param>
         /// <param name="unsafeTruncateLog">Truncate log</param>
         /// <param name="truncateAof">Truncate AOF log</param>
-        protected void FlushDatabase(GarnetDatabase db, bool unsafeTruncateLog, bool truncateAof = true)
+        protected static void FlushDatabase(GarnetDatabase db, bool unsafeTruncateLog, bool truncateAof = true)
         {
             db.MainStore.Log.ShiftBeginAddress(db.MainStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);

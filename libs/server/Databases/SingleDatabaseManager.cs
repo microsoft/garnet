@@ -21,6 +21,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override int DatabaseCount => 1;
 
+        public override int MaxDatabaseId => 0;
+
         readonly GarnetDatabase defaultDatabase;
 
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :

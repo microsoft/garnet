@@ -120,6 +120,11 @@ namespace Garnet.server
         public int DatabaseCount => databaseManager.DatabaseCount;
 
         /// <summary>
+        /// Current max database ID
+        /// </summary>
+        public int MaxDatabaseId => databaseManager.MaxDatabaseId;
+
+        /// <summary>
         /// Shared timeout manager for all <see cref="LuaRunner"/> across all sessions.
         /// </summary>
         internal readonly LuaTimeoutManager luaTimeoutManager;

@@ -6,14 +6,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
 {
     class GarnetInfoMetrics
     {
-        public static readonly InfoMetricsType[] defaultInfo = [.. Enum.GetValues<InfoMetricsType>()
+        public static readonly InfoMetricsType[] DefaultInfo = [.. Enum.GetValues<InfoMetricsType>()
             .Where(e => e switch
             {
                 InfoMetricsType.STOREHASHTABLE => false,
@@ -28,18 +27,16 @@ namespace Garnet.server
         MetricsItem[] clusterInfo = null;
         MetricsItem[] replicationInfo = null;
         MetricsItem[] statsInfo = null;
-        MetricsItem[] storeInfo = null;
-        MetricsItem[] objectStoreInfo = null;
-        MetricsItem[] storeHashDistrInfo = null;
-        MetricsItem[] objectStoreHashDistrInfo = null;
-        MetricsItem[] storeRevivInfo = null;
-        MetricsItem[] objectStoreRevivInfo = null;
-        MetricsItem[] persistenceInfo = null;
+        MetricsItem[][] storeInfo = null;
+        MetricsItem[][] objectStoreInfo = null;
+        MetricsItem[][] storeHashDistrInfo = null;
+        MetricsItem[][] objectStoreHashDistrInfo = null;
+        MetricsItem[][] storeRevivInfo = null;
+        MetricsItem[][] objectStoreRevivInfo = null;
+        MetricsItem[][] persistenceInfo = null;
         MetricsItem[] clientsInfo = null;
         MetricsItem[] keyspaceInfo = null;
         MetricsItem[] bufferPoolStats = null;
-
-        public GarnetInfoMetrics() { }
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
@@ -225,157 +222,140 @@ namespace Garnet.server
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
-            for (var i = 0; i < databases.Length; i++)
+            storeInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
+            foreach (var db in databases)
             {
-                var storeStats = GetDatabaseStoreStats(storeWrapper, ref databases[i]);
-                if (i == 0)
-                    storeInfo = new MetricsItem[databases.Length * storeStats.Length];
-
-                Array.Copy(storeStats, 0, storeInfo, storeStats.Length * i, storeStats.Length);
+                var storeStats = GetDatabaseStoreStats(storeWrapper, db);
+                storeInfo[db.Id] = storeStats;
             }
         }
 
-        private MetricsItem[] GetDatabaseStoreStats(StoreWrapper storeWrapper, ref GarnetDatabase db) =>
+        private MetricsItem[] GetDatabaseStoreStats(StoreWrapper storeWrapper, GarnetDatabase db) =>
         [
-            new($"db{db.Id}.CurrentVersion", db.MainStore.CurrentVersion.ToString()),
-            new($"db{db.Id}.LastCheckpointedVersion", db.MainStore.LastCheckpointedVersion.ToString()),
-            new($"db{db.Id}.SystemState", db.MainStore.SystemState.ToString()),
-            new($"db{db.Id}.IndexSize", db.MainStore.IndexSize.ToString()),
-            new($"db{db.Id}.LogDir", storeWrapper.serverOptions.LogDir),
-            new($"db{db.Id}.Log.BeginAddress", db.MainStore.Log.BeginAddress.ToString()),
-            new($"db{db.Id}.Log.BufferSize", db.MainStore.Log.BufferSize.ToString()),
-            new($"db{db.Id}.Log.EmptyPageCount", db.MainStore.Log.EmptyPageCount.ToString()),
-            new($"db{db.Id}.Log.FixedRecordSize", db.MainStore.Log.FixedRecordSize.ToString()),
-            new($"db{db.Id}.Log.HeadAddress", db.MainStore.Log.HeadAddress.ToString()),
-            new($"db{db.Id}.Log.MemorySizeBytes", db.MainStore.Log.MemorySizeBytes.ToString()),
-            new($"db{db.Id}.Log.SafeReadOnlyAddress", db.MainStore.Log.SafeReadOnlyAddress.ToString()),
-            new($"db{db.Id}.Log.TailAddress", db.MainStore.Log.TailAddress.ToString()),
-            new($"db{db.Id}.ReadCache.BeginAddress", db.MainStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.BufferSize", db.MainStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.EmptyPageCount", db.MainStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.HeadAddress", db.MainStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.MemorySizeBytes", db.MainStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.TailAddress", db.MainStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
+            new($"CurrentVersion", db.MainStore.CurrentVersion.ToString()),
+            new($"LastCheckpointedVersion", db.MainStore.LastCheckpointedVersion.ToString()),
+            new($"SystemState", db.MainStore.SystemState.ToString()),
+            new($"IndexSize", db.MainStore.IndexSize.ToString()),
+            new($"LogDir", storeWrapper.serverOptions.LogDir),
+            new($"Log.BeginAddress", db.MainStore.Log.BeginAddress.ToString()),
+            new($"Log.BufferSize", db.MainStore.Log.BufferSize.ToString()),
+            new($"Log.EmptyPageCount", db.MainStore.Log.EmptyPageCount.ToString()),
+            new($"Log.FixedRecordSize", db.MainStore.Log.FixedRecordSize.ToString()),
+            new($"Log.HeadAddress", db.MainStore.Log.HeadAddress.ToString()),
+            new($"Log.MemorySizeBytes", db.MainStore.Log.MemorySizeBytes.ToString()),
+            new($"Log.SafeReadOnlyAddress", db.MainStore.Log.SafeReadOnlyAddress.ToString()),
+            new($"Log.TailAddress", db.MainStore.Log.TailAddress.ToString()),
+            new($"ReadCache.BeginAddress", db.MainStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+            new($"ReadCache.BufferSize", db.MainStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
+            new($"ReadCache.EmptyPageCount", db.MainStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+            new($"ReadCache.HeadAddress", db.MainStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
+            new($"ReadCache.MemorySizeBytes", db.MainStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.TailAddress", db.MainStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
         ];
 
         private void PopulateObjectStoreStats(StoreWrapper storeWrapper)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
-            for (var i = 0; i < databases.Length; i++)
+            objectStoreInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
+            foreach (var db in databases)
             {
-                var storeStats = GetDatabaseObjectStoreStats(storeWrapper, ref databases[i]);
-                if (i == 0)
-                    objectStoreInfo = new MetricsItem[databases.Length * storeStats.Length];
-
-                Array.Copy(storeStats, 0, objectStoreInfo, storeStats.Length * i, storeStats.Length);
+                var storeStats = GetDatabaseObjectStoreStats(storeWrapper, db);
+                objectStoreInfo[db.Id] = storeStats;
             }
         }
 
-        private MetricsItem[] GetDatabaseObjectStoreStats(StoreWrapper storeWrapper, ref GarnetDatabase db) =>
+        private MetricsItem[] GetDatabaseObjectStoreStats(StoreWrapper storeWrapper, GarnetDatabase db) =>
         [
-            new($"db{db.Id}.CurrentVersion", db.ObjectStore.CurrentVersion.ToString()),
-            new($"db{db.Id}.LastCheckpointedVersion", db.ObjectStore.LastCheckpointedVersion.ToString()),
-            new($"db{db.Id}.SystemState", db.ObjectStore.SystemState.ToString()),
-            new($"db{db.Id}.IndexSize", db.ObjectStore.IndexSize.ToString()),
-            new($"db{db.Id}.LogDir", storeWrapper.serverOptions.LogDir),
-            new($"db{db.Id}.Log.BeginAddress", db.ObjectStore.Log.BeginAddress.ToString()),
-            new($"db{db.Id}.Log.BufferSize", db.ObjectStore.Log.BufferSize.ToString()),
-            new($"db{db.Id}.Log.EmptyPageCount", db.ObjectStore.Log.EmptyPageCount.ToString()),
-            new($"db{db.Id}.Log.FixedRecordSize", db.ObjectStore.Log.FixedRecordSize.ToString()),
-            new($"db{db.Id}.Log.HeadAddress", db.ObjectStore.Log.HeadAddress.ToString()),
-            new($"db{db.Id}.Log.MemorySizeBytes", db.ObjectStore.Log.MemorySizeBytes.ToString()),
-            new($"db{db.Id}.Log.SafeReadOnlyAddress", db.ObjectStore.Log.SafeReadOnlyAddress.ToString()),
-            new($"db{db.Id}.Log.TailAddress", db.ObjectStore.Log.TailAddress.ToString()),
-            new($"db{db.Id}.ReadCache.BeginAddress", db.ObjectStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.BufferSize", db.ObjectStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.EmptyPageCount", db.ObjectStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.HeadAddress", db.ObjectStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.MemorySizeBytes", db.ObjectStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
-            new($"db{db.Id}.ReadCache.TailAddress", db.ObjectStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
+            new($"CurrentVersion", db.ObjectStore.CurrentVersion.ToString()),
+            new($"LastCheckpointedVersion", db.ObjectStore.LastCheckpointedVersion.ToString()),
+            new($"SystemState", db.ObjectStore.SystemState.ToString()),
+            new($"IndexSize", db.ObjectStore.IndexSize.ToString()),
+            new($"LogDir", storeWrapper.serverOptions.LogDir),
+            new($"Log.BeginAddress", db.ObjectStore.Log.BeginAddress.ToString()),
+            new($"Log.BufferSize", db.ObjectStore.Log.BufferSize.ToString()),
+            new($"Log.EmptyPageCount", db.ObjectStore.Log.EmptyPageCount.ToString()),
+            new($"Log.FixedRecordSize", db.ObjectStore.Log.FixedRecordSize.ToString()),
+            new($"Log.HeadAddress", db.ObjectStore.Log.HeadAddress.ToString()),
+            new($"Log.MemorySizeBytes", db.ObjectStore.Log.MemorySizeBytes.ToString()),
+            new($"Log.SafeReadOnlyAddress", db.ObjectStore.Log.SafeReadOnlyAddress.ToString()),
+            new($"Log.TailAddress", db.ObjectStore.Log.TailAddress.ToString()),
+            new($"ReadCache.BeginAddress", db.ObjectStore.ReadCache?.BeginAddress.ToString() ?? "N/A"),
+            new($"ReadCache.BufferSize", db.ObjectStore.ReadCache?.BufferSize.ToString() ?? "N/A"),
+            new($"ReadCache.EmptyPageCount", db.ObjectStore.ReadCache?.EmptyPageCount.ToString() ?? "N/A"),
+            new($"ReadCache.HeadAddress", db.ObjectStore.ReadCache?.HeadAddress.ToString() ?? "N/A"),
+            new($"ReadCache.MemorySizeBytes", db.ObjectStore.ReadCache?.MemorySizeBytes.ToString() ?? "N/A"),
+            new($"ReadCache.TailAddress", db.ObjectStore.ReadCache?.TailAddress.ToString() ?? "N/A"),
         ];
 
         private void PopulateStoreHashDistribution(StoreWrapper storeWrapper)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
-            var sb = new StringBuilder();
+            storeHashDistrInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
             foreach (var db in databases)
             {
-                sb.AppendLine($"db{db.Id}:");
-                sb.Append(db.MainStore.DumpDistribution());
+                storeHashDistrInfo[db.Id] = [new("", db.MainStore.DumpDistribution())];
             }
-
-            storeHashDistrInfo = [new("", sb.ToString())];
         }
 
         private void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
-            var sb = new StringBuilder();
+            objectStoreHashDistrInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
             foreach (var db in databases)
             {
-                sb.AppendLine($"db{db.Id}:");
-                sb.Append(db.ObjectStore.DumpDistribution());
+                objectStoreHashDistrInfo[db.Id] = [new("", db.ObjectStore.DumpDistribution())];
             }
-
-            objectStoreHashDistrInfo = [new("", sb.ToString())];
         }
 
         private void PopulateStoreRevivInfo(StoreWrapper storeWrapper)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
-            var sb = new StringBuilder();
+            storeRevivInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
             foreach (var db in databases)
             {
-                sb.AppendLine($"db{db.Id}:");
-                sb.Append(db.MainStore.DumpRevivificationStats());
+                storeRevivInfo[db.Id] = [new("", db.MainStore.DumpRevivificationStats())];
             }
-
-            storeRevivInfo = [new("", sb.ToString())];
         }
 
         private void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
-            var sb = new StringBuilder();
+
+            objectStoreRevivInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
             foreach (var db in databases)
             {
-                sb.AppendLine($"db{db.Id}:");
-                sb.Append(db.ObjectStore.DumpRevivificationStats());
+                objectStoreRevivInfo[db.Id] = [new("", db.ObjectStore.DumpRevivificationStats())];
             }
-
-            objectStoreRevivInfo = [new("", sb.ToString())];
         }
 
         private void PopulatePersistenceInfo(StoreWrapper storeWrapper)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
-            for (var i = 0; i < databases.Length; i++)
+            persistenceInfo = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
+            foreach (var db in databases)
             {
-                var persistenceStats = GetDatabasePersistenceStats(storeWrapper, ref databases[i]);
-                if (i == 0)
-                    persistenceInfo = new MetricsItem[databases.Length * persistenceStats.Length];
-
-                Array.Copy(persistenceStats, 0, persistenceInfo, persistenceStats.Length * i, persistenceStats.Length);
+                var persistenceStats = GetDatabasePersistenceStats(storeWrapper, db);
+                persistenceInfo[db.Id] = persistenceStats;
             }
         }
 
-        private MetricsItem[] GetDatabasePersistenceStats(StoreWrapper storeWrapper, ref GarnetDatabase db)
+        private MetricsItem[] GetDatabasePersistenceStats(StoreWrapper storeWrapper, GarnetDatabase db)
         {
             var aofEnabled = storeWrapper.serverOptions.EnableAOF;
 
             return
             [
-                new($"db{db.Id}.CommittedBeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedBeginAddress.ToString()),
-                new($"db{db.Id}.CommittedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedUntilAddress.ToString()),
-                new($"db{db.Id}.FlushedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.FlushedUntilAddress.ToString()),
-                new($"db{db.Id}.BeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.BeginAddress.ToString()),
-                new($"db{db.Id}.TailAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.TailAddress.ToString()),
-                new($"db{db.Id}.SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString())
+                new($"CommittedBeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedBeginAddress.ToString()),
+                new($"CommittedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.CommittedUntilAddress.ToString()),
+                new($"FlushedUntilAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.FlushedUntilAddress.ToString()),
+                new($"BeginAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.BeginAddress.ToString()),
+                new($"TailAddress", !aofEnabled ? "N/A" : db.AppendOnlyFile.TailAddress.ToString()),
+                new($"SafeAofAddress", !aofEnabled ? "N/A" : storeWrapper.safeAofAddress.ToString())
             ];
         }
 
@@ -401,7 +381,7 @@ namespace Garnet.server
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
         }
 
-        public static string GetSectionHeader(InfoMetricsType infoType)
+        public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
         {
             return infoType switch
             {
@@ -410,13 +390,13 @@ namespace Garnet.server
                 InfoMetricsType.CLUSTER => "Cluster",
                 InfoMetricsType.REPLICATION => "Replication",
                 InfoMetricsType.STATS => "Stats",
-                InfoMetricsType.STORE => "MainStore",
-                InfoMetricsType.OBJECTSTORE => "ObjectStore",
-                InfoMetricsType.STOREHASHTABLE => "MainStoreHashTableDistribution",
-                InfoMetricsType.OBJECTSTOREHASHTABLE => "ObjectStoreHashTableDistribution",
-                InfoMetricsType.STOREREVIV => "MainStoreDeletedRecordRevivification",
-                InfoMetricsType.OBJECTSTOREREVIV => "ObjectStoreDeletedRecordRevivification",
-                InfoMetricsType.PERSISTENCE => "Persistence",
+                InfoMetricsType.STORE => $"MainStore (DB {dbId})",
+                InfoMetricsType.OBJECTSTORE => $"ObjectStore (DB {dbId})",
+                InfoMetricsType.STOREHASHTABLE => $"MainStoreHashTableDistribution (DB {dbId})",
+                InfoMetricsType.OBJECTSTOREHASHTABLE => $"ObjectStoreHashTableDistribution (DB {dbId})",
+                InfoMetricsType.STOREREVIV => $"MainStoreDeletedRecordRevivification (DB {dbId})",
+                InfoMetricsType.OBJECTSTOREREVIV => $"ObjectStoreDeletedRecordRevivification (DB {dbId})",
+                InfoMetricsType.PERSISTENCE => $"Persistence (DB {dbId})",
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
@@ -425,9 +405,9 @@ namespace Garnet.server
             };
         }
 
-        private static string GetSectionRespInfo(InfoMetricsType infoType, MetricsItem[] info)
+        private static string GetSectionRespInfo(string sectionHeader, MetricsItem[] info)
         {
-            var section = $"# {GetSectionHeader(infoType)}\r\n";
+            var section = $"# {sectionHeader}\r\n";
             if (info == null)
                 return section;
 
@@ -445,73 +425,75 @@ namespace Garnet.server
             return section;
         }
 
-        public string GetRespInfo(InfoMetricsType section, StoreWrapper storeWrapper)
+        private string GetRespInfo(InfoMetricsType section, int dbId, StoreWrapper storeWrapper)
         {
+            var header = GetSectionHeader(section, dbId);
+
             switch (section)
             {
                 case InfoMetricsType.SERVER:
                     PopulateServerInfo(storeWrapper);
-                    return GetSectionRespInfo(section, serverInfo);
+                    return GetSectionRespInfo(header, serverInfo);
                 case InfoMetricsType.MEMORY:
                     PopulateMemoryInfo(storeWrapper);
-                    return GetSectionRespInfo(section, memoryInfo);
+                    return GetSectionRespInfo(header, memoryInfo);
                 case InfoMetricsType.CLUSTER:
                     PopulateClusterInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.CLUSTER, clusterInfo);
+                    return GetSectionRespInfo(header, clusterInfo);
                 case InfoMetricsType.REPLICATION:
                     PopulateReplicationInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.REPLICATION, replicationInfo);
+                    return GetSectionRespInfo(header, replicationInfo);
                 case InfoMetricsType.STATS:
                     PopulateStatsInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.STATS, statsInfo);
+                    return GetSectionRespInfo(header, statsInfo);
                 case InfoMetricsType.STORE:
                     PopulateStoreStats(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.STORE, storeInfo);
+                    return GetSectionRespInfo(header, storeInfo[dbId]);
                 case InfoMetricsType.OBJECTSTORE:
                     if (storeWrapper.serverOptions.DisableObjects) return "";
                     PopulateObjectStoreStats(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.OBJECTSTORE, objectStoreInfo);
+                    return GetSectionRespInfo(header, objectStoreInfo[dbId]);
                 case InfoMetricsType.STOREHASHTABLE:
                     PopulateStoreHashDistribution(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.STOREHASHTABLE, storeHashDistrInfo);
+                    return GetSectionRespInfo(header, storeHashDistrInfo[dbId]);
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
                     if (storeWrapper.serverOptions.DisableObjects) return "";
                     PopulateObjectStoreHashDistribution(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.OBJECTSTOREHASHTABLE, objectStoreHashDistrInfo);
+                    return GetSectionRespInfo(header, objectStoreHashDistrInfo[dbId]);
                 case InfoMetricsType.STOREREVIV:
                     PopulateStoreRevivInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.STOREREVIV, storeRevivInfo);
+                    return GetSectionRespInfo(header, storeRevivInfo[dbId]);
                 case InfoMetricsType.OBJECTSTOREREVIV:
                     if (storeWrapper.serverOptions.DisableObjects) return "";
                     PopulateObjectStoreRevivInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.OBJECTSTOREREVIV, objectStoreRevivInfo);
+                    return GetSectionRespInfo(header, objectStoreRevivInfo[dbId]);
                 case InfoMetricsType.PERSISTENCE:
                     if (!storeWrapper.serverOptions.EnableAOF) return "";
                     PopulatePersistenceInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.PERSISTENCE, persistenceInfo);
+                    return GetSectionRespInfo(header, persistenceInfo[dbId]);
                 case InfoMetricsType.CLIENTS:
                     PopulateClientsInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.CLIENTS, clientsInfo);
+                    return GetSectionRespInfo(header, clientsInfo);
                 case InfoMetricsType.KEYSPACE:
                     PopulateKeyspaceInfo(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.KEYSPACE, keyspaceInfo);
+                    return GetSectionRespInfo(header, keyspaceInfo);
                 case InfoMetricsType.MODULES:
-                    return GetSectionRespInfo(section, null);
+                    return GetSectionRespInfo(header, null);
                 case InfoMetricsType.BPSTATS:
                     PopulateClusterBufferPoolStats(storeWrapper);
-                    return GetSectionRespInfo(InfoMetricsType.BPSTATS, bufferPoolStats);
+                    return GetSectionRespInfo(header, bufferPoolStats);
                 default:
                     return "";
             }
         }
 
-        public string GetRespInfo(InfoMetricsType[] sections, StoreWrapper storeWrapper)
+        public string GetRespInfo(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
         {
             var response = "";
             for (var i = 0; i < sections.Length; i++)
             {
                 var section = sections[i];
-                var resp = GetRespInfo(section, storeWrapper);
+                var resp = GetRespInfo(section, dbId, storeWrapper);
                 if (string.IsNullOrEmpty(resp)) continue;
                 response += resp;
                 response += sections.Length - 1 == i ? "" : "\r\n";
@@ -519,7 +501,7 @@ namespace Garnet.server
             return response;
         }
 
-        private MetricsItem[] GetMetricInternal(InfoMetricsType section, StoreWrapper storeWrapper)
+        private MetricsItem[] GetMetricInternal(InfoMetricsType section, int dbId, StoreWrapper storeWrapper)
         {
             switch (section)
             {
@@ -540,29 +522,29 @@ namespace Garnet.server
                     return statsInfo;
                 case InfoMetricsType.STORE:
                     PopulateStoreStats(storeWrapper);
-                    return storeInfo;
+                    return storeInfo[dbId];
                 case InfoMetricsType.OBJECTSTORE:
                     if (storeWrapper.serverOptions.DisableObjects) return null;
                     PopulateObjectStoreStats(storeWrapper);
-                    return objectStoreInfo;
+                    return objectStoreInfo[dbId];
                 case InfoMetricsType.STOREHASHTABLE:
                     PopulateStoreHashDistribution(storeWrapper);
-                    return storeHashDistrInfo;
+                    return storeHashDistrInfo[dbId];
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
                     if (storeWrapper.serverOptions.DisableObjects) return null;
                     PopulateObjectStoreHashDistribution(storeWrapper);
-                    return objectStoreHashDistrInfo;
+                    return objectStoreHashDistrInfo[dbId];
                 case InfoMetricsType.STOREREVIV:
                     PopulateStoreRevivInfo(storeWrapper);
-                    return storeRevivInfo;
+                    return storeRevivInfo[dbId];
                 case InfoMetricsType.OBJECTSTOREREVIV:
                     if (storeWrapper.serverOptions.DisableObjects) return null;
                     PopulateObjectStoreRevivInfo(storeWrapper);
-                    return objectStoreRevivInfo;
+                    return objectStoreRevivInfo[dbId];
                 case InfoMetricsType.PERSISTENCE:
                     if (!storeWrapper.serverOptions.EnableAOF) return null;
                     PopulatePersistenceInfo(storeWrapper);
-                    return persistenceInfo;
+                    return persistenceInfo[dbId];
                 case InfoMetricsType.CLIENTS:
                     PopulateClientsInfo(storeWrapper);
                     return clientsInfo;
@@ -576,14 +558,14 @@ namespace Garnet.server
             }
         }
 
-        public MetricsItem[] GetMetric(InfoMetricsType section, StoreWrapper storeWrapper) => GetMetricInternal(section, storeWrapper);
+        public MetricsItem[] GetMetric(InfoMetricsType section, int dbId, StoreWrapper storeWrapper) => GetMetricInternal(section, dbId, storeWrapper);
 
-        public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] sections, StoreWrapper storeWrapper)
+        public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
         {
             for (var i = 0; i < sections.Length; i++)
             {
                 var infoType = sections[i];
-                var infoItems = GetMetricInternal(infoType, storeWrapper);
+                var infoItems = GetMetricInternal(infoType, dbId, storeWrapper);
                 if (infoItems != null)
                     yield return (infoType, infoItems);
             }

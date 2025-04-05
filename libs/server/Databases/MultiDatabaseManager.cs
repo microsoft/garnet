@@ -23,6 +23,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override int DatabaseCount => activeDbIds.ActualSize;
 
+        /// <inheritdoc/>
+        public override int MaxDatabaseId => databases.ActualSize - 1;
+
         // Map of databases by database ID (by default: of size 1, contains only DB 0)
         ExpandableMap<GarnetDatabase> databases;
 

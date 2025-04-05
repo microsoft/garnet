@@ -1397,11 +1397,13 @@ namespace Garnet.server
         /// <returns>True if successful</returns>
         internal bool TrySwitchActiveDatabaseSession(int dbId)
         {
-            if (!allowMultiDb) return false;
+            if (!allowMultiDb) 
+                return false;
 
             // Try to get or set the database session by ID
             var dbSession = TryGetOrSetDatabaseSession(dbId, out var success);
-            if (!success) return false;
+            if (!success) 
+                return false;
 
             // Set the active database session
             SwitchActiveDatabaseSession(dbSession);
@@ -1416,16 +1418,20 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool TrySwapDatabaseSessions(int dbId1, int dbId2)
         {
-            if (!allowMultiDb) return false;
-            if (dbId1 == dbId2) return true;
+            if (!allowMultiDb) 
+                return false;
+            if (dbId1 == dbId2) 
+                return true;
 
             // Try to get or set the database sessions
             // Note that the dbIdForSessionCreation is set to the other DB ID - 
             // That is because the databases have been swapped prior to the session swap
             var dbSession1 = TryGetOrSetDatabaseSession(dbId1, out var success, dbId2);
-            if (!success) return false;
+            if (!success) 
+                return false;
             var dbSession2 = TryGetOrSetDatabaseSession(dbId2, out success, dbId1);
-            if (!success) return false;
+            if (!success) 
+                return false;
 
             // Swap the sessions in the session map
             databaseSessions.Map[dbId1] = new GarnetDatabaseSession(dbId1, dbSession2);

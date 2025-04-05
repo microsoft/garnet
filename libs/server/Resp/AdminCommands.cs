@@ -591,27 +591,8 @@ namespace Garnet.server
             // Check if ID specified
             if (parseState.Count == 1)
             {
-                if (!parseState.TryGetInt(0, out dbId))
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
+                if (!TryParseDatabaseId(0, out dbId))
                     return true;
-                }
-
-                if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
-                {
-                    // Cluster mode does not allow DBID specification
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
-
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
             }
 
             CommitAof(dbId);
@@ -892,27 +873,8 @@ namespace Garnet.server
             // Check if ID specified
             if (parseState.Count == 1)
             {
-                if (!parseState.TryGetInt(0, out dbId))
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
+                if (!TryParseDatabaseId(0, out dbId))
                     return true;
-                }
-
-                if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
-                {
-                    // Cluster mode does not allow DBID specification
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
-
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
             }
 
             if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
@@ -946,27 +908,8 @@ namespace Garnet.server
             // Check if ID specified
             if (parseState.Count == 1)
             {
-                if (!parseState.TryGetInt(0, out dbId))
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
+                if (!TryParseDatabaseId(0, out dbId))
                     return true;
-                }
-
-                if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
-                {
-                    // Cluster mode does not allow DBID specification
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
-
-                if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
             }
 
             var dbFound = storeWrapper.TryGetOrAddDatabase(dbId, out var db, out _);
@@ -1003,27 +946,8 @@ namespace Garnet.server
                 // Check if ID specified
                 if (parseState.Count - tokenIdx > 0)
                 {
-                    if (!parseState.TryGetInt(tokenIdx, out dbId))
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                            SendAndReset();
+                    if (!TryParseDatabaseId(tokenIdx, out dbId))
                         return true;
-                    }
-
-                    if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
-                    {
-                        // Cluster mode does not allow DBID specification
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
                 }
             }
 
@@ -1037,6 +961,34 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
+            }
+
+            return true;
+        }
+
+        private bool TryParseDatabaseId(int tokenIdx, out int dbId)
+        {
+            dbId = -1;
+            if (!parseState.TryGetInt(tokenIdx, out dbId))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+
+            if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
+            {
+                // Cluster mode does not allow DBID specification
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+
+            if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                    SendAndReset();
+                return false;
             }
 
             return true;

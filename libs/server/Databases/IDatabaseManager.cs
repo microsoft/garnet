@@ -61,6 +61,11 @@ namespace Garnet.server
         public int DatabaseCount { get; }
 
         /// <summary>
+        /// Current max database ID
+        /// </summary>
+        public int MaxDatabaseId { get; }
+
+        /// <summary>
         /// Try to get or add a new database
         /// </summary>
         /// <param name="dbId">Database ID</param>
