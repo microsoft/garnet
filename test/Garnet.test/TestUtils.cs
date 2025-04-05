@@ -258,8 +258,8 @@ namespace Garnet.test
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
-            TextWriter logTo = null
-        )
+            TextWriter logTo = null,
+            bool enableCluster = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -335,6 +335,7 @@ namespace Garnet.test
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths,
+                EnableCluster = enableCluster,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,

@@ -184,10 +184,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual("placeholder", options.CertPassword);
             ClassicAssert.AreEqual(10000, options.SlowLogThreshold);
             ClassicAssert.AreEqual(128, options.SlowLogMaxEntries);
+            ClassicAssert.AreEqual(32, options.MaxDatabases);
 
             // Import from redis.conf file, include command line args
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
-            args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true"];
+            args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true", "--max-databases", "64"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
@@ -202,6 +203,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("placeholder", options.CertPassword);
             ClassicAssert.AreEqual(10000, options.SlowLogThreshold);
             ClassicAssert.AreEqual(128, options.SlowLogMaxEntries);
+            ClassicAssert.AreEqual(64, options.MaxDatabases);
             ClassicAssert.IsTrue(File.Exists(garnetConfigPath));
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

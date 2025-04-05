@@ -213,6 +213,14 @@
         "Type": "PureToken",
         "Token": "SCHEDULE",
         "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -1706,7 +1714,17 @@
     "Command": "COMMITAOF",
     "Name": "COMMITAOF",
     "Summary": "Commit to append-only file.",
-    "Group": "Server"
+    "Group": "Server",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
   },
   {
     "Command": "CONFIG",
@@ -4696,7 +4714,17 @@
     "Name": "LASTSAVE",
     "Summary": "Returns the Unix timestamp of the last successful save to disk.",
     "Group": "Server",
-    "Complexity": "O(1)"
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
   },
   {
     "Command": "LATENCY",
@@ -6373,7 +6401,17 @@
     "Name": "SAVE",
     "Summary": "Synchronously saves the database(s) to disk.",
     "Group": "Server",
-    "Complexity": "O(N) where N is the total number of keys in all databases"
+    "Complexity": "O(N) where N is the total number of keys in all databases",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
   },
   {
     "Command": "SCAN",
@@ -7450,6 +7488,25 @@
         "Type": "Key",
         "ArgumentFlags": "Multiple",
         "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "SWAPDB",
+    "Name": "SWAPDB",
+    "Summary": "Swaps two Memurai databases",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the count of clients watching or blocking on keys from both databases.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX1",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX2",
+        "Type": "Integer"
       }
     ]
   },

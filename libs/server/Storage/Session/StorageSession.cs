@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -58,23 +59,28 @@ namespace Garnet.server
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
-            ILogger logger = null)
+            ILogger logger = null,
+            int dbId = 0)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-            this.stateMachineDriver = storeWrapper.serverOptions.StateMachineDriver;
             parseState.Initialize();
 
-            functionsState = storeWrapper.CreateFunctionsState();
+            functionsState = storeWrapper.CreateFunctionsState(dbId);
 
             var functions = new MainSessionFunctions(functionsState);
-            var session = storeWrapper.store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
-            var objstorefunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            Debug.Assert(dbFound);
+
+            this.stateMachineDriver = db.StateMachineDriver;
+            var session = db.MainStore.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+
+            var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
+            var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
@@ -84,7 +90,7 @@ namespace Garnet.server
                 objectStoreLockableContext = objectStoreSession.LockableContext;
             }
 
-            HeadAddress = storeWrapper.store.Log.HeadAddress;
+            HeadAddress = db.MainStore.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
 

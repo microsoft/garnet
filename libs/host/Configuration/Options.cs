@@ -607,6 +607,10 @@ namespace Garnet
         [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
         public int UnixSocketPermission { get; set; }
 
+        [IntRangeValidation(1, 256, isRequired: true)]
+        [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
+        public int MaxDatabases { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -872,7 +876,8 @@ namespace Garnet
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
                 UnixSocketPath = UnixSocketPath,
-                UnixSocketPermission = unixSocketPermissions
+                UnixSocketPermission = unixSocketPermissions,
+                MaxDatabases = MaxDatabases,
             };
         }
 
