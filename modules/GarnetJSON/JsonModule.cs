@@ -9,7 +9,7 @@ namespace GarnetJSON
     /// <summary>
     /// Represents the GarnetJSON module.
     /// </summary>
-    public class Module : ModuleBase
+    public class JsonModule : ModuleBase
     {
         /// <summary>
         /// Initializes the JSON module.
@@ -25,7 +25,7 @@ namespace GarnetJSON
                 return;
             }
 
-            var jsonFactory = new JsonObjectFactory();
+            var jsonFactory = new GarnetJsonObjectFactory();
             status = context.RegisterType(jsonFactory);
             if (status == ModuleActionStatus.Success)
             {
