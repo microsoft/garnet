@@ -69,7 +69,7 @@ namespace Garnet.server
                         success = ClusterPurgeBufferPool(managerType);
                         break;
                     case ManagerType.ServerListener:
-                        foreach (var server in storeWrapper.TcpServer)
+                        foreach (var server in storeWrapper.Servers)
                             ((GarnetServerTcp)server).Purge();
                         break;
                     default:

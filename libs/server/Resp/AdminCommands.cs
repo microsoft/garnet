@@ -163,9 +163,9 @@ namespace Garnet.server
             }
         }
 
-        void CommitAof()
+        void CommitAof(int dbId = -1)
         {
-            storeWrapper.appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            storeWrapper.CommitAOFAsync(dbId).ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
         private bool NetworkMonitor()
@@ -574,14 +574,28 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// COMMITAOF [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkCOMMITAOF()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF));
             }
 
-            CommitAof();
+            // By default - commit AOF for all active databases, unless database ID specified
+            var dbId = -1;
+
+            // Check if ID specified
+            if (parseState.Count == 1)
+            {
+                if (!TryParseDatabaseId(0, out dbId))
+                    return true;
+            }
+
+            CommitAof(dbId);
             while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                 SendAndReset();
 
@@ -842,14 +856,28 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// SAVE [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkSAVE()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
-            if (!storeWrapper.TakeCheckpoint(false, logger))
+            // By default - save all active databases, unless database ID specified
+            var dbId = -1;
+
+            // Check if ID specified
+            if (parseState.Count == 1)
+            {
+                if (!TryParseDatabaseId(0, out dbId))
+                    return true;
+            }
+
+            if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
@@ -863,28 +891,67 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// LASTSAVE [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkLASTSAVE()
         {
-            if (parseState.Count != 0)
+            if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LASTSAVE));
             }
 
-            var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
+            // By default - get the last saved timestamp for current active database, unless database ID specified
+            var dbId = activeDbId;
+
+            // Check if ID specified
+            if (parseState.Count == 1)
+            {
+                if (!TryParseDatabaseId(0, out dbId))
+                    return true;
+            }
+
+            var dbFound = storeWrapper.TryGetOrAddDatabase(dbId, out var db, out _);
+            Debug.Assert(dbFound);
+
+            var seconds = db.LastSaveTime.ToUnixTimeSeconds();
             while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
                 SendAndReset();
 
             return true;
         }
 
+        /// <summary>
+        /// BGSAVE [SCHEDULE] [DBID]
+        /// </summary>
+        /// <returns></returns>
         private bool NetworkBGSAVE()
         {
-            if (parseState.Count > 1)
+            if (parseState.Count > 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
-            var success = storeWrapper.TakeCheckpoint(true, logger);
+            // By default - save all active databases, unless database ID specified
+            var dbId = -1;
+
+            var tokenIdx = 0;
+            if (parseState.Count > 0)
+            {
+                if (parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan
+                    .EqualsUpperCaseSpanIgnoringCase(CmdStrings.SCHEDULE))
+                    tokenIdx++;
+
+                // Check if ID specified
+                if (parseState.Count - tokenIdx > 0)
+                {
+                    if (!TryParseDatabaseId(tokenIdx, out dbId))
+                        return true;
+                }
+            }
+
+            var success = storeWrapper.TakeCheckpoint(true, dbId: dbId, logger: logger);
             if (success)
             {
                 while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))
@@ -894,6 +961,34 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                     SendAndReset();
+            }
+
+            return true;
+        }
+
+        private bool TryParseDatabaseId(int tokenIdx, out int dbId)
+        {
+            dbId = -1;
+            if (!parseState.TryGetInt(tokenIdx, out dbId))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+
+            if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
+            {
+                // Cluster mode does not allow DBID specification
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+
+            if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                    SendAndReset();
+                return false;
             }
 
             return true;

@@ -113,6 +113,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> CH => "CH"u8;
         public static ReadOnlySpan<byte> WITHETAG => "WITHETAG"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
@@ -160,6 +161,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
         public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
+        public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
 
         /// <summary>
         /// Response strings
@@ -227,8 +229,16 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE => "ERR value is out of range, must be positive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DB_INDEX_OUT_OF_RANGE => "ERR DB index is out of range."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_FIRST_DB_INDEX => "ERR invalid first DB index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_SECOND_DB_INDEX => "ERR invalid second DB index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SELECT_IN_TXN_UNSUPPORTED => "ERR SELECT is currently unsupported inside a transaction."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SWAPDB_IN_TXN_UNSUPPORTED => "ERR SWAPDB is currently unsupported inside a transaction."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SWAPDB_UNSUPPORTED => "ERR SWAPDB is currently unsupported when multiple clients are connected."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_SELECT_UNSUCCESSFUL => "ERR unable to select database."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_DB_ID_CLUSTER_MODE => "ERR specifying non-zero DBID is not allowed in cluster mode"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE => "ERR SWAPDB is not allowed in cluster mode"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_TRANSACTION_PROCEDURE => "ERR Could not get transaction procedure"u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS => "ERR wrong number of arguments for command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION => "ERR Unsupported protocol version"u8;

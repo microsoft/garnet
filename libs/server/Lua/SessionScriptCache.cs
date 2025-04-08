@@ -219,6 +219,15 @@ namespace Garnet.server
             scriptCache.Clear();
         }
 
+        /// <summary>
+        /// Swap database sessions in processor session
+        /// </summary>
+        /// <param name="dbId1">First database ID</param>
+        /// <param name="dbId2">Second database ID</param>
+        /// <returns>True if successful</returns>
+        internal bool TrySwapDatabaseSessions(int dbId1, int dbId2) =>
+            processor.TrySwapDatabaseSessions(dbId1, dbId2);
+
         static ReadOnlySpan<byte> HEX_CHARS => "0123456789abcdef"u8;
 
         public void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> into)

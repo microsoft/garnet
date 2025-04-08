@@ -53,7 +53,7 @@ namespace Garnet.server
                 // Create the session-specific instance and add it to the cache
                 customProc = entry.CustomProcedureFactory();
                 customProc.respServerSession = respServerSession;
-                sessionCustomProcMap.TrySetValue(id, ref customProc);
+                sessionCustomProcMap.TrySetValue(id, customProc);
             }
 
             return customProc;
@@ -92,7 +92,7 @@ namespace Garnet.server
 
             arity = entry.arity;
             tranToArity = new ValueTuple<CustomTransactionProcedure, int>(customTranProc, arity);
-            sessionTransactionProcMap.TrySetValue(id, ref tranToArity);
+            sessionTransactionProcMap.TrySetValueByRef(id, ref tranToArity);
 
             return customTranProc;
         }

@@ -84,7 +84,7 @@ namespace Garnet.server
             var extId = cmdId - CustomRawStringCommandMinId;
             var arity = commandInfo?.Arity ?? 0;
             var newCmd = new CustomRawStringCommand(name, (ushort)extId, type, arity, customFunctions, expirationTicks);
-            var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = rawStringCommandMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
             if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
@@ -111,7 +111,7 @@ namespace Garnet.server
 
             var arity = commandInfo?.Arity ?? 0;
             var newCmd = new CustomTransaction(name, (byte)cmdId, arity, proc);
-            var setSuccessful = transactionProcMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = transactionProcMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
             if (commandInfo != null)
                 customCommandsInfo.AddOrUpdate(name, commandInfo, (_, _) => commandInfo);
@@ -163,7 +163,7 @@ namespace Garnet.server
             var arity = commandInfo?.Arity ?? 0;
             var newSubCmd = new CustomObjectCommand(name, (byte)extId, (byte)scId, commandType, arity, wrapper.factory,
                 customObjectFunctions);
-            var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, ref newSubCmd);
+            var scSetSuccessful = wrapper.commandMap.TrySetValue(scId, newSubCmd);
             Debug.Assert(scSetSuccessful);
 
             if (commandInfo != null)
@@ -192,7 +192,7 @@ namespace Garnet.server
 
             var arity = commandInfo?.Arity ?? 0;
             var newCmd = new CustomProcedureWrapper(name, (byte)cmdId, arity, customProcedure, this);
-            var setSuccessful = customProcedureMap.TrySetValue(cmdId, ref newCmd);
+            var setSuccessful = customProcedureMap.TrySetValue(cmdId, newCmd);
             Debug.Assert(setSuccessful);
 
             if (commandInfo != null)
@@ -394,7 +394,7 @@ namespace Garnet.server
 
             var extId = typeId - CustomObjectTypeMinId;
             var newCmd = new CustomObjectCommandWrapper((byte)extId, factory);
-            var setSuccessful = objectCommandMap.TrySetValue(typeId, ref newCmd);
+            var setSuccessful = objectCommandMap.TrySetValue(typeId, newCmd);
             Debug.Assert(setSuccessful);
 
             return typeId;
