@@ -44,10 +44,6 @@ namespace Garnet.fuzz.Targets
                 {
                     // expected!
                 }
-                catch (Exception e) when (e is not FuzzerValidationException)
-                {
-                    IFuzzerTarget.RaiseErrorForInput(e, input);
-                }
             }
         }
     }

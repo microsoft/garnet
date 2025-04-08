@@ -92,6 +92,21 @@ public static class Program
 
             var del = (FuzzTargetDelegate)Delegate.CreateDelegate(typeof(FuzzTargetDelegate), null, mtd!);
 
+            FuzzTargetDelegate wrappedDel = (input) =>
+            {
+                try
+                {
+                    del(input);
+                }
+                catch (Exception e) when (e is not FuzzerValidationException)
+                {
+                    // Re-throw a wrapped error that captures input for ease of local debugging
+                    //
+                    // Centralized to DRY up IFuzzerTarget implementations
+                    IFuzzerTarget.RaiseErrorForInput(e, input);
+                }
+            };
+
             return del;
         }
 
