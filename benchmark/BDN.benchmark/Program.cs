@@ -32,10 +32,24 @@ public class BaseConfig : ManualConfig
 
         var baseJob = Job.Default.WithGcServer(true);
 
-        if (args.Length > 0)
+        // Bug in BDN: When run with 'dotnet run', all optional BDN parameters are counted as args to program.cs.
+        // It also overwrites the last BDN arg with the '--' arg sent to program.cs.
+        // Example:
+        // dotnet run -c Release -f net9.0 --project C:/GarnetGitHub/benchmark/BDN.benchmark --filter BDN.benchmark.Operations.BasicOperations.* --exporters json -- net9.0
+        // BDN fails with "net9.0 is invalid value for '--exporters'."
+        // Workaround: Use the last parameter to determine the BDN framework (net8.0 or net9.0).
+        // Then set the last arg to the second-to-last arg value (e.g., "json").
+        // This ensures BDN runs correctly by using the last arg as the value for the second-to-last arg.
+
+        if (args.Length > 0 && (args[args.Length - 1] == "net8.0" || args[args.Length - 1] == "net9.0"))
         {
-            var framework = args[0];  
-            switch (framework)
+            string BDNframework = args[args.Length - 1];
+            if (args.Length > 1)
+            {
+                args[args.Length - 1] = args[args.Length - 2];  // bug in BDN where arg to this app is sent to BDN as the last arg
+            }
+
+            switch (BDNframework)
             {
                 case "net8.0":
                     AddJob(baseJob.WithRuntime(CoreRuntime.Core80)
@@ -48,7 +62,7 @@ public class BaseConfig : ManualConfig
                         .WithId(".NET 9"));
                     break;
                 default:
-                    throw new NotSupportedException($"Unsupported runtime: {framework}");
+                    throw new NotSupportedException($"Unsupported framework: {BDNframework}");
             }
         }
         else
