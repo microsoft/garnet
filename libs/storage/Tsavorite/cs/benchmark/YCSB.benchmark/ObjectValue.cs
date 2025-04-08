@@ -23,7 +23,7 @@ namespace Tsavorite.benchmark
         {
             public override void Deserialize(out IHeapObject obj) => obj = new ObjectValue { value = reader.ReadInt32() };
 
-            public override void Serialize(ref IHeapObject obj) => writer.Write(((ObjectValue)obj).value);
+            public override void Serialize(IHeapObject obj) => writer.Write(((ObjectValue)obj).value);
         }
     }
 }

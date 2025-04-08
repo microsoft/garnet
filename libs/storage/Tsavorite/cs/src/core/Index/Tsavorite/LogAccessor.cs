@@ -312,60 +312,52 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions>(functions, default, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext>(long untilAddress, CompactionType compactionType)
+            => Compact<TInput, TOutput, TContext, DefaultCompactionFunctions>(default, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="input">Input for SingleWriter</param>
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions>(functions, default, ref input, ref output, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext>(ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
+            => Compact<TInput, TOutput, TContext, DefaultCompactionFunctions>(default, ref input, ref output, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions"/>)</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        public long Compact<TInput, TOutput, TContext, TCompactionFunctions>(TCompactionFunctions cf, long untilAddress, CompactionType compactionType)
             where TCompactionFunctions : ICompactionFunctions
         {
             TInput input = default;
             TOutput output = default;
-            return Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
+            return Compact<TInput, TOutput, TContext, TCompactionFunctions>(cf, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions"/>)</param>
         /// <param name="input">Input for SingleWriter</param>
         /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
+        public long Compact<TInput, TOutput, TContext, TCompactionFunctions>(TCompactionFunctions cf, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
             where TCompactionFunctions : ICompactionFunctions
-            => store.Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
+            => store.Compact<TInput, TOutput, TContext, TCompactionFunctions>(cf, ref input, ref output, untilAddress, compactionType);
     }
 }

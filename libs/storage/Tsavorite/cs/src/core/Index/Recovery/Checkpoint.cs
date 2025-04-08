@@ -100,12 +100,6 @@ namespace Tsavorite.core
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
         }
 
-        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
-            where CompactionFunctions : ICompactionFunctions
-        {
-            throw new NotImplementedException();
-        }
-
         // #endregion
     }
 }

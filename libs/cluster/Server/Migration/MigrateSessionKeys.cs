@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -56,8 +57,7 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    // Write key to network buffer. TODOMigrate: include expiration and ETag
-                    // TODOMigrate: Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have returned GarnetStatus.NOTFOUND");
+                    Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have returned GarnetStatus.NOTFOUND");
 
                     // Get SpanByte from stack if it was within size range, else from pinned heap memory
                     bool ok;
@@ -113,7 +113,7 @@ namespace Garnet.cluster
                         continue;
                     var key = mKey.Key;
 
-                    ObjectInput input = default;
+                    ObjectInput input = new(RespCommand.MIGRATE);
                     GarnetObjectStoreOutput value = default;
                     var status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref value);
                     if (status == GarnetStatus.NOTFOUND)
@@ -124,12 +124,11 @@ namespace Garnet.cluster
                     }
 
                     // Serialize the object.
-                    // TODOMigrate: Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have returned GarnetStatus.NOTFOUND");
-                    // If it had expired, we would have received GarnetStatus.NOTFOUND.
-                    var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
+                    Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have returned GarnetStatus.NOTFOUND");
+                    GarnetObjectSerializer.Serialize(value.GarnetObject, out var objectData);
 
-                    // TODOMigrate: if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
-                    // TODOMigrate:     return false;
+                    if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
+                        return false;
                 }
 
                 // Flush data in client buffer

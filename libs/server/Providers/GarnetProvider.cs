@@ -12,10 +12,9 @@ namespace Garnet.server
     using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     /// <summary>
-    /// Session provider for Garnet, based on
-    /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
+    /// Session provider for Garnet
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByteAndMemory, MainStoreFunctions, MainStoreAllocator>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<PinnedSpanByte, SpanByteAndMemory, MainStoreFunctions, MainStoreAllocator>
     {
         readonly StoreWrapper storeWrapper;
 

@@ -165,7 +165,7 @@ namespace Tsavorite.core
 
         #region Serialized Record Creation
         /// <summary>
-        /// Serialize for RUMD operations
+        /// Serialize for RUMD operations, called by PendingContext; these also have TInput, TOutput, and TContext, which are handled by PendingContext.
         /// </summary>
         /// <param name="key">Record key</param>
         /// <param name="valueSpan">Record value as a Span, if Upsert</param>
@@ -173,6 +173,18 @@ namespace Tsavorite.core
         /// <param name="bufferPool">Allocator for backing storage</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Serialize(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool)
+            => Serialize(key, valueSpan, valueObject, bufferPool, ref allocatedRecord);
+
+        /// <summary>
+        /// Serialize for RUMD operations, called by PendingContext; these also have TInput, TOutput, and TContext, which are handled by PendingContext.
+        /// </summary>
+        /// <remarks>This overload may be called either directly for a caller who owns the <paramref name="allocatedRecord"/>, or with this.allocatedRecord.</remarks>
+        /// <param name="key">Record key</param>
+        /// <param name="valueSpan">Record value as a Span, if Upsert</param>
+        /// <param name="valueObject">Record value as an object, if Upsert</param>
+        /// <param name="bufferPool">Allocator for backing storage</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Serialize(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
             // Value length prefix on the disk is a long, as it may be an object.
             long valueSize = (valueObject is not null && valueSpan.Length > 0)
@@ -185,7 +197,7 @@ namespace Tsavorite.core
                 + sizeof(int) + key.Length                                              // Key; length prefix is an int
                 + valueSize;
 
-            var ptr = SerializeCommonFields(key, recordSize, bufferPool);
+            var ptr = SerializeCommonFields(key, recordSize, bufferPool, ref allocatedRecord);
 
             // For RUMD ops we never serialize the object, just carry it through the pending IO sequence.
             if (valueSize > 0)
@@ -195,13 +207,24 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Serialize for Compact, Pending Operations, etc.
+        /// Serialize for Compact, Pending Operations, etc. There is no associated TInput, TOutput, TContext for these.
         /// </summary>
         /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
         /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+            => Serialize(in logRecord, bufferPool, valueSerializer, ref allocatedRecord);
+
+        /// <summary>
+        /// Serialize for Compact, Pending Operations, etc. There is no associated TInput, TOutput, TContext for these.
+        /// </summary>
+        /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
+        /// <param name="bufferPool">Allocator for backing storage</param>
+        /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
+        /// <remarks>This overload may be called either directly for a caller who owns the <paramref name="allocatedRecord"/>, or with this.allocatedRecord.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer, ref SectorAlignedMemory allocatedRecord)
         {
             // If we have an object and we don't serialize it, we don't need to allocate space for it.
             // Value length prefix on the disk is a long, as it may be an object.
@@ -215,7 +238,7 @@ namespace Tsavorite.core
                 + sizeof(int) + logRecord.Key.Length                                    // Key; length prefix is an int
                 + valueSize;
 
-            var ptr = SerializeCommonFields(in logRecord, recordSize, bufferPool);
+            var ptr = SerializeCommonFields(in logRecord, recordSize, bufferPool, ref allocatedRecord);
 
             if (!logRecord.ValueIsObject)
                 SerializeValue(ptr, logRecord.ValueSpan);
@@ -224,7 +247,7 @@ namespace Tsavorite.core
                 var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.Size);
                 valueSerializer.BeginSerialize(stream);
                 var valueObject = logRecord.ValueObject;
-                valueSerializer.Serialize(ref valueObject);
+                valueSerializer.Serialize(valueObject);
                 valueSerializer.EndSerialize();
             }
             else
@@ -258,7 +281,7 @@ namespace Tsavorite.core
             => diskLogRecord;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe byte* SerializeCommonFields(ReadOnlySpan<byte> key, long recordSize, SectorAlignedBufferPool bufferPool)
+        private unsafe byte* SerializeCommonFields(ReadOnlySpan<byte> key, long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
             bufferPool.EnsureSize(ref allocatedRecord, (int)recordSize);                // TODO: handle chunked operations on large objects
             physicalAddress = (long)allocatedRecord.GetValidPointer();
@@ -275,7 +298,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe byte* SerializeCommonFields(ref readonly LogRecord logRecord, long recordSize, SectorAlignedBufferPool bufferPool)
+        private unsafe byte* SerializeCommonFields(ref readonly LogRecord logRecord, long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
             bufferPool.EnsureSize(ref allocatedRecord, (int)recordSize);                // TODO: handle chunked operations on large objects
             physicalAddress = (long)allocatedRecord.GetValidPointer();
@@ -326,18 +349,36 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Deserialize the current value span to a <see cref="valueObject"/> valueObject.
+        /// </summary>
+        /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
+        /// <remarks>This overload converts from LogRecord to DiskLogRecord.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void DeserializeValueObject(IObjectSerializer<IHeapObject> valueSerializer)
+        {
+            if (valueObject is not null)
+                return;
+            var valueAddress = ValueAddress;
+            var stream = new UnmanagedMemoryStream((byte*)SpanField.GetInlineDataAddress(valueAddress), GetSerializedLength(valueAddress));
+            valueSerializer.BeginDeserialize(stream);
+            valueSerializer.Deserialize(out valueObject);
+            valueSerializer.EndDeserialize();
+        }
+
+        /// <summary>
         /// Clone from a temporary <see cref="DiskLogRecord"/> (having no <see cref="SectorAlignedMemory"/>) to a longer-lasting one.
         /// </summary>
         /// <param name="diskLogRecord"></param>
         /// <param name="bufferPool"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Clone(ref DiskLogRecord diskLogRecord, SectorAlignedBufferPool bufferPool)    // TODO: maybe not needed
+        internal void Clone(ref DiskLogRecord diskLogRecord, SectorAlignedBufferPool bufferPool)    // TODO: will be used by iterator at least
         {
             Debug.Assert(!diskLogRecord.IsSet, "DiskLogRecord is not set");
             Debug.Assert(diskLogRecord.allocatedRecord is null, "DiskLogRecord is not set");
 
             // If the source has a Value object we don't need to allocate space for the serialized value.
             // Larger-than-int serialized values should always be value objects and thus we should have a value object.
+            // This cloning thus lets us release the original diskLogRecord, keeping only the (hopefully much) smaller key (and optionals).
             var recordSize = diskLogRecord.ValueIsObject
                 ? diskLogRecord.SerializedRecordLength
                 : RecordInfo.GetLength()

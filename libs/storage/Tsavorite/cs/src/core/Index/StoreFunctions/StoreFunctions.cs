@@ -46,12 +46,15 @@ namespace Tsavorite.core
 
         #region Value Serializer
         /// <inheritdoc/>
+        public readonly IObjectSerializer<IHeapObject> CreateValueObjectSerializer() => valueSerializerCreator();
+
+        /// <inheritdoc/>
         public readonly bool HasValueSerializer => valueSerializerCreator is not null;
 
         /// <inheritdoc/>
         public readonly IObjectSerializer<IHeapObject> BeginSerializeValue(Stream stream)
         {
-            var valueSerializer = valueSerializerCreator();
+            var valueSerializer = CreateValueObjectSerializer();
             valueSerializer.BeginSerialize(stream);
             return valueSerializer;
         }
@@ -59,7 +62,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly IObjectSerializer<IHeapObject> BeginDeserializeValue(Stream stream)
         {
-            var valueSerializer = valueSerializerCreator();
+            var valueSerializer = CreateValueObjectSerializer();
             valueSerializer.BeginDeserialize(stream);
             return valueSerializer;
         }

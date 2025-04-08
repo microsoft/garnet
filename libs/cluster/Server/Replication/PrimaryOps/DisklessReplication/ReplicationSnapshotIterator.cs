@@ -95,7 +95,7 @@ namespace Garnet.cluster
         }
 
         public bool StringReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var key = srcLogRecord.Key;
             var value = srcLogRecord.ValueSpan;
@@ -123,7 +123,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader(isMainStore: true);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueSpanByte(ref key, ref value, out var task))
+                    if (!sessions[i].TryWriteKeyValueSpanByte(key, value, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -142,7 +142,7 @@ namespace Garnet.cluster
         }
 
         public bool ObjectReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            where TSourceLogRecord : ISourceLogRecord
         {
             var key = srcLogRecord.Key;
             var value = srcLogRecord.ValueObject;
@@ -153,7 +153,7 @@ namespace Garnet.cluster
             }
 
             var needToFlush = false;
-            var objectData = GarnetObjectSerializer.Serialize(value);
+            GarnetObjectSerializer.Serialize((IGarnetObject)value, out var objectData);
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -209,7 +209,7 @@ namespace Garnet.cluster
     }
 
     internal sealed unsafe class MainStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions<SpanByte>
+        IStreamingSnapshotIteratorFunctions
     {
         readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
         long targetVersion;
@@ -221,7 +221,7 @@ namespace Garnet.cluster
         }
 
         public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
-            where TSourceLogRecord : ISourceLogRecord<SpanByte>
+            where TSourceLogRecord : ISourceLogRecord
             => snapshotIteratorManager.StringReader(ref srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)
@@ -232,7 +232,7 @@ namespace Garnet.cluster
     }
 
     internal sealed unsafe class ObjectStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions<IGarnetObject>
+        IStreamingSnapshotIteratorFunctions
     {
         readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
         long targetVersion;
@@ -244,7 +244,7 @@ namespace Garnet.cluster
         }
 
         public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
-            where TSourceLogRecord : ISourceLogRecord<IGarnetObject>
+            where TSourceLogRecord : ISourceLogRecord
             => snapshotIteratorManager.ObjectReader(ref srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)

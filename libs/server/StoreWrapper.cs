@@ -558,7 +558,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        store.Log.Compact<SpanByte, Empty, Empty, SimpleRMWSpanByteFunctions>(new SimpleRMWSpanByteFunctions(), untilAddress, CompactionType.Scan);
+                        store.Log.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -567,7 +567,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Lookup:
-                        store.Log.Compact<SpanByte, Empty, Empty, SimpleRMWSpanByteFunctions>(new SimpleRMWSpanByteFunctions(), untilAddress, CompactionType.Lookup);
+                        store.Log.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -600,8 +600,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(
-                            new SimpleGarnetObjectSessionFunctions(), untilAddress, CompactionType.Scan);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty>(untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -610,8 +609,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(
-                            new SimpleGarnetObjectSessionFunctions(), untilAddress, CompactionType.Lookup);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty>(untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof();
@@ -931,7 +929,7 @@ namespace Garnet.server
             {
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleGarnetObjectSessionFunctions<SpanByte, Empty>>(new SimpleGarnetObjectSessionFunctions<SpanByte, Empty>());  // TODO replace with Push iterator
+                    using var iter = store.Iterate<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());  // TODO replace with Push iterator
                     while (!hasKeyInSlots && iter.GetNext())
                     {
                         var key = iter.Key;

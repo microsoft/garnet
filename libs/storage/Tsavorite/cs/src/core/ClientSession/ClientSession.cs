@@ -415,7 +415,7 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return store.Compact<TInput, TOutput, TContext, TFunctions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType);
+            return store.Compact<TInput, TOutput, TContext, CompactionFunctions>(compactionFunctions, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>
@@ -431,7 +431,7 @@ namespace Tsavorite.core
         public long Compact<CompactionFunctions>(ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions
         {
-            return store.Compact<TInput, TOutput, TContext, TFunctions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType);
+            return store.Compact<TInput, TOutput, TContext, CompactionFunctions>(compactionFunctions, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>

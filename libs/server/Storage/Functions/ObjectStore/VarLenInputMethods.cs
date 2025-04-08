@@ -65,7 +65,7 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IGarnetObject value, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref ObjectInput input)
         {
             return new RecordFieldInfo()
             {

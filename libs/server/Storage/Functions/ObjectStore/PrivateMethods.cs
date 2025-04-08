@@ -19,12 +19,29 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID)
         {
-            if (functionsState.StoredProcMode) return;
+            if (functionsState.StoredProcMode)
+                return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            var valueBytes = GarnetObjectSerializer.Serialize(value);
+            functionsState.appendOnlyFile.Enqueue(
+                new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
+                key, value, out _);
+        }
+
+        /// <summary>
+        /// Logging upsert from
+        /// a. ConcurrentWriter
+        /// b. PostSingleWriter
+        /// </summary>
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
+        {
+            if (functionsState.StoredProcMode)
+                return;
+            input.header.flags |= RespInputFlags.Deterministic;
+
+            GarnetObjectSerializer.Serialize(value, out var valueBytes);
             fixed (byte* valPtr = valueBytes)
             {
                 functionsState.appendOnlyFile.Enqueue(

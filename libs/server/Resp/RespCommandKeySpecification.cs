@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {

@@ -279,12 +279,29 @@ namespace Tsavorite.core
                 {
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
 
-                    // Mutable Region: If the record is not deleted or is in the revivifiable range, try to update the record in-place
-                    if (!srcLogRecord.Info.Tombstone || (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress()))
+                    // Mutable Region: If the record is deleted and is in the revivifiable range, try to update the record in-place
+                    if (srcLogRecord.Info.Tombstone)
                     {
-                        if (TryRevivifyInChain(ref inputLogRecord, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx, out status)
-                                || status != OperationStatus.SUCCESS)
-                            goto LatchRelease;
+                        if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
+                        {
+                            if (TryRevivifyInChain(ref inputLogRecord, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx, out status)
+                                    || status != OperationStatus.SUCCESS)
+                                goto LatchRelease;
+                        }
+                        goto CreateNewRecord;
+                    }
+
+                    // Not deleted, so try to update the record in-place.
+                    var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
+                    hlog.PopulateRecordSizeInfo(ref sizeInfo);
+
+                    if (srcLogRecord.TrySetValueLength(ref sizeInfo))
+                    {
+                        srcLogRecord.CopyFrom(ref inputLogRecord, copyKey: false);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        goto LatchRelease;
                     }
                     goto CreateNewRecord;
                 }

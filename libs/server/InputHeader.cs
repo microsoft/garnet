@@ -245,6 +245,17 @@ namespace Garnet.server
             this.parseState = parseState.Slice(startIdx);
         }
 
+        /// <summary>
+        /// Create a new instance of ObjectInput for the specified command
+        /// </summary>
+        /// <param name="cmd">The command to perform</param>
+        /// <param name="arg1">First general-purpose argument</param>
+        /// <param name="arg2">Second general-purpose argument</param>
+        public ObjectInput(RespCommand cmd, int arg1 = 0, int arg2 = 0)
+            : this(new RespInputHeader(cmd), arg1, arg2)
+        {
+        }
+
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + (2 * sizeof(int)) // arg1 + arg2

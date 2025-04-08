@@ -55,7 +55,7 @@ namespace Garnet.server
                 return true;
             }
 
-            Debug.Assert(type is not GarnetObjectType.Expire and not GarnetObjectType.PExpire and not GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+            Debug.Assert(type is not GarnetObjectType.Expire and not GarnetObjectType.PExpire and not GarnetObjectType.Persist, "Expire and Persist commands should have returned false from NeedInitialUpdate.");
 
             var customObjectCommand = GetCustomObjectCommand(ref input, type);
             value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);

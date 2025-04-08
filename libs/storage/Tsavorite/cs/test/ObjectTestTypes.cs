@@ -37,7 +37,7 @@ namespace Tsavorite.test
         {
             public override void Deserialize(out IHeapObject obj) => obj = new TestObjectValue { value = reader.ReadInt32() };
 
-            public override void Serialize(ref IHeapObject obj) => writer.Write(((TestObjectValue)obj).value);
+            public override void Serialize(IHeapObject obj) => writer.Write(((TestObjectValue)obj).value);
         }
     }
 
@@ -209,7 +209,7 @@ namespace Tsavorite.test
                 obj.value = reader.ReadBytes(size);
             }
 
-            public override void Serialize(ref TestLargeObjectValue obj)
+            public override void Serialize(TestLargeObjectValue obj)
             {
                 writer.Write(obj.value.Length);
                 writer.Write(obj.value);

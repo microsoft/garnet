@@ -426,6 +426,9 @@ namespace Garnet.server
             var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(ptr + sizeof(AofHeader) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToArray());
 
+            // input
+            // TODOMigrate: _ = objectStoreInput.DeserializeFrom(curr); // TODO - need to serialize this as well
+
             var output = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(outputPtr, outputLength) };
             basicContext.Upsert(key.ReadOnlySpan, valB);
             if (!output.SpanByteAndMemory.IsSpanByte)

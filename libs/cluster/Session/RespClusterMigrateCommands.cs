@@ -93,7 +93,7 @@ namespace Garnet.cluster
 
                     // Set if key replace flag is set or key does not exist
                     if (replaceOption || !Exists(key))
-                        _ = basicGarnetApi.SET(key, value);
+                        _ = basicGarnetApi.SET(key, value); // TODOMigrate: needs to be LogRecord-based
                     i++;
                 }
             }
@@ -120,13 +120,13 @@ namespace Garnet.cluster
                     }
 
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                    // TODOMigrate: value.Expiration = expiration;
+                    value.Expiration = expiration;
 
                     // Set if key replace flag is set or key does not exist
                     if (replaceOption || !CheckIfKeyExists(key))
                     { 
                         fixed(byte* keyPtr = key)
-                            _ = basicGarnetApi.SET(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), value);
+                            _ = basicGarnetApi.SET(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), value);    // TODOMigrate: needs to be LogRecord-based
                     }
                     i++;
                 }

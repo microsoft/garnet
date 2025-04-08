@@ -132,7 +132,7 @@ namespace Garnet.cluster
 
             if (clusterProvider.serverOptions.EnableAOF)
             {
-                clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
+                _ = clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
                 if (!clusterProvider.replicationManager.TryConnectToReplica(nodeId, nextAddress, aofSyncTaskInfo, out var errorMessage))
                 {
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
@@ -179,7 +179,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var sbRecord = parseState.GetArgSliceByRef(4).SpanByte;
+            var sbRecord = parseState.GetArgSliceByRef(4);
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             var localRole = currentConfig.LocalNodeRole;
@@ -219,7 +219,7 @@ namespace Garnet.cluster
 
             var replicaNodeId = parseState.GetString(0);
             var replicaAssignedPrimaryId = parseState.GetString(1);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(2).ToArray();
 
             if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
                 !parseState.TryGetLong(4, out var replicaAofTailAddress))
@@ -276,7 +276,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointMetadata = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+            var checkpointMetadata = parseState.GetArgSliceByRef(2).ToArray();
 
             var fileToken = new Guid(fileTokenBytes);
             var fileType = (CheckpointFileType)fileTypeInt;
@@ -353,7 +353,7 @@ namespace Garnet.cluster
             }
 
             var primaryReplicaId = parseState.GetString(3);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).ToArray();
 
             if (!parseState.TryGetLong(5, out var beginAddress) ||
                 !parseState.TryGetLong(6, out var tailAddress))
@@ -394,7 +394,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).ToArray();
             var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
 
             ReadOnlySpan<byte> errorMessage = default;
@@ -436,9 +436,9 @@ namespace Garnet.cluster
 
             var primaryNodeId = parseState.GetString(0);
             var storeTypeSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-            var payload = parseState.GetArgSliceByRef(2).SpanByte;
+            var payload = parseState.GetArgSliceByRef(2);
             var payloadPtr = payload.ToPointer();
-            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
 
             var keyValuePairCount = *(int*)payloadPtr;
@@ -449,14 +449,12 @@ namespace Garnet.cluster
                 TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
                 while (i < keyValuePairCount)
                 {
-#if TODOMigrate
-                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
                     payloadPtr += key.TotalSize;
-                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                    var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
                     payloadPtr += value.TotalSize;
 
-                    _ = basicGarnetApi.SET(ref key, ref value);
-#endif // TODOMigrate
+                    _ = basicGarnetApi.SET(key, value); // TODOMigrate: needs to be LogRecord-based
                     i++;
                 }
             }
@@ -469,9 +467,9 @@ namespace Garnet.cluster
                         return false;
 
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                    // TODOMigrate: value.Expiration = expiration;
+                    value.Expiration = expiration;
                     fixed (byte* keyPtr = key)
-                        _ = basicGarnetApi.SET(SpanByte.FromPinnedPointer(keyPtr, key.Length), value);
+                        _ = basicGarnetApi.SET(SpanByte.FromPinnedPointer(keyPtr, key.Length), value);  // TODOMigrate: needs to be LogRecord-based
                     i++;
                 }
             }

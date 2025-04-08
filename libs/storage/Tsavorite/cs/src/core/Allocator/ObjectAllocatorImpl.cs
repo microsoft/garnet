@@ -225,27 +225,10 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
         {
-            var inlineRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
-            if (inlineRecordSize > int.MaxValue)
-                throw new TsavoriteException("Total size out of range");
-
-            var ptr = SerializeCommonRecordFieldsToBuffer(logRecord, ref recordBuffer, inlineRecordSize);
-
-            if (logRecord.Info.ValueIsObject)
-            {
-                *(int*)ptr = 0;
-                ptr += ObjectIdMap.ObjectIdSize;
-                valueObject = logRecord.ValueObject;
-            }
-            else
-            {
-                var value = logRecord.ValueSpan;
-                *(int*)ptr = value.Length;
-                ptr += SpanField.FieldLengthPrefixSize;
-                value.CopyTo(new Span<byte>(ptr, value.Length));
-                ptr += value.Length;
-                valueObject = default;
-            }
+            // For iterator buffer we don't need to serialize the value (it should be deserialized already).
+            var diskLogRecord = new DiskLogRecord();
+            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer : default, ref recordBuffer);
+            valueObject = logRecord.Info.ValueIsObject ? logRecord.ValueObject : default;
         }
 
         /// <inheritdoc/>

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.networking;
+using Tsavorite.core;
 
 namespace Garnet.server
 {

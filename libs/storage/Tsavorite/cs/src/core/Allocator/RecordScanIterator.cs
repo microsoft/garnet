@@ -380,8 +380,17 @@ namespace Tsavorite.core
                 result.cts?.Cancel();
             }
 
+#if false   // TODO: Deserialize valueObject in frame (if present). Consider DiskLogRecord.Clone to a the local diskLogRecord immediately, so the large valueObject is freed as early as possible.
+            if (result.freeBuffer1 != null)
+            {
+                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, ref frame.GetPage(result.page % frame.frameSize));
+                result.freeBuffer1.Return();
+                result.freeBuffer1 = null;
+            }
+#endif
+
             if (errorCode == 0)
-                _ = (result.handle?.Signal());
+                _ = result.handle?.Signal();
 
             Interlocked.MemoryBarrier();
         }

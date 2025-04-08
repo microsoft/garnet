@@ -88,7 +88,7 @@ namespace Garnet.cluster
         /// <param name="value"></param>
         /// <param name="task"></param>
         /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
+        public bool TryWriteKeyValueSpanByte(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
             return AofSyncTask.garnetClient.TryWriteKeyValueSpanByte(key, value, out task);

@@ -19,11 +19,11 @@ using Tsavorite.core;
 
 namespace Garnet
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Implementation Garnet server
@@ -46,8 +46,8 @@ namespace Garnet
 
         private readonly GarnetServerOptions opts;
         private IGarnetServer server;
-        private TsavoriteKV<SpanByte, MainStoreFunctions, MainStoreAllocator> store;
-        private TsavoriteKV<IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
+        private TsavoriteKV<MainStoreFunctions, MainStoreAllocator> store;
+        private TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
         private TsavoriteAof appendOnlyFile;
         private SubscribeBroker subscribeBroker;
@@ -316,7 +316,7 @@ namespace Garnet
             }
 
             store = new(kvSettings
-                , StoreFunctions<SpanByte>.Create()
+                , StoreFunctions.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
@@ -342,7 +342,7 @@ namespace Garnet
                         removeOutdated: true);
 
                 objectStore = new(objKvSettings
-                    , StoreFunctions<IGarnetObject>.Create(new SpanByteComparer(),
+                    , StoreFunctions.Create(new SpanByteComparer(),
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 

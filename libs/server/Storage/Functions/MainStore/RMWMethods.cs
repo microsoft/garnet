@@ -49,7 +49,7 @@ namespace Garnet.server
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref outp);
+                            .NeedInitialUpdate(key, ref input, ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;

@@ -7,10 +7,9 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Abstract session provider for TsavoriteKV store based on
-    /// [K, V, I, O, F, P]
+    /// Abstract session provider for TsavoriteKV store
     /// </summary>
-    public abstract class TsavoriteKVProviderBase<TValue, TInput, TOutput, TStoreFunctions, TAllocator> : ISessionProvider
+    public abstract class TsavoriteKVProviderBase<TInput, TOutput, TStoreFunctions, TAllocator> : ISessionProvider
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {

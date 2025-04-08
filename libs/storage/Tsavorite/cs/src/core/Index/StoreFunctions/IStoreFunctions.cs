@@ -20,6 +20,9 @@ namespace Tsavorite.core
         #endregion Key Comparer
 
         #region Value Serializer
+        /// <summary>Creates an instance of the Value Serializer</summary>
+        IObjectSerializer<IHeapObject> CreateValueObjectSerializer();
+
         /// <summary>Indicates whether the Value Serializer is to be used</summary>
         bool HasValueSerializer { get; }
 
