@@ -101,7 +101,7 @@ namespace Garnet.fuzz.Targets
                 {
                     // Produce valid string data
 
-                    var data = input.Length <= lastStringLength ? input[..lastStringLength] : input;
+                    var data = lastStringLength <= input.Length  ? input[..lastStringLength] : input;
                     input = input[data.Length..];
 
                     buff.AddRange(data);
@@ -128,7 +128,7 @@ namespace Garnet.fuzz.Targets
                         case 0:
                             {
                                 var tooLittle = Math.Max(lastStringLength - 1, 0);
-                                var data = input.Length <= lastStringLength ? input[..tooLittle] : input;
+                                var data = lastStringLength <= input.Length ? input[..tooLittle] : input;
                                 input = input[data.Length..];
 
                                 buff.AddRange(data);
@@ -143,7 +143,7 @@ namespace Garnet.fuzz.Targets
                         case 1:
                             {
                                 var tooMuch = lastStringLength + 1;
-                                var data = input.Length <= lastStringLength ? input[..tooMuch] : input;
+                                var data = tooMuch <= input.Length ? input[..tooMuch] : input;
                                 input = input[data.Length..];
 
                                 buff.AddRange(data);
@@ -157,7 +157,7 @@ namespace Garnet.fuzz.Targets
                             break;
                         case 2:
                             {
-                                var data = input.Length <= lastStringLength ? input[..lastStringLength] : input;
+                                var data = lastStringLength <= input.Length ? input[..lastStringLength] : input;
                                 input = input[data.Length..];
 
                                 buff.AddRange(data);
@@ -171,7 +171,7 @@ namespace Garnet.fuzz.Targets
                             break;
                         case 3:
                             {
-                                var data = input.Length <= lastStringLength ? input[..lastStringLength] : input;
+                                var data = lastStringLength <= input.Length ? input[..lastStringLength] : input;
                                 input = input[data.Length..];
 
                                 buff.AddRange(data);
@@ -185,7 +185,7 @@ namespace Garnet.fuzz.Targets
                             break;
                         case 4:
                             {
-                                var data = input.Length < lastStringLength + 2 ? input[..lastStringLength] : input;
+                                var data = lastStringLength + 2 <= input.Length ? input[..lastStringLength] : input;
                                 input = input[data.Length..];
 
                                 buff.AddRange(data);
@@ -269,7 +269,7 @@ namespace Garnet.fuzz.Targets
                 {
                     var numStrings = (numParts / 2) + (numParts % 2);
 
-                    var controlByte = input.IsEmpty ? 0 : input[1];
+                    var controlByte = input.IsEmpty ? 0 : input[0];
                     input = input.IsEmpty ? input : input[1..];
 
                     if (controlByte < 128)

@@ -14,6 +14,9 @@ namespace Garnet.fuzz
         [Option('f', "input-file", HelpText = "Read fuzz input from given file", Group = "input")]
         public FileInfo? InputFile { get; set; }
 
+        [Option('d', "input-directory", HelpText = "Read fuzz inputs from files in given directory", Group = "input")]
+        public DirectoryInfo? InputDirectory { get; set; }
+
         [Option('i', "stdin", HelpText = "Read fuzz input from standard input", Group = "input")]
         public bool UseStandardIn { get; set; }
 

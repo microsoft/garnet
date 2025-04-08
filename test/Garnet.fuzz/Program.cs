@@ -54,11 +54,14 @@ public static class Program
     /// </summary>
     private static void RunFuzzExample(FuzzOptions opts)
     {
-        var input = GetInput(opts);
+        var inputs = GetInput(opts);
 
         var target = GetTarget(opts);
 
-        target(input);
+        foreach (var input in inputs)
+        {
+            target(input);
+        }
 
         // Obtain a callback to run a fuzz target.
         static FuzzTargetDelegate GetTarget(FuzzOptions opts)
@@ -107,40 +110,54 @@ public static class Program
                 }
             };
 
-            return del;
+            return wrappedDel;
         }
 
         // Load the given input into an array.
-        static byte[] GetInput(FuzzOptions opts)
+        static IEnumerable<byte[]> GetInput(FuzzOptions opts)
         {
-            byte[] content;
-            Stream? stream = null;
+            if (opts.UseStandardIn)
+            {
+                if (!opts.Quiet)
+                {
+                    Console.WriteLine("Reading from standard in (end input with ^Z):");
+                }
+                yield return ReadSingleInput(Console.OpenStandardInput(), endOnCtrlZ: true, opts);
+            }
+            else if (opts.InputFile is not null)
+            {
+                if (!opts.Quiet)
+                {
+                    Console.WriteLine($"Reading file: {opts.InputFile.FullName}");
+                }
+                yield return ReadSingleInput(opts.InputFile.OpenRead(), endOnCtrlZ: false, opts);
+            }
+            else if (opts.InputDirectory is not null)
+            {
+                var files = opts.InputDirectory.GetFiles();
+                var count = files.Length;
+                var n = 1;
 
-            try
+                foreach (var file in files)
+                {
+                    if (!opts.Quiet)
+                    {
+                        Console.WriteLine($"Reading file ({n:N0}/{count:N0}): {file.FullName}");
+                    }
+
+                    yield return ReadSingleInput(file.OpenRead(), endOnCtrlZ: false, opts);
+                    n++;
+                }
+            }
+            else
+            {
+                throw new InvalidOperationException("Unexpected input option configuration");
+            }
+
+            // Read input off of the given stream
+            static byte[] ReadSingleInput(Stream stream, bool endOnCtrlZ, FuzzOptions opts)
             {
                 var buff = new List<byte>(4 * 1_024);
-
-                var endOnCtrlZ = false;
-
-                if (opts.UseStandardIn)
-                {
-                    if (!opts.Quiet)
-                    {
-                        Console.WriteLine("Reading from standard in (end input with ctrl-Z):");
-                    }
-
-                    stream = Console.OpenStandardInput();
-                    endOnCtrlZ = true;
-                }
-                else
-                {
-                    if (!opts.Quiet)
-                    {
-                        Console.WriteLine($"Reading from '{opts.InputFile!.FullName}'");
-                    }
-
-                    stream = opts.InputFile!.OpenRead();
-                }
 
                 var into = new byte[1_024];
 
@@ -161,19 +178,15 @@ public static class Program
                     buff.AddRange(readSpan);
                 }
 
-                content = [.. buff];
+                byte[] content = [.. buff];
 
                 if (!opts.Quiet)
                 {
                     Console.WriteLine($"{content.Length:N0} bytes read");
                 }
-            }
-            finally
-            {
-                stream?.Dispose();
-            }
 
-            return content;
+                return content;
+            }
         }
     }
 }
