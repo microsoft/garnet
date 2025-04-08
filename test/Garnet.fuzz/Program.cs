@@ -58,9 +58,20 @@ public static class Program
 
         var target = GetTarget(opts);
 
+        var repeatCount = opts.RepeatCount is null || opts.RepeatCount <= 0 ? 1 : opts.RepeatCount.Value;
+
         foreach (var input in inputs)
         {
-            target(input);
+            var inputCopy = input;
+            for (var i = 0; i < repeatCount; i++)
+            {
+                target(inputCopy);
+                if (i != repeatCount - 1)
+                {
+                    // Force a new copy to wiggle things around in memory a bit
+                    inputCopy = [.. input];
+                }
+            }
         }
 
         // Obtain a callback to run a fuzz target.

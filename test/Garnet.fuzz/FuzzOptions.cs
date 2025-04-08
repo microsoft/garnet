@@ -20,6 +20,9 @@ namespace Garnet.fuzz
         [Option('i', "stdin", HelpText = "Read fuzz input from standard input", Group = "input")]
         public bool UseStandardIn { get; set; }
 
+        [Option('c', "run-count", HelpText = "Number of times to run fuzzer for input (default=1)")]
+        public int? RepeatCount { get; set; }
+
         [Option('q', "quiet", HelpText = "Suppress output")]
         public bool Quiet { get; set; }
     }

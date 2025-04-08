@@ -10,6 +10,7 @@ using System.Text;
 using Embedded.server;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
+
 using Tsavorite.core;
 
 namespace Garnet.fuzz.Targets
@@ -19,76 +20,102 @@ namespace Garnet.fuzz.Targets
     /// </summary>
     public sealed class GarnetEndToEnd : IFuzzerTarget
     {
+        private static DirectoryInfo? LogDir;
+        private static DirectoryInfo? CheckpointDir;
+
         /// <inheritdoc/>
         public static void Fuzz(ReadOnlySpan<byte> input)
         {
-            using var server = CreateServer();
-
-            // Do a bit of stretching so input looks more like a RESP command
-            //
-            // We explore up to N parts,
-            //   0 - *<num>\r\n (array header)
-            //   1 - $<len>\r\n (string header)
-            //   2 - <data>\r\n (string data)
-            //   3 - $<len>\r\n (second string header)
-            //   4 - <data>\r\n> (second string data)
-            //   5 - $<len>\r\n (third string header)
-            //   6 - <data>\r\n> (third string data)
-            //
-            // Though in each case we sometimes produce invalid commands
-            //
-            // As an escape to let the fuzzer do it's thing, we also just straight copy input
-            // for a final special case.
-
-            var buff = new List<byte>();
-
-            if (input.Length >= 2 && input[0] == byte.MaxValue)
+            try
             {
-                // Pass fuzzer input through unmodified
-                buff.AddRange(input[1..]);
-            }
-            else
-            {
-                // Do nudging in the direction of RESP to help the fuzzer explore more of the Garnet code
+                using var server = CreateServer();
 
-                var numParts = input.IsEmpty ? 0 : input[0] % 7;
+                // Do a bit of stretching so input looks more like a RESP command
+                //
+                // We explore up to N parts,
+                //   0 - *<num>\r\n (array header)
+                //   1 - $<len>\r\n (string header)
+                //   2 - <data>\r\n (string data)
+                //   3 - $<len>\r\n (second string header)
+                //   4 - <data>\r\n> (second string data)
+                //   5 - $<len>\r\n (third string header)
+                //   6 - <data>\r\n> (third string data)
+                //
+                // Though in each case we sometimes produce invalid commands
+                //
+                // As an escape to let the fuzzer do it's thing, we also just straight copy input
+                // for a final special case.
 
-                var remainingInput = input.IsEmpty ? input : input[1..];
+                var buff = new List<byte>();
 
-                var lastStringLength = -1;
-
-                for (var i = 0; i <= numParts; i++)
+                if (input.Length >= 2 && input[0] == byte.MaxValue)
                 {
-                    switch (i)
+                    // Pass fuzzer input through unmodified
+                    buff.AddRange(input[1..]);
+                }
+                else
+                {
+                    // Do nudging in the direction of RESP to help the fuzzer explore more of the Garnet code
+
+                    var numParts = input.IsEmpty ? 0 : input[0] % 7;
+
+                    var remainingInput = input.IsEmpty ? input : input[1..];
+
+                    var lastStringLength = -1;
+
+                    for (var i = 0; i <= numParts; i++)
                     {
-                        case 0:
-                            AddArrayHeader(buff, numParts, ref input);
-                            break;
-                        case 1:
-                        case 3:
-                        case 5:
-                            AddStringHeader(buff, ref input, out lastStringLength);
-                            break;
-                        case 2:
-                        case 4:
-                        case 6:
-                            AddStringData(buff, lastStringLength, ref input);
-                            break;
-                        default:
-                            throw new InvalidOperationException($"Unexpected part number {i}");
+                        switch (i)
+                        {
+                            case 0:
+                                AddArrayHeader(buff, numParts, ref input);
+                                break;
+                            case 1:
+                            case 3:
+                            case 5:
+                                AddStringHeader(buff, ref input, out lastStringLength);
+                                break;
+                            case 2:
+                            case 4:
+                            case 6:
+                                AddStringData(buff, lastStringLength, ref input);
+                                break;
+                            default:
+                                throw new InvalidOperationException($"Unexpected part number {i}");
+                        }
+                    }
+                }
+
+                var commandBuffer = buff.ToArray();
+
+                using var session = server.GetRespSession();
+
+                unsafe
+                {
+                    fixed (byte* ptr = commandBuffer)
+                    {
+                        _ = session.TryConsumeMessages(ptr, commandBuffer.Length);
                     }
                 }
             }
-
-            var commandBuffer = buff.ToArray();
-
-            using var session = server.GetRespSession();
-
-            unsafe
+            finally
             {
-                fixed (byte* ptr = commandBuffer)
+                try
                 {
-                    _ = session.TryConsumeMessages(ptr, commandBuffer.Length);
+                    LogDir?.Delete();
+                }
+                catch
+                {
+                    // Best effort
+                }
+
+                try
+                {
+                    CheckpointDir?.Delete();
+                }
+                catch
+                {
+                    // Best effort
                 }
             }
 
@@ -101,7 +128,7 @@ namespace Garnet.fuzz.Targets
                 {
                     // Produce valid string data
 
-                    var data = lastStringLength <= input.Length  ? input[..lastStringLength] : input;
+                    var data = lastStringLength <= input.Length ? input[..lastStringLength] : input;
                     input = input[data.Length..];
 
                     buff.AddRange(data);
@@ -327,13 +354,8 @@ namespace Garnet.fuzz.Targets
         /// </summary>
         private static EmbeddedRespServer CreateServer()
         {
-            var checkPointDir = Path.GetTempFileName();
-            File.Delete(checkPointDir);
-            Directory.CreateDirectory(checkPointDir + "-checkpoint");
-
-            var logDir = Path.GetTempFileName();
-            File.Delete(logDir);
-            Directory.CreateDirectory(logDir + "-log");
+            CheckpointDir = MakeTempDir("checkpoint-");
+            LogDir = MakeTempDir("log-");
 
             GarnetServerOptions opts = new()
             {
@@ -341,8 +363,8 @@ namespace Garnet.fuzz.Targets
                 SegmentSize = "1g",
                 ObjectStoreSegmentSize = "1g",
                 EnableStorageTier = true,
-                LogDir = logDir,
-                CheckpointDir = checkPointDir,
+                LogDir = LogDir.FullName,
+                CheckpointDir = CheckpointDir.FullName,
                 EndPoints = [new IPEndPoint(IPAddress.Loopback, 1234)],
                 DisablePubSub = false,
                 DisableObjects = false,
@@ -382,6 +404,22 @@ namespace Garnet.fuzz.Targets
             server.Start();
 
             return server;
+
+            static DirectoryInfo MakeTempDir(string prefix)
+            {
+                while (true)
+                {
+                    try
+                    {
+                        var tempFile = Path.Combine(Path.GetTempPath(), $"{prefix}{Guid.NewGuid()}");
+                        return Directory.CreateDirectory(tempFile);
+                    }
+                    catch
+                    {
+                        // What?
+                    }
+                }
+            }
         }
     }
 }
