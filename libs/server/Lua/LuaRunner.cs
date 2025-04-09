@@ -1412,8 +1412,8 @@ namespace Garnet.server
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
             // Get sandbox_env and "KEYS" on the stack
-            var sandboxEnvIndex = state.StackTop;
             _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+            var sandboxEnvIndex = state.StackTop;
             state.PushConstantString(constStrs.KEYS);
 
             // Make new KEYS
@@ -1442,8 +1442,8 @@ namespace Garnet.server
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
             // Get sandbox_env and "KEYS" on the stack
-            var sandboxEnvIndex = state.StackTop;
             _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+            var sandboxEnvIndex = state.StackTop;
             state.PushConstantString(constStrs.ARGV);
 
             // Make new ARGV
