@@ -322,8 +322,6 @@ namespace Garnet.server
             // Cancel the async processor, if any
             asyncWaiterCancel?.Cancel();
             asyncWaiter?.Signal();
-
-            storageSession.Dispose();
         }
 
         public int StoreSessionID => storageSession.SessionID;
