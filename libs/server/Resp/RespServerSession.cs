@@ -274,10 +274,20 @@ namespace Garnet.server
         /// </summary>
         internal RespServerSession() : base(null)
         {
-            customCommandManagerSession = new(new());
-            storeWrapper = new("", "", [], null, null, null, null, null, new(), null);
+            var cmdManager = new CustomCommandManager();
+            customCommandManagerSession = new(cmdManager);
+            storeWrapper = new(
+                "",
+                "",
+                [],
+                cmdManager,
+                new(),
+                null,
+                createDatabaseDelegate: delegate { return null; }
+            );
         }
 
+        /// <summary>
         /// Get all active database sessions
         /// </summary>
         /// <returns>Array of active database sessions</returns>
