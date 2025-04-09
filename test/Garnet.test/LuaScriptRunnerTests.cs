@@ -738,6 +738,17 @@ namespace Garnet.test
         }
 
         [Test]
+        public void Issue1165()
+        {
+            // See: https://github.com/microsoft/garnet/issues/1165
+
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "10m", Timeout.InfiniteTimeSpan, LuaLoggingMode.Enable, []), "return 1");
+
+            runner.CompileForRunner();
+            _ = runner.RunForRunner([.. Enumerable.Repeat("key", 9)], [.. Enumerable.Repeat("argv", 9)]);
+        }
+
+        [Test]
         public void NeedsDisposeCheck()
         {
             foreach (var mode in Enum.GetValues<LuaMemoryManagementMode>())
