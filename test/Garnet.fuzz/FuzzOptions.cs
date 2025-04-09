@@ -8,7 +8,7 @@ namespace Garnet.fuzz
 {
     internal sealed class FuzzOptions
     {
-        [Option('t', "fuzz-target",  HelpText = "Class name to run fuzz input against.", Required = true)]
+        [Option('t', "fuzz-target", HelpText = "Class name to run fuzz input against.", Required = true)]
         public required FuzzTargets FuzzTarget { get; set; }
 
         [Option('f', "input-file", HelpText = "Read fuzz input from given file.", Group = "input")]
