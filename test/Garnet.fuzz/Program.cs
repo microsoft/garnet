@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
 using CommandLine;
@@ -26,11 +27,12 @@ public static class Program
     {
         var parser = new Parser(settings =>
         {
-            settings.AutoHelp = false;
+            settings.AutoHelp = true;
             settings.CaseInsensitiveEnumValues = true;
             settings.GetoptMode = true;
+            settings.IgnoreUnknownArguments = false;
+            settings.CaseInsensitiveEnumValues = true;
         });
-
 
         var res = parser.ParseArguments<FuzzOptions>(args);
 
@@ -40,13 +42,44 @@ public static class Program
         }
         else
         {
-            var helpText = HelpText.AutoBuild(res);
-            helpText.Heading = "Garnet.fuzz";
-            helpText.Copyright = "Copyright (c) Microsoft Corporation";
+            var helpText =
+                HelpText.AutoBuild(
+                    res,
+                    err =>
+                    {
+                        err.Heading = "Garnet.fuzz";
+                        err.Copyright = "Copyright (c) Microsoft Corporation";
+                        err.AddEnumValuesToHelpText = true;
+                        return err;
+                    }
+                );
 
             Console.Write(helpText);
             Environment.Exit(ErrOptionsParse);
         }
+    }
+
+    /// <summary>
+    /// Log, if options allow it, a line to standard out.
+    /// </summary>
+    private static void WriteLine(FuzzOptions opts, string line)
+    {
+        if (opts.Quiet)
+        {
+            return;
+        }
+
+        Console.WriteLine(line);
+    }
+
+    /// <summary>
+    /// Log a message to standard error and exit the process.
+    /// </summary>
+    [DoesNotReturn]
+    private static void FailAndExit(string message, int exitCode)
+    {
+        Console.Error.WriteLine(message);
+        Environment.Exit(exitCode);
     }
 
     /// <summary>
@@ -58,7 +91,7 @@ public static class Program
 
         var target = GetTarget(opts);
 
-        var repeatCount = opts.RepeatCount is null || opts.RepeatCount <= 0 ? 1 : opts.RepeatCount.Value;
+        var repeatCount = opts.RepeatCount is null or <= 0 ? 1 : opts.RepeatCount.Value;
 
         foreach (var input in inputs)
         {
@@ -82,31 +115,23 @@ public static class Program
 
             if (type is null)
             {
-                Console.Error.WriteLine($"Could not load type: {typeName}");
-                Environment.Exit(ErrTypeNotFound);
+                FailAndExit($"Could not load type: {typeName}", ErrTypeNotFound);
             }
 
-            if (!opts.Quiet)
-            {
-                Console.WriteLine($"Fuzz target class: {type.FullName}");
-            }
+            WriteLine(opts, $"Fuzz target class: {type.FullName}");
 
             var mtd = type.GetMethod(nameof(IFuzzerTarget.Fuzz), BindingFlags.Public | BindingFlags.Static);
 
             if (mtd is null)
             {
-                Console.Error.WriteLine($"Could not load method: {nameof(IFuzzerTarget.Fuzz)}");
-                Environment.Exit(ErrMethodNotFound);
+                FailAndExit($"Could not load method: {nameof(IFuzzerTarget.Fuzz)}", ErrMethodNotFound);
             }
 
-            if (!opts.Quiet)
-            {
-                Console.WriteLine($"Fuzz target method: {mtd.Name}");
-            }
+            WriteLine(opts, $"Fuzz target method: {mtd.Name}");
 
             var del = (FuzzTargetDelegate)Delegate.CreateDelegate(typeof(FuzzTargetDelegate), null, mtd!);
 
-            FuzzTargetDelegate wrappedDel = (input) =>
+            void WrappedDel(ReadOnlySpan<byte> input)
             {
                 try
                 {
@@ -119,9 +144,9 @@ public static class Program
                     // Centralized to DRY up IFuzzerTarget implementations
                     IFuzzerTarget.RaiseErrorForInput(e, input);
                 }
-            };
+            }
 
-            return wrappedDel;
+            return WrappedDel;
         }
 
         // Load the given input into an array.
@@ -129,18 +154,12 @@ public static class Program
         {
             if (opts.UseStandardIn)
             {
-                if (!opts.Quiet)
-                {
-                    Console.WriteLine("Reading from standard in (end input with ^Z):");
-                }
+                WriteLine(opts, "Reading from standard in (end input with ^Z):");
                 yield return ReadSingleInput(Console.OpenStandardInput(), endOnCtrlZ: true, opts);
             }
             else if (opts.InputFile is not null)
             {
-                if (!opts.Quiet)
-                {
-                    Console.WriteLine($"Reading file: {opts.InputFile.FullName}");
-                }
+                WriteLine(opts, $"Reading file: {opts.InputFile.FullName}");
                 yield return ReadSingleInput(opts.InputFile.OpenRead(), endOnCtrlZ: false, opts);
             }
             else if (opts.InputDirectory is not null)
@@ -151,10 +170,7 @@ public static class Program
 
                 foreach (var file in files)
                 {
-                    if (!opts.Quiet)
-                    {
-                        Console.WriteLine($"Reading file ({n:N0}/{count:N0}): {file.FullName}");
-                    }
+                    WriteLine(opts, $"Reading file ({n:N0}/{count:N0}): {file.FullName}");
 
                     yield return ReadSingleInput(file.OpenRead(), endOnCtrlZ: false, opts);
                     n++;
@@ -168,35 +184,35 @@ public static class Program
             // Read input off of the given stream
             static byte[] ReadSingleInput(Stream stream, bool endOnCtrlZ, FuzzOptions opts)
             {
-                var buff = new List<byte>(4 * 1_024);
-
-                var into = new byte[1_024];
-
-                int read;
-                while ((read = stream.Read(into)) != 0)
+                using (stream)
                 {
-                    var readSpan = into.AsSpan()[..read];
+                    var buff = new List<byte>(4 * 1_024);
 
-                    // TODO: this is fairly Windows specific, how does Linux behave?
-                    if (endOnCtrlZ && readSpan.Length >= 3 && readSpan[^3] == '\u001A')
+                    var into = new byte[1_024];
+
+                    int read;
+                    while ((read = stream.Read(into)) != 0)
                     {
-                        // Trim the ^z\r\n
-                        buff.AddRange(readSpan[..^3]);
+                        var readSpan = into.AsSpan()[..read];
 
-                        break;
+                        // TODO: this is fairly Windows specific, how does Linux behave?
+                        if (endOnCtrlZ && readSpan.Length >= 3 && readSpan[^3] == '\u001A')
+                        {
+                            // Trim the ^z\r\n
+                            buff.AddRange(readSpan[..^3]);
+
+                            break;
+                        }
+
+                        buff.AddRange(readSpan);
                     }
 
-                    buff.AddRange(readSpan);
+                    byte[] content = [.. buff];
+
+                    WriteLine(opts, $"{content.Length:N0} bytes read");
+
+                    return content;
                 }
-
-                byte[] content = [.. buff];
-
-                if (!opts.Quiet)
-                {
-                    Console.WriteLine($"{content.Length:N0} bytes read");
-                }
-
-                return content;
             }
         }
     }
