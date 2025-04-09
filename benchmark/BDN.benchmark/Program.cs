@@ -35,7 +35,7 @@ public class BaseConfig : ManualConfig
         // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net9.0 or both (if env var is not set)
         string bdnRunParam = Environment.GetEnvironmentVariable("BDNRUNPARAM");
 
-        if (args.Length > 0 && (bdnRunParam == "net8.0" || bdnRunParam == "net9.0"))        
+        if (args.Length > 0 && (bdnRunParam == "net8.0" || bdnRunParam == "net9.0"))
         {
             switch (bdnRunParam)
             {
