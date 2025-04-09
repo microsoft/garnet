@@ -14,7 +14,7 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
@@ -74,9 +74,5 @@ namespace Garnet.server
             output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }
-
-        /// <inheritdoc />
-        public bool ConcurrentReader(ref LogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
-            => SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo);
     }
 }

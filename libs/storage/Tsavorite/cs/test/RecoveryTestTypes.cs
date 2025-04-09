@@ -47,13 +47,7 @@ namespace Tsavorite.test.recovery.sumstore
     public class Functions : SessionFunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
-        {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool Reader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;

@@ -90,14 +90,11 @@ namespace Tsavorite.test
         }
 
         // Read functions
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
             output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             return true;
         }
-
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
-            => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
 
         // RMW functions
         public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
@@ -170,14 +167,11 @@ namespace Tsavorite.test
         }
 
         // Read functions
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
             output.value = srcLogRecord.ValueSpan.AsRef<ValueStruct>();
             return true;
         }
-
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct dst, ref ReadInfo readInfo)
-            => SingleReader(ref logRecord, ref input, ref dst, ref readInfo);
 
         // RMW functions
         public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ref OutputStruct output, ref RMWInfo rmwInfo)
@@ -221,10 +215,10 @@ namespace Tsavorite.test
 
     public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
     {
-        private int concurrentWriterCallCount;
+        private int inPlaceWriterCallCount;
         private int inPlaceUpdaterCallCount;
 
-        public int ConcurrentWriterCallCount => concurrentWriterCallCount;
+        public int InPlaceWriterCallCount => inPlaceWriterCallCount;
         public int InPlaceUpdaterCallCount => inPlaceUpdaterCallCount;
 
         public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
@@ -242,25 +236,22 @@ namespace Tsavorite.test
         }
 
         // Read functions
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
         {
             output.value = logRecord.ValueSpan.AsRef<ValueStruct>();
             return true;
         }
 
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
-            => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
-
         // Upsert functions
-        public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.ValueSpan.AsRef<ValueStruct>() = srcValue.AsRef<ValueStruct>();
             return true;
         }
 
-        public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
-            _ = Interlocked.Increment(ref concurrentWriterCallCount);
+            _ = Interlocked.Increment(ref inPlaceWriterCallCount);
             return false;
         }
 
@@ -315,30 +306,23 @@ namespace Tsavorite.test
         public SimpleLongSimpleFunctions(Func<long, long, long> merger) => this.merger = merger;
 
         /// <inheritdoc/>
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref long input, ref long output, ref ReadInfo readInfo)
-        {
-            output = logRecord.ValueSpan.AsRef<long>();
-            return true;
-        }
-
-        /// <inheritdoc/>
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref long input, ref long output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref long input, ref long output, ref ReadInfo readInfo)
         {
             output = srcLogRecord.ValueSpan.AsRef<long>();
             return true;
         }
 
-        public override bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
-            var result = base.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            var result = base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
             if (result)
                 output = srcValue.AsRef<long>();
             return result;
         }
 
-        public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
         {
-            var result = base.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+            var result = base.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             if (result)
                 output = srcValue.AsRef<long>();
             return result;

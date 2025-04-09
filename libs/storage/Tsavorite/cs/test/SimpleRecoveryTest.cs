@@ -432,15 +432,7 @@ namespace Tsavorite.test.recovery.sumstore
         }
 
         // Read functions
-        public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
-        {
-            if (expectedVersion >= 0)
-                ClassicAssert.AreEqual(expectedVersion, readInfo.Version);
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool Reader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             if (expectedVersion >= 0)
                 ClassicAssert.AreEqual(expectedVersion, readInfo.Version);

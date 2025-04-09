@@ -25,8 +25,8 @@ namespace Tsavorite.test.Cancellation
             NeedCopyUpdate,
             CopyUpdater,
             InPlaceUpdater,
-            SingleWriter,
-            ConcurrentWriter
+            InitialWriter,
+            InPlaceWriter
         }
 
         public class CancellationFunctions : SessionFunctionsBase<int, int, Empty>
@@ -94,10 +94,10 @@ namespace Tsavorite.test.Cancellation
             }
 
             // Upsert functions
-            public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
-                lastFunc = CancelLocation.SingleWriter;
-                if (cancelLocation == CancelLocation.SingleWriter)
+                lastFunc = CancelLocation.InitialWriter;
+                if (cancelLocation == CancelLocation.InitialWriter)
                 {
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
@@ -105,10 +105,10 @@ namespace Tsavorite.test.Cancellation
                 return logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
             }
 
-            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
             {
-                lastFunc = CancelLocation.ConcurrentWriter;
-                if (cancelLocation == CancelLocation.ConcurrentWriter)
+                lastFunc = CancelLocation.InPlaceWriter;
+                if (cancelLocation == CancelLocation.InPlaceWriter)
                 {
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
@@ -257,7 +257,7 @@ namespace Tsavorite.test.Cancellation
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void SingleWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
+        public void InitialWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -265,16 +265,16 @@ namespace Tsavorite.test.Cancellation
             var key = SpanByte.FromPinnedVariable(ref keyNum);
             var value = SpanByte.FromPinnedVariable(ref valueNum);
 
-            functions.cancelLocation = CancelLocation.SingleWriter;
+            functions.cancelLocation = CancelLocation.InitialWriter;
             var status = bContext.Upsert(key, value);
             ClassicAssert.IsTrue(status.IsCanceled);
-            ClassicAssert.AreEqual(CancelLocation.SingleWriter, functions.lastFunc);
+            ClassicAssert.AreEqual(CancelLocation.InitialWriter, functions.lastFunc);
         }
 
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke"), Category("RMW")]
-        public void ConcurrentWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
+        public void InPlaceWriterTest([Values(Phase.REST, Phase.PREPARE)] Phase phase)
         {
             Populate();
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -282,10 +282,10 @@ namespace Tsavorite.test.Cancellation
             var key = SpanByte.FromPinnedVariable(ref keyNum);
             var value = SpanByte.FromPinnedVariable(ref valueNum);
 
-            functions.cancelLocation = CancelLocation.ConcurrentWriter;
+            functions.cancelLocation = CancelLocation.InPlaceWriter;
             var status = bContext.Upsert(key, value);
             ClassicAssert.IsTrue(status.IsCanceled);
-            ClassicAssert.AreEqual(CancelLocation.ConcurrentWriter, functions.lastFunc);
+            ClassicAssert.AreEqual(CancelLocation.InPlaceWriter, functions.lastFunc);
         }
     }
 }

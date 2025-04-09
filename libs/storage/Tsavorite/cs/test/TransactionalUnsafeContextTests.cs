@@ -45,12 +45,12 @@ namespace Tsavorite.test.TransactionalUnsafeContext
     {
         internal long recordAddress;
 
-        public override void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public override void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             recordAddress = deleteInfo.Address;
         }
 
-        public override bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public override bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             recordAddress = deleteInfo.Address;
             return true;

@@ -71,11 +71,8 @@ namespace Tsavorite.core
                     if (iter.Info.IsClosed)    // Iterator checks this but it may have changed since
                         continue;
 
-                    // Pull Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
-                    // may need to know the object is in that region.
-                    stop = iter.CurrentAddress >= headAddress
-                        ? !scanFunctions.ConcurrentReader(ref iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _)
-                        : !scanFunctions.SingleReader(ref iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
+                    // Pull Iter records are in temp storage so do not need locks.
+                    stop = !scanFunctions.Reader(ref iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -109,12 +106,8 @@ namespace Tsavorite.core
                     // Iter records above readOnlyAddress will be in mutable log memory so the chain must be locked.
                     // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
                     if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
-                    {
                         store.LockForScan(ref stackCtx, key);
-                        stop = !scanFunctions.ConcurrentReader(ref logRecord, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
-                    }
-                    else
-                        stop = !scanFunctions.SingleReader(ref logRecord, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
+                    stop = !scanFunctions.Reader(ref logRecord, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -173,7 +166,7 @@ namespace Tsavorite.core
 
             var logRecord = new DiskLogRecord((long)completionEvent.request.record.GetValidPointer());
             logRecord.InfoRef.ClearBitsForDiskImages();
-            stop = !scanFunctions.SingleReader(ref logRecord, new RecordMetadata(completionEvent.request.logicalAddress), numRecords, out _);
+            stop = !scanFunctions.Reader(ref logRecord, new RecordMetadata(completionEvent.request.logicalAddress), numRecords, out _);
             logicalAddress = logRecord.Info.PreviousAddress;
             return !stop;
         }
@@ -288,9 +281,7 @@ namespace Tsavorite.core
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
                 RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
-                var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
-                    ? !scanCursorState.functions.ConcurrentReader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
-                    : !scanCursorState.functions.SingleReader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
+                var stop = scanCursorState.functions.Reader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
                 if (stop)
                     scanCursorState.stop = true;
                 else
@@ -324,30 +315,29 @@ namespace Tsavorite.core
 
         internal struct LogScanCursorFunctions<TInput, TOutput> : ISessionFunctions<TInput, TOutput, Empty>
         {
-            public readonly bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
+            public readonly bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
                 where TSourceLogRecord : ISourceLogRecord
                 => true;
-            public readonly bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo) => true;
             public readonly void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
-            public readonly bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
-            public readonly void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
-            public readonly bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
+            public readonly bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
+            public readonly void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
+            public readonly bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
-            public readonly bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
-            public readonly bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
-            public readonly bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public readonly bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
+            public readonly bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) => true;
+            public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
                 where TSourceLogRecord : ISourceLogRecord
                 => true;
-            public readonly void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public readonly void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public readonly void PostSingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public readonly void PostInitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+            public readonly void PostInitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+            public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
                 where TSourceLogRecord : ISourceLogRecord
                 { }
 
-            public readonly bool ConcurrentWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
-            public readonly bool ConcurrentWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
-            public readonly bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            public readonly bool InPlaceWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+            public readonly bool InPlaceWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject newValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+            public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
                 where TSourceLogRecord : ISourceLogRecord
                  => true;
 

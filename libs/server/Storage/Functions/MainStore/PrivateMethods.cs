@@ -784,8 +784,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Logging upsert from
-        /// a. ConcurrentWriter
-        /// b. PostSingleWriter
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
         /// </summary>
         void WriteLogUpsert(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, long version, int sessionId)
         {
@@ -820,8 +820,8 @@ namespace Garnet.server
 
         /// <summary>
         ///  Logging Delete from
-        ///  a. ConcurrentDeleter
-        ///  b. PostSingleDeleter
+        ///  a. InPlaceDeleter
+        ///  b. PostInitialDeleter
         /// </summary>
         void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {

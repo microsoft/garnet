@@ -29,7 +29,7 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
@@ -44,10 +44,6 @@ namespace Garnet.cluster
                     // Transfer key if it belongs to slot that is currently being migrated
                     return !iterator.Contains(slot) || iterator.Consume(key);
                 }
-
-                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                    => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
@@ -70,7 +66,7 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
@@ -85,10 +81,6 @@ namespace Garnet.cluster
                     // Transfer key if it belongs to slot that is currently being migrated
                     return !iterator.Contains(slot) || iterator.Consume(key);
                 }
-
-                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                    => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }

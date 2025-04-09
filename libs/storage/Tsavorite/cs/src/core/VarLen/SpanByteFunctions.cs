@@ -23,16 +23,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             srcLogRecord.ValueSpan.CopyTo(ref output, memoryPool);
-            return true;
-        }
-
-        /// <inheritdoc />
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
-        {
-            logRecord.ValueSpan.CopyTo(ref output, memoryPool);
             return true;
         }
 

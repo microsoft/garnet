@@ -88,10 +88,10 @@ namespace Tsavorite.test.spanbyte
             // Right now this is unused but helped with debugging so I'm keeping it around.
             internal long insertedAddress;
 
-            public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
             {
                 insertedAddress = upsertInfo.Address;
-                return base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+                return base.InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
             }
         }
 
@@ -345,7 +345,7 @@ namespace Tsavorite.test.spanbyte
                 }
             }
 
-            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var kfield1 = int.Parse(keyString.Substring(keyString.IndexOf('_') + 1));
@@ -377,9 +377,6 @@ namespace Tsavorite.test.spanbyte
             public bool OnStart(long beginAddress, long endAddress) => true;
 
             public void OnStop(bool completed, long numberOfRecords) { }
-
-            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
         }
 
         [Test]

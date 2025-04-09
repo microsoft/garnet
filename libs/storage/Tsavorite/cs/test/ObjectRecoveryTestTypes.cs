@@ -53,13 +53,7 @@ namespace Tsavorite.test.recovery.objects
     public class Functions : SessionFunctionsBase<AdIdObj, NumClicksObj, Input, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo)
-        {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool Reader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;

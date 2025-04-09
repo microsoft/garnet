@@ -11,11 +11,11 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             => true;
 
         /// <inheritdoc />
-        public void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
@@ -24,7 +24,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

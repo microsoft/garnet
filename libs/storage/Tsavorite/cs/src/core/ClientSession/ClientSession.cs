@@ -394,18 +394,6 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="input">Input for SingleWriter</param>
-        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
-        /// <param name="compactUntilAddress">Compact log until this address</param>
-        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact(ref TInput input, ref TOutput output, long compactUntilAddress, CompactionType compactionType = CompactionType.Scan)
-            => Compact(ref input, ref output, compactUntilAddress, compactionType, default(DefaultCompactionFunctions));
-
-        /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
-        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
-        /// </summary>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions"/>).</param>
@@ -415,22 +403,6 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return store.Compact<TInput, TOutput, TContext, CompactionFunctions>(compactionFunctions, ref input, ref output, untilAddress, compactionType);
-        }
-
-        /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
-        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
-        /// </summary>
-        /// <param name="input">Input for SingleWriter</param>
-        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions"/>).</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact<CompactionFunctions>(ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
-            where CompactionFunctions : ICompactionFunctions
-        {
             return store.Compact<TInput, TOutput, TContext, CompactionFunctions>(compactionFunctions, ref input, ref output, untilAddress, compactionType);
         }
 

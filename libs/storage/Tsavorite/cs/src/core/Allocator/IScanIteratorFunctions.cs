@@ -43,24 +43,14 @@ namespace Tsavorite.core
         /// <returns>True to continue iteration, else false</returns>
         bool OnStart(long beginAddress, long endAddress);
 
-        /// <summary>Next record in iteration for a record not in mutable log memory.</summary>
+        /// <summary>Read the next record in the iteration.</summary>
         /// <param name="logRecord">Reference to the current log record's info</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
         /// <param name="numberOfRecords">The number of records accepted so far, not including the current one.</param>
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-            where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>Next record in iteration for a record in mutable log memory.</summary>
-        /// <param name="logRecord">Reference to the current log record's info</param>
-        /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
-        /// <param name="numberOfRecords">The number of records accepted so far, not including the current one.</param>
-        /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
-        ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
-        /// <returns>True to continue iteration, else false</returns>
-        bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+        bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Iteration is complete.</summary>
@@ -68,7 +58,7 @@ namespace Tsavorite.core
         /// <param name="numberOfRecords">The number of records returned before the iteration stopped.</param>
         void OnStop(bool completed, long numberOfRecords);
 
-        /// <summary>An exception was thrown on iteration (likely during <see name="SingleReader"/> or <see name="ConcurrentReader"/>.</summary>
+        /// <summary>An exception was thrown on iteration (likely during <see name="Reader"/>.</summary>
         /// <param name="exception">The exception that was thrown.</param>
         /// <param name="numberOfRecords">The number of records returned, including the current one, before the exception.</param>
         void OnException(Exception exception, long numberOfRecords);

@@ -349,16 +349,13 @@ namespace Tsavorite.test
                 }
             }
 
-            public override bool ConcurrentReader(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
-                => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
-
-            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Set(ref output.srcValueStyle, logRecord.Info);
                 return DoWriter(ref logRecord, ref sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
             }
 
-            public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
             {
                 Set(ref output.srcValueStyle, srcLogRecord.Info);
 
@@ -375,7 +372,7 @@ namespace Tsavorite.test
                 return true;
             }
 
-            public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
                 return DoWriter(ref logRecord, ref sizeInfo, ref input, (TestObjectValue)srcValue, ref output);

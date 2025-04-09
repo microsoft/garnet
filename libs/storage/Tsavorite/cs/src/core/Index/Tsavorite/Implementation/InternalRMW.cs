@@ -308,8 +308,8 @@ namespace Tsavorite.core
         /// <param name="key">Key, if inserting a new record.</param>
         /// <param name="srcLogRecord">The source record. If <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/>
         /// it is in-memory (either too small or is in readonly region, or is in readcache); otherwise it is from disk IO</param>
-        /// <param name="input">Input to the operation</param>
-        /// <param name="output">The result of ISessionFunctions.SingleWriter</param>
+        /// <param name="input">Input to the ISessionFunctions operation</param>
+        /// <param name="output">The result of ISessionFunctions operation</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,

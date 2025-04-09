@@ -21,59 +21,52 @@ namespace Tsavorite.benchmark
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             output.value = srcLogRecord.ValueSpan.AsRef<FixedLengthValue>();
             return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref LogRecord logRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
-        {
-            output.value = logRecord.ValueSpan.AsRef<FixedLengthValue>();
-            return true;
-        }
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
-        public bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
-
-        public bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             srcValue.CopyTo(logRecord.ValueSpan);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             return true;
         }
 
-        public bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
             => true; // not used
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
         {
             srcValue.CopyTo(logRecord.ValueSpan);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
         {
             logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             return dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
@@ -135,13 +128,13 @@ namespace Tsavorite.benchmark
 
         static unsafe RecordFieldInfo GetFieldInfo() => new () { KeyDataSize = sizeof(FixedLengthKey), ValueDataSize = sizeof(FixedLengthValue) };
 
-        public void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
 
-        public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
-        public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
-        public void PostSingleWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
             { }
 

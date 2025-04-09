@@ -94,13 +94,13 @@ namespace Tsavorite.test
                 var status = bContext.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                // ConcurrentWriter and InPlaceUpater return false, so we create a new record.
+                // InPlaceWriter and InPlaceUpater return false, so we create a new record.
                 RecordMetadata recordMetadata2;
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 if (updateOp == UpdateOp.Upsert)
                 {
                     status = bContext.Upsert(ref key, ref input, ref value, ref output, out recordMetadata2);
-                    ClassicAssert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
+                    ClassicAssert.AreEqual(1, copyOnWrite.InPlaceWriterCallCount);
                     ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
                 else

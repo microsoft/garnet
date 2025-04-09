@@ -14,7 +14,7 @@ namespace Garnet.server
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (CheckExpiry(ref srcLogRecord))
@@ -63,57 +63,6 @@ namespace Garnet.server
             if (srcLogRecord.Info.HasETag)
                 ETagState.ResetState(ref functionsState.etagState);
 
-            return true;
-        }
-
-        /// <inheritdoc />
-        public bool ConcurrentReader(ref LogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
-        {
-            if (CheckExpiry(ref srcLogRecord))
-                return false;
-
-            var cmd = input.header.cmd;
-            var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
-            if (cmd == RespCommand.GETIFNOTMATCH)
-            {
-                if (handleGetIfNotMatch(ref srcLogRecord, ref input, ref output, ref readInfo))
-                    return true;
-            }
-            else if (cmd > RespCommandExtensions.LastValidCommand)
-            {
-                if (srcLogRecord.Info.HasETag)
-                {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
-                    return true;
-                }
-
-                var valueLength = value.Length;
-                (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
-                var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                    .Reader(srcLogRecord.Key, ref input, value, ref memoryAndLength, ref readInfo);
-                Debug.Assert(valueLength <= value.Length);
-                (output.Memory, output.Length) = memoryAndLength;
-                return ret;
-            }
-
-            if (srcLogRecord.Info.HasETag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
-
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
-            {
-                CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
-                ETagState.ResetState(ref functionsState.etagState);
-                return true;
-            }
-
-            if (cmd == RespCommand.NONE)
-                CopyRespTo(value, ref output);
-            else
-                CopyRespToWithInput(ref srcLogRecord, ref input, ref output, readInfo.IsFromPending);
-
-            if (srcLogRecord.Info.HasETag)
-                ETagState.ResetState(ref functionsState.etagState);
             return true;
         }
 

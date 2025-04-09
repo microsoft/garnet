@@ -129,15 +129,9 @@ namespace Garnet.test
             public MyFunctions()
             { }
 
-            public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
             {
                 output = (IGarnetObject)srcLogRecord.ValueObject;
-                return true;
-            }
-
-            public override bool ConcurrentReader(ref LogRecord logRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
-            {
-                output = (IGarnetObject)logRecord.ValueObject;
                 return true;
             }
 

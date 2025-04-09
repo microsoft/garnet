@@ -11,7 +11,7 @@ namespace Garnet.server
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             logRecord.InfoRef.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
@@ -19,14 +19,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (functionsState.appendOnlyFile != null)
                 WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             logRecord.ClearOptionals();
             if (!logRecord.Info.Modified)

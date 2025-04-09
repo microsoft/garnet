@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The reason a SingleWriter was performed
+    /// The reason an InitialWriter was performed
     /// </summary>
     public enum WriteReason : byte
     {

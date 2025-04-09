@@ -51,27 +51,21 @@ namespace Tsavorite.test
         }
 
         // Read functions
-        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref int[] dst, ref ReadInfo readInfo)
-        {
-            dst = value.ToArray<int>();
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref int[] dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool Reader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref int[] dst, ref ReadInfo readInfo)
         {
             dst = value.ToArray<int>();
             return true;
         }
 
         // Upsert functions
-        public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+        public override bool InitialWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            => base.InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
 
-        public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
             if (src.Length != dst.Length)
                 return false;
-            return base.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
+            return base.InPlaceWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
         }
     }
 }

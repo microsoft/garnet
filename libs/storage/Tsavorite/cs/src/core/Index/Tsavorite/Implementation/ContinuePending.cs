@@ -109,16 +109,16 @@ namespace Tsavorite.core
                         if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                         {
                             // If this succeeds, we don't need to copy to tail or readcache, so return success.
-                            if (sessionFunctions.ConcurrentReader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo))
+                            if (sessionFunctions.Reader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo))
                                 return OperationStatus.SUCCESS;
                         }
                         else if (memoryRecord.IsSet)
                         {
                             // This may be in the immutable region, which means it may be an updated version of the record.
-                            success = sessionFunctions.SingleReader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                            success = sessionFunctions.Reader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
                         }
                         else
-                            success = sessionFunctions.SingleReader(ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                            success = sessionFunctions.Reader(ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
 
                         if (!success)
                         {

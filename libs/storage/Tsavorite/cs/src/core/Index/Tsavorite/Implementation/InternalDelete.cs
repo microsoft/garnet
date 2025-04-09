@@ -110,8 +110,8 @@ namespace Tsavorite.core
 
                     // Mutable Region: Update the record in-place
 
-                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter.
-                    if (sessionFunctions.ConcurrentDeleter(ref srcLogRecord, ref deleteInfo))
+                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
+                    if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
@@ -290,7 +290,7 @@ namespace Tsavorite.core
             hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
-            if (!sessionFunctions.SingleDeleter(ref newLogRecord, ref deleteInfo))
+            if (!sessionFunctions.InitialDeleter(ref newLogRecord, ref deleteInfo))
             {
                 // This record was allocated with a minimal Value size (unless it was a revivified larger record) so there's no room for a Filler,
                 // but we may want it for a later Delete, or for insert with a smaller Key.
@@ -314,7 +314,7 @@ namespace Tsavorite.core
 
                 // Note that this is the new logicalAddress; we have not retrieved the old one if it was below HeadAddress, and thus
                 // we do not know whether 'logicalAddress' belongs to 'key' or is a collision.
-                sessionFunctions.PostSingleDeleter(ref newLogRecord, ref deleteInfo);
+                sessionFunctions.PostInitialDeleter(ref newLogRecord, ref deleteInfo);
 
                 // Success should always Seal the old record. This may be readcache or readonly, which is OK.
                 if (stackCtx.recSrc.HasMainLogSrc)
@@ -327,7 +327,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.SingleDeleterCASFailed);
+            DisposeRecord(ref newLogRecord, DisposeReason.InitialDeleterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

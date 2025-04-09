@@ -74,7 +74,7 @@ namespace Tsavorite.test
             internal long numRecords;
             internal int stopAt;
 
-            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 if (keyMultToValue > 0)
@@ -82,8 +82,6 @@ namespace Tsavorite.test
                 return stopAt != ++numRecords;
             }
 
-            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
             public readonly bool OnStart(long beginAddress, long endAddress) => true;
             public readonly void OnException(Exception exception, long numberOfRecords) { }
             public readonly void OnStop(bool completed, long numberOfRecords) { }
@@ -109,7 +107,7 @@ namespace Tsavorite.test
                 {
                     using var iter = session.Iterate();
                     while (iter.GetNext(out var recordInfo))
-                        _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                        _ = scanIteratorFunctions.Reader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
                     ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");

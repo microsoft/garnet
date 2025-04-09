@@ -16,8 +16,8 @@ namespace Garnet.server
     {
         /// <summary>
         /// Logging upsert from
-        /// a. ConcurrentWriter
-        /// b. PostSingleWriter
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
         /// </summary>
         void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID)
         {
@@ -32,8 +32,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Logging upsert from
-        /// a. ConcurrentWriter
-        /// b. PostSingleWriter
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
         /// </summary>
         void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
         {
@@ -68,8 +68,8 @@ namespace Garnet.server
 
         /// <summary>
         ///  Logging Delete from
-        ///  a. ConcurrentDeleter
-        ///  b. PostSingleDeleter
+        ///  a. InPlaceDeleter
+        ///  b. PostInitialDeleter
         /// </summary>
         void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {

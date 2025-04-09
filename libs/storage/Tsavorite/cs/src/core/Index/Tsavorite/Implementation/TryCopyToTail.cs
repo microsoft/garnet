@@ -54,7 +54,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.SingleWriterCASFailed);
+            DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

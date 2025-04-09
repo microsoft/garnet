@@ -85,7 +85,7 @@ namespace Tsavorite.core
                         readInfo.Address = Constants.kInvalidAddress;   // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-                        if (sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo))
+                        if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
                             return OperationStatus.SUCCESS;
                         return CheckFalseActionStatus(ref readInfo);
                     }
@@ -111,11 +111,10 @@ namespace Tsavorite.core
                 {
                     // Mutable region (even fuzzy region is included here)
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    return sessionFunctions.ConcurrentReader(ref srcLogRecord, ref input, ref output, ref readInfo)
+                    return sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo)
                         ? OperationStatus.SUCCESS
                         : CheckFalseActionStatus(ref readInfo);
                 }
@@ -127,7 +126,7 @@ namespace Tsavorite.core
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    if (sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo))
+                    if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
                     {
                         return pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
                             ? OperationStatus.SUCCESS
@@ -299,16 +298,7 @@ namespace Tsavorite.core
 
                 // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
                 status = OperationStatus.SUCCESS;
-                if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
-                {
-                    // Mutable region (even fuzzy region is included here).
-                    _ = sessionFunctions.ConcurrentReader(ref srcLogRecord, ref input, ref output, ref readInfo);
-                }
-                else
-                {
-                    // Immutable region (we tested for < HeadAddress above).
-                    _ = sessionFunctions.SingleReader(ref srcLogRecord, ref input, ref output, ref readInfo);
-                }
+                _ = sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo);
             }
             finally
             {

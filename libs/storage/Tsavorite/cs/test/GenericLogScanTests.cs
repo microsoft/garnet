@@ -81,10 +81,7 @@ namespace Tsavorite.test
 
             public readonly bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 ClassicAssert.AreEqual(numRecords, key.key, $"log scan 1: key");
@@ -145,7 +142,7 @@ namespace Tsavorite.test
                 {
                     using var iter = store.Log.Scan(start, store.Log.TailAddress, sbm);
                     while (iter.GetNext(out var recordInfo))
-                        _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                        _ = scanIteratorFunctions.Reader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
                     ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress, sbm), "Failed to complete push iteration");
@@ -248,10 +245,10 @@ namespace Tsavorite.test
             // Right now this is unused but helped with debugging so I'm keeping it around.
             internal long insertedAddress;
 
-            public override bool SingleWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
             {
                 insertedAddress = upsertInfo.Address;
-                return base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+                return base.InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
             }
         }
 
@@ -425,7 +422,7 @@ namespace Tsavorite.test
                 this.filter = filter;
             }
 
-            public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = filter(key) ? CursorRecordResult.Accept : CursorRecordResult.Skip;
                 if (cursorRecordResult != CursorRecordResult.Accept)
@@ -445,11 +442,7 @@ namespace Tsavorite.test
             public bool OnStart(long beginAddress, long endAddress) => true;
 
             public void OnStop(bool completed, long numberOfRecords) { }
-
-            public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
         }
-
     }
 }
 

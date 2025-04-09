@@ -564,25 +564,14 @@ namespace Tsavorite.test
         {
             internal long expectedReadAddress;
 
-            public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
-            {
-                Assign(ref logRecord, ref output, ref readInfo);
-                return true;
-            }
-
-            public override bool ConcurrentReader(ref LogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
-            {
-                Assign(ref logRecord, ref output, ref readInfo);
-                return true;
-            }
-
-            void Assign<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref OutputStruct output, ref ReadInfo readInfo)
-                where TSourceLogRecord : ISourceLogRecord
+            public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
             {
                 output.value = logRecord.ValueSpan.AsRef<ValueStruct>();
                 ClassicAssert.AreEqual(expectedReadAddress, readInfo.Address);
                 expectedReadAddress = -1;   // show that the test executed
+                return true;
             }
+
             public override void ReadCompletionCallback(ref DiskLogRecord logRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 // Do no data verifications here; they're done in the test

@@ -24,10 +24,7 @@ namespace Tsavorite.test.ReadCacheTests
     {
         class Functions : SpanByteFunctions<Empty>
         {
-            public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-                => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
-
-            public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+            public override bool Reader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
             {
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));

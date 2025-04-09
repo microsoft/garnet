@@ -45,7 +45,7 @@ namespace Garnet.server
                 if (!logRecord.Info.Tombstone)
                 { 
                     var value = logRecord.ValueObject;
-                    if (value != null) // ignore deleted values being evicted (they are accounted for by ConcurrentDeleter)
+                    if (value != null) // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)
                         size += value.Size;
                 }
                 return size;

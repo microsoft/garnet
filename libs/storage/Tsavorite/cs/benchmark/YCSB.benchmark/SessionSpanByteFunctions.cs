@@ -9,21 +9,16 @@ namespace Tsavorite.benchmark
     public sealed class SessionSpanByteFunctions : SpanByteFunctions<Empty>
     {
         /// <inheritdoc />
-        public override bool ConcurrentReader(ref LogRecord logRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
-            => SingleReader(ref logRecord, ref input, ref output, ref readInfo);
-
-        /// <inheritdoc />
-        public override bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             srcLogRecord.ValueSpan.CopyTo(output.SpanByte.Span);
             return true;
         }
 
-
-        // Only the ReadOnlySpan<byte> form of Upsert value is used here.
+        // Note: Currently, only the ReadOnlySpan<byte> form of Upsert value is used here.
 
         /// <inheritdoc/>
-        public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
             srcValue.CopyTo(logRecord.ValueSpan);
@@ -31,7 +26,7 @@ namespace Tsavorite.benchmark
         }
 
         /// <inheritdoc/>
-        public override bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             // This does not try to set ETag or Expiration
             srcValue.CopyTo(dstLogRecord.ValueSpan);

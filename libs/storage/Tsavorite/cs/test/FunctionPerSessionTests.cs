@@ -97,13 +97,7 @@ namespace Tsavorite.test
 
     public class RefCountedReader : SessionFunctionsBase<int, RefCountedValueStruct, Empty, RefCountedValueStruct, Empty>
     {
-        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValueStruct value, ref RefCountedValueStruct dst, ref ReadInfo readInfo)
-        {
-            dst = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValueStruct value, ref RefCountedValueStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool Reader(ref int key, ref Empty input, ref RefCountedValueStruct value, ref RefCountedValueStruct dst, ref ReadInfo readInfo)
         {
             dst = value;
             return true;

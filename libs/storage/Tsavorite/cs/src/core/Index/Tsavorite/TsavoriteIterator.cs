@@ -167,11 +167,8 @@ namespace Tsavorite.core
                             var key = mainKvIter.Key;
                             if (IsTailmostMainKvRecord(key, mainKvIter.Info, ref stackCtx))
                             {
-                                // Push Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
-                                // may need to know the object is in that region.
-                                stop = mainKvIter.CurrentAddress >= store.hlogBase.ReadOnlyAddress
-                                    ? !scanFunctions.ConcurrentReader(ref mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress), numRecords, out _)
-                                    : !scanFunctions.SingleReader(ref mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress), numRecords, out _);
+                                // Push Iter records are in temp storage so do not need locks.
+                                stop = !scanFunctions.Reader(ref mainKvIter, new RecordMetadata(mainKvIter.CurrentAddress), numRecords, out _);
                                 return !stop;
                             }
 
@@ -202,7 +199,7 @@ namespace Tsavorite.core
                     {
                         if (!tempKvIter.Info.Tombstone)
                         {
-                            stop = !scanFunctions.SingleReader(ref tempKvIter, new RecordMetadata(tempKvIter.CurrentAddress), numRecords, out _);
+                            stop = !scanFunctions.Reader(ref tempKvIter, new RecordMetadata(tempKvIter.CurrentAddress), numRecords, out _);
                             return !stop;
                         }
                         continue;

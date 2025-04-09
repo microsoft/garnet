@@ -27,13 +27,9 @@ namespace Tsavorite.core
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.SingleReader(ref srcLogRecord, ref input, ref dst, ref readInfo);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentReader(ref LogRecord logRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
-            => _clientSession.functions.ConcurrentReader(ref logRecord, ref input, ref dst, ref readInfo);
+            => _clientSession.functions.Reader(ref srcLogRecord, ref input, ref dst, ref readInfo);
 
         public void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
             => _clientSession.functions.ReadCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);
@@ -42,63 +38,63 @@ namespace Tsavorite.core
 
         #region Upserts
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => _clientSession.functions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            => _clientSession.functions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
+            => _clientSession.functions.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostSingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostSingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void PostSingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
         {
             dstLogRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostSingleWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostInitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo))
+            if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
@@ -187,20 +183,20 @@ namespace Tsavorite.core
 
         #region Deletes
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
-            => _clientSession.functions.SingleDeleter(ref logRecord, ref deleteInfo);
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+            => _clientSession.functions.InitialDeleter(ref logRecord, ref deleteInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostSingleDeleter(ref logRecord, ref deleteInfo);
+            _clientSession.functions.PostInitialDeleter(ref logRecord, ref deleteInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!_clientSession.functions.ConcurrentDeleter(ref logRecord, ref deleteInfo))
+            if (!_clientSession.functions.InPlaceDeleter(ref logRecord, ref deleteInfo))
                 return false;
             logRecord.InfoRef.SetTombstone();
             logRecord.InfoRef.SetDirtyAndModified();

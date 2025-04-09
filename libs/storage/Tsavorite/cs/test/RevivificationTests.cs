@@ -473,8 +473,8 @@ namespace Tsavorite.test.Revivification
 
             internal int expectedInputLength = InitialLength;
 
-            // This is a queue rather than a single value because there may be calls to, for example, ConcurrentWriter with one length
-            // followed by SingleWriter with another.
+            // This is a queue rather than a single value because there may be calls to, for example, InPlaceWriter with one length
+            // followed by InitialWriter with another.
             internal Queue<int> expectedValueLengths = new();
 
             internal bool readCcCalled, rmwCcCalled;
@@ -535,16 +535,16 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, upsertInfo.Address);
-                return base.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+                return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
             }
 
-            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, upsertInfo.Address, isIPU: true);
-                return base.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -576,24 +576,24 @@ namespace Tsavorite.test.Revivification
                 return logRecord.TrySetValueSpan(input.ReadOnlySpan, ref sizeInfo);
             }
 
-            public override bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+            public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             {
                 AssertInfoValid(ref deleteInfo);
 
                 RecordSizeInfo sizeInfo = default;
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, deleteInfo.Address);
 
-                return base.SingleDeleter(ref logRecord, ref deleteInfo);
+                return base.InitialDeleter(ref logRecord, ref deleteInfo);
             }
 
-            public override bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+            public override bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             {
                 AssertInfoValid(ref deleteInfo);
 
                 RecordSizeInfo sizeInfo = default;
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, deleteInfo.Address);
 
-                return base.ConcurrentDeleter(ref logRecord, ref deleteInfo);
+                return base.InPlaceDeleter(ref logRecord, ref deleteInfo);
             }
 
             public override bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -608,16 +608,16 @@ namespace Tsavorite.test.Revivification
                 base.PostInitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason writeReason)
+            public override void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason writeReason)
             {
                 AssertInfoValid(ref upsertInfo);
-                base.PostSingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, writeReason);
+                base.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, writeReason);
             }
 
-            public override void PostSingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+            public override void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             {
                 AssertInfoValid(ref deleteInfo);
-                base.PostSingleDeleter(ref logRecord, ref deleteInfo);
+                base.PostInitialDeleter(ref logRecord, ref deleteInfo);
             }
 
             public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, Empty ctx, Status status, RecordMetadata recordMetadata)
@@ -1640,16 +1640,16 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            public override bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 VerifyKey(logRecord.Key);
-                return base.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+                return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
             }
 
-            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 VerifyKeyAndValue(logRecord.Key, srcValue);
-                return base.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
+                return base.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -1670,11 +1670,11 @@ namespace Tsavorite.test.Revivification
                 return logRecord.TrySetValueSpan(input.ReadOnlySpan, ref sizeInfo);
             }
 
-            public override bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
-                => base.SingleDeleter(ref logRecord, ref deleteInfo);
+            public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+                => base.InitialDeleter(ref logRecord, ref deleteInfo);
 
-            public override unsafe bool ConcurrentDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
-                => base.ConcurrentDeleter(ref logRecord, ref deleteInfo);
+            public override unsafe bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+                => base.InPlaceDeleter(ref logRecord, ref deleteInfo);
         }
 
         const int NumRecords = 200;

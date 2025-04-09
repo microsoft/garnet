@@ -112,18 +112,13 @@ namespace BenchmarkDotNetTests
             public bool OnStart(long beginAddress, long endAddress) => true;
 
             /// <inheritdoc/>
-            public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 ++counter.count;
                 cursorRecordResult = CursorRecordResult.Accept;
                 return true;
             }
-
-            /// <inheritdoc/>
-            public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord
-                => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc/>
             public void OnStop(bool completed, long numberOfRecords) { }

@@ -28,7 +28,7 @@ namespace Tsavorite.test.LockTests
                 return true;
             }
 
-            public override bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
             {
                 return Increment(logRecord.ValueSpan);
             }
@@ -48,24 +48,24 @@ namespace Tsavorite.test.LockTests
                 return base.InitialUpdater(ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = upsertInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+                return base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
             }
 
-            public override bool SingleDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
+            public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = deleteInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.SingleDeleter(ref logRecord, ref deleteInfo);
+                return base.InitialDeleter(ref logRecord, ref deleteInfo);
             }
         }
 

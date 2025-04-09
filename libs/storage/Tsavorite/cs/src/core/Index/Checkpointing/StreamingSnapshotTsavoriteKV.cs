@@ -36,17 +36,12 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc />
-            public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept;
                 return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
             }
-
-            /// <inheritdoc />
-            public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord
-                => SingleReader(ref srcLogRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc />
             public void OnException(Exception exception, long numberOfRecords)
@@ -94,17 +89,12 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc />
-            public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept;
                 return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
             }
-
-            /// <inheritdoc />
-            public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                where TSourceLogRecord : ISourceLogRecord
-                => SingleReader(ref srcLogRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc />
             public void OnException(Exception exception, long numberOfRecords)

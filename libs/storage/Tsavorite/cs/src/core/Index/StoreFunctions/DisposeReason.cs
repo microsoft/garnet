@@ -19,9 +19,9 @@ namespace Tsavorite.core
         CopyUpdated,
 
         /// <summary>
-        /// Failure of SingleWriter insertion of a record at the tail of the cache.
+        /// Failure of InitialWriter insertion of a record at the tail of the cache.
         /// </summary>
-        SingleWriterCASFailed,
+        InitialWriterCASFailed,
 
         /// <summary>
         /// Failure of CopyUpdater insertion of a record at the tail of the cache.
@@ -34,9 +34,9 @@ namespace Tsavorite.core
         InitialUpdaterCASFailed,
 
         /// <summary>
-        /// Failure of SingleDeleter insertion of a record at the tail of the cache.
+        /// Failure of InitialDeleter insertion of a record at the tail of the cache.
         /// </summary>
-        SingleDeleterCASFailed,
+        InitialDeleterCASFailed,
 
         /// <summary>
         /// Some CAS failed and retry could not use the record due to size or address restrictions

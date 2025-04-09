@@ -127,18 +127,18 @@ namespace Tsavorite.core
                     if (!srcStringValue.IsEmpty)
                     {
                         var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, srcStringValue, ref input, sessionFunctions);
-                        ok = sessionFunctions.ConcurrentWriter(ref srcLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
+                        ok = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
                     }
                     else if (srcObjectValue is not null)
                     {
                         var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, srcObjectValue, ref input, sessionFunctions);
-                        ok = sessionFunctions.ConcurrentWriter(ref srcLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
+                        ok = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
                     }
                     else
                     {
                         Debug.Assert(inputLogRecord.IsSet);
                         var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, ref inputLogRecord, ref input, sessionFunctions);
-                        ok = sessionFunctions.ConcurrentWriter(ref srcLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
+                        ok = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
                     }
                     if (ok)
                     {
@@ -153,7 +153,7 @@ namespace Tsavorite.core
                         goto LatchRelease;
                     }
 
-                    // ConcurrentWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
+                    // InPlaceWriter failed (e.g. insufficient space, another thread set Tombstone, etc). Write a new record, but track that we have to seal and unlock this one.
                     goto CreateNewRecord;
                 }
                 if (stackCtx.recSrc.HasMainLogSrc)
@@ -239,12 +239,12 @@ namespace Tsavorite.core
                 if (srcObjectValue is null)
                 {
                     var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcStringValue, ref input, sessionFunctions);
-                    ok = sessionFunctions.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert);
                 }
                 else
                 {
                     var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcObjectValue, ref input, sessionFunctions);
-                    ok = sessionFunctions.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
                 }
                 if (ok)
                 {
@@ -301,9 +301,10 @@ namespace Tsavorite.core
         /// <param name="srcLogRecord">The source record, if <paramref name="stackCtx"/>.<see cref="RecordSource{TStoreFunctions, TAllocator}.HasInMemorySrc"/> and
         /// it is either too small or is in readonly region, or is in readcache</param>
         /// <param name="input">Input to the operation</param>
-        /// <param name="srcStringValue">String value to be updated to (or inserted if key does not exist); exclusive with <paramref name="srcObjectValue"/>.</param>
-        /// <param name="srcObjectValue">String value to be updated to (or inserted if key does not exist); exclusive with <paramref name="srcStringValue"/>.</param>
-        /// <param name="output">The result of ISessionFunctions.SingleWriter</param>
+        /// <param name="srcStringValue">String value to be set to; exclusive with <paramref name="srcObjectValue"/> and <paramref name="inputLogRecord"/>.</param>
+        /// <param name="srcObjectValue">String value to be set to; exclusive with <paramref name="srcStringValue"/> and <paramref name="inputLogRecord"/>.</param>
+        /// <param name="inputLogRecord">Log record to be copied from; exclusive with <paramref name="srcObjectValue"/> and <paramref name="srcStringValue"/>.</param>
+        /// <param name="output">The result of ISessionFunctions operation</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
@@ -345,10 +346,10 @@ namespace Tsavorite.core
             newLogRecord.SetFillerLength(allocatedSize);
 
             var success = !srcStringValue.IsEmpty
-                ? sessionFunctions.SingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert)
+                ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert)
                 : (srcObjectValue is not null
-                    ? sessionFunctions.SingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert)
-                    : sessionFunctions.SingleWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, WriteReason.Upsert));
+                    ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert)
+                    : sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, WriteReason.Upsert));
             if (!success)
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
@@ -370,9 +371,9 @@ namespace Tsavorite.core
                 PostCopyToTail(ref srcLogRecord, ref stackCtx);
 
                 if (srcObjectValue is null)
-                    sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert);
                 else
-                    sessionFunctions.PostSingleWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
@@ -396,7 +397,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
-            DisposeRecord(ref newLogRecord, DisposeReason.SingleWriterCASFailed);
+            DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

@@ -9,40 +9,40 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test.SingleWriter
+namespace Tsavorite.test.InitialWriter
 {
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
     using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
-    internal class SingleWriterTestFunctions : SimpleLongSimpleFunctions<int, int>
+    internal class InitialWriterTestFunctions : SimpleLongSimpleFunctions<int, int>
     {
         internal WriteReason actualReason;
 
-        public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public override bool InitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
         {
             ClassicAssert.AreEqual((WriteReason)input, reason);
             actualReason = reason;
             return true;
         }
 
-        public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             ClassicAssert.AreEqual((WriteReason)input, reason);
             actualReason = reason;
         }
     }
 
-    class SingleWriterTests
+    class InitialWriterTests
     {
         const int NumRecords = 1000;
         const int ValueMult = 1_000_000;
         const WriteReason NoReason = (WriteReason)255;
 
-        SingleWriterTestFunctions functions;
+        InitialWriterTestFunctions functions;
 
         private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, int, int, Empty, SingleWriterTestFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, int, int, Empty, SingleWriterTestFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private ClientSession<int, int, int, int, Empty, InitialWriterTestFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, InitialWriterTestFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -80,7 +80,7 @@ namespace Tsavorite.test.SingleWriter
                 , StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, SingleWriterTestFunctions>(functions);
+            session = store.NewSession<int, int, Empty, InitialWriterTestFunctions>(functions);
             bContext = session.BasicContext;
         }
 
@@ -107,7 +107,7 @@ namespace Tsavorite.test.SingleWriter
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SingleWriterReasonsTest([Values] ReadCopyDestination readCopyDestination)
+        public void InitialWriterReasonsTest([Values] ReadCopyDestination readCopyDestination)
         {
             functions.actualReason = NoReason;
             Populate();
@@ -132,7 +132,7 @@ namespace Tsavorite.test.SingleWriter
             status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(status.IsPending && !status.IsCompleted);
             _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
-            (status, output) = GetSinglePendingResult(outputs);
+            (status, output) = GetInitialPendingResult(outputs);
             ClassicAssert.IsTrue(!status.IsPending && status.IsCompleted && status.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(status.Found && !status.NotFound && status.Record.Copied);
             ClassicAssert.AreEqual(expectedReason, functions.actualReason);
@@ -140,7 +140,7 @@ namespace Tsavorite.test.SingleWriter
             functions.actualReason = NoReason;
             expectedReason = WriteReason.Compaction;
             input = (int)expectedReason;
-            _ = store.Log.Compact<int, int, Empty, SingleWriterTestFunctions>(functions, ref input, ref output, store.Log.SafeReadOnlyAddress, CompactionType.Scan);
+            _ = store.Log.Compact<int, int, Empty, InitialWriterTestFunctions>(functions, ref input, ref output, store.Log.SafeReadOnlyAddress, CompactionType.Scan);
             ClassicAssert.AreEqual(expectedReason, functions.actualReason);
         }
     }

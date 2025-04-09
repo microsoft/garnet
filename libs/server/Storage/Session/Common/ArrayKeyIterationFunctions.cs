@@ -219,11 +219,7 @@ namespace Garnet.server
                 internal void Initialize(List<byte[]> keys, byte* patternB, int length)
                     => info.Initialize(keys, patternB, length);
 
-                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                    => ConcurrentReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     var key = logRecord.Key;
@@ -268,11 +264,7 @@ namespace Garnet.server
                 internal void Initialize(List<byte[]> keys, byte* patternB, int length, Type matchType = null)
                     => info.Initialize(keys, patternB, length, matchType);
 
-                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                    => ConcurrentReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     if (ObjectSessionFunctions.CheckExpiry(ref logRecord))
@@ -331,7 +323,7 @@ namespace Garnet.server
 
                 internal void Initialize() => info.Initialize();
 
-                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
@@ -341,9 +333,7 @@ namespace Garnet.server
                     }
                     return true;
                 }
-                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                    => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
@@ -359,7 +349,7 @@ namespace Garnet.server
 
                 internal void Initialize() => info.Initialize();
 
-                public bool SingleReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
@@ -369,9 +359,7 @@ namespace Garnet.server
                     }
                     return true;
                 }
-                public bool ConcurrentReader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                    => SingleReader(ref logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
