@@ -67,9 +67,15 @@ namespace Garnet.test.cluster
             loggerFactory?.Dispose();
             var timeoutSeconds = 5;
             if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+            {
                 logger?.LogError("Timed out waiting for DisposeCluster");
+                Assert.Fail("Timed out waiting for DisposeCluster");
+            }
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
-                logger?.LogError("Timed out waiting for DisposeCluster");
+            {
+                logger?.LogError("Timed out DeleteDirectory");
+                Assert.Fail("Timed out DeleteDirectory");
+            }
         }
 
         public void RegisterCustomTxn(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)

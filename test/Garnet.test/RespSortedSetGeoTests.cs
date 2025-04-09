@@ -534,7 +534,11 @@ namespace Garnet.test
 
             // Check GEOADD without members
             var response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX", bytesSent);
-            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.GEOADD))}\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.GEOADD))}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX XX CH", bytesSent);
+            expectedResponse = $"-ERR syntax error\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
@@ -550,23 +554,15 @@ namespace Garnet.test
             response = lightClientRequest.SendCommandChunks("GEOADD Sicily XX CH 15.361389 39.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
             expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
-        }
 
-        [Test]
-        [TestCase(10)]
-        [TestCase(50)]
-        [TestCase(100)]
-        public void CanContinueWhenInvalidPairInGeoAdd(int bytesSent)
-        {
-            using var lightClientRequest = TestUtils.CreateRequest();
-            //only Catania pair is added
-            var response = lightClientRequest.SendCommands("GEOADD Sicily 113.361389 338.115556 Palermo 15.087269 37.502669 Catania", "PING");
-            var expectedResponse = ":1\r\n+PONG\r\n";
+            // This should work too
+            response = lightClientRequest.SendCommandChunks("GEOADD Sicily CH XX XX XX CH 15.361380 39.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
+            expectedResponse = ":1\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            //no pairs are added
-            response = lightClientRequest.SendCommandChunks("GEOADD Sicily 113.361389 338.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
-            expectedResponse = ":0\r\n";
+            // Add and update
+            response = lightClientRequest.SendCommandChunks("GEOADD Sicily CH 13.361389 38.115556 Palermo 15.087269 37.502669 Catania 13.583333 37.316667 Agrigento", bytesSent);
+            expectedResponse = ":2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -755,6 +751,9 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("GEORADIUSBYMEMBER Sicily member 50 NM");
             expectedResponse = "-ERR unsupported unit provided. please use M, KM, FT, MI\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("GEODIST Sicily Catania Palermo NM");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("GEOSEARCHSTORE bar foo FROMMEMBER nx BYRADIUS 1 FT ANY COUNT 1");

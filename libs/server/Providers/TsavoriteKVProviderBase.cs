@@ -39,24 +39,12 @@ namespace Garnet.server
         /// <summary>
         /// Create TsavoriteKV backend
         /// </summary>
-        /// <param name="store"></param>
         /// <param name="serializer"></param>
         /// <param name="broker"></param>
-        /// <param name="recoverStore"></param>
         /// <param name="maxSizeSettings"></param>
-        public TsavoriteKVProviderBase(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TParameterSerializer serializer,
-                SubscribeBroker broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
+        public TsavoriteKVProviderBase(TParameterSerializer serializer,
+                SubscribeBroker broker = null, MaxSizeSettings maxSizeSettings = default)
         {
-            this.store = store;
-            if (recoverStore)
-            {
-                try
-                {
-                    store.Recover();
-                }
-                catch
-                { }
-            }
             this.broker = broker;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();

@@ -25,30 +25,35 @@ namespace Garnet.server
         /// Get info metrics for specified info type
         /// </summary>
         /// <param name="infoMetricsType"></param>
+        /// <param name="dbId">Database ID for database-specific metrics</param>
         /// <returns></returns>
-        public MetricsItem[] GetInfoMetrics(InfoMetricsType infoMetricsType)
+        public MetricsItem[] GetInfoMetrics(InfoMetricsType infoMetricsType, int dbId = 0)
         {
             GarnetInfoMetrics info = new();
-            return info.GetMetric(infoMetricsType, provider.StoreWrapper);
+            return info.GetMetric(infoMetricsType, dbId, provider.StoreWrapper);
         }
 
         /// <summary>
         /// Get info metrics for specified info types
         /// </summary>
         /// <param name="infoMetricsTypes">Info types to get, null to get all</param>
+        /// <param name="dbId">Database ID for database-specific metrics</param>
         /// <returns></returns>
-        public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] infoMetricsTypes = null)
+        public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] infoMetricsTypes = null, int dbId = 0)
         {
             GarnetInfoMetrics info = new();
-            infoMetricsTypes ??= GarnetInfoMetrics.defaultInfo;
-            return info.GetInfoMetrics(infoMetricsTypes, provider.StoreWrapper);
+            infoMetricsTypes ??= GarnetInfoMetrics.DefaultInfo;
+            return info.GetInfoMetrics(infoMetricsTypes, dbId, provider.StoreWrapper);
         }
 
         /// <summary>
         /// Get header for given info metrics type
         /// </summary>
-        public static string GetHeader(InfoMetricsType infoMetricsType)
-            => GarnetInfoMetrics.GetSectionHeader(infoMetricsType);
+        /// <param name="infoMetricsType">Info types to get, null to get all</param>
+        /// <param name="dbId">Database ID for database-specific metrics</param>
+        /// <returns></returns>
+        public static string GetHeader(InfoMetricsType infoMetricsType, int dbId = 0)
+            => GarnetInfoMetrics.GetSectionHeader(infoMetricsType, dbId);
 
         /// <summary>
         /// Reset info metrics
@@ -66,7 +71,7 @@ namespace Garnet.server
         /// <param name="infoMetricsTypes">Info types to reset, null to reset all</param>
         public void ResetInfoMetrics(InfoMetricsType[] infoMetricsTypes = null)
         {
-            infoMetricsTypes ??= GarnetInfoMetrics.defaultInfo;
+            infoMetricsTypes ??= GarnetInfoMetrics.DefaultInfo;
             for (int i = 0; i < infoMetricsTypes.Length; i++)
                 ResetInfoMetrics(infoMetricsTypes[i]);
         }

@@ -440,7 +440,7 @@ namespace Garnet.cluster
         internal bool BumpAndWaitForEpochTransition()
         {
             BumpCurrentEpoch();
-            foreach (var server in storeWrapper.TcpServer)
+            foreach (var server in storeWrapper.Servers)
             {
                 while (true)
                 {
