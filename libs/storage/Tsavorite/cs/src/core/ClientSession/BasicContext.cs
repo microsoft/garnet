@@ -411,12 +411,10 @@ namespace Tsavorite.core
         /// Copy key and value to tail, succeed only if key is known to not exist in between expectedLogicalAddress and tail.
         /// </summary>
         /// <param name="srcLogRecord"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, long currentAddress, long untilAddress)
+        internal Status CompactionCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress)
             where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
@@ -424,7 +422,7 @@ namespace Tsavorite.core
             {
                 return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions,
                         BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
-                    sessionFunctions, ref srcLogRecord, ref input, ref output, currentAddress, untilAddress);
+                    sessionFunctions, ref srcLogRecord, currentAddress, untilAddress);
             }
             finally
             {

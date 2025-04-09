@@ -130,7 +130,7 @@ namespace Tsavorite.core
             }
 
             /// <summary>
-            /// Serialize a <see cref="LogRecord"/> and Input, Output, and userContext into the local <see cref="DiskLogRecord"/> for Pending operations
+            /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> and Input, Output, and userContext into the local <see cref="DiskLogRecord"/> for Pending operations
             /// </summary>
             /// <param name="srcLogRecord">The log record. This may be either in-memory or from disk IO</param>
             /// <param name="input">Input to the operation</param>
@@ -142,6 +142,21 @@ namespace Tsavorite.core
             ///     rather than serialized to a byte stream (e.g. for out-of-process operations)</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void Serialize<TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions,
+                    SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                Serialize(ref srcLogRecord, sessionFunctions, bufferPool, valueSerializer);
+                CopyIOC(ref input, output, userContext, sessionFunctions);
+            }
+
+            /// <summary>
+            /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> into the local <see cref="DiskLogRecord"/> for Pending operations
+            /// </summary>
+            /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
+            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void Serialize<TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, TSessionFunctionsWrapper sessionFunctions,
                     SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TSourceLogRecord : ISourceLogRecord
@@ -160,26 +175,6 @@ namespace Tsavorite.core
                     else
                         diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool);
                 }
-
-                CopyIOC(ref input, output, userContext, sessionFunctions);
-            }
-
-            /// <summary>
-            /// Copy a <see cref="DiskLogRecord"/> and Input, Output, and userContext into the local <see cref="DiskLogRecord"/> for Pending operations
-            /// </summary>
-            /// <param name="diskLogRecord">The log record. This may be either in-memory or from disk IO</param>
-            /// <param name="input">Input to the operation</param>
-            /// <param name="output">Output from the operation</param>
-            /// <param name="userContext">User context for the operation</param>
-            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSessionFunctionsWrapper>(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions,
-                    SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
-                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            {
-                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset diskLogRecord");
-                this.diskLogRecord = diskLogRecord;
-                CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
             private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions) 

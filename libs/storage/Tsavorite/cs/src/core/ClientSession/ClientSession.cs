@@ -400,11 +400,7 @@ namespace Tsavorite.core
         /// <returns>Address until which compaction was done</returns>
         public long Compact<CompactionFunctions>(long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions
-        {
-            TInput input = default;
-            TOutput output = default;
-            return store.Compact<TInput, TOutput, TContext, CompactionFunctions>(compactionFunctions, ref input, ref output, untilAddress, compactionType);
-        }
+            => store.Compact<TInput, TOutput, TContext, CompactionFunctions>(compactionFunctions, untilAddress, compactionType);
 
         /// <summary>
         /// Pull iterator for all (distinct) live key-values stored in Tsavorite

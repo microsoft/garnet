@@ -16,9 +16,6 @@ namespace Tsavorite.core
         /// <param name="sessionFunctions">Callback functions.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="srcLogRecord">key of the record.</param>
-        /// <param name="input">input passed through.</param>
-        /// <param name="output">Location to store output computed from input and value.</param>
-        /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="stackCtx">Contains information about the call context, record metadata, and so on</param>
         /// <param name="writeReason">The reason the CopyToTail is being done</param>
         /// <param name="wantIO">Whether to do IO if the search must go below HeadAddress. ReadFromImmutable, for example,
@@ -27,7 +24,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true, long maxAddress = long.MaxValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
@@ -83,15 +80,13 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, userContext,
-                                                      ref stackCtx2, minAddress, maxAddress, WriteReason.Compaction);
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx2, minAddress, maxAddress, WriteReason.Compaction);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                TSessionFunctionsWrapper sessionFunctions, ref TSourceLogRecord srcLogRecord, ref TInput input,
-                ref TOutput output, long currentAddress, long minAddress, long maxAddress = long.MaxValue)
+                TSessionFunctionsWrapper sessionFunctions, ref TSourceLogRecord srcLogRecord, long currentAddress, long minAddress, long maxAddress = long.MaxValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -109,16 +104,15 @@ namespace Tsavorite.core
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, default, ref stackCtx, minAddress, maxAddress, WriteReason.Compaction);
+                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, minAddress, maxAddress, WriteReason.Compaction);
             else
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, default, ref stackCtx, WriteReason.Compaction, maxAddress: maxAddress);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, WriteReason.Compaction, maxAddress: maxAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                                        TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
+                                        TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord,
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, WriteReason writeReason,
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -133,7 +127,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             if (!pendingContext.IsSet)
-                pendingContext.Serialize(ref srcLogRecord, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
+                pendingContext.Serialize(ref srcLogRecord, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
             return OperationStatus.RECORD_ON_DISK;
         }
     }

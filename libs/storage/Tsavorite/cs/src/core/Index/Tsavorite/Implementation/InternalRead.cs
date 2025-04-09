@@ -166,9 +166,8 @@ namespace Tsavorite.core
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref input, ref output, userContext, ref stackCtx,
-                                               WriteReason.CopyToTail, wantIO: false);
-                if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, WriteReason.CopyToTail, wantIO: false);
+                if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly; this is a different case from pending IO as it is allocation-related. TODO is isAsync still needed?
                     CreatePendingReadContext(srcLogRecord.Key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                 return status;
             }

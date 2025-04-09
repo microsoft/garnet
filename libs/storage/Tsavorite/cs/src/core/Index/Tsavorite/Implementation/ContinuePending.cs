@@ -133,8 +133,7 @@ namespace Tsavorite.core
                         if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                         {
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
-                                                               pendingContext.userContext, ref stackCtx, WriteReason.CopyToTail);
+                                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx, WriteReason.CopyToTail);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
                                     && TryCopyToReadCache(ref diskRecord, sessionFunctions, ref pendingContext, ref stackCtx))
                                 status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -293,10 +292,8 @@ namespace Tsavorite.core
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(),
-                                                            ref pendingContext.output, pendingContext.userContext, ref stackCtx, minAddress, pendingContext.maxAddress, WriteReason.Compaction)
-                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref pendingContext.input.Get(),
-                                                            ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
+                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx, minAddress, pendingContext.maxAddress, WriteReason.Compaction)
+                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx, pendingContext.writeReason);
                 }
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
