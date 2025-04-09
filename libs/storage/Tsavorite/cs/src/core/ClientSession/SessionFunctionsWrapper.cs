@@ -38,38 +38,38 @@ namespace Tsavorite.core
 
         #region Upserts
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+            => _clientSession.functions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+            => _clientSession.functions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
+            => _clientSession.functions.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             logRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public readonly void PostInitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             dstLogRecord.InfoRef.SetDirtyAndModified();
-            _clientSession.functions.PostInitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
+            _clientSession.functions.PostInitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

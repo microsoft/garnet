@@ -116,7 +116,7 @@ namespace Tsavorite.core
                         // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
-                            if (TryRevivifyInChain(ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
+                            if (TryRevivifyInChain(ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
                                     || status != OperationStatus.SUCCESS)
                                 goto LatchRelease;
                         }
@@ -221,10 +221,11 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref TInput input,
-                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref LogRecord logRecord, ref TInput input,
+                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
                 goto NeedNewRecord;
@@ -236,15 +237,21 @@ namespace Tsavorite.core
                 logRecord.ClearOptionals();
                 logRecord.InfoRef.ClearTombstone();
 
-                if (srcObjectValue is null)
+                if (!srcStringValue.IsEmpty)
                 {
                     var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcStringValue, ref input, sessionFunctions);
-                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
+                }
+                else if (srcObjectValue is not null)
+                {
+                    var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcObjectValue, ref input, sessionFunctions);
+                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
                 }
                 else
                 {
-                    var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcObjectValue, ref input, sessionFunctions);
-                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                    Debug.Assert(inputLogRecord.IsSet);
+                    var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, ref inputLogRecord, ref input, sessionFunctions);
+                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
                 }
                 if (ok)
                 {
@@ -346,10 +353,10 @@ namespace Tsavorite.core
             newLogRecord.SetFillerLength(allocatedSize);
 
             var success = !srcStringValue.IsEmpty
-                ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert)
+                ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo)
                 : (srcObjectValue is not null
-                    ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert)
-                    : sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, WriteReason.Upsert));
+                    ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo)
+                    : sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo));
             if (!success)
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
@@ -370,10 +377,15 @@ namespace Tsavorite.core
             {
                 PostCopyToTail(ref srcLogRecord, ref stackCtx);
 
-                if (srcObjectValue is null)
-                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                if (!srcStringValue.IsEmpty)
+                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
+                else if (srcObjectValue is not null)
+                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
                 else
-                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo, WriteReason.Upsert);
+                {
+                    Debug.Assert(inputLogRecord.IsSet);
+                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
+                }
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.

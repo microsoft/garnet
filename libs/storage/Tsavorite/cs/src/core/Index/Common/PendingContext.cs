@@ -50,7 +50,6 @@ namespace Tsavorite.core
             internal const ushort kIsObjectRecord = 0x0008; // TODO replace with RecordInfo.ValueIsObject
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
-            internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
 
             internal long minAddress;
             internal long maxAddress;

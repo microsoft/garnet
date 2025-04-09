@@ -535,7 +535,7 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, upsertInfo.Address);
                 return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
@@ -608,10 +608,10 @@ namespace Tsavorite.test.Revivification
                 base.PostInitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason writeReason)
+            public override void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 AssertInfoValid(ref upsertInfo);
-                base.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, writeReason);
+                base.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
@@ -1640,10 +1640,10 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 VerifyKey(logRecord.Key);
-                return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+                return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)

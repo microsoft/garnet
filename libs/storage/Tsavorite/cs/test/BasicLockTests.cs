@@ -48,14 +48,14 @@ namespace Tsavorite.test.LockTests
                 return base.InitialUpdater(ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = upsertInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+                return base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)

@@ -496,7 +496,7 @@ namespace Tsavorite.test.Expiration
             }
 
             // Upsert functions
-            public override bool InitialWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
                 => SpanByteFunctions<Empty>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
             public override bool InPlaceWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)

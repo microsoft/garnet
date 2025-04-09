@@ -17,7 +17,6 @@ namespace Tsavorite.core
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="srcLogRecord">key of the record.</param>
         /// <param name="stackCtx">Contains information about the call context, record metadata, and so on</param>
-        /// <param name="writeReason">The reason the CopyToTail is being done</param>
         /// <param name="wantIO">Whether to do IO if the search must go below HeadAddress. ReadFromImmutable, for example,
         ///     is just an optimization to avoid future IOs, so if we need an IO here we just defer them to the next Read().</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
@@ -25,7 +24,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private OperationStatus ConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord,
-                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true, long maxAddress = long.MaxValue)
+                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool wantIO = true, long maxAddress = long.MaxValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -44,7 +43,7 @@ namespace Tsavorite.core
                 {
                     try
                     {
-                        status = TryCopyToTail(ref srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx, writeReason);
+                        status = TryCopyToTail(ref srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx);
                     }
                     finally
                     {
@@ -80,7 +79,7 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx2, minAddress, maxAddress, WriteReason.Compaction);
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx2, minAddress, maxAddress);
             }
         }
 
@@ -104,24 +103,22 @@ namespace Tsavorite.core
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, minAddress, maxAddress, WriteReason.Compaction);
+                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, minAddress, maxAddress);
             else
-                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, WriteReason.Compaction, maxAddress: maxAddress);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, maxAddress: maxAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                                         TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord,
-                                        ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, WriteReason writeReason,
-                                        OperationType opType = OperationType.CONDITIONAL_INSERT)
+                                        ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
             pendingContext.maxAddress = maxAddress;
-            pendingContext.writeReason = writeReason;
             pendingContext.InitialEntryAddress = Constants.kInvalidAddress;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

@@ -40,17 +40,17 @@ namespace Tsavorite.test.InputOutputParameterTests
 
             /// <inheritdoc/>
             public override bool InPlaceWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-                => InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, WriteReason.Upsert, ref recordInfo);
+                => InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
 
             /// <inheritdoc/>
-            public override bool InitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
                 lastWriteAddress = upsertInfo.Address;
                 dst = output = src * input;
                 return true;
             }
             /// <inheritdoc/>
-            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reasons)
+            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo)
             {
                 ClassicAssert.AreEqual(lastWriteAddress, upsertInfo.Address);
                 ClassicAssert.AreEqual(key * input, dst);

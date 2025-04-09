@@ -58,7 +58,7 @@ namespace Tsavorite.test
         }
 
         // Upsert functions
-        public override bool InitialWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public override bool InitialWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             => base.InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
 
         public override bool InPlaceWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)

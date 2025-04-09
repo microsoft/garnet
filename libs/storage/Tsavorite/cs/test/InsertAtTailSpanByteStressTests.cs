@@ -105,7 +105,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             }
 
             /// <inheritdoc/>
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 if (!logRecord.TrySetValueSpan(srcValue, ref sizeInfo))
                     return false;

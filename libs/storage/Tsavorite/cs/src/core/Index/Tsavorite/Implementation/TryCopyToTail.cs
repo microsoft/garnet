@@ -15,7 +15,6 @@ namespace Tsavorite.core
         /// <param name="pendingContext"></param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="reason">The reason for this operation.</param>
         /// <returns>
         ///     <list type="bullet">
         ///     <item>RETRY_NOW: failed CAS, so no copy done. This routine deals entirely with new records, so will not encounter Sealed records</item>
@@ -24,7 +23,7 @@ namespace Tsavorite.core
         /// </returns>
         internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord inputLogRecord,
                                     TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, 
-                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, WriteReason reason)
+                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {

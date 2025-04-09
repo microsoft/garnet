@@ -97,7 +97,7 @@ namespace Tsavorite.test.readaddress
             public override bool InPlaceUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false;
 
             // Record addresses
-            public override bool InitialWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
                 dst = src;
                 output.address = upsertInfo.Address;

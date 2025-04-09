@@ -44,9 +44,8 @@ namespace Tsavorite.core
         /// <param name="srcValue">The input Span to be copied to the record value</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo);
 
         /// <summary>
         /// Non-concurrent writer for Object values; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU).
@@ -57,9 +56,8 @@ namespace Tsavorite.core
         /// <param name="srcValue">The input Object to be copied to the record value</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo);
 
         /// <summary>
         /// Non-concurrent writer for Object values; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU).
@@ -70,9 +68,8 @@ namespace Tsavorite.core
         /// <param name="inputLogRecord">The log record passed to Upsert, to be copied to the destination record</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -84,8 +81,7 @@ namespace Tsavorite.core
         /// <param name="srcValue">The input Span that was to be copied to the record value</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="reason">The operation for which this write is being done</param>
-        void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo);
 
         /// <summary>
         /// Called after InitialWriter when a record has been successfully inserted at the tail of the log.
@@ -96,8 +92,7 @@ namespace Tsavorite.core
         /// <param name="srcValue">The input Object that was to be copied to the record value</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="reason">The operation for which this write is being done</param>
-        void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo);
 
         /// <summary>
         /// Called after InitialWriter when a record has been successfully inserted at the tail of the log.
@@ -108,8 +103,7 @@ namespace Tsavorite.core
         /// <param name="inputLogRecord">The input LogRecord that was to be copied to the record value</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="reason">The operation for which this write is being done</param>
-        void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>

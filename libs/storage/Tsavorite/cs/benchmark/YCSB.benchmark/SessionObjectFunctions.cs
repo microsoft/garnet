@@ -32,7 +32,7 @@ namespace Tsavorite.benchmark
         }
 
         /// <inheritdoc/>
-        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
             if (dstLogRecord.Info.ValueIsInline && srcValue.Length <= dstLogRecord.ValueSpan.Length)
@@ -45,7 +45,7 @@ namespace Tsavorite.benchmark
         }
 
         /// <inheritdoc/>
-        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration. It is called only during Setup.
             return dstLogRecord.TrySetValueObject(srcValue, ref sizeInfo);

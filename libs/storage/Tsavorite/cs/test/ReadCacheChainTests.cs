@@ -966,9 +966,9 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             /// <inheritdoc/>
-            public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason))
+                if (!base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
                     return false;
                 srcValue.CopyTo(ref output, memoryPool);
                 return true;

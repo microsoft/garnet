@@ -43,44 +43,34 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
-            if (reason != WriteReason.CopyToTail)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
+            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
+            // TODO: Need to track lengths written to readcache, which is now internal in Tsavorite
             if (logRecord.Info.ValueIsOverflow)
-            {
-                if (reason == WriteReason.CopyToReadCache)
-                    functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(srcValue.Length);
-                else
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Length);
-            }
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Length);
         }
 
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             var garnetObject = (IGarnetObject)srcValue;
-            if (reason != WriteReason.CopyToTail)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
+            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            if (reason == WriteReason.CopyToReadCache)
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(srcValue.Size);
-            else
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Size);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Size);
         }
 
         /// <inheritdoc />
         public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref TSourceLogRecord inputLogRecord, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (reason != WriteReason.CopyToTail)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
+            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
             {
                 if (!inputLogRecord.Info.ValueIsObject)
                     WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
@@ -89,11 +79,7 @@ namespace Garnet.server
             }
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            var size = !logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size;
-            if (reason == WriteReason.CopyToReadCache)
-                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(size);
-            else
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(size);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(size);
         }
 
         /// <inheritdoc />

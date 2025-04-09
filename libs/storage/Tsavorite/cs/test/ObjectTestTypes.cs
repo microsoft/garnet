@@ -102,7 +102,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
@@ -162,7 +162,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             => logRecord.TrySetValueObject(srcValue, ref sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
@@ -235,7 +235,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestLargeObjectOutput output, ref UpsertInfo updateInfo)
         {
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;

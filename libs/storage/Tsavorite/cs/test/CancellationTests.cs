@@ -94,7 +94,7 @@ namespace Tsavorite.test.Cancellation
             }
 
             // Upsert functions
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.InitialWriter;
                 if (cancelLocation == CancelLocation.InitialWriter)

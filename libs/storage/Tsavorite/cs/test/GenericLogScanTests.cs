@@ -245,7 +245,7 @@ namespace Tsavorite.test
             // Right now this is unused but helped with debugging so I'm keeping it around.
             internal long insertedAddress;
 
-            public override bool InitialWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref MyKey key, ref MyInput input, ref MyValue src, ref MyValue dst, ref MyOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
                 insertedAddress = upsertInfo.Address;
                 return base.InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);

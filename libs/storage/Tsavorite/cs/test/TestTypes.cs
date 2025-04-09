@@ -243,7 +243,7 @@ namespace Tsavorite.test
         }
 
         // Upsert functions
-        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref InputStruct input, ReadOnlySpan<byte> srcValue, ref OutputStruct output, ref UpsertInfo upsertInfo)
         {
             logRecord.ValueSpan.AsRef<ValueStruct>() = srcValue.AsRef<ValueStruct>();
             return true;
@@ -312,9 +312,9 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
         {
-            var result = base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            var result = base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             if (result)
                 output = srcValue.AsRef<long>();
             return result;

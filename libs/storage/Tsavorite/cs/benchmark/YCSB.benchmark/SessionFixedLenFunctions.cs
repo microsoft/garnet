@@ -34,20 +34,20 @@ namespace Tsavorite.benchmark
 
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo)
         {
             srcValue.CopyTo(logRecord.ValueSpan);
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
         {
             logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             return true;
         }
 
-        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
             => true; // not used
 
@@ -130,11 +130,11 @@ namespace Tsavorite.benchmark
 
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) { }
 
-        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo) { }
 
-        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo) { }
 
-        public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
             { }
 

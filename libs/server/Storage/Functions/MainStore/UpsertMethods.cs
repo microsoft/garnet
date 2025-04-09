@@ -41,7 +41,7 @@ namespace Garnet.server
         public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
+            if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
         }
 
@@ -54,7 +54,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
+            if (functionsState.appendOnlyFile != null)
             {
                 Debug.Assert(!inputLogRecord.Info.ValueIsObject, "String store should not be called with IHeapObject");
                 WriteLogUpsert(logRecord.Key, ref input, inputLogRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);

@@ -372,7 +372,7 @@ namespace Tsavorite.test
                 return true;
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
                 return DoWriter(ref logRecord, ref sizeInfo, ref input, (TestObjectValue)srcValue, ref output);

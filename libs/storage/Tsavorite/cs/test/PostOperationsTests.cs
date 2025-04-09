@@ -35,7 +35,7 @@ namespace Tsavorite.test
 
             internal PostFunctions() : base() { }
 
-            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason) { pswAddress = upsertInfo.Address; }
+            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo) { pswAddress = upsertInfo.Address; }
 
             public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = input; return true; }
             /// <inheritdoc/>
