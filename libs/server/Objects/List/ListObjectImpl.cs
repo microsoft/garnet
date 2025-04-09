@@ -90,7 +90,7 @@ namespace Garnet.server
                 var pivot = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                 // get the string to INSERT into the list
-                var item = input.parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+                var item = input.parseState.GetArgSliceByRef(2).ToArray();
 
                 var insertBefore = position.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BEFORE);
 
@@ -282,7 +282,7 @@ namespace Garnet.server
             _output->result1 = 0;
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var value = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var value = input.parseState.GetArgSliceByRef(i).ToArray();
 
                 // Add the value to the top of the list
                 if (fAddAtHead)
@@ -392,7 +392,7 @@ namespace Garnet.server
                 }
 
                 // element
-                var element = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+                var element = input.parseState.GetArgSliceByRef(1).ToArray();
 
                 var targetNode = index == 0 ? list.First
                     : (index == list.Count - 1 ? list.Last

@@ -62,7 +62,7 @@ namespace Garnet.server
         {
             // Simple base implementation does not use upsertInfo or WriteReason
             var upsertInfo = new UpsertInfo();
-            return base.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref upsertInfo, WriteReason.Upsert);
+            return base.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, ref srcLogRecord, ref output, ref upsertInfo, WriteReason.Upsert);
         }
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)

@@ -10,9 +10,9 @@ namespace Garnet
 {
     public class MyDictSet : CustomObjectFunctions
     {
-        public override bool NeedInitialUpdate(SpanByte key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
+        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
 
-        public override bool Updater(SpanByte key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(value is MyDict);
 

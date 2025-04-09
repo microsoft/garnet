@@ -29,7 +29,7 @@ namespace Tsavorite.core
         internal IHeapObject valueObject;
 
         /// <summary>If this is non-null, it must be freed on <see cref="Dispose()"/>.</summary>
-        internal SectorAlignedMemory allocatedRecord;
+        internal SectorAlignedMemory allocatedBuffer;
 
         /// <summary>Constructor that takes a physical address, which may come from a <see cref="SectorAlignedMemory"/> or some other allocation
         /// that will have at least the lifetime of this <see cref="DiskLogRecord"/>. This <see cref="DiskLogRecord"/> does not own the memory allocation
@@ -44,10 +44,10 @@ namespace Tsavorite.core
         /// <summary>Constructor that takes a <see cref="SectorAlignedMemory"/> from which it obtains the physical address.
         /// This <see cref="DiskLogRecord"/> owns the memory allocation and must free it on <see cref="Dispose()"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(SectorAlignedMemory allocatedRecord)
-            : this((long)allocatedRecord.GetValidPointer())
+        internal DiskLogRecord(SectorAlignedMemory allocatedBuffer)
+            : this((long)allocatedBuffer.GetValidPointer())
         {
-            this.allocatedRecord = allocatedRecord;
+            this.allocatedBuffer = allocatedBuffer;
         }
 
         /// <summary>A ref to the record header</summary>
@@ -61,6 +61,9 @@ namespace Tsavorite.core
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long GetSerializedLength(long physicalAddress) => *(long*)(physicalAddress + RecordInfo.GetLength());
+
+        /// <summary>If true, this DiskLogRecord owns the buffer and must free it on <see cref="Dispose"/></summary>
+        public readonly bool OwnsMemory => allocatedBuffer is not null;
 
         #region ISourceLogRecord
         /// <inheritdoc/>
@@ -76,8 +79,8 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
-            allocatedRecord?.Dispose();
-            allocatedRecord = null;
+            allocatedBuffer?.Dispose();
+            allocatedBuffer = null;
         }
 
         /// <inheritdoc/>
@@ -173,7 +176,7 @@ namespace Tsavorite.core
         /// <param name="bufferPool">Allocator for backing storage</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Serialize(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool)
-            => Serialize(key, valueSpan, valueObject, bufferPool, ref allocatedRecord);
+            => Serialize(key, valueSpan, valueObject, bufferPool, ref allocatedBuffer);
 
         /// <summary>
         /// Serialize for RUMD operations, called by PendingContext; these also have TInput, TOutput, and TContext, which are handled by PendingContext.
@@ -214,7 +217,7 @@ namespace Tsavorite.core
         /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
-            => Serialize(in logRecord, bufferPool, valueSerializer, ref allocatedRecord);
+            => Serialize(in logRecord, bufferPool, valueSerializer, ref allocatedBuffer);
 
         /// <summary>
         /// Serialize for Compact, Pending Operations, etc. There is no associated TInput, TOutput, TContext for these.
@@ -368,19 +371,18 @@ namespace Tsavorite.core
         /// <summary>
         /// Clone from a temporary <see cref="DiskLogRecord"/> (having no <see cref="SectorAlignedMemory"/>) to a longer-lasting one.
         /// </summary>
-        /// <param name="diskLogRecord"></param>
+        /// <param name="inputDiskLogRecord"></param>
         /// <param name="bufferPool"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Clone(ref DiskLogRecord diskLogRecord, SectorAlignedBufferPool bufferPool)    // TODO: will be used by iterator at least
+        internal void CloneFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool)
         {
-            Debug.Assert(!diskLogRecord.IsSet, "DiskLogRecord is not set");
-            Debug.Assert(diskLogRecord.allocatedRecord is null, "DiskLogRecord is not set");
+            Debug.Assert(!inputDiskLogRecord.IsSet, "inputDiskLogRecord is not set");
 
             // If the source has a Value object we don't need to allocate space for the serialized value.
             // Larger-than-int serialized values should always be value objects and thus we should have a value object.
             // This cloning thus lets us release the original diskLogRecord, keeping only the (hopefully much) smaller key (and optionals).
-            var recordSize = diskLogRecord.ValueIsObject
-                ? diskLogRecord.SerializedRecordLength
+            var recordSize = inputDiskLogRecord.ValueIsObject
+                ? inputDiskLogRecord.SerializedRecordLength
                 : RecordInfo.GetLength()
                     + SerializedRecordLengthSize                                            // Total record length on disk; used in IO
                     + OptionalLength                                                        // OptionalSize
@@ -388,8 +390,32 @@ namespace Tsavorite.core
                     + 0;                                                                    // No value length allocation here.
 
             Debug.Assert(recordSize < int.MaxValue, $"recordSize too large: {recordSize}");
-            var resultRecord = new DiskLogRecord(bufferPool.Get((int)recordSize));
-            resultRecord.valueObject = diskLogRecord.valueObject;
+
+            if (allocatedBuffer is not null)
+                allocatedBuffer.pool.EnsureSize(ref allocatedBuffer, (int)recordSize);      // TODO: handle chunked operations on large objects
+            else
+                allocatedBuffer = bufferPool.Get((int)recordSize);
+
+            Buffer.MemoryCopy((void*)inputDiskLogRecord.physicalAddress, (void*)physicalAddress, recordSize, recordSize);
+            valueObject = inputDiskLogRecord.valueObject;
+        }
+
+        /// <summary>
+        /// Transfer memory ownership from a temporary <see cref="DiskLogRecord"/> to a longer-lasting one.
+        /// </summary>
+        /// <remarks>This is separate from <see cref="CloneFrom"/> to ensure the caller is prepared to handle the implications of the transfer</remarks>
+        /// <param name="diskLogRecord"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Transfer(ref DiskLogRecord diskLogRecord)
+        {
+            Debug.Assert(diskLogRecord.IsSet, "inputDiskLogRecord is not set");
+            Debug.Assert(diskLogRecord.allocatedBuffer is not null, "inputDiskLogRecord does not own its memory");
+
+            if (allocatedBuffer is not null)
+                allocatedBuffer.Return();
+            allocatedBuffer = diskLogRecord.allocatedBuffer;
+            diskLogRecord.allocatedBuffer = null;   // Transfers ownership
+            physicalAddress = (long)allocatedBuffer.GetValidPointer();
         }
         #endregion //Serialized Record Creation
 

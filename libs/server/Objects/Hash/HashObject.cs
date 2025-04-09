@@ -159,7 +159,7 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
+            fixed (byte* outputSpan = output.SpanByteAndMemory.Span)
             {
                 if (input.header.type != GarnetObjectType.Hash)
                 {

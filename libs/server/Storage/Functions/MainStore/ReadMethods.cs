@@ -18,10 +18,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             if (CheckExpiry(ref srcLogRecord))
-            {
-                srcLogRecord.InfoRef.ClearHasETag();
                 return false;
-            }
 
             var cmd = input.header.cmd;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
@@ -73,10 +70,7 @@ namespace Garnet.server
         public bool ConcurrentReader(ref LogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             if (CheckExpiry(ref srcLogRecord))
-            {
-                srcLogRecord.RemoveETag();
                 return false;
-            }
 
             var cmd = input.header.cmd;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
@@ -106,13 +100,12 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
-            if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
+            if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
             {
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                 ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
-
 
             if (cmd == RespCommand.NONE)
                 CopyRespTo(value, ref output);

@@ -66,7 +66,7 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo);
+                return dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo);
             }
 
             public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)

@@ -243,7 +243,7 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
+            fixed (byte* outputSpan = output.SpanByteAndMemory.Span)
             {
                 var header = input.header;
                 if (header.type != GarnetObjectType.SortedSet)

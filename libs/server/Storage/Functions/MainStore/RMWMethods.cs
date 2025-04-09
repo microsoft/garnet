@@ -1151,7 +1151,7 @@ namespace Garnet.server
                     var expireOption = (ExpireOption)input.arg1;
 
                     // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
@@ -1168,7 +1168,7 @@ namespace Garnet.server
                     expireOption = (ExpireOption)input.arg1;
 
                     // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
@@ -1177,7 +1177,7 @@ namespace Garnet.server
 
                 case RespCommand.PERSIST:
                     shouldUpdateEtag = false;
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
                     if (srcLogRecord.Info.HasExpiration)
                     {
@@ -1223,7 +1223,7 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     // Some duplicate code to avoid "fixed" when possible
@@ -1278,7 +1278,7 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1306,7 +1306,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD_RO:
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
 
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1440,7 +1440,7 @@ namespace Garnet.server
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
 
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1463,7 +1463,7 @@ namespace Garnet.server
                     shouldUpdateEtag = false;
                     CopyRespTo(oldValue, ref output);
 
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1487,7 +1487,7 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     var appendValue = input.parseState.GetArgSliceByRef(0);
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     // Append the new value with the client input at the end of the old data

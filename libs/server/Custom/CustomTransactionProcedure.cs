@@ -47,8 +47,8 @@ namespace Garnet.server
         /// Rewind (pop) the last entry of scratch buffer (rewinding the current scratch buffer offset),
         /// if it contains the given ArgSlice
         /// </summary>
-        protected bool RewindScratchBuffer(ref PinnedSpanByte slice)
-            => scratchBufferManager.RewindScratchBuffer(ref slice);
+        protected bool RewindScratchBuffer(PinnedSpanByte slice)
+            => scratchBufferManager.RewindScratchBuffer(slice);
 
         /// <summary>
         /// Create ArgSlice in scratch buffer, from given ReadOnlySpan

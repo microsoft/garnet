@@ -42,7 +42,7 @@ namespace Garnet.server
         {
             if (resp.Length < dst.SpanByte.Length)
             {
-                resp.CopyTo(dst.SpanByte.AsSpan());
+                resp.CopyTo(dst.SpanByte.Span);
                 dst.SpanByte.Length = resp.Length;
                 return;
             }

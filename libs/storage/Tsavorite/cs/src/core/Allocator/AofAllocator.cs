@@ -77,6 +77,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => throw new NotImplementedException("Not implemented for AofAllocator");
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => throw new NotImplementedException("Not implemented for AofAllocator");
 
         /// <inheritdoc/>

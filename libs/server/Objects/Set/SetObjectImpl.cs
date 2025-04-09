@@ -22,7 +22,7 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(i).ToArray();
 
                 if (set.Add(member))
                 {
@@ -76,7 +76,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(0).ToArray();
                 var isMember = set.Contains(member);
 
                 while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
@@ -110,7 +110,7 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ToArray();
                     var isMember = set.Contains(member);
 
                     while (!RespWriteUtils.TryWriteInt32(isMember ? 1 : 0, ref curr, end))
@@ -136,7 +136,7 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var field = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var field = input.parseState.GetArgSliceByRef(i).ToArray();
 
                 if (set.Remove(field))
                 {

@@ -26,12 +26,16 @@ namespace Tsavorite.core
         #region Upserts
         bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
         bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
-        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord;
         void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
         void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
+        void PostSingleWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord;
         bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo);
         bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo);
+        bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord;
         #endregion Upserts
 
         #region RMWs

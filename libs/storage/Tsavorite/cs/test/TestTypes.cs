@@ -356,7 +356,7 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
         {
-            ClassicAssert.IsTrue(dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo), "Failed TryCopyRecordValues");
+            ClassicAssert.IsTrue(dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo), "Failed TryCopyRecordValues");
             var result = output = merger(input, srcLogRecord.ValueSpan.AsRef<long>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
             return dstLogRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref result), ref sizeInfo);
         }

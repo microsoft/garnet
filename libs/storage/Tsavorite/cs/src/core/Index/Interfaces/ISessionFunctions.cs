@@ -71,16 +71,18 @@ namespace Tsavorite.core
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
         bool SingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
 
-        /// <summary>Non-concurrent writer; called when copying a record to tail or readcache. The caller should be aware of ETag and Expiration in the source record</summary>
-        /// <param name="srcLogRecord">The log record being copied from</param>
-        /// <param name="dstLogRecord">The destination log record being copied to</param>
+        /// <summary>
+        /// Non-concurrent writer for Object values; called on an Upsert that does not find the key so does an insert or finds the key's record in the immutable region so does a read/copy/update (RCU).
+        /// </summary>
+        /// <param name="logRecord">The destination log record</param>
         /// <param name="sizeInfo">The size information for this record's fields</param>
         /// <param name="input">The user input to be used for computing <paramref name="output"/></param>
+        /// <param name="inputLogRecord">The log record passed to Upsert, to be copied to the destination record</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        bool SingleWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -108,6 +110,19 @@ namespace Tsavorite.core
         void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
 
         /// <summary>
+        /// Called after SingleWriter when a record has been successfully inserted at the tail of the log.
+        /// </summary>
+        /// <param name="logRecord">The destination log record</param>
+        /// <param name="sizeInfo">The size information for this record's fields</param>
+        /// <param name="input">The user input that was used to compute <paramref name="output"/></param>
+        /// <param name="inputLogRecord">The input LogRecord that was to be copied to the record value</param>
+        /// <param name="output">The location where the result of the update may be placed</param>
+        /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// <param name="reason">The operation for which this write is being done</param>
+        void PostSingleWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
         /// Concurrent writer; called on an Upsert that is in-place updating a record in the mutable range.
         /// </summary>
         /// <param name="logRecord">The destination log record</param>
@@ -132,6 +147,20 @@ namespace Tsavorite.core
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject newValue, ref TOutput output, ref UpsertInfo upsertInfo);
+
+        /// <summary>
+        /// Concurrent writer; called on an Upsert that is in-place updating a record in the mutable range. The caller should be aware of ETag and Expiration in the source record.
+        /// </summary>
+        /// <param name="logRecord">The destination log record</param>
+        /// <param name="sizeInfo">The size information for this record's fields</param>
+        /// <param name="input">The user input to be used for computing the destination record's value</param>
+        /// <param name="inputLogRecord">The log record passed to Upsert, to be copied to the destination record</param>
+        /// <param name="output">The location where the result of the update may be placed</param>
+        /// <param name="upsertInfo">Information about this update operation and its context</param>
+        /// <returns>True if the value was written, else false</returns>
+        /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
+        bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord;
         #endregion Upserts
 
         #region RMWs

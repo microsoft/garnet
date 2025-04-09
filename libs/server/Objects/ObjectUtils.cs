@@ -75,7 +75,7 @@ namespace Garnet.server
                 if (sbParam.SequenceEqual(CmdStrings.MATCH) || sbParam.SequenceEqual(CmdStrings.match))
                 {
                     // Read pattern for keys filter
-                    var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+                    var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++);
                     pattern = sbPattern.ToPointer();
                     patternLength = sbPattern.Length;
                 }

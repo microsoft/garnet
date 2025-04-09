@@ -371,9 +371,26 @@ namespace Tsavorite.core
         public Status Upsert<TSourceLogRecord>(ref TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
+            TInput input = default;
+            TOutput output = default;
+            UpsertOptions upsertOptions = default;
+            return Upsert(diskLogRecord.Key, ref input, ref diskLogRecord, ref output, ref upsertOptions);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert<TSourceLogRecord>(ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TSourceLogRecord : ISourceLogRecord
+            => Upsert(inputLogRecord.Key, ref input, ref inputLogRecord, ref output, ref upsertOptions, userContext);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            where TSourceLogRecord : ISourceLogRecord
+        {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions,
-                                                     TransactionalSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(ref diskLogRecord, sessionFunctions);
+            var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
+            return clientSession.store.ContextUpsert(key, keyHash, ref input, inputLogRecord: ref inputLogRecord, ref output, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

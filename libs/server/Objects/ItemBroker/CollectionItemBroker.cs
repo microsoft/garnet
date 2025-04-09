@@ -473,7 +473,7 @@ namespace Garnet.server
             try
             {
                 // Get the object stored at key
-                var statusOp = storageSession.GET(asKey.SpanByte, out var osObject, ref objectTransactionalContext);
+                var statusOp = storageSession.GET(asKey, out var osObject, ref objectTransactionalContext);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
                 IGarnetObject dstObj = null;

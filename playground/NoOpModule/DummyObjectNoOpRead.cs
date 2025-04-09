@@ -13,7 +13,7 @@ namespace NoOpModule
     public class DummyObjectNoOpRead : CustomObjectFunctions
     {
         /// <inheritdoc />
-        public override bool Reader(SpanByte key, ref ObjectInput input, IGarnetObject value,
+        public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value,
             ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
             return true;

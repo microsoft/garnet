@@ -133,15 +133,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             if (!pendingContext.IsSet)
-            {
-                if (srcLogRecord.AsLogRecord(out var logRecord))
-                    pendingContext.Serialize(ref logRecord, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
-                else
-                {
-                    _ = srcLogRecord.AsDiskLogRecord(out var diskLogRecord);
-                    pendingContext.Serialize(ref diskLogRecord, ref input, ref output, userContext, sessionFunctions);
-                }
-            }
+                pendingContext.Serialize(ref srcLogRecord, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
             return OperationStatus.RECORD_ON_DISK;
         }
     }

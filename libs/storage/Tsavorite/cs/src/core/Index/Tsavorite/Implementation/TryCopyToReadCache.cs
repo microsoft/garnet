@@ -33,7 +33,7 @@ namespace Tsavorite.core
             // Even though readcache records are immutable, we have to initialize the lengths
             readcache.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
-            newLogRecord.CopyFrom(ref inputLogRecord, copyKey: false);
+            newLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.

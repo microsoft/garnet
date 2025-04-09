@@ -54,7 +54,7 @@ namespace Tsavorite.benchmark
             return true;
         }
 
-        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
             => true; // not used
 
@@ -70,6 +70,13 @@ namespace Tsavorite.benchmark
         {
             logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            return dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
         }
 
         // RMW functions
@@ -118,7 +125,13 @@ namespace Tsavorite.benchmark
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref Input input) => GetFieldInfo();
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
-        public unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref Input input) => new() { KeyDataSize = sizeof(FixedLengthKey), ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        public unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref Input input) 
+            => new() { KeyDataSize = sizeof(FixedLengthKey), ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+
+        /// <summary>Length of value object, when populated by Upsert using given log record and input</summary>
+        public unsafe RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref Input input)
+            where TSourceLogRecord : ISourceLogRecord
+            => throw new NotImplementedException("GetUpsertFieldInfo(TSourceLogRecord)");
 
         static unsafe RecordFieldInfo GetFieldInfo() => new () { KeyDataSize = sizeof(FixedLengthKey), ValueDataSize = sizeof(FixedLengthValue) };
 
@@ -127,6 +140,10 @@ namespace Tsavorite.benchmark
         public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ReadOnlySpan<byte> srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+
+        public void PostSingleWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref Input input, ref TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord
+            { }
 
         public void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }

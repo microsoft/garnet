@@ -188,6 +188,17 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+        {
+            // Used by Upsert to determine the length of insert destination (client uses Input to fill in whether ETag and Expiration are inluded); Filler information is not needed.
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = varlenInput.GetUpsertFieldInfo(key, ref inputLogRecord, ref input) };
+            PopulateRecordSizeInfo(ref sizeInfo);
+            return sizeInfo;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key)
         {
             // Used by Delete to determine the length of a new tombstone record. Does not require an ISessionFunctions method.

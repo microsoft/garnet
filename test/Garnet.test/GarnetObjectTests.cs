@@ -179,10 +179,10 @@ namespace Garnet.test
     /// <summary>
     /// Serializer for IGarnetObject
     /// </summary>
-    sealed class MyGarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>
+    sealed class MyGarnetObjectSerializer : BinaryObjectSerializer<IHeapObject>
     {
         /// <inheritdoc />
-        public override void Deserialize(out IGarnetObject obj)
+        public override void Deserialize(out IHeapObject obj)
         {
             var type = (GarnetObjectType)reader.ReadByte();
             obj = type switch
@@ -196,12 +196,12 @@ namespace Garnet.test
         }
 
         /// <inheritdoc />
-        public override void Serialize(ref IGarnetObject obj)
+        public override void Serialize(IHeapObject obj)
         {
             if (obj == null)
                 writer.Write((byte)GarnetObjectType.Null);
             else
-                obj.Serialize(writer);
+                ((IGarnetObject)obj).Serialize(writer);
         }
     }
 }

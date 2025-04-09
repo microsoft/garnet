@@ -116,7 +116,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             /// <inheritdoc/>
             public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;

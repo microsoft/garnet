@@ -421,5 +421,13 @@ namespace Garnet.server
 
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref RawStringInput input)
             => throw new GarnetException("String store should not be called with IHeapObject");
+
+        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref RawStringInput input)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (inputLogRecord.Info.ValueIsObject)
+                throw new GarnetException("String store should not be called with IHeapObject");
+            return inputLogRecord.GetRecordFieldInfo();
+        }
     }
 }

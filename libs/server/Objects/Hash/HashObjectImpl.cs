@@ -30,7 +30,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(0).ToArray();
 
                 if (TryGetValue(key, out var hashValue))
                 {
@@ -72,7 +72,7 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var key = input.parseState.GetArgSliceByRef(i).ToArray();
 
                     if (TryGetValue(key, out var hashValue))
                     {
@@ -155,7 +155,7 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).ToArray();
 
                 if (Remove(key, out var hashValue))
                 {
@@ -174,7 +174,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).ToArray();
             _output->result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
@@ -183,7 +183,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var field = input.parseState.GetArgSliceByRef(0).ToArray();
             _output->result1 = ContainsKey(field) ? 1 : 0;
         }
 
@@ -283,8 +283,8 @@ namespace Garnet.server
             var hop = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).ToArray();
+                var value = input.parseState.GetArgSliceByRef(i + 1).ToArray();
 
                 if (!TryGetValue(key, out var hashValue))
                 {
@@ -376,7 +376,7 @@ namespace Garnet.server
 
             try
             {
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(0).ToArray();
                 var incrSlice = input.parseState.GetArgSliceByRef(1);
 
                 var valueExists = TryGetValue(key, out var value);
@@ -416,7 +416,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        resultBytes = incrSlice.SpanByte.ToByteArray();
+                        resultBytes = incrSlice.ToArray();
                         Add(key, resultBytes);
                     }
 
@@ -454,7 +454,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        resultBytes = incrSlice.SpanByte.ToByteArray();
+                        resultBytes = incrSlice.ToArray();
                         Add(key, resultBytes);
                     }
 

@@ -526,9 +526,10 @@ namespace Tsavorite.core
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
+            DiskLogRecord inputLogRecord = default;
 
             do
-                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref output, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
@@ -542,9 +543,10 @@ namespace Tsavorite.core
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
+            DiskLogRecord inputLogRecord = default;
 
             do
-                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref output, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
@@ -553,7 +555,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord diskLogRecord, TSessionFunctionsWrapper sessionFunctions)
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+                ref TSourceLogRecord inputLogRecord, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -561,7 +564,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref diskLogRecord, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);

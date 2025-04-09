@@ -76,5 +76,18 @@ namespace Garnet.server
                 // No object commands take an Expiration for Upsert.
             };
         }
+
+        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref ObjectInput input)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            return new RecordFieldInfo()
+            {
+                KeyDataSize = key.Length,
+                ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                ValueIsObject = true,
+                HasETag = input.header.CheckWithETagFlag()
+                // No object commands take an Expiration for Upsert.
+            };
+        }
     }
 }

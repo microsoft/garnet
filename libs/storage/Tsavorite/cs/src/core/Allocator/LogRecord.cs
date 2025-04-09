@@ -700,7 +700,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy the entire record values: Value and optionals (ETag, Expiration)
         /// </summary>
-        public bool TryCopyRecordValues<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryCopyFrom<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // This assumes the Key has been set and is not changed
@@ -722,6 +723,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy the record optional values (ETag, Expiration)
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryCopyRecordOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -766,7 +768,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PrepareForRevivification(RecordSizeInfo sizeInfo)
+        public void PrepareForRevivification(RecordSizeInfo sizeInfo)   // TODO is this needed?
         {
             // For revivification: prepare the current record to be passed to initial updaters.
             // The rules:
@@ -820,55 +822,6 @@ namespace Tsavorite.core
                 address = valueAddress + SpanField.OverflowInlineSize;  // FillerAddress
                 *(int*)address = spaceToEndOfRecord - SpanField.OverflowInlineSize;
             }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CopyFrom<TSourceLogRecord>(ref TSourceLogRecord inputLogRecord, bool copyKey)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            var allocatedRecordSize = GetInlineRecordSizes().allocatedSize;
-
-            // This is called after we have just allocated this LogRecord (e.g. Upsert) or have ensured the size is sufficient (e.g. reviv) via TrySetValueLength.
-            if (copyKey)
-            {
-                Debug.Assert(SpanField.GetInlineLengthRef(KeyAddress) == inputLogRecord.Key.Length, $"Key size {*(int*)KeyAddress} does not match diskLogRecord.Key.Length {inputLogRecord.Key.Length}");
-                inputLogRecord.Key.CopyTo(SpanField.AsInlineSpan(KeyAddress));
-            }
-            Debug.Assert(inputLogRecord.Info.ValueIsInline == Info.ValueIsInline, $"diskLogRecord ValueIsInline {inputLogRecord.Info.ValueIsInline} does not match this.ValueIsInline {this.Info.ValueIsInline}");
-            Debug.Assert(inputLogRecord.ValueIsObject == this.ValueIsObject, $"diskLogRecord ValueIsObject {inputLogRecord.ValueIsObject} does not match this.ValueIsObject {this.ValueIsObject}");
-            if (!inputLogRecord.Info.ValueIsObject)
-                inputLogRecord.ValueSpan.CopyTo(SpanField.AsInlineSpan(ValueAddress));
-            else
-            {
-                var objectId = SpanField.GetObjectIdRef(ValueAddress);
-                Debug.Assert(objectId != ObjectIdMap.InvalidObjectId, "ObjectIdRef was not set");
-                objectIdMap.Set(objectId, inputLogRecord.ValueObject);
-            }
-
-            // Set optionals. Use local address calculation to avoid multiple "if"s.
-            var address = GetOptionalStartAddress();
-
-            Debug.Assert(inputLogRecord.Info.HasETag == Info.HasETag, $"diskLogRecord HasETag {inputLogRecord.Info.HasETag} does not match this.HasETag {this.Info.HasETag}");
-            if (inputLogRecord.Info.HasETag)
-            {
-                *(long*)address = inputLogRecord.ETag;
-                address += ETagLen;
-            }
-            Debug.Assert(inputLogRecord.Info.HasExpiration == Info.HasExpiration, $"diskLogRecord HasExpiration {inputLogRecord.Info.HasExpiration} does not match this.HasExpiration {this.Info.HasExpiration}");
-            if (inputLogRecord.Info.HasExpiration)
-            {
-                *(long*)address = inputLogRecord.Expiration;
-                address += ExpirationLen;
-            }
-
-            var fillerLen = allocatedRecordSize - (int)(address - physicalAddress);
-            if (fillerLen >= FillerLengthSize)
-            {
-                *(int*)address = fillerLen;
-                InfoRef.SetHasFiller();
-            }
-            else
-                InfoRef.ClearHasFiller();
         }
 
         public override readonly string ToString()

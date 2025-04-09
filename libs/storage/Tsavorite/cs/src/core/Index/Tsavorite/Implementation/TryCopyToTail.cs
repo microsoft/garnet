@@ -39,7 +39,7 @@ namespace Tsavorite.core
 
             hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
-            newLogRecord.CopyFrom(ref inputLogRecord, copyKey: false);
+            newLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);

@@ -34,6 +34,13 @@ namespace Tsavorite.core
             return logRecord.TrySetValueObject(srcValue, ref sizeInfo);
         }
 
+        public virtual bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            // This includes ETag and Expiration
+            return dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
+        }
+
         /// <inheritdoc/>
         public virtual bool SingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
@@ -49,26 +56,21 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public virtual bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public virtual bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var ok = srcLogRecord.ValueIsObject
-                ? dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject, ref sizeInfo)
-                : dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, ref sizeInfo);
-            if (!ok)
-                return false;
-            if (srcLogRecord.Info.HasETag && !dstLogRecord.TrySetETag(srcLogRecord.ETag))
-                return false;
-            if (srcLogRecord.Info.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
-                return false;
-            return true;
+            // This includes ETag and Expiration
+            return dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
         }
 
         /// <inheritdoc/>
         public virtual void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-
         /// <inheritdoc/>
         public virtual void PostSingleWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        /// <inheritdoc/>
+        public virtual void PostSingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord
+        { }
 
         /// <inheritdoc/>
         public virtual bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
@@ -116,6 +118,10 @@ namespace Tsavorite.core
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input) => throw new NotImplementedException("GetUpsertFieldInfo(Span<byte>)");
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => throw new NotImplementedException("GetUpsertFieldInfo(IHeapObject)");
+        /// <inheritdoc/>
+        public virtual RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input)
+            where TSourceLogRecord : ISourceLogRecord
+        => throw new NotImplementedException("GetUpsertFieldInfo(ref TSourceLogRecord)");
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }

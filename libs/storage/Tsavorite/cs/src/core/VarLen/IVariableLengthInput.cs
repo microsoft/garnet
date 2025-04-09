@@ -22,5 +22,9 @@ namespace Tsavorite.core
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input);
+
+        /// <summary>Length of value object, when populated by Upsert using given log record</summary>
+        RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input)
+            where TSourceLogRecord : ISourceLogRecord;
     }
 }

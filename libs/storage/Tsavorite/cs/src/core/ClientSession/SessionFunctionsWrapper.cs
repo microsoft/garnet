@@ -50,9 +50,9 @@ namespace Tsavorite.core
             => _clientSession.functions.SingleWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SingleCopyWriter<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool SingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
             where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.SingleCopyWriter(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref upsertInfo, reason);
+            => _clientSession.functions.SingleWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostSingleWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
@@ -69,6 +69,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void PostSingleWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            dstLogRecord.InfoRef.SetDirtyAndModified();
+            _clientSession.functions.PostSingleWriter(ref dstLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo, reason);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
@@ -81,6 +89,16 @@ namespace Tsavorite.core
         public bool ConcurrentWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo))
+                return false;
+            logRecord.InfoRef.SetDirtyAndModified();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ConcurrentWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (!_clientSession.functions.ConcurrentWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
@@ -229,6 +247,11 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input)
+            where TSourceLogRecord : ISourceLogRecord
+            => _clientSession.functions.GetUpsertFieldInfo(key, ref inputLogRecord, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);

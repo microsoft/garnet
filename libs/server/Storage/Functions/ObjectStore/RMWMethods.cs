@@ -248,7 +248,7 @@ namespace Garnet.server
                     break;
 
                 case GarnetObjectType.Persist:
-                    if (!dstLogRecord.TryCopyRecordValues(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
                         return false;
                     if (srcLogRecord.Info.HasExpiration)
                     {

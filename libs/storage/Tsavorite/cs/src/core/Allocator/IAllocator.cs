@@ -38,6 +38,11 @@ namespace Tsavorite.core
         RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
+        /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="inputLogRecord"/>, and <paramref name="input"/></summary>
+        RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>;
+
         /// <summary>Get record size required for a new tombstone record</summary>
         RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key);
 
