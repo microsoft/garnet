@@ -414,6 +414,11 @@ namespace Garnet.test
             Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand($"EXISTS {key}");
+            var expectedResponse = ":1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -470,6 +475,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, pop[1][1].Length);
             ClassicAssert.AreEqual("two", pop[1][1][0].ToString());
             ClassicAssert.AreEqual(2, (int)(RedisValue)pop[1][1][1]);
+
+            ClassicAssert.IsFalse(db.KeyExists("a"));
+            ClassicAssert.IsTrue(db.KeyExists("b"));
         }
 
         [Test]
@@ -606,6 +614,88 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand($"{command} nonexistentkey 1");
             var expectedResponse = "$-1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void PopWrongTypeTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SET key 0");
+            lightClientRequest.SendCommand("RPUSH list 0");
+            lightClientRequest.SendCommand("ZADD set 0 first");
+
+            var response = lightClientRequest.SendCommand("BLMPOP 0 1 key RIGHT");
+            var expectedResponse = "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLMPOP 0 2 key list RIGHT");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLMPOP 0 1 set RIGHT");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BZMPOP 0 1 key MAX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BZMPOP 0 2 key set MAX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BZMPOP 0 1 list MAX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BZPOPMIN key 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BZPOPMAX list 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLMOVE key foo RIGHT RIGHT 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLMOVE set foo RIGHT RIGHT 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLMOVE list set LEFT LEFT 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLMOVE list key LEFT LEFT 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BRPOPLPUSH key foo 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BRPOPLPUSH list key 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BLPOP key 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("BRPOP key 0");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            var blockingLTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommand("BLMPOP 0 2 list key RIGHT");
+                var expectedResponse = "*2\r\n$4\r\nlist\r\n*1\r\n$1\r\n0\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            });
+
+            var blockingZTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommand("BZMPOP 0 2 set key MAX");
+                var expectedResponse = "*2\r\n$3\r\nset\r\n*1\r\n*2\r\n$5\r\nfirst\r\n$1\r\n0";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            });
+
+            Task.WaitAll([blockingLTask, blockingZTask], TimeSpan.FromSeconds(5));
+            ClassicAssert.IsTrue(blockingLTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(blockingZTask.IsCompletedSuccessfully);
+
+            response = lightClientRequest.SendCommand("EXISTS list");
+            expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
     }
