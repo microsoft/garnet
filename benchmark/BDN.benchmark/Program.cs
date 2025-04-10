@@ -15,7 +15,7 @@ BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
 #if DEBUG
     .Run(args, new DebugInProcessConfig());
 #else
-    .Run(args, new BaseConfig(args));
+    .Run(args, new BaseConfig());
 #endif
 
 public class BaseConfig : ManualConfig
@@ -23,44 +23,39 @@ public class BaseConfig : ManualConfig
     public Job Net8BaseJob { get; }
     public Job Net9BaseJob { get; }
 
-    public BaseConfig(string[] args)
+    public BaseConfig()
     {
-        AddLogger(ConsoleLogger.Default);
-        AddExporter(DefaultExporters.Markdown);
-        AddColumnProvider(DefaultColumnProviders.Instance);
-        WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
+        _ = AddLogger(ConsoleLogger.Default);
+        _ = AddExporter(DefaultExporters.Markdown);
+        _ = AddColumnProvider(DefaultColumnProviders.Instance);
+        _ = WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
 
         var baseJob = Job.Default.WithGcServer(true);
 
-        // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net9.0 or both (if env var is not set)
-        string bdnRunParam = Environment.GetEnvironmentVariable("BDNRUNPARAM");
+        Net8BaseJob = baseJob
+            .WithRuntime(CoreRuntime.Core80)
+            .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
+        Net9BaseJob = baseJob
+            .WithRuntime(CoreRuntime.Core90)
+            .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
-        if (args.Length > 0 && (bdnRunParam == "net8.0" || bdnRunParam == "net9.0"))
+        // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net9.0 or both (if env var is not set or invalid)
+        var bdnRunParam = Environment.GetEnvironmentVariable("BDNRUNPARAM");
+
+        switch (bdnRunParam)
         {
-            switch (bdnRunParam)
-            {
-                case "net8.0":
-                    AddJob(baseJob.WithRuntime(CoreRuntime.Core80)
-                        .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
-                        .WithId(".NET 8"));
-                    break;
-                case "net9.0":
-                    AddJob(baseJob.WithRuntime(CoreRuntime.Core90)
-                        .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
-                        .WithId(".NET 9"));
-                    break;
-                default:
-                    throw new NotSupportedException($"Unsupported framework in BDNRUNPARAM env var: {bdnRunParam}.  Expecting net9.0 or net8.0.");
-            }
-        }
-        else
-        {
-            AddJob(baseJob.WithRuntime(CoreRuntime.Core80)
-                .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
-                .WithId(".NET 8"));
-            AddJob(baseJob.WithRuntime(CoreRuntime.Core90)
-                .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
-                .WithId(".NET 9"));
+            case "net8.0":
+                _ = AddJob(Net8BaseJob.WithId(".NET 8"));
+                break;
+            case "net9.0":
+                _ = AddJob(Net9BaseJob.WithId(".NET 9"));
+                break;
+            default:
+                _ = AddJob(
+                    Net8BaseJob.WithId(".NET 8"),
+                    Net9BaseJob.WithId(".NET 9")
+                    );
+                break;
         }
     }
 }
