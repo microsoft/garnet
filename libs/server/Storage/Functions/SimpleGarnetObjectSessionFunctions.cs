@@ -22,9 +22,9 @@ namespace Garnet.server
             return false; // TODO create an IGarnetObject from the serialized bytes
         }
 
-        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, IHeapObject srcValue, ref IGarnetObject output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, IHeapObject srcValue, ref IGarnetObject output, ref UpsertInfo upsertInfo)
         {
-            var result = base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+            var result = base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             if (result)
                 output = (IGarnetObject)srcValue;
             return result;
@@ -49,7 +49,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
         {
-            // Simple base implementation does not use upsertInfo or WriteReason
+            // Simple base implementation does not use upsertInfo
             var upsertInfo = new UpsertInfo();
             return base.InitialWriter(ref dstLogRecord, ref sizeInfo, ref input, ref srcLogRecord, ref output, ref upsertInfo);
         }

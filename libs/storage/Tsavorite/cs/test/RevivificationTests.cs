@@ -538,7 +538,7 @@ namespace Tsavorite.test.Revivification
             public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, upsertInfo.Address);
-                return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo, reason);
+                return base.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
             public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)

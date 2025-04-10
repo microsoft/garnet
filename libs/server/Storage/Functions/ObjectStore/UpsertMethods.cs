@@ -12,7 +12,7 @@ namespace Garnet.server
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
             if (!dstLogRecord.TrySetValueSpan(srcValue, ref sizeInfo))
                 return false;
@@ -24,7 +24,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
             if (!dstLogRecord.TrySetValueObject(srcValue, ref sizeInfo))
                 return false;
@@ -36,12 +36,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref TSourceLogRecord inputLogRecord, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref TSourceLogRecord inputLogRecord, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
             => dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
 
         /// <inheritdoc />
-        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -54,7 +54,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
             var garnetObject = (IGarnetObject)srcValue;
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -66,7 +66,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref TSourceLogRecord inputLogRecord, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref TSourceLogRecord inputLogRecord, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -79,6 +79,9 @@ namespace Garnet.server
             }
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
+            var size = logRecord.Info.ValueIsInline
+                ? 0
+                : (!logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(size);
         }
 

@@ -15,7 +15,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <remarks>The space is laid out as:
     ///     <list>
-    ///     <item>[RecordInfo][Span key][Value (Span or ObjectId)][ETag?][Expiration?][FillerLen?][Filler bytes]
+    ///     <item>[RecordInfo][Key (Span or ObjectId)][Value (Span or ObjectId)][ETag?][Expiration?][FillerLen?][Filler bytes]
     ///         <br>Where Value Span is one of:</br>
     ///         <list type="bullet">
     ///             <item>ObjectId: If this is a object record, this is the ID into the <see cref="ObjectIdMap"/></item>
