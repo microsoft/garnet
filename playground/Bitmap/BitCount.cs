@@ -16,7 +16,7 @@ namespace Bitmap
 
         private static byte* alloc_aligned(int numRecords, int sectorSize)
         {
-            alignedMemory = new SectorAlignedMemory(numRecords, sectorSize);
+            alignedMemory = SectorAlignedMemory.Allocate(numRecords, (uint)sectorSize);
             return alignedMemory.GetValidPointer();
         }
 
