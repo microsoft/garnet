@@ -3,7 +3,6 @@
 
 using System;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -1758,7 +1757,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SortedSetExpire(key, ref input, ref outputFooter);
 
@@ -1851,7 +1850,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
             var input = new ObjectInput(header, ref membersParseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref outputFooter);
 
@@ -1920,7 +1919,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
             var input = new ObjectInput(header, ref membersParseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = CreateDefaultObjectStoreOutput();
 
             var status = storageApi.SortedSetPersist(key, ref input, ref outputFooter);
 
