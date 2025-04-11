@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Dummy network sender that reads from a fixed in-memory buffer
     /// </summary>
-    unsafe class ScratchBufferNetworkSender : INetworkSender
+    internal unsafe class ScratchBufferNetworkSender : INetworkSender
     {
         readonly ScratchBufferManager scratchBufferManager;
 

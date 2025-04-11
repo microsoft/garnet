@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+		<DelaySign>false</DelaySign>
+  </PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommandLineParser" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\..\benchmark\BDN.benchmark\BDN.benchmark.csproj" />
+	  <ProjectReference Include="..\..\main\GarnetServer\GarnetServer.csproj" />
+	</ItemGroup>
+	
+</Project>
