@@ -20,12 +20,12 @@ namespace Garnet.server
         bool isMemory;
         readonly bool resp3;
 
-        public unsafe GarnetObjectStoreRespOutput(ref GarnetObjectStoreOutput outputFooter)
+        public unsafe GarnetObjectStoreRespOutput(ref RespInputHeader input, ref SpanByteAndMemory output)
         {
             isMemory = false;
             ptrHandle = default;
-            output = ref outputFooter.SpanByteAndMemory;
-            resp3 = outputFooter.IsResp3;
+            this.output = ref output;
+            resp3 = input.CheckResp3Flag();
             ptr = output.SpanByte.ToPointer();
             curr = ptr;
             end = curr + output.Length;

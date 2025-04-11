@@ -179,13 +179,13 @@ namespace Garnet.server
                         HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HGET:
-                        HashGet(ref input, ref output);
+                        HashGet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HMGET:
-                        HashMultipleGet(ref input, ref output);
+                        HashMultipleGet(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HGETALL:
-                        HashGetAll(ref output);
+                        HashGetAll(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HDEL:
                         HashDelete(ref input, outputSpan);
@@ -200,31 +200,31 @@ namespace Garnet.server
                         HashExists(ref input, outputSpan);
                         break;
                     case HashOperation.HEXPIRE:
-                        HashExpire(ref input, ref output);
+                        HashExpire(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HTTL:
-                        HashTimeToLive(ref input, ref output);
+                        HashTimeToLive(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HPERSIST:
-                        HashPersist(ref input, ref output);
+                        HashPersist(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HKEYS:
-                        HashGetKeysOrValues(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HVALS:
-                        HashGetKeysOrValues(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HINCRBY:
-                        HashIncrement(ref input, ref output);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrement(ref input, ref output);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HSETNX:
                         HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(ref input, ref output);
+                        HashRandomField(ref input, ref output.SpanByteAndMemory);
                         break;
                     case HashOperation.HCOLLECT:
                         HashCollect(ref input, outputSpan);
