@@ -186,50 +186,8 @@ namespace Tsavorite.core
         #endregion
 
         #region Abstract and virtual methods
-        /// <summary>Serialize an in-memory log record to the <see cref="RecordScanIterator{TStoreFunctions, TAllocator}"/>'s record buffer.</summary>
-        internal abstract void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject);
-
-        /// <summary>Deserialize the <see cref="IHeapObject"/> value from a disk log record read by the <see cref="RecordScanIterator{TStoreFunctions, TAllocator}"/>,
-        /// if this is the <see cref="ObjectAllocator{TStoreFunctions}"/>.</summary>
-        internal abstract void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream);
-
         /// <summary>Initialize fully derived allocator</summary>
         public abstract void Initialize();
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal SpanByteHeapContainer GetSpanByteHeapContainer(ReadOnlySpan<byte> item) => new SpanByteHeapContainer(item, bufferPool);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private protected unsafe byte* SerializeCommonRecordFieldsToBuffer(LogRecord logRecord, ref SectorAlignedMemory recordBuffer, int inlineRecordSize)
-        {
-            bufferPool.EnsureSize(ref recordBuffer, inlineRecordSize);
-            var ptr = recordBuffer.GetValidPointer();
-
-            *(RecordInfo*)ptr = logRecord.Info;
-            ptr += RecordInfo.GetLength();
-
-            *(long*)ptr = (long)inlineRecordSize;
-            ptr += DiskLogRecord.SerializedRecordLengthSize;
-
-            if (logRecord.Info.HasETag)
-            {
-                *(long*)ptr = logRecord.ETag;
-                ptr += LogRecord.ETagSize;
-            }
-
-            if (logRecord.Info.HasExpiration)
-            {
-                *(long*)ptr = logRecord.Expiration;
-                ptr += LogRecord.ExpirationSize;
-            }
-
-            var key = logRecord.Key;
-            *(int*)ptr = key.Length;
-            ptr += SpanField.FieldLengthPrefixSize;
-            key.CopyTo(new Span<byte>(ptr, key.Length));
-            ptr += key.Length;
-            return ptr;
-        }
 
         /// <summary>Write async to device</summary>
         /// <typeparam name="TContext"></typeparam>
@@ -1844,17 +1802,14 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
-                var record = ctx.record.GetValidPointer();
-                var diskLogRecord = new DiskLogRecord((long)record);
-                if ((int)diskLogRecord.SerializedRecordLength > int.MaxValue)
-                    throw new TsavoriteException("Records exceeding 2GB are not yet supported");        // TODO: Convert to support 'long' lengths
-                int requiredBytes = (int)diskLogRecord.SerializedRecordLength;
-                if (ctx.record.available_bytes >= requiredBytes)                                        // TODO: Could check for whether we have a full Key and if so a match here; if so, we can determine whether we need to get Value vs. skip to next .PreviousAddress
+                var diskLogRecord = new DiskLogRecord((long)ctx.record.GetValidPointer());
+                bool hasFullRecord = diskLogRecord.IsComplete(ctx.record.available_bytes, out bool hasFullKey, out int requiredBytes);      // TODO: support 'long' lengths
+                if (hasFullKey || ctx.request_key.IsEmpty)
                 {
                     Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
-                    _wrapper.DeserializeValueObject(ref diskLogRecord, ref ctx);
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
+                    var currentRecordIsInRange = ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress;
                     if (!ctx.request_key.IsEmpty && !storeFunctions.KeysEqual(ctx.request_key, diskLogRecord.Key))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
@@ -1868,16 +1823,27 @@ namespace Tsavorite.core
                         }
                     }
 
-                    // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
-                    if (ctx.completionEvent is not null)
-                        ctx.completionEvent.Set(ref ctx);
-                    else if (ctx.callbackQueue is not null)
-                        ctx.callbackQueue.Enqueue(ctx);
-                    else
-                        _ = ctx.asyncOperation.TrySetResult(ctx);
+                    if (hasFullRecord)
+                    {
+                        // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                        if (currentRecordIsInRange)
+                            ctx.ValueObject = diskLogRecord.DeserializeValueObject(storeFunctions.CreateValueObjectSerializer());
+
+                        if (ctx.completionEvent is not null)
+                            ctx.completionEvent.Set(ref ctx);
+                        else if (ctx.callbackQueue is not null)
+                            ctx.callbackQueue.Enqueue(ctx);
+                        else
+                            _ = ctx.asyncOperation.TrySetResult(ctx);
+                    }
                 }
-                else
+
+                if (!hasFullRecord)
                 {
+                    // We don't have the full record and may not even have gotten a full key, so we need to do another IO
+                    if (requiredBytes > int.MaxValue)
+                        throw new TsavoriteException("Records exceeding 2GB are not yet supported"); // TODO note: We should not have written this yet; serialization is int-limited
+                    
                     ctx.record.Return();
                     AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
                 }

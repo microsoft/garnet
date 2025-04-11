@@ -115,7 +115,7 @@ namespace Tsavorite.core
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
             // Otherwise the key is already in the pendingContext *and* the key in diskLogRecord has been verified to match.
-            DiskLogRecord diskLogRecord = new((long)request.record.GetValidPointer());
+            DiskLogRecord diskLogRecord = new(ref request);
             var key = diskLogRecord.Key;
 
             OperationStatus internalStatus = pendingContext.type switch

@@ -87,9 +87,9 @@ namespace Tsavorite.core
         public void ClearBitsForDiskImages()
         {
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
-            // Clear kKeyIsInlineBitMask and kValueIsInlineBitMask but preserve ValueIsObject as it indicates for the ObjectAllocator whether a value object should
-            // be deserialized or if the value should remain inline.
-            word &= ~(kDirtyBitMask | kSealedBitMask | kKeyIsInlineBitMask | kValueIsInlineBitMask);
+            // Preserve Key/ValueIsInline as they are always inline for DiskLogRecord. Preserve ValueIsObject to indicate whether a value object should be deserialized
+            // or if the value should remain inline (and possibly overflow if copied to a LogRecord).
+            word &= ~(kDirtyBitMask | kSealedBitMask);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

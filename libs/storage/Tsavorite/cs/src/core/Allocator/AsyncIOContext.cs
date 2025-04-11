@@ -24,6 +24,11 @@ namespace Tsavorite.core
         public PinnedSpanByte request_key;
 
         /// <summary>
+        /// Deserialized ValueObject if RecordInfo.ValueIsObject, else null
+        /// </summary>
+        public IHeapObject ValueObject;
+
+        /// <summary>
         /// Logical address
         /// </summary>
         public long logicalAddress;

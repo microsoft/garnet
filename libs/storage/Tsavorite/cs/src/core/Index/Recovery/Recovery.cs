@@ -774,7 +774,7 @@ namespace Tsavorite.core
                         lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
-                    ClearLocksOnPage(p, options);
+                    ClearBitsOnPage(p, options);
 
                     ProcessReadPageAndFlush(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
                 }
@@ -807,7 +807,7 @@ namespace Tsavorite.core
                         lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
-                    ClearLocksOnPage(p, options);
+                    ClearBitsOnPage(p, options);
 
                     ProcessReadPageAndFlush(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
                 }
@@ -910,7 +910,7 @@ namespace Tsavorite.core
                             lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
-                        ClearLocksOnPage(p, options);
+                        ClearBitsOnPage(p, options);
                     }
                     else
                     {
@@ -952,7 +952,7 @@ namespace Tsavorite.core
                             lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
-                        ClearLocksOnPage(p, options);
+                        ClearBitsOnPage(p, options);
                     }
                     else
                     {
@@ -1062,7 +1062,7 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
-        private unsafe void ClearLocksOnPage(long page, RecoveryOptions options)
+        private unsafe void ClearBitsOnPage(long page, RecoveryOptions options)
         {
             var startLogicalAddress = hlog.GetStartLogicalAddress(page);
             var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
@@ -1077,15 +1077,16 @@ namespace Tsavorite.core
             while (pointer < untilLogicalAddressInPage)
             {
                 long recordStart = physicalAddress + pointer;
-                ref RecordInfo info = ref DiskLogRecord.GetInfoRef(recordStart);
-                info.ClearBitsForDiskImages();
 
-                if (info.IsNull)
+                // DiskLogRecord ctor calls ClearBitsForDiskImages(), and then we use its size to move to the next record.
+                var diskLogRecord = new DiskLogRecord(recordStart);
+
+                if (diskLogRecord.Info.IsNull)
                     pointer += RecordInfo.GetLength();
                 else
                 {
-                    long size = DiskLogRecord.GetSerializedLength(recordStart);
-                    Debug.Assert(size <= hlogBase.GetPageSize());
+                    long size = diskLogRecord.GetSerializedLength();
+                    Debug.Assert(size <= hlogBase.GetPageSize());   // TODO: This will likely exceed pagesize for large objects. Make sure we don't need this limitation
                     pointer += size;
                 }
             }
@@ -1147,7 +1148,7 @@ namespace Tsavorite.core
                         }
                     }
                 }
-                pointer += diskLogRecord.SerializedRecordLength;
+                pointer += diskLogRecord.GetSerializedLength();
             }
 
             return touched;

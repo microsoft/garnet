@@ -185,18 +185,6 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
-        /// <inheritdoc/>
-        internal override void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
-        {
-            // For SpanByteAllocator we don't have a value object.
-            var diskLogRecord = new DiskLogRecord();
-            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer: default, ref recordBuffer);
-            valueObject = default;
-        }
-
-        /// <inheritdoc/>
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream) { /* This allocator has no IHeapObject */ }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {

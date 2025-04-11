@@ -233,25 +233,6 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
-        /// <inheritdoc/>
-        internal override void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject)
-        {
-            // For iterator buffer we don't need to serialize the value (it should be deserialized already).
-            var diskLogRecord = new DiskLogRecord();
-            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer : default, ref recordBuffer);
-            valueObject = logRecord.Info.ValueIsObject ? logRecord.ValueObject : default;
-        }
-
-        /// <inheritdoc/>
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) serializedBytes)
-        {
-            var stream = new MemoryStream(serializedBytes.array);
-            _ = stream.Seek(serializedBytes.offset, SeekOrigin.Begin);
-            var valueSerializer = storeFunctions.BeginDeserializeValue(stream);
-            valueSerializer.Deserialize(out diskLogRecord.valueObject);
-            valueSerializer.EndDeserialize();
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
@@ -274,7 +255,7 @@ namespace Tsavorite.core
         internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
-            if (logRecord.ValueIsObject && logRecord.ValueObject is not null)
+            if (logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
                 storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 
@@ -968,13 +949,6 @@ namespace Tsavorite.core
             startptr = 0;
             size = 0;
 #endif // READ_WRITE
-        }
-
-        /// <summary>Retrieve objects from object log</summary>
-        internal void DeserializeValue(ref DiskLogRecord diskLogRecord, ref AsyncIOContext ctx)
-        {
-            var serializedBytes = ctx.record.GetArrayAndUnalignedOffset(diskLogRecord.physicalAddress);
-            DeserializeFromDiskBuffer(ref diskLogRecord, serializedBytes);
         }
         #endregion
 

@@ -38,12 +38,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetInlineDataAddress(long fieldAddress) => fieldAddress + FieldLengthPrefixSize;
 
-        /// <summary>
-        /// This is the inline size of an overflow (out-of-line) objectId.. There is no length prefix for
-        /// this field. A field's inline size must be at least this to be able to convert it to an overflow byte[].
-        /// For an Object record, this should not be used; use <see cref="ObjectIdMap.ObjectIdSize"/> instead.
-        /// </summary>
-        internal const int OverflowInlineSize = sizeof(int);
+        /// <summary>This is the inline size of an overflow (out-of-line) byte[] objectId. There is no length prefix for this field.</summary>
+        /// <remarks>This is a separate field for </remarks>
+        internal const int OverflowInlineSize = ObjectIdMap.ObjectIdSize;
 
         /// <summary>Gets a referemce to the ObjectId at address (which is ValueAddress). There is no length prefix.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -285,7 +282,7 @@ namespace Tsavorite.core
                 objectIdMap.Set(objectId, null);
 
             // Set this as inline with length equal to the size difference.
-            int newLength = OverflowInlineSize - FieldLengthPrefixSize;
+            var newLength = OverflowInlineSize - FieldLengthPrefixSize;
             Debug.Assert(newLength >= 0, "newLength must be non-negative");
 
             // Sequencing here is important for zeroinit correctness
@@ -307,7 +304,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static Span<byte> ConvertObjectIdToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
         {
-            ref int objIdRef = ref GetObjectIdRef(fieldAddress);
+            ref var objIdRef = ref GetObjectIdRef(fieldAddress);
             objectIdMap.Free(objIdRef);
             objIdRef = 0;
 

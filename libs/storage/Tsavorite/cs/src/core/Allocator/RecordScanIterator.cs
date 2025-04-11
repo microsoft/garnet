@@ -187,7 +187,6 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                IHeapObject valueObject = default;
                 if (currentAddress >= headAddress || assumeInMemory)
                 {
                     // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
@@ -203,29 +202,20 @@ namespace Tsavorite.core
                     {
                         if (currentAddress >= headAddress && store is not null)
                             store.LockForScan(ref stackCtx, logRecord.Key);
-
-                        hlogBase.SerializeRecordToIteratorBuffer(ref logRecord, ref recordBuffer, out valueObject);
+                        diskLogRecord.Serialize(in logRecord, store.hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
                     }
                     finally
                     {
                         if (stackCtx.recSrc.HasLock)
                             store.UnlockForScan(ref stackCtx);
                     }
-                    diskLogRecord = new((long)recordBuffer.GetValidPointer());
                 }
                 else
                 {
                     // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                     diskLogRecord = new(physicalAddress);
-                    nextAddress = currentAddress + diskLogRecord.SerializedRecordLength;
-                }
-
-                if (hlogBase.IsObjectAllocator)
-                { 
-                    if (valueObject is not null)
-                        diskLogRecord.valueObject = valueObject;
-                    else 
-                        hlogBase.DeserializeFromDiskBuffer(ref diskLogRecord, frame.GetArrayAndUnalignedOffset(currentPage, offset));
+                    _ = diskLogRecord.DeserializeValueObject(store.hlogBase.storeFunctions.CreateValueObjectSerializer());
+                    nextAddress = currentAddress + diskLogRecord.GetSerializedLength();
                 }
 
                 // Success
@@ -282,13 +272,11 @@ namespace Tsavorite.core
             }
 
             long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
-            allocatedSize = new DiskLogRecord(physicalAddress).SerializedRecordLength;
+            allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();
             return physicalAddress;
         }
 
         #region ISourceLogRecord
-        /// <inheritdoc/>
-        public bool ValueIsObject => false;
         /// <inheritdoc/>
         public ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
         /// <inheritdoc/>
@@ -346,8 +334,8 @@ namespace Tsavorite.core
         public RecordFieldInfo GetRecordFieldInfo() => new()
         {
             KeyDataSize = Key.Length,
-            ValueDataSize = ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
-            ValueIsObject = ValueIsObject,
+            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+            ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
         };
@@ -380,14 +368,9 @@ namespace Tsavorite.core
                 result.cts?.Cancel();
             }
 
-#if false   // TODO: Deserialize valueObject in frame (if present). Consider DiskLogRecord.Clone to a the local diskLogRecord immediately, so the large valueObject is freed as early as possible.
-            if (result.freeBuffer1 != null)
-            {
-                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, ref frame.GetPage(result.page % frame.frameSize));
-                result.freeBuffer1.Return();
-                result.freeBuffer1 = null;
-            }
-#endif
+            // Deserialize valueObject in frame (if present)
+            var diskLogRecord = new DiskLogRecord(frame.GetPhysicalAddress(result.page, offset: 0));
+            _ = diskLogRecord.DeserializeValueObject(store.hlogBase.storeFunctions.CreateValueObjectSerializer());
 
             if (errorCode == 0)
                 _ = result.handle?.Signal();

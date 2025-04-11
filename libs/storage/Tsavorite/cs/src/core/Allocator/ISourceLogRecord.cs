@@ -8,9 +8,6 @@ namespace Tsavorite.core
     /// <summary>An interface to cover either an in-memory or on-disk log record for RCU</summary>
     public unsafe interface ISourceLogRecord
     {
-        /// <summary>Whether this is a record for an object or a Span{byte} value</summary>
-        bool ValueIsObject { get; }
-
         /// <summary>A ref to the record header</summary>
         ref RecordInfo InfoRef { get; }
 

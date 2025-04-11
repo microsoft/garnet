@@ -56,18 +56,12 @@ namespace Tsavorite.core
             this.objectIdMap = objectIdMap;
         }
 
-        #region ISourceLogRecord
-        /// <inheritdoc/>
-        public readonly bool ValueIsObject
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                Debug.Assert(!Info.ValueIsObject || objectIdMap is not null, $"Mismatch between Info.ValueIsObject ({Info.ValueIsObject}) and objectIdMap != null {objectIdMap is not null}");
-                return Info.ValueIsObject;
-            }
-        }
+        /// <summary>Serialized length of the record</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly long GetSerializedLength(long physicalAddress)
+            => RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
+        #region ISourceLogRecord
         /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0;
         /// <inheritdoc/>
@@ -88,7 +82,7 @@ namespace Tsavorite.core
         {
             get
             {
-                Debug.Assert(!ValueIsObject || Info.ValueIsInline, "ValueSpan is not valid for non-inline Object log records");
+                Debug.Assert(!Info.ValueIsObject, "ValueSpan is not valid for Object values");
                 return SpanField.AsSpan(ValueAddress, Info.ValueIsInline, objectIdMap);
             }
         }
@@ -99,8 +93,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(ValueIsObject, "ValueObject is not valid for Span values");
-                if (Info.ValueIsInline)
+                Debug.Assert(Info.ValueIsObject, "ValueObject is not valid for Span values");
+                if (!Info.ValueIsObject)
                     return default;
                 var objectId = *ValueObjectIdAddress;
                 if (objectId == ObjectIdMap.InvalidObjectId)
@@ -127,8 +121,8 @@ namespace Tsavorite.core
         public void ClearValueObject(Action<IHeapObject> disposer)
 #pragma warning restore IDE0251
         {
-            Debug.Assert(ValueIsObject, "ClearValueObject() is not valid for String log records");
-            if (ValueIsObject)
+            Debug.Assert(Info.ValueIsObject, "ClearValueObject() is not valid for Span Values");
+            if (Info.ValueIsObject)
             {
                 objectIdMap.ClearAt(ValueObjectId, disposer);
                 if (!Info.ValueIsInline)
@@ -156,8 +150,8 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
         {
             KeyDataSize = SpanField.GetInlineDataSizeOfKey(KeyAddress, Info.KeyIsInline),
-            ValueDataSize = SpanField.GetInlineDataSizeOfValue(ValueAddress, ValueIsObject, Info.ValueIsInline),
-            ValueIsObject = ValueIsObject,
+            ValueDataSize = SpanField.GetInlineDataSizeOfValue(ValueAddress, Info.ValueIsObject, Info.ValueIsInline),
+            ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
         };
@@ -206,7 +200,7 @@ namespace Tsavorite.core
         {
             get
             {
-                Debug.Assert(ValueIsObject, "Cannot get ValueObjectId for String LogRecord");
+                Debug.Assert(Info.ValueIsObject, "Cannot get ValueObjectId for String LogRecord");
                 Debug.Assert(!Info.ValueIsInline, "Cannot get ValueObjectId for inline values");
                 return Info.ValueIsInline ? ObjectIdMap.InvalidObjectId : *ValueObjectIdAddress;
             }
@@ -219,8 +213,8 @@ namespace Tsavorite.core
             get
             {
                 var valueAddress = ValueAddress;
-                var valueSize = SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, GetInfo(physicalAddress).ValueIsInline);
-                return (int)(valueAddress - physicalAddress + valueSize + OptionalSize);
+                var valueSize = SpanField.GetInlineTotalSizeOfValue(valueAddress, Info.ValueIsObject, GetInfo(physicalAddress).ValueIsInline);
+                return (int)(valueAddress - physicalAddress + valueSize + OptionalLength);
             }
         }
 
@@ -241,13 +235,13 @@ namespace Tsavorite.core
         public bool TrySetValueLength(ref RecordSizeInfo sizeInfo)
         {
             var valueAddress = ValueAddress;
-            var oldInlineValueSize = SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            var oldInlineValueSize = SpanField.GetInlineTotalSizeOfValue(valueAddress, Info.ValueIsObject, Info.ValueIsInline);
             var newInlineValueSize = sizeInfo.InlineTotalValueSize;
 
             // Growth and fillerLen may be negative if shrinking.
             var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
             var newOptionalSize = sizeInfo.OptionalSize;
-            var oldOptionalSize = OptionalSize;
+            var oldOptionalSize = OptionalLength;
             var inlineTotalGrowth = inlineValueGrowth + (newOptionalSize - oldOptionalSize);
 
             var optionalStartAddress = valueAddress + oldInlineValueSize;
@@ -434,7 +428,7 @@ namespace Tsavorite.core
         public bool TrySetValueObject(IHeapObject value)
 #pragma warning restore IDE0251
         {
-            Debug.Assert(ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
+            Debug.Assert(Info.ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
 
             if (Info.ValueIsInline)
             {
@@ -464,10 +458,10 @@ namespace Tsavorite.core
         internal readonly long GetOptionalStartAddress()
         {
             var valueAddress = ValueAddress;
-            return ValueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            return ValueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, Info.ValueIsObject, Info.ValueIsInline);
         }
 
-        public readonly int OptionalSize => ETagLen + ExpirationLen;
+        public readonly int OptionalLength => ETagLen + ExpirationLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetETagAddress() => GetOptionalStartAddress();
@@ -499,7 +493,7 @@ namespace Tsavorite.core
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
             // Therefore optionals (ETag, Expiration) are not considered here.
             var valueAddress = ValueAddress;
-            var fillerAddress = valueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            var fillerAddress = valueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, Info.ValueIsObject, Info.ValueIsInline);
             var usedSize = (int)(fillerAddress - physicalAddress);
             var fillerSize = allocatedSize - usedSize;
 
@@ -705,7 +699,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             // This assumes the Key has been set and is not changed
-            if (!srcLogRecord.ValueIsObject)
+            if (!srcLogRecord.Info.ValueIsObject)
             {
                 if (!TrySetValueLength(ref sizeInfo))
                     return false;
@@ -717,14 +711,14 @@ namespace Tsavorite.core
                     return false;
             }
 
-            return TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo);
+            return TryCopyOptionals(ref srcLogRecord, ref sizeInfo);
         }
 
         /// <summary>
         /// Copy the record optional values (ETag, Expiration)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyRecordOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
+        public bool TryCopyOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             var srcRecordInfo = srcLogRecord.Info;
@@ -802,7 +796,7 @@ namespace Tsavorite.core
             // Value is going to take up whatever space is leftover after Key, so optimize zeroinit to be only from end of new Key length to end of old value, if this difference is > 0.
             var endOfNewKey = KeyAddress + newKeySize;
             var valueAddress = ValueAddress;
-            var endOfCurrentValue = valueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, ValueIsObject, Info.ValueIsInline);
+            var endOfCurrentValue = valueAddress + SpanField.GetInlineTotalSizeOfValue(valueAddress, Info.ValueIsObject, Info.ValueIsInline);
             var zeroSize = (int)(endOfCurrentValue - endOfNewKey);
             if (zeroSize > 0)
                 new Span<byte>((byte*)endOfNewKey, zeroSize).Clear();
@@ -829,7 +823,7 @@ namespace Tsavorite.core
             if (physicalAddress == 0)
                 return "<empty>";
             static string bstr(bool value) => value ? "T" : "F";
-            var valueString = ValueIsObject ? "<obj>" : ValueSpan.ToShortString(20);
+            var valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToShortString(20);
             return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }

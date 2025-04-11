@@ -40,8 +40,5 @@ namespace Tsavorite.core
 
         /// <summary>Number of extra overflow pages allocated</summary>
         int OverflowPageCount { get; }
-
-        /// <summary>Deserialize the value, if this is <see cref="ObjectAllocator{TStoreFunctions}"/></summary>
-        unsafe void DeserializeValueObject(ref DiskLogRecord diskLogRecord, ref AsyncIOContext ctx);
     }
 }

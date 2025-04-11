@@ -94,10 +94,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void DeserializeValueObject(ref DiskLogRecord diskLogRecord, ref AsyncIOContext ctx) => _this.DeserializeValue(ref diskLogRecord, ref ctx);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void AllocatePage(int pageIndex) => _this.AllocatePage(pageIndex);
 
         /// <inheritdoc/>

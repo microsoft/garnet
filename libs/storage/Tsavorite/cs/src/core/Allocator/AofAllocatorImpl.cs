@@ -63,13 +63,6 @@ namespace Tsavorite.core
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
-        internal override void SerializeRecordToIteratorBuffer(ref LogRecord logRecord, ref SectorAlignedMemory recordBuffer, out IHeapObject valueObject) => throw new TsavoriteException("AofAllocator Scan methods should not be used");
-
-        internal override void DeserializeFromDiskBuffer(ref DiskLogRecord diskLogRecord, (byte[] array, long offset) byteStream)
-        {
-            // Do nothing; we don't create a HeapObject for AofAllocator
-        }
-
         /// <summary>
         /// Dispose memory allocator
         /// </summary>

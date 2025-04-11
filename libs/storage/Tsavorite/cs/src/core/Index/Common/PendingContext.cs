@@ -190,8 +190,6 @@ namespace Tsavorite.core
 
             #region ISourceLogRecord
             /// <inheritdoc/>
-            public readonly bool ValueIsObject => (operationFlags & kIsObjectRecord) != 0;
-            /// <inheritdoc/>
             public readonly ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
             /// <inheritdoc/>
             public readonly RecordInfo Info => diskLogRecord.Info;
@@ -248,8 +246,8 @@ namespace Tsavorite.core
             public readonly RecordFieldInfo GetRecordFieldInfo() => new()
                 {
                     KeyDataSize = Key.Length,
-                    ValueDataSize = ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
-                    ValueIsObject = ValueIsObject,
+                    ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+                    ValueIsObject = Info.ValueIsObject,
                     HasETag = Info.HasETag,
                     HasExpiration = Info.HasExpiration
                 };

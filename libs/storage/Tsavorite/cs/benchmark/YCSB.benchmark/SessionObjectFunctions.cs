@@ -24,7 +24,7 @@ namespace Tsavorite.benchmark
         public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
-            if (!logRecord.ValueIsObject)           // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
+            if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
                 srcValue.CopyTo(logRecord.ValueSpan);
             else                                    // Slice the input because it comes from a larger buffer
                 ((ObjectValue)logRecord.ValueObject).value = srcValue.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
@@ -37,9 +37,9 @@ namespace Tsavorite.benchmark
             // This does not try to set ETag or Expiration
             if (dstLogRecord.Info.ValueIsInline && srcValue.Length <= dstLogRecord.ValueSpan.Length)
                 srcValue.CopyTo(dstLogRecord.ValueSpan);
-            else if (!dstLogRecord.ValueIsObject)   // process overflow
+            else if (!dstLogRecord.Info.ValueIsObject)  // process overflow
                 return dstLogRecord.TrySetValueSpan(srcValue, ref sizeInfo);
-            else                                    // Slice the input because it comes from a larger buffer
+            else                                        // Slice the input because it comes from a larger buffer
                 ((ObjectValue)dstLogRecord.ValueObject).value = srcValue.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
             return true;
         }
@@ -62,7 +62,7 @@ namespace Tsavorite.benchmark
         public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // This does not try to set ETag or Expiration
-            if (!logRecord.ValueIsObject)           // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
+            if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
                 input.CopyTo(logRecord.ValueSpan);
             else                                    // Slice the input because it comes from a larger buffer
                 ((ObjectValue)logRecord.ValueObject).value = input.ReadOnlySpan.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
