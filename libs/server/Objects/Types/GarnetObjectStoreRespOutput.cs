@@ -60,9 +60,16 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void WriteDoubleBulkString(double distanceValue)
+        internal void WriteDirect(ReadOnlySpan<byte> bytes)
         {
-            while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+            while (!RespWriteUtils.TryWriteDirect(bytes, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteDoubleBulkString(double value)
+        {
+            while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 
@@ -137,6 +144,13 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteNull(ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteNullArray()
+        {
+            while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

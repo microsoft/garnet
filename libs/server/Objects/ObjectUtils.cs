@@ -107,7 +107,7 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <param name="cursor"></param>
         /// <param name="output"></param>
-        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output)
+        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output, bool resp3)
         {
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -143,8 +143,18 @@ namespace Garnet.server
                                 ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         else
-                            while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        {
+                            if (resp3)
+                            {
+                                while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
+                                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteNull(ref curr, end))
+                                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+                        }
                     }
                 }
                 _output.result1 = items.Count;
