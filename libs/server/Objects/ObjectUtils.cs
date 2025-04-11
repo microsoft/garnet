@@ -189,24 +189,5 @@ namespace Garnet.server
                 output.Length = (int)(curr - ptr);
             }
         }
-
-        public static unsafe void WriteNull(ref GarnetObjectStoreOutput outputFooter,
-                                            ref bool isMemory,
-                                            ref byte* ptr,
-                                            ref MemoryHandle ptrHandle,
-                                            ref byte* curr,
-                                            ref byte* end)
-        {
-            if (outputFooter.IsResp3)
-            {
-                while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
-                    ReallocateOutput(ref outputFooter.SpanByteAndMemory, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                    ReallocateOutput(ref outputFooter.SpanByteAndMemory, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            }
-        }
     }
 }

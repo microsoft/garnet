@@ -1437,36 +1437,6 @@ namespace Garnet.server
             return header;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal GarnetObjectStoreOutput CreateDefaultObjectStoreOutput()
-        {
-            return new GarnetObjectStoreOutput
-            {
-                SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)),
-                OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
-            };
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal GarnetObjectStoreOutput CreateEmptyObjectStoreOutput()
-        {
-            return new GarnetObjectStoreOutput
-            {
-                SpanByteAndMemory = new SpanByteAndMemory(null),
-                OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
-            };
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal GarnetObjectStoreOutput CreatePinnedObjectStoreOutput()
-        {
-            return new GarnetObjectStoreOutput
-            {
-                SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))),
-                OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
-            };
-        }
-
         /// <summary>
         /// Set the current database session
         /// </summary>
