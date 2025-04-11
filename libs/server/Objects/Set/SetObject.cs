@@ -143,7 +143,7 @@ namespace Garnet.server
                         SetAdd(ref input, outputSpan);
                         break;
                     case SetOperation.SMEMBERS:
-                        SetMembers(ref output.SpanByteAndMemory);
+                        SetMembers(ref input, ref output.SpanByteAndMemory);
                         break;
                     case SetOperation.SISMEMBER:
                         SetIsMember(ref input, ref output.SpanByteAndMemory);
@@ -169,7 +169,7 @@ namespace Garnet.server
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, input.header.CheckResp3Flag());
                         }
                         else
                         {
