@@ -1437,26 +1437,34 @@ namespace Garnet.server
             return header;
         }
 
-        public GarnetObjectStoreOutput CreateDefaultObjectStoreOutput()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal GarnetObjectStoreOutput CreateDefaultObjectStoreOutput()
         {
-            var output = new GarnetObjectStoreOutput
+            return new GarnetObjectStoreOutput
             {
                 SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)),
                 OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
             };
-
-            return output;
         }
 
-        public GarnetObjectStoreOutput CreatePinnedObjectStoreOutput()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal GarnetObjectStoreOutput CreateEmptyObjectStoreOutput()
         {
-            var output = new GarnetObjectStoreOutput
+            return new GarnetObjectStoreOutput
+            {
+                SpanByteAndMemory = new SpanByteAndMemory(null),
+                OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
+            };
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal GarnetObjectStoreOutput CreatePinnedObjectStoreOutput()
+        {
+            return new GarnetObjectStoreOutput
             {
                 SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))),
                 OutputFlags = respProtocolVersion == 3 ? ObjectStoreOutputFlags.RESP3 : 0
             };
-
-            return output;
         }
 
         /// <summary>
