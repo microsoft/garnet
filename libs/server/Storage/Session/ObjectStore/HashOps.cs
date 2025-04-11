@@ -225,11 +225,7 @@ namespace Garnet.server
             var inputArg = 2; // Default RESP protocol version
             var input = new ObjectInput(header, inputArg);
 
-            var outputFooter = new GarnetObjectStoreOutput
-            {
-                SpanByteAndMemory = new SpanByteAndMemory(null),
-                OutputFlags = input.arg1 == 3 ? ObjectStoreOutputFlags.RESP3 : 0
-            };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 

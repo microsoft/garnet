@@ -19,14 +19,20 @@ namespace Garnet.server
     public enum RespInputFlags : byte
     {
         /// <summary>
+        /// Flag indicating a SET operation that returns the previous value
+        /// </summary>
+        SetGet = 8,
+
+        /// <summary>
         /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
         /// </summary>
         WithEtag = 16,
 
         /// <summary>
-        /// Flag indicating a SET operation that returns the previous value
+        /// Flag indicating protocol version is RESP3,
         /// </summary>
-        SetGet = 32,
+        Resp3 = 32,
+
         /// <summary>
         /// Deterministic
         /// </summary>
@@ -50,7 +56,7 @@ namespace Garnet.server
 
         // Since we know WithEtag is not used with any Object types, we keep the flag mask to work with the last 3 bits as flags,
         // and the other 5 bits for storing object associated flags. However, in the case of Rawstring we use the last 4 bits for flags, and let the others remain unused.
-        internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
+        internal const byte FlagMask = (byte)RespInputFlags.Resp3 - 1;
 
         [FieldOffset(0)]
         internal RespCommand cmd;
@@ -130,6 +136,15 @@ namespace Garnet.server
         internal unsafe void SetExpiredFlag() => flags |= RespInputFlags.Expired;
 
         /// <summary>
+        /// Set "RespVersion" flag, used to get the old value of a key after conditionally setting it
+        /// </summary>
+        internal unsafe void SetRespVersionFlag(byte version)
+        {
+            if (version == 3)
+                flags |= RespInputFlags.Resp3;
+        }
+
+        /// <summary>
         /// Set "SetGet" flag, used to get the old value of a key after conditionally setting it
         /// </summary>
         internal unsafe void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
@@ -172,6 +187,12 @@ namespace Garnet.server
             }
             return false;
         }
+
+        /// <summary>
+        /// Check RESP protocol version
+        /// </summary>
+        internal unsafe bool CheckResp3Flag()
+            => (flags & RespInputFlags.Resp3) != 0;
 
         /// <summary>
         /// Check the SetGet flag

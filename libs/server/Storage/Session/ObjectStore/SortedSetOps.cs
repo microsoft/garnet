@@ -723,11 +723,7 @@ namespace Garnet.server
             try
             {
                 SpanByteAndMemory rangeOutputMem = default;
-                var rangeOutput = new GarnetObjectStoreOutput()
-                {
-                    SpanByteAndMemory = rangeOutputMem,
-                    OutputFlags = input.arg1 == 3 ? ObjectStoreOutputFlags.RESP3 : 0
-                };
+                var rangeOutput = new GarnetObjectStoreOutput() { SpanByteAndMemory = rangeOutputMem };
                 var status = SortedSetRange(srcKey.ToArray(), ref input, ref rangeOutput, ref objectStoreLockableContext);
                 rangeOutputMem = rangeOutput.SpanByteAndMemory;
 

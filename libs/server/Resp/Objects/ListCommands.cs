@@ -4,6 +4,7 @@
 using System;
 using System.Text;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -40,6 +41,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
@@ -102,10 +104,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = CreateDefaultObjectStoreOutput();
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(keyBytes, ref input, ref outputFooter)
@@ -152,10 +155,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LPOS };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = CreateDefaultObjectStoreOutput();
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListPosition(keyBytes, ref input, ref outputFooter);
 
@@ -437,6 +441,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header);
 
             var status = storageApi.ListLength(keyBytes, ref input, out var output);
@@ -491,6 +496,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, start, stop);
 
             var status = storageApi.ListTrim(keyBytes, ref input);
@@ -542,10 +548,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LRANGE };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = CreateDefaultObjectStoreOutput();
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListRange(keyBytes, ref input, ref outputFooter);
 
@@ -596,10 +603,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINDEX };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = CreateDefaultObjectStoreOutput();
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListIndex(keyBytes, ref input, ref outputFooter);
 
@@ -652,6 +660,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINSERT };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var statusOp = storageApi.ListInsert(keyBytes, ref input, out var output);
@@ -708,6 +717,7 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LREM };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: nCount);
 
             var statusOp = storageApi.ListRemove(keyBytes, ref input, out var output);
@@ -879,10 +889,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LSET };
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = CreateDefaultObjectStoreOutput();
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = storageApi.ListSet(keyBytes, ref input, ref outputFooter);
 

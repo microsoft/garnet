@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -46,6 +47,7 @@ namespace Garnet.server
             }
 
             var header = new RespInputHeader(objectType);
+            header.SetRespVersionFlag(respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: cursorValue,
                 arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 
@@ -66,7 +68,7 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var outputFooter = CreateDefaultObjectStoreOutput();
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
             var status = storageApi.ObjectScan(keyBytes, ref input, ref outputFooter);
 
             switch (status)
