@@ -32,6 +32,20 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteAsciiBulkString(string bulkString)
+        {
+            while (!RespWriteUtils.TryWriteAsciiBulkString(bulkString, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteArrayItem(long item)
+        {
+            while (!RespWriteUtils.TryWriteArrayItem(item, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteArrayLength(int len)
         {
             while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end))
@@ -46,6 +60,28 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteDoubleBulkString(double distanceValue)
+        {
+            while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteDoubleNumeric(double value)
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteDoubleNumeric(value, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteEmptyArray()
         {
             while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
@@ -53,9 +89,9 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void WriteError(ReadOnlySpan<byte> rESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)
+        internal void WriteError(ReadOnlySpan<byte> error)
         {
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
+            while (!RespWriteUtils.TryWriteError(error, ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 
