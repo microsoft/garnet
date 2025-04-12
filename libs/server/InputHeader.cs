@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Flags used by append-only file (AOF/WAL)
     /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the field used to store the flag stores other data in the case of Object types.
-    /// In the case of a Rawstring, the last 4 bits are used for flags, and the other 4 bits are unused of the byte.
+    /// In the case of a Rawstring, the last 5 bits are used for flags, and the other 3 bits are unused of the byte.
     /// NOTE: This will soon be expanded as a part of a breaking change to make WithEtag bit compatible with object store as well.
     /// </summary>
     [Flags]
@@ -37,6 +37,7 @@ namespace Garnet.server
         /// Deterministic
         /// </summary>
         Deterministic = 64,
+
         /// <summary>
         /// Expired
         /// </summary>

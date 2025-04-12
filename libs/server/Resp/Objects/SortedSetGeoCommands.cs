@@ -181,8 +181,7 @@ namespace Garnet.server
                     switch (op)
                     {
                         case SortedSetOperation.GEODIST:
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                            WriteNull();
                             break;
                         default:
                             var inputCount = parseState.Count - 1;
