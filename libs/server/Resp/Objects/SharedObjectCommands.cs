@@ -46,8 +46,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var header = new RespInputHeader(objectType);
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(objectType, respProtocolVersion);
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: cursorValue,
                 arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 

@@ -45,7 +45,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = hop };
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = hop };
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
@@ -91,8 +91,10 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HGET
+            };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
@@ -135,9 +137,11 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
-            header.SetRespVersionFlag(respProtocolVersion);
-            var input = new ObjectInput(header, respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HGETALL
+            };
+            var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -179,8 +183,10 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HMGET
+            };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
@@ -260,8 +266,10 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HRANDFIELD
+            };
             var input = new ObjectInput(header, countWithMetadata, seed);
 
             // Prepare GarnetObjectStore output
@@ -315,7 +323,10 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HLEN
+            };
             var input = new ObjectInput(header);
 
             var status = storageApi.HashLength(keyBytes, ref input, out var output);
@@ -358,7 +369,10 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HSTRLEN
+            };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
@@ -401,7 +415,10 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HDEL
+            };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashDelete(keyBytes, ref input, out var output);
@@ -442,7 +459,10 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HEXISTS
+            };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = storageApi.HashExists(keyBytes, ref input, out var output);
@@ -494,8 +514,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = op };
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
@@ -553,8 +572,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = op };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
@@ -649,8 +667,10 @@ namespace Garnet.server
             var fieldsParseState = parseState.Slice(currIdx, numFields);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HEXPIRE
+            };
             var input = new ObjectInput(header, ref fieldsParseState);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -740,8 +760,10 @@ namespace Garnet.server
             var fieldsParseState = parseState.Slice(3, numFields);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HTTL
+            };
             var input = new ObjectInput(header, ref fieldsParseState);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -803,8 +825,10 @@ namespace Garnet.server
             var fieldsParseState = parseState.Slice(3, numFields);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion)
+            {
+                HashOp = HashOperation.HPERSIST
+            };
             var input = new ObjectInput(header, ref fieldsParseState);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
