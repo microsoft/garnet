@@ -30,7 +30,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(offset, setValSlice);
 
-            var input = new RawStringInput(RespCommand.SETBIT, ref parseState,
+            var input = new RawStringInput(RespCommand.SETBIT, respProtocolVersion, ref parseState,
                                            arg1: ParseUtils.ReadLong(ref offset));
 
             SpanByteAndMemory output = new(null);
@@ -50,7 +50,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(offset);
 
-            var input = new RawStringInput(RespCommand.GETBIT, ref parseState,
+            var input = new RawStringInput(RespCommand.GETBIT, respProtocolVersion, ref parseState,
                                            arg1: ParseUtils.ReadLong(ref offset));
 
             SpanByteAndMemory output = new(null);
@@ -199,7 +199,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(args);
 
-            var input = new RawStringInput(RespCommand.BITOP, ref parseState);
+            var input = new RawStringInput(RespCommand.BITOP, respProtocolVersion, ref parseState);
 
             return StringBitOperation(ref input, bitOp, out result);
         }
@@ -247,7 +247,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
-            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState);
+            var input = new RawStringInput(RespCommand.BITCOUNT, respProtocolVersion, ref parseState);
 
             scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
@@ -274,7 +274,7 @@ namespace Garnet.server
         public unsafe GarnetStatus StringBitField<TContext>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result, ref TContext context)
              where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput(RespCommand.BITFIELD);
+            var input = new RawStringInput(RespCommand.BITFIELD, respProtocolVersion);
 
             result = new();
             var keySp = key.SpanByte;

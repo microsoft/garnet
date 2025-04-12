@@ -37,7 +37,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var header = new RespInputHeader(GarnetObjectType.List, respProtocolVersion) { ListOp = lop };
             var input = new ObjectInput(header, ref parseState);
 
             var arrKey = key.ToArray();
@@ -70,7 +70,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var header = new RespInputHeader(GarnetObjectType.List, respProtocolVersion) { ListOp = lop };
             var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -113,7 +113,7 @@ namespace Garnet.server
                  where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var header = new RespInputHeader(GarnetObjectType.List, respProtocolVersion) { ListOp = lop };
             var input = new ObjectInput(header, count);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
@@ -184,7 +184,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
+            var header = new RespInputHeader(GarnetObjectType.List, respProtocolVersion) { ListOp = ListOperation.LLEN };
             var input = new ObjectInput(header);
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -340,7 +340,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
+            var header = new RespInputHeader(GarnetObjectType.List, respProtocolVersion) { ListOp = ListOperation.LTRIM };
             var input = new ObjectInput(header, start, stop);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectStoreContext);

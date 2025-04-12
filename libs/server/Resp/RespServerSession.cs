@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        internal byte respProtocolVersion = 2;
+        internal byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION;
 
         /// <summary>
         /// Client name for the session
@@ -1556,7 +1556,7 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
@@ -1578,6 +1578,8 @@ namespace Garnet.server
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;
+
+            this.storageSession.respProtocolVersion = this.respProtocolVersion;
         }
     }
 }

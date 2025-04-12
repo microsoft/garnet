@@ -55,18 +55,22 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        public byte respProtocolVersion;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             ILogger logger = null,
-            int dbId = 0)
+            int dbId = 0,
+            byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            this.respProtocolVersion = respProtocolVersion;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId);

@@ -72,11 +72,12 @@ namespace Garnet.server
         /// Create a new instance of RespInputHeader
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="flags">Flags</param>
-        public RespInputHeader(RespCommand cmd, RespInputFlags flags = 0)
+        /// <param name="respProtocolVersion"></param>
+        public RespInputHeader(RespCommand cmd, byte respProtocolVersion)
         {
             this.cmd = cmd;
-            this.flags = flags;
+            if (respProtocolVersion >= 3)
+                flags = RespInputFlags.Resp3;
         }
 
         /// <summary>
@@ -87,30 +88,8 @@ namespace Garnet.server
         public RespInputHeader(GarnetObjectType type, byte respProtocolVersion)
         {
             this.type = type;
-            if (respProtocolVersion == 3)
-                this.flags = RespInputFlags.Resp3;
-        }
-
-        /// <summary>
-        /// Create a new instance of RespInputHeader
-        /// </summary>
-        /// <param name="type">Object type</param>
-        /// <param name="flags">Flags</param>
-        public RespInputHeader(GarnetObjectType type, RespInputFlags flags = 0)
-        {
-            this.type = type;
-            this.flags = flags;
-        }
-
-        /// <summary>
-        /// Set RESP input header
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="flags">Flags</param>
-        public void SetHeader(ushort cmd, byte flags)
-        {
-            this.cmd = (RespCommand)cmd;
-            this.flags = (RespInputFlags)flags;
+            if (respProtocolVersion >= 3)
+                flags = RespInputFlags.Resp3;
         }
 
         internal byte SubId
@@ -376,47 +355,12 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="flags">Flags</param>
-        /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
-        {
-            this.header = new RespInputHeader(cmd, flags);
-            this.arg1 = arg1;
-        }
-
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        public RawStringInput(ushort cmd) : this((RespCommand)cmd, (RespInputFlags)0, 0)
-        {
-        }
-
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
         /// <param name="respVersion">Resp protocol version</param>
         /// <param name="arg1">General-purpose argument</param>
         public RawStringInput(RespCommand cmd, byte respVersion, long arg1 = 0)
         {
-            if (respVersion >= 3)
-                this.header = new RespInputHeader(cmd, RespInputFlags.Resp3);
-            else
-                this.header = new RespInputHeader(cmd);
+            this.header = new RespInputHeader(cmd, respVersion);
             this.arg1 = arg1;
-        }
-
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
-        {
-            this.parseState = parseState;
         }
 
         /// <summary>

@@ -200,7 +200,7 @@ namespace Garnet.test
                 valueToMessWith.RemoveAt(valueToMessWith.Count - 1);
             }
 
-            RawStringInput input = new RawStringInput(RespCommand.SET);
+            RawStringInput input = new RawStringInput(RespCommand.SET, ServerOptions.DEFAULT_RESP_VERSION);
             input.header.cmd = RespCommand.SET;
             // if we send a SET we must explictly ask it to retain etag, and use conditional set
             input.header.SetWithEtagFlag();

@@ -1542,6 +1542,7 @@ namespace Garnet.server
                 }
 
                 this.respProtocolVersion = respProtocolVersion.Value;
+                this.storageSession.respProtocolVersion = this.respProtocolVersion;
             }
 
             if (!username.IsEmpty)
