@@ -947,6 +947,8 @@ namespace Garnet.server
                 var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
 
                 var header = new RespInputHeader(type);
+                if (input.header.CheckResp3Flag())
+                    header.SetRespVersionFlag();
 
                 var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
 
@@ -1188,7 +1190,7 @@ namespace Garnet.server
                 increment = -increment;
             }
 
-            var input = new RawStringInput(cmd, 0, increment);
+            var input = new RawStringInput(cmd, (RespInputFlags)0, increment);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];

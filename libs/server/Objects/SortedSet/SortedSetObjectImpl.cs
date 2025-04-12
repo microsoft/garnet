@@ -335,7 +335,7 @@ namespace Garnet.server
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
             var rangeOpts = (SortedSetRangeOpts)input.arg2;
             var count = input.parseState.Count;
-            var respProtocolVersion = input.arg1;
+            var resp3 = input.header.CheckResp3Flag();
             var currIdx = 0;
 
             // Read min & max
@@ -413,7 +413,7 @@ namespace Garnet.server
                     {
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref output);
+                        WriteSortedSetResult(options.WithScores, scoredElements.Count, resp3, scoredElements, ref output);
                     }
                     else
                     {
@@ -469,7 +469,7 @@ namespace Garnet.server
 
                                 iterator = iterator.Skip(minIndex).Take(n);
 
-                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output);
+                                WriteSortedSetResult(options.WithScores, n, resp3, iterator, ref output);
                             }
                         }
                     }
@@ -486,7 +486,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, respProtocolVersion, elementsInLex, ref output);
+                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, resp3, elementsInLex, ref output);
                     }
                 }
             }
@@ -496,9 +496,9 @@ namespace Garnet.server
             }
         }
 
-        void WriteSortedSetResult(bool withScores, int count, int respProtocolVersion, IEnumerable<(double, byte[])> iterator, ref GarnetObjectStoreRespOutput output)
+        void WriteSortedSetResult(bool withScores, int count, bool resp3, IEnumerable<(double, byte[])> iterator, ref GarnetObjectStoreRespOutput output)
         {
-            if (withScores && respProtocolVersion >= 3)
+            if (withScores && resp3)
             {
                 // write the size of the array reply
                 output.WriteArrayLength(count);

@@ -151,7 +151,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.SETBIT, ref parseState, startIdx: 1, arg1: offset);
+            var input = new RawStringInput(RespCommand.SETBIT, respProtocolVersion, ref parseState, startIdx: 1, arg1: offset);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
@@ -187,7 +187,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.GETBIT, ref parseState, startIdx: 1, arg1: offset);
+            var input = new RawStringInput(RespCommand.GETBIT, respProtocolVersion, ref parseState, startIdx: 1, arg1: offset);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
@@ -229,7 +229,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.BITCOUNT, respProtocolVersion, ref parseState, startIdx: 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -303,7 +303,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(RespCommand.BITPOS, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.BITPOS, respProtocolVersion, ref parseState, startIdx: 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -348,7 +348,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.BITOP, ref parseState);
+            var input = new RawStringInput(RespCommand.BITOP, respProtocolVersion, ref parseState);
 
             _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
             while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
@@ -534,7 +534,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
                 SendAndReset();
 
-            var input = new RawStringInput(cmd);
+            var input = new RawStringInput(cmd, respProtocolVersion);
 
             for (var i = 0; i < secondaryCommandArgs.Count; i++)
             {

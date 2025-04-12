@@ -82,8 +82,10 @@ namespace Garnet.server
             while (currTokenIdx < parseState.Count);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.SortedSet, respProtocolVersion)
+            {
+                SortedSetOp = SortedSetOperation.GEOADD
+            };
             var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -163,8 +165,7 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            header.SetRespVersionFlag(respProtocolVersion);
+            var header = new RespInputHeader(GarnetObjectType.SortedSet, respProtocolVersion) { SortedSetOp = op };
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
@@ -257,7 +258,7 @@ namespace Garnet.server
             var sourceKey = parseState.GetArgSliceByRef(sourceIdx);
 
             // Prepare input and call the storage layer
-            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet)
+            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet, respProtocolVersion)
             {
                 SortedSetOp = SortedSetOperation.GEOSEARCH
             }, ref parseState, startIdx: sourceIdx + 1, arg1: (int)command);
