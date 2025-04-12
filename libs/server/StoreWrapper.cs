@@ -701,7 +701,7 @@ namespace Garnet.server
 
             static void ExecuteHashCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
             {
-                var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+                var header = new RespInputHeader(GarnetObjectType.Hash, storageSession.respProtocolVersion) { HashOp = HashOperation.HCOLLECT };
                 var input = new ObjectInput(header);
 
                 ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
