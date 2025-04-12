@@ -124,7 +124,7 @@ namespace Tsavorite.core
             {
                 if (diskLogRecord.IsSet)
                     return;
-                diskLogRecord.Serialize(key, valueSpan, valueObject, bufferPool);
+                diskLogRecord.SerializeForPendingOperation(key, valueSpan, valueObject, bufferPool);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 

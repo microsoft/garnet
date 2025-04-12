@@ -17,6 +17,7 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
+#pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         const int kTotalSizeInBytes = 8;
         const int kTotalBits = kTotalSizeInBytes * 8;
 
@@ -60,6 +61,7 @@ namespace Tsavorite.core
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
         const long kUnused1BitMask = 1L << kUnused1BitOffset;
+#pragma warning restore IDE1006 // Naming Styles
 
         [FieldOffset(0)]
         private long word;
@@ -96,7 +98,7 @@ namespace Tsavorite.core
         private static bool IsClosedWord(long word) => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsClosedOrTombstoned(ref OperationStatus internalStatus)
+        internal readonly bool IsClosedOrTombstoned(ref OperationStatus internalStatus)
         {
             if ((word & (kValidBitMask | kSealedBitMask | kTombstoneBitMask)) != kValidBitMask)
             {
@@ -127,7 +129,7 @@ namespace Tsavorite.core
             // If this fails for any reason it means another record is trying to modify (perhaps revivify) it, so return false to RETRY_LATER.
             // If invalidate, we in a situation such as revivification freelisting where we want to make sure that removing Seal will not leave
             // it eligible to be Scanned after Recovery.
-            long expected_word = word;
+            var expected_word = word;
             if (IsClosedWord(expected_word))
                 return false;
             var new_word = expected_word | kSealedBitMask;
@@ -143,9 +145,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryResetModifiedAtomic()
         {
-            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
+            for (var spinCount = Constants.kMaxLockSpins; ; _ = Thread.Yield())
             {
-                long expected_word = word;
+                var expected_word = word;
                 if (IsClosedWord(expected_word))
                     return false;
                 if ((expected_word & kModifiedBitMask) == 0)
@@ -196,18 +198,15 @@ namespace Tsavorite.core
 
         public void ClearDirtyAtomic()
         {
-            for (; ; Thread.Yield())
+            for (; ; _ = Thread.Yield())
             {
-                long expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
+                var expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kDirtyBitMask, expected_word))
                     break;
             }
         }
 
-        public readonly bool Dirty
-        {
-            get => (word & kDirtyBitMask) > 0;
-        }
+        public readonly bool Dirty => (word & kDirtyBitMask) > 0;
 
         public bool Modified
         {
@@ -262,9 +261,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalidAtomic()
         {
-            for (; ; Thread.Yield())
+            for (; ; _ = Thread.Yield())
             {
-                long expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
+                var expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kValidBitMask, expected_word))
                     return;
             }
@@ -299,7 +298,7 @@ namespace Tsavorite.core
         public readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
         public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
         public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
-        public bool KeyIsOverflow => !KeyIsInline;
+        public readonly bool KeyIsOverflow => !KeyIsInline;
 
         // Note: ValueIsOveflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
         public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
@@ -309,8 +308,10 @@ namespace Tsavorite.core
         public void SetValueIsObject() => word = (word & ~kValueIsInlineBitMask) | kValueIsObjectBitMask;
 
         // "Overflow" is determined by lack of Inline and lack of Object
-        public bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
+        public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
         public void SetValueIsOverflow() => word &= ~(kValueIsInlineBitMask | kValueIsObjectBitMask);
+
+        public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) != 0;
 
         internal bool PreviousAddressIsOnDisk
         {

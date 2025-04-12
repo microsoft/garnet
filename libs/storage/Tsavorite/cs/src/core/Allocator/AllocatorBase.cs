@@ -1803,7 +1803,7 @@ namespace Tsavorite.core
             try
             {
                 var diskLogRecord = new DiskLogRecord((long)ctx.record.GetValidPointer());
-                bool hasFullRecord = diskLogRecord.IsComplete(ctx.record.available_bytes, out bool hasFullKey, out int requiredBytes);      // TODO: support 'long' lengths
+                bool hasFullRecord = diskLogRecord.IsComplete(ctx.record, out bool hasFullKey, out int requiredBytes);      // TODO: support 'long' lengths
                 if (hasFullKey || ctx.request_key.IsEmpty)
                 {
                     Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");

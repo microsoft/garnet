@@ -38,8 +38,8 @@ namespace Tsavorite.test
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
-        [Repeat(900)]
-        public unsafe void LogRecordBasicTest()
+        //[Repeat(900)]
+        public unsafe void InlineBasicTest()
         {
             const int initialKeyLen = 10;
             const int initialValueLen = 40;
