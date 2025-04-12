@@ -148,8 +148,7 @@ namespace Garnet.server
 
             if (status is GarnetStatus.NOTFOUND)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
                 return true;
             }
 

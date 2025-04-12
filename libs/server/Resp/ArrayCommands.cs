@@ -44,8 +44,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                         break;
                 }
             }
@@ -111,8 +110,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                            WriteNull();
                             o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                         }
                         else
@@ -143,8 +141,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
             }
