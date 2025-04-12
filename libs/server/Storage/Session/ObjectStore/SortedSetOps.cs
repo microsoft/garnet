@@ -501,8 +501,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
-            var inputArg = 2; // Default RESP server protocol version
-            var input = new ObjectInput(header, ref parseState, arg1: inputArg, arg2: (int)rangeOpts);
+            var input = new ObjectInput(header, ref parseState, arg2: (int)rangeOpts);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);

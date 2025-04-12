@@ -83,6 +83,18 @@ namespace Garnet.server
         /// Create a new instance of RespInputHeader
         /// </summary>
         /// <param name="type">Object type</param>
+        /// <param name="respProtocolVersion"></param>
+        public RespInputHeader(GarnetObjectType type, byte respProtocolVersion)
+        {
+            this.type = type;
+            if (respProtocolVersion == 3)
+                this.flags = RespInputFlags.Resp3;
+        }
+
+        /// <summary>
+        /// Create a new instance of RespInputHeader
+        /// </summary>
+        /// <param name="type">Object type</param>
         /// <param name="flags">Flags</param>
         public RespInputHeader(GarnetObjectType type, RespInputFlags flags = 0)
         {
@@ -137,13 +149,9 @@ namespace Garnet.server
         internal unsafe void SetExpiredFlag() => flags |= RespInputFlags.Expired;
 
         /// <summary>
-        /// Set "RespVersion" flag, used to get the old value of a key after conditionally setting it
+        /// Set "RespVersion" flag, used to set resp version for output
         /// </summary>
-        internal unsafe void SetRespVersionFlag(byte version)
-        {
-            if (version == 3)
-                flags |= RespInputFlags.Resp3;
-        }
+        internal unsafe void SetRespVersionFlag() => flags |= RespInputFlags.Resp3;
 
         /// <summary>
         /// Set "SetGet" flag, used to get the old value of a key after conditionally setting it
@@ -380,12 +388,23 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="flags">Flags</param>
-        /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
-
+        public RawStringInput(ushort cmd) : this((RespCommand)cmd, (RespInputFlags)0, 0)
         {
+        }
+
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="respVersion">Resp protocol version</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public RawStringInput(RespCommand cmd, byte respVersion, long arg1 = 0)
+        {
+            if (respVersion >= 3)
+                this.header = new RespInputHeader(cmd, RespInputFlags.Resp3);
+            else
+                this.header = new RespInputHeader(cmd);
+            this.arg1 = arg1;
         }
 
         /// <summary>
@@ -404,11 +423,24 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="cmd">Command</param>
+        /// <param name="respVersion">Resp protocol version</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public RawStringInput(RespCommand cmd, byte respVersion, ref SessionParseState parseState,
+                              long arg1 = 0) : this(cmd, respVersion, arg1)
+        {
+            this.parseState = parseState;
+        }
+
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="respVersion">Resp protocol version</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public RawStringInput(RespCommand cmd, byte respVersion, ref SessionParseState parseState, int startIdx, long arg1 = 0) : this(cmd, respVersion, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }

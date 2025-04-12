@@ -222,8 +222,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
-            var inputArg = 2; // Default RESP protocol version
-            var input = new ObjectInput(header, inputArg);
+            var input = new ObjectInput(header);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
 
