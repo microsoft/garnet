@@ -16,8 +16,15 @@ namespace Garnet.server
     /// NOTE: This will soon be expanded as a part of a breaking change to make WithEtag bit compatible with object store as well.
     /// </summary>
     [Flags]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1069:Enums values should not be duplicated",
+        Justification = "We can only use the last 3 bits for object flags, and SetGet was already defined. Moving it may affect AOF.")]
     public enum RespInputFlags : byte
     {
+        /// <summary>
+        /// Flag indicating protocol version is RESP3 (for strings).
+        /// </summary>
+        Resp3String = 8,
+
         /// <summary>
         /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
         /// </summary>
@@ -30,7 +37,7 @@ namespace Garnet.server
         /// <summary>
         /// Flag indicating protocol version is RESP3 (for objects).
         /// </summary>
-        Resp3 = 32,
+        Resp3Object = 32,
 
         /// <summary>
         /// Deterministic
@@ -56,7 +63,7 @@ namespace Garnet.server
 
         // Since we know WithEtag is not used with any Object types, we keep the flag mask to work with the last 3 bits as flags,
         // and the other 5 bits for storing object associated flags. However, in the case of Rawstring we use the last 4 bits for flags, and let the others remain unused.
-        internal const byte FlagMask = (byte)RespInputFlags.Resp3 - 1;
+        internal const byte FlagMask = (byte)RespInputFlags.Resp3Object - 1;
 
         [FieldOffset(0)]
         internal RespCommand cmd;
@@ -75,8 +82,8 @@ namespace Garnet.server
         public RespInputHeader(RespCommand cmd, byte respProtocolVersion)
         {
             this.cmd = cmd;
-            //if (respProtocolVersion >= 3)
-            //flags = RespInputFlags.Resp3;
+            if (respProtocolVersion >= 3)
+                flags = RespInputFlags.Resp3String;
         }
 
         /// <summary>
@@ -88,7 +95,7 @@ namespace Garnet.server
         {
             this.type = type;
             if (respProtocolVersion >= 3)
-                flags = RespInputFlags.Resp3;
+                flags = RespInputFlags.Resp3Object;
         }
 
         internal byte SubId
@@ -169,12 +176,6 @@ namespace Garnet.server
             }
             return false;
         }
-
-        /// <summary>
-        /// Check RESP protocol version
-        /// </summary>
-        internal unsafe bool CheckResp3Flag()
-            => (flags & RespInputFlags.Resp3) != 0;
 
         /// <summary>
         /// Check the SetGet flag
@@ -264,6 +265,9 @@ namespace Garnet.server
         {
             this.parseState = parseState.Slice(startIdx);
         }
+
+        /// <inheritdoc />
+        public bool IsResp3 => (header.flags & RespInputFlags.Resp3Object) != 0;
 
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
@@ -384,6 +388,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public bool IsResp3 => (header.flags & RespInputFlags.Resp3String) != 0;
+
+        /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
                                        + parseState.GetSerializedLength();
@@ -474,6 +481,9 @@ namespace Garnet.server
             this.parseState = parseState.Slice(startIdx);
             RespVersion = respVersion;
         }
+
+        /// <inheritdoc />
+        public bool IsResp3 => RespVersion >= 3;
 
         /// <inheritdoc />
         public int SerializedLength => parseState.GetSerializedLength();
