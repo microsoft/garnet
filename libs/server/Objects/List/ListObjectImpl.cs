@@ -120,7 +120,7 @@ namespace Garnet.server
         {
             var index = input.arg1;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
             output.SetResult1(-1);
 
             index = index < 0 ? list.Count + index : index;
@@ -137,7 +137,7 @@ namespace Garnet.server
             var start = input.arg1;
             var stop = input.arg2;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             if (0 == list.Count)
             {
@@ -263,7 +263,7 @@ namespace Garnet.server
             if (list.Count < count)
                 count = list.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             if (list.Count == 0)
             {
@@ -299,7 +299,7 @@ namespace Garnet.server
 
         private void ListSet(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             if (list.Count == 0)
             {
@@ -459,7 +459,7 @@ namespace Garnet.server
                 if (isDefaultCount && noOfFoundItem == 0)
                 {
                     output_currptr = output_startptr;
-                    if (input.header.CheckResp3Flag())
+                    if (input.IsResp3)
                     {
                         while (!RespWriteUtils.TryWriteResp3Null(ref output_currptr, output_end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);

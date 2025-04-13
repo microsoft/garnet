@@ -19,7 +19,7 @@ namespace Garnet.server
     {
         private void HashGet(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
@@ -37,7 +37,7 @@ namespace Garnet.server
 
         private void HashMultipleGet(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -60,9 +60,9 @@ namespace Garnet.server
 
         private void HashGetAll(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
-            if (!input.header.CheckResp3Flag())
+            if (!input.IsResp3)
             {
                 output.WriteArrayLength(Count() * 2);
             }
@@ -134,7 +134,7 @@ namespace Garnet.server
 
             var countDone = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             if (includedCount)
             {
@@ -227,7 +227,7 @@ namespace Garnet.server
             var count = Count();
             var op = input.header.HashOp;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(count);
 
@@ -257,7 +257,7 @@ namespace Garnet.server
         {
             var op = input.header.HashOp;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // This value is used to indicate partial command execution
             output.SetResult1(int.MinValue);
@@ -341,7 +341,7 @@ namespace Garnet.server
 
         private void HashExpire(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             DeleteExpiredItems();
 
@@ -360,7 +360,7 @@ namespace Garnet.server
 
         private void HashTimeToLive(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             DeleteExpiredItems();
 
@@ -400,7 +400,7 @@ namespace Garnet.server
 
         private void HashPersist(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             DeleteExpiredItems();
 

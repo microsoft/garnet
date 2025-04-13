@@ -445,7 +445,7 @@ namespace Garnet.server
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, input.header.CheckResp3Flag());
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, input.IsResp3);
                         }
                         else
                         {

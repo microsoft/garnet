@@ -36,7 +36,7 @@ namespace Garnet.server
             var count = input.parseState.Count;
             var currTokenIdx = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // Read the members
             var elementsAdded = 0;
@@ -82,7 +82,7 @@ namespace Garnet.server
 
         private void GeoHash(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -120,7 +120,7 @@ namespace Garnet.server
                 Debug.Assert(validUnit);
             }
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
             {
@@ -141,7 +141,7 @@ namespace Garnet.server
 
         private void GeoPosition(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -173,7 +173,7 @@ namespace Garnet.server
         {
             Debug.Assert(opts.searchType != default);
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // FROMMEMBER
             if (opts.origin == GeoOriginType.FromMember)
