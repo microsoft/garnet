@@ -76,7 +76,7 @@ namespace Garnet.server
         {
             this.cmd = cmd;
             //if (respProtocolVersion >= 3)
-                //flags = RespInputFlags.Resp3;
+            //flags = RespInputFlags.Resp3;
         }
 
         /// <summary>
