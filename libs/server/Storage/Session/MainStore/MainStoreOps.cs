@@ -947,7 +947,7 @@ namespace Garnet.server
 
                 var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
 
-                var header = input.header.CheckResp3Flag() ? new RespInputHeader(type, 3) : new RespInputHeader(type, 2);
+                var header = new RespInputHeader(type, respProtocolVersion);
 
                 var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
 
