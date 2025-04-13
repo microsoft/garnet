@@ -19,17 +19,16 @@ namespace Garnet.server
     public enum RespInputFlags : byte
     {
         /// <summary>
-        /// Flag indicating a SET operation that returns the previous value
-        /// </summary>
-        SetGet = 8,
-
-        /// <summary>
         /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
         /// </summary>
         WithEtag = 16,
 
         /// <summary>
-        /// Flag indicating protocol version is RESP3,
+        /// Flag indicating a SET operation that returns the previous value (for strings).
+        /// </summary>
+        SetGet = 32,
+        /// <summary>
+        /// Flag indicating protocol version is RESP3 (for objects).
         /// </summary>
         Resp3 = 32,
 
@@ -76,8 +75,8 @@ namespace Garnet.server
         public RespInputHeader(RespCommand cmd, byte respProtocolVersion)
         {
             this.cmd = cmd;
-            if (respProtocolVersion >= 3)
-                flags = RespInputFlags.Resp3;
+            //if (respProtocolVersion >= 3)
+                //flags = RespInputFlags.Resp3;
         }
 
         /// <summary>
@@ -126,11 +125,6 @@ namespace Garnet.server
         /// Set expiration flag, used for log replay
         /// </summary>
         internal unsafe void SetExpiredFlag() => flags |= RespInputFlags.Expired;
-
-        /// <summary>
-        /// Set "RespVersion" flag, used to set resp version for output
-        /// </summary>
-        internal unsafe void SetRespVersionFlag() => flags |= RespInputFlags.Resp3;
 
         /// <summary>
         /// Set "SetGet" flag, used to get the old value of a key after conditionally setting it
