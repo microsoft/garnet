@@ -91,7 +91,7 @@ namespace Garnet.server
             var currTokenIdx = 0;
             var parsedOptions = false;
 
-            var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             try
             {
@@ -220,7 +220,7 @@ namespace Garnet.server
         private void SortedSetScore(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
             // ZSCORE key member
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
@@ -240,7 +240,7 @@ namespace Garnet.server
             // ZMSCORE key member
             var count = input.parseState.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(count);
 
@@ -267,7 +267,7 @@ namespace Garnet.server
             var minParamSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var maxParamSpan = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // Check if parameters are valid
             if (!TryParseParameter(minParamSpan, out var minValue, out var minExclusive) ||
@@ -298,7 +298,7 @@ namespace Garnet.server
             DeleteExpiredItems();
 
             // ZINCRBY key increment member
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // Try to read increment value
             if (!input.parseState.TryGetDouble(0, out var incrValue))
@@ -335,7 +335,6 @@ namespace Garnet.server
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
             var rangeOpts = (SortedSetRangeOpts)input.arg2;
             var count = input.parseState.Count;
-            var resp3 = input.header.CheckResp3Flag();
             var currIdx = 0;
 
             // Read min & max
@@ -351,7 +350,7 @@ namespace Garnet.server
                 WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
             };
 
-            var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             try
             {
@@ -413,7 +412,7 @@ namespace Garnet.server
                     {
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        WriteSortedSetResult(options.WithScores, scoredElements.Count, resp3, scoredElements, ref output);
+                        WriteSortedSetResult(options.WithScores, scoredElements.Count, input.IsResp3, scoredElements, ref output);
                     }
                     else
                     {
@@ -469,7 +468,7 @@ namespace Garnet.server
 
                                 iterator = iterator.Skip(minIndex).Take(n);
 
-                                WriteSortedSetResult(options.WithScores, n, resp3, iterator, ref output);
+                                WriteSortedSetResult(options.WithScores, n, input.IsResp3, iterator, ref output);
                             }
                         }
                     }
@@ -486,7 +485,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, resp3, elementsInLex, ref output);
+                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, input.IsResp3, elementsInLex, ref output);
                     }
                 }
             }
@@ -530,7 +529,7 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // ZREMRANGEBYRANK key start stop
             if (!input.parseState.TryGetInt(0, out var start) ||
@@ -572,7 +571,7 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // ZREMRANGEBYSCORE key min max
             // Read min and max
@@ -604,7 +603,7 @@ namespace Garnet.server
             if (count > 0 && count > sortedSetCount)
                 count = sortedSetCount;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // The count parameter can have a negative value, but the array length can't
             var arrayLength = Math.Abs(withScores ? count * 2 : count);
@@ -672,7 +671,7 @@ namespace Garnet.server
 
             var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             if (!TryGetScore(member, out var score))
             {
@@ -746,7 +745,7 @@ namespace Garnet.server
             if (sortedSet.Count < count)
                 count = sortedSet.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(count * 2);
 
@@ -775,7 +774,7 @@ namespace Garnet.server
 
             var numFields = input.parseState.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(numFields);
 
@@ -795,7 +794,7 @@ namespace Garnet.server
             var isTimestamp = input.arg2 == 1;
             var numFields = input.parseState.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(numFields);
 
@@ -869,7 +868,7 @@ namespace Garnet.server
 
             var numFields = input.parseState.Count - idx;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(numFields);
 

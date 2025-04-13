@@ -37,7 +37,7 @@ namespace Garnet.server
 
         private void SetMembers(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(Set.Count);
 
@@ -50,7 +50,7 @@ namespace Garnet.server
 
         private void SetIsMember(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 #if NET9_0_OR_GREATER
@@ -64,7 +64,7 @@ namespace Garnet.server
 
         private void SetMultiIsMember(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -116,7 +116,7 @@ namespace Garnet.server
             var count = input.arg1;
             var countDone = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             // key [count]
             if (count >= 1)
@@ -169,7 +169,7 @@ namespace Garnet.server
 
             var countDone = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input.header, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
             Span<int> indexes = default;
 
