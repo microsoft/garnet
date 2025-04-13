@@ -163,8 +163,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                         break;
                 }
             }
@@ -681,8 +680,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
 
@@ -698,8 +696,7 @@ namespace Garnet.server
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 SpanByteAndMemory outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                GarnetStatus status = storageApi.SET_Conditional(ref key,
-                    ref input, ref outputBuffer);
+                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input, ref outputBuffer);
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 bool ok = status != GarnetStatus.NOTFOUND || withEtag;
@@ -713,8 +710,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                 }
 
                 return true;

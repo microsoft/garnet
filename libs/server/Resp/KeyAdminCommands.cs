@@ -343,8 +343,7 @@ namespace Garnet.server
             else
             {
                 Debug.Assert(o.IsSpanByte);
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
 
             return true;
