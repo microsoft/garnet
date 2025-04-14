@@ -3846,6 +3846,35 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase([2, "$-1\r\n"], Description = "RESP2 Null test")]
+        [TestCase([3, "_\r\n"], Description = "RESP3 Null test")]
+        public async Task RespNullTests(int respVersion, string expectedResponse)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+
+            response = await c.ExecuteAsync("GET", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("SPOP", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("LPOP", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("ZSCORE", "nx", "foo");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("GEODIST", "nx", "foo", "bar");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("LPOS", "nx", "foo");
+            ClassicAssert.AreEqual(expectedResponse, response);
+
+            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
+            ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
+            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
+            ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
+        }
+
+        [Test]
         public void AsyncTest1()
         {
             // Set up low-memory database
