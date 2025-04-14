@@ -383,6 +383,8 @@ namespace Garnet.server
 
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
         {
+            // No word separators inside section names, some clients will then fail to process INFO output.
+            // https://github.com/microsoft/garnet/pull/1019#issuecomment-2660752028
             return infoType switch
             {
                 InfoMetricsType.SERVER => "Server",
@@ -390,13 +392,13 @@ namespace Garnet.server
                 InfoMetricsType.CLUSTER => "Cluster",
                 InfoMetricsType.REPLICATION => "Replication",
                 InfoMetricsType.STATS => "Stats",
-                InfoMetricsType.STORE => $"MainStore (DB {dbId})",
-                InfoMetricsType.OBJECTSTORE => $"ObjectStore (DB {dbId})",
-                InfoMetricsType.STOREHASHTABLE => $"MainStoreHashTableDistribution (DB {dbId})",
-                InfoMetricsType.OBJECTSTOREHASHTABLE => $"ObjectStoreHashTableDistribution (DB {dbId})",
-                InfoMetricsType.STOREREVIV => $"MainStoreDeletedRecordRevivification (DB {dbId})",
-                InfoMetricsType.OBJECTSTOREREVIV => $"ObjectStoreDeletedRecordRevivification (DB {dbId})",
-                InfoMetricsType.PERSISTENCE => $"Persistence (DB {dbId})",
+                InfoMetricsType.STORE => $"MainStore_DB_{dbId}",
+                InfoMetricsType.OBJECTSTORE => $"ObjectStore_DB_{dbId}",
+                InfoMetricsType.STOREHASHTABLE => $"MainStoreHashTableDistribution_DB_{dbId}",
+                InfoMetricsType.OBJECTSTOREHASHTABLE => $"ObjectStoreHashTableDistribution_DB_{dbId}",
+                InfoMetricsType.STOREREVIV => $"MainStoreDeletedRecordRevivification_DB_{dbId}",
+                InfoMetricsType.OBJECTSTOREREVIV => $"ObjectStoreDeletedRecordRevivification_DB_{dbId}",
+                InfoMetricsType.PERSISTENCE => $"Persistence_DB_{dbId}",
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
