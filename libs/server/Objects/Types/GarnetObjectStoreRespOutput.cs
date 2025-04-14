@@ -9,7 +9,10 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    public unsafe ref struct GarnetObjectStoreRespOutput : IDisposable
+    /// <summary>
+    /// Manage RESP output to SpanByteAndMemory.
+    /// </summary>
+    internal unsafe ref struct GarnetObjectStoreRespOutput : IDisposable
     {
         byte* curr;
         byte* end;
@@ -19,11 +22,20 @@ namespace Garnet.server
         ObjectOutputHeader outputHeader;
         bool isMemory;
         readonly bool resp3;
+        readonly bool skipOutputHeader;
 
-        public unsafe GarnetObjectStoreRespOutput(ref ObjectInput input, ref SpanByteAndMemory output)
+        internal unsafe GarnetObjectStoreRespOutput(byte respVersion, ref SpanByteAndMemory output)
         {
-            isMemory = false;
-            ptrHandle = default;
+            this.output = ref output;
+            resp3 = respVersion >= 3;
+            ptr = output.SpanByte.ToPointer();
+            curr = ptr;
+            end = curr + output.Length;
+            skipOutputHeader = true;
+        }
+
+        internal unsafe GarnetObjectStoreRespOutput(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
             this.output = ref output;
             resp3 = input.IsResp3;
             ptr = output.SpanByte.ToPointer();
@@ -127,8 +139,16 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteMapLength(int len)
         {
-            while (!RespWriteUtils.TryWriteMapLength(len, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteMapLength(len, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(len * 2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -167,8 +187,11 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            while (!RespWriteUtils.TryWriteDirect(ref outputHeader, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            if (!skipOutputHeader)
+            {
+                while (!RespWriteUtils.TryWriteDirect(ref outputHeader, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
 
             if (isMemory) ptrHandle.Dispose();
             output.Length = (int)(curr - ptr);
