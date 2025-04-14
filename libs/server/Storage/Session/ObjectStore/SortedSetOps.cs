@@ -1133,10 +1133,6 @@ namespace Garnet.server
             }
 
             Dictionary<byte[], double> sortedSetDictionary = null;
-            if (status == GarnetStatus.NOTFOUND)
-            {
-                sortedSetDictionary = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
-            }
 
             if (status == GarnetStatus.OK)
             {
@@ -1150,14 +1146,17 @@ namespace Garnet.server
             // Initialize pairs with the first set
             if (weights is null)
             {
-                pairs = new Dictionary<byte[], double>(sortedSetDictionary, ByteArrayComparer.Instance);
+                pairs = sortedSetDictionary is null ? new Dictionary<byte[], double>(ByteArrayComparer.Instance) : new Dictionary<byte[], double>(sortedSetDictionary, ByteArrayComparer.Instance);
             }
             else
             {
                 pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
-                foreach (var (key, score) in sortedSetDictionary)
+                if (sortedSetDictionary is not null)
                 {
-                    pairs[key] = weights[0] * score;
+                    foreach (var (key, score) in sortedSetDictionary)
+                    {
+                        pairs[key] = weights[0] * score;
+                    }
                 }
             }
 
