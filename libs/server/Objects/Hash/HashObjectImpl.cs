@@ -62,14 +62,7 @@ namespace Garnet.server
         {
             using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
 
-            if (!input.IsResp3)
-            {
-                output.WriteArrayLength(Count() * 2);
-            }
-            else
-            {
-                output.WriteMapLength(Count());
-            }
+            output.WriteMapLength(Count());
 
             var isExpirable = HasExpirableItems();
 

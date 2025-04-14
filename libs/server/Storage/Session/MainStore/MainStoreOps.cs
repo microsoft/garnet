@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -1330,30 +1329,24 @@ namespace Garnet.server
         private unsafe GarnetStatus LCSInternal<TContext>(ArgSlice key1, ArgSlice key2, ref SpanByteAndMemory output, ref TContext context, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-            var curr = ptr;
-            var end = curr + output.Length;
+            ArgSlice val1, val2;
+            var status1 = GET(key1, out val1, ref context);
+            var status2 = GET(key2, out val2, ref context);
+
+            var respOutput = new GarnetObjectStoreRespOutput(respProtocolVersion, ref output);
 
             try
             {
-                ArgSlice val1, val2;
-                var status1 = GET(key1, out val1, ref context);
-                var status2 = GET(key2, out val2, ref context);
-
                 if (lenOnly)
                 {
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        respOutput.WriteInt32(0);
                         return GarnetStatus.OK;
                     }
 
                     var len = ComputeLCSLength(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
-                    while (!RespWriteUtils.TryWriteInt32(len, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    respOutput.WriteInt32(len);
                 }
                 else if (withIndices)
                 {
@@ -1361,7 +1354,7 @@ namespace Garnet.server
                     int len;
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        matches = new List<LCSMatch>();
+                        matches = [];
                         len = 0;
                     }
                     else
@@ -1369,30 +1362,26 @@ namespace Garnet.server
                         matches = ComputeLCSWithIndices(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen, out len);
                     }
 
-                    WriteLCSMatches(matches, withMatchLen, len, ref curr, end, ref output, ref isMemory, ref ptr, ref ptrHandle);
+                    WriteLCSMatches(matches, withMatchLen, len, ref respOutput);
                 }
                 else
                 {
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        respOutput.WriteDirect(CmdStrings.RESP_EMPTY);
                         return GarnetStatus.OK;
                     }
 
                     var lcs = ComputeLCS(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
-                    while (!RespWriteUtils.TryWriteBulkString(lcs, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    respOutput.WriteBulkString(lcs);
                 }
+
+                return GarnetStatus.OK;
             }
             finally
             {
-                if (isMemory)
-                    ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+                respOutput.Dispose();
             }
-
-            return GarnetStatus.OK;
         }
 
         private static int ComputeLCSLength(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
@@ -1464,57 +1453,41 @@ namespace Garnet.server
         }
 
         private static unsafe void WriteLCSMatches(List<LCSMatch> matches, bool withMatchLen, int lcsLength,
-            ref byte* curr, byte* end, ref SpanByteAndMemory output,
-            ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
+                                                   ref GarnetObjectStoreRespOutput output)
         {
-            while (!RespWriteUtils.TryWriteArrayLength(4, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            output.WriteMapLength(2);
 
             // Write "matches" section identifier
-            while (!RespWriteUtils.TryWriteBulkString(CmdStrings.matches, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            output.WriteBulkString(CmdStrings.matches);
 
             // Write matches array
-            while (!RespWriteUtils.TryWriteArrayLength(matches.Count, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            output.WriteArrayLength(matches.Count);
 
             foreach (var match in matches)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(withMatchLen ? 3 : 2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                output.WriteArrayLength(withMatchLen ? 3 : 2);
 
-                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                output.WriteArrayLength(2);
 
-                while (!RespWriteUtils.TryWriteInt32(match.Start1, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                output.WriteInt32(match.Start1);
+                output.WriteInt32(match.Start1 + match.Length - 1);
 
-                while (!RespWriteUtils.TryWriteInt32(match.Start1 + match.Length - 1, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                output.WriteArrayLength(2);
 
-                while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                while (!RespWriteUtils.TryWriteInt32(match.Start2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                while (!RespWriteUtils.TryWriteInt32(match.Start2 + match.Length - 1, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                output.WriteInt32(match.Start2);
+                output.WriteInt32(match.Start2 + match.Length - 1);
 
                 if (withMatchLen)
                 {
-                    while (!RespWriteUtils.TryWriteInt32(match.Length, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    output.WriteInt32(match.Length);
                 }
             }
 
             // Write "len" section identifier
-            while (!RespWriteUtils.TryWriteBulkString(CmdStrings.len, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            output.WriteBulkString(CmdStrings.len);
 
             // Write LCS length
-            while (!RespWriteUtils.TryWriteInt32(lcsLength, ref curr, end))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            output.WriteInt32(lcsLength);
         }
 
         private static byte[] ComputeLCS(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
