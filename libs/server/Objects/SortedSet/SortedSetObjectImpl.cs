@@ -173,7 +173,7 @@ namespace Garnet.server
 
                 if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                 {
-                    output.WriteDoubleBulkString(incrResult);
+                    output.WriteDoubleNumeric(incrResult);
                 }
                 else
                 {
@@ -254,7 +254,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    output.WriteDoubleBulkString(score);
+                    output.WriteDoubleNumeric(score);
                 }
             }
 
@@ -325,7 +325,7 @@ namespace Garnet.server
             }
 
             // Write the new score
-            output.WriteDoubleBulkString(sortedSetDict[member]);
+            output.WriteDoubleNumeric(sortedSetDict[member]);
         }
 
         private void SortedSetRange(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
