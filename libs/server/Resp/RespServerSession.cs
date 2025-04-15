@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        internal byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION;
+        public byte respProtocolVersion { get; private set; } = ServerOptions.DEFAULT_RESP_VERSION;
 
         /// <summary>
         /// Client name for the session
@@ -315,6 +315,12 @@ namespace Garnet.server
         {
             this._userHandle = userHandle;
             clusterSession?.SetUserHandle(userHandle);
+        }
+
+        public void UpdateRespProtocolVersion(byte _respProtocolVersion)
+        {
+            this.respProtocolVersion = _respProtocolVersion;
+            this.storageSession.UpdateRespProtocolVersion(respProtocolVersion);
         }
 
         public override void Dispose()
@@ -1579,7 +1585,7 @@ namespace Garnet.server
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;
 
-            this.storageSession.respProtocolVersion = this.respProtocolVersion;
+            this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
     }
 }

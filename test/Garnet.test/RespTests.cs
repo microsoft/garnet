@@ -3846,9 +3846,9 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase([2, "$-1\r\n"], Description = "RESP2 Null test")]
-        [TestCase([3, "_\r\n"], Description = "RESP3 Null test")]
-        public async Task RespNullTests(int respVersion, string expectedResponse)
+        [TestCase([2, "$-1\r\n", '*'], Description = "RESP2 output")]
+        [TestCase([3, "_\r\n", '~'], Description = "RESP3 output")]
+        public async Task RespOutputTests(int respVersion, string expectedResponse, char setChar)
         {
             using var c = TestUtils.GetGarnetClientSession(raw: true);
             c.Connect();
@@ -3872,6 +3872,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
             response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
             ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
+
+            response = await c.ExecuteAsync("SADD", "set", "foo", "bar");
+            ClassicAssert.AreEqual(":2\r\n", response);
+            response = await c.ExecuteAsync("SMEMBERS", "set");
+            ClassicAssert.AreEqual(setChar + "2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", response);
         }
 
         [Test]

@@ -184,7 +184,7 @@ namespace Garnet.server
                 countSlice, countValueSlice);
 
             // Prepare the input
-            var header = new RespInputHeader(objectType, respProtocolVersion);
+            var header = new RespInputHeader(objectType);
             var input = new ObjectInput(header, ref parseState, arg1: (int)cursor, arg2: ObjectScanCountLimit);
 
             switch (objectType)

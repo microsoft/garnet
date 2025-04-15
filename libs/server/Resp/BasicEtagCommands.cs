@@ -23,7 +23,7 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 1);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var input = new RawStringInput(RespCommand.GETWITHETAG, respProtocolVersion);
+            var input = new RawStringInput(RespCommand.GETWITHETAG);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GET(ref key, ref input, ref output);
 
@@ -54,7 +54,7 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, respProtocolVersion, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GET(ref key, ref input, ref output);
 

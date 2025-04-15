@@ -47,7 +47,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                value.Operate(ref input, ref output, out _);
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                 return true;
             }
             else
@@ -141,7 +141,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = value.Operate(ref input, ref output, out sizeChange);
+                        var operateSuccessful = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
                         if (output.HasWrongType)
                             return true;
 
@@ -238,7 +238,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output, out _);
+                        value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                         if (output.HasWrongType)
                             return true;
 

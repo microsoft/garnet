@@ -2792,7 +2792,7 @@ namespace Garnet.server
                 return LuaWrappedError(0, constStrs.ErrRespVersion);
             }
 
-            respServerSession.respProtocolVersion = (byte)num;
+            respServerSession.UpdateRespProtocolVersion((byte)num);
 
             return 0;
         }
