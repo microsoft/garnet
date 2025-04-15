@@ -42,6 +42,13 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteAsciiDirect(ReadOnlySpan<char> asciiString)
+        {
+            while (!RespWriteUtils.TryWriteAsciiDirect(asciiString, ref curr, end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteArrayItem(long item)
         {
             while (!RespWriteUtils.TryWriteArrayItem(item, ref curr, end))

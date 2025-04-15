@@ -436,8 +436,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
-                        SendAndReset();
+                    WriteMapLength(3);
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
                         SendAndReset();

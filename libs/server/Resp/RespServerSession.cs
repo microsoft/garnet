@@ -317,6 +317,10 @@ namespace Garnet.server
             clusterSession?.SetUserHandle(userHandle);
         }
 
+        /// <summary>
+        /// Update RESP protocol version used by session
+        /// </summary>
+        /// <param name="_respProtocolVersion"></param>
         public void UpdateRespProtocolVersion(byte _respProtocolVersion)
         {
             this.respProtocolVersion = _respProtocolVersion;
@@ -1311,9 +1315,9 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteEmptySet()
+        private void WriteEmptySet()
         {
-            if (respProtocolVersion == 3)
+            if (respProtocolVersion >= 3)
             {
                 while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
                     SendAndReset();
@@ -1326,9 +1330,24 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteNull()
+        private void WriteMapLength(int count)
         {
-            if (respProtocolVersion == 3)
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteMapLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count * 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteNull()
+        {
+            if (respProtocolVersion >= 3)
             {
                 while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
                     SendAndReset();
@@ -1341,9 +1360,9 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteSetLength(int count)
+        private void WriteSetLength(int count)
         {
-            if (respProtocolVersion == 3)
+            if (respProtocolVersion >= 3)
             {
                 while (!RespWriteUtils.TryWriteSetLength(count, ref dcurr, dend))
                     SendAndReset();
