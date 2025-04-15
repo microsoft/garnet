@@ -58,7 +58,7 @@ namespace Tsavorite.core
 
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetSerializedLength(long physicalAddress)
+        public readonly long GetSerializedLength()
             => RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
         #region ISourceLogRecord

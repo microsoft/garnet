@@ -148,16 +148,16 @@ namespace Tsavorite.core
         const long kValueLengthBitMask = 7;         // 3 bits for the number of bytes for the value length
 #pragma warning restore IDE1006 // Naming Styles
 
-        const long CurrentVersion = 0 << 5;         // Initial version
+        const long CurrentVersion = 0 << 5;         // Initial version is 0; shift will always be 5
 
         /// <summary>This contains the leading byte which are the indicators, plus the up-to-int length for the key, and then some or all of the length for the value.</summary>
-        readonly long IndicatorAddress => physicalAddress + RecordInfo.GetLength();
+        internal readonly long IndicatorAddress => physicalAddress + RecordInfo.GetLength();
 
         /// <summary>Version of the variable-length byte encoding for key and value lengths. There is no version info for <see cref="RecordInfo.RecordIsInline"/>
         /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>
-        readonly long VarByteVersion => (*(long*)IndicatorAddress & kVersionBitMask) >> 6;
+        internal readonly long Version => (*(long*)IndicatorAddress & kVersionBitMask) >> 6;
 
-        readonly (int length, long dataAddress) KeyInfo
+        internal readonly (int length, long dataAddress) KeyInfo
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
@@ -166,8 +166,8 @@ namespace Tsavorite.core
                 if (Info.RecordIsInline)    // For inline, the key length int starts at the same offset as IndicatorAddress
                     return (*(int*)address, address + SpanField.InlineLengthPrefixSize);
 
-                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3);
-                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask);
+                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3) + 1;
+                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask) + 1;
 
                 byte* ptr = (byte*)++address;  // Move past the indicator byte; the next bytes are key length
                 var keyLength = ReadVarBytes(keyLengthBytes, ref ptr);
@@ -177,19 +177,22 @@ namespace Tsavorite.core
             }
         }
 
-        readonly (long length, long dataAddress) ValueInfo
+        internal readonly (long length, long dataAddress) ValueInfo
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 var keyInfo = KeyInfo;
 
-                if (Info.RecordIsInline)    // For inline values the length is an int.
-                    return (*(int*)keyInfo.length, keyInfo.dataAddress);
+                if (Info.RecordIsInline)    // For inline values the length is an int, stored immediately after key data
+                {
+                    var valueLengthAddress = keyInfo.dataAddress + keyInfo.length;
+                    return (*(int*)valueLengthAddress, valueLengthAddress + sizeof(int));
+                }
 
                 var address = IndicatorAddress;
-                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3);
-                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask);
+                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3) + 1;     // add 1 due to 0-based
+                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask) + 1;        // add 1 due to 0-based
 
                 byte* ptr = (byte*)IndicatorAddress + 1 + keyLengthBytes;   // Skip over the key length bytes; the value length bytes are immediately after (before the key data)
                 var valueLength = ReadVarBytes(valueLengthBytes, ref ptr);
@@ -198,17 +201,17 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static byte CreateIndicatorByte(int keyLength, long valueLength, out int keyByteCount, out int valueByteCount)
+        internal static byte CreateIndicatorByte(int keyLength, long valueLength, out int keyByteCount, out int valueByteCount)
         {
             keyByteCount = GetByteCount(keyLength);
             valueByteCount = GetByteCount(valueLength);
-            return (byte)(CurrentVersion            // Already shifted
-                | ((long)keyByteCount << 3)         // Shift key into position
-                | (long)valueByteCount);            // Value does not need to be shifted
+            return (byte)(CurrentVersion                // Already shifted
+                | ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
+                | (long)(valueByteCount - 1));          // Value does not need to be shifted; subtract 1 for 0-based
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static int GetByteCount(long num)
+        internal static int GetByteCount(long num)
         {
             var result = 0;
             do
@@ -232,8 +235,8 @@ namespace Tsavorite.core
         static long ReadVarBytes(int len, ref byte* ptr)
         {
             long value = 0;
-            for (; len > 0; --len)
-                value = (value << 8) + *ptr++;
+            for (var ii = 0; ii < len; ++ii)
+                value |= (long)*ptr++ << (ii * 8);
             return value;
         }
 
@@ -255,7 +258,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly bool IsPinnedValue => Info.ValueIsInline;
+        public readonly bool IsPinnedValue => !Info.ValueIsObject;  // We store all bytes inline, but we don't set ValueIsInline, per discussion in SerializeCommonVarByteFields.
 
         /// <inheritdoc/>
         public readonly byte* PinnedValuePointer
@@ -335,7 +338,7 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
         {
             KeyDataSize = Key.Length,
-            ValueDataSize = Info.ValueIsInline ? (int)ValueInfo.length : ObjectIdMap.ObjectIdSize,
+            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : (int)ValueInfo.length,
             ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
@@ -385,6 +388,7 @@ namespace Tsavorite.core
         {
             // OptionalSize (ETag and Expiration) is not considered here; those are specified in the Input, which is serialized separately by PendingContext.
 
+            // Because this is for RUMD, we have only two possibilities for value: a Span (which is inline in DiskLogRecord regardless of length) or an object.
             long recordSize;
             byte* ptr;
             if (!valueSpan.IsEmpty)
@@ -426,8 +430,8 @@ namespace Tsavorite.core
             ptr = SerializeCommonVarByteFields(recordInfo:default, indicatorByte, key, keyLengthByteCount, valueLength, valueLengthByteCount, recordSize, bufferPool, ref allocatedRecord);
 
             // Set the value
-            InfoRef.SetValueIsObject();
             this.valueObject = valueObject;
+            InfoRef.SetValueIsObject();
         }
 
         /// <summary>
@@ -453,7 +457,7 @@ namespace Tsavorite.core
         {
             if (logRecord.Info.RecordIsInline)
             {
-                DirectCopyRecord(logRecord.GetInlineRecordSizes().actualSize, logRecord.physicalAddress, ref allocatedRecord);
+                DirectCopyRecord(logRecord.GetInlineRecordSizes().actualSize, logRecord.physicalAddress, bufferPool, ref allocatedRecord);
                 return;
             }
 
@@ -478,23 +482,19 @@ namespace Tsavorite.core
 
             // Set the value
             if (!logRecord.Info.ValueIsObject)
-            {
-                InfoRef.SetValueIsInline();
                 logRecord.ValueSpan.CopyTo(new Span<byte>(ptr, (int)valueLength));
-            }
-            else if (valueSerializer is not null)
-            {
-                InfoRef.SetValueIsInline();
-                var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.Size);
-                valueSerializer.BeginSerialize(stream);
-                var valueObject = logRecord.ValueObject;
-                valueSerializer.Serialize(valueObject);
-                valueSerializer.EndSerialize();
-            }
             else
             {
+                if (valueSerializer is not null)
+                {
+                    var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.Size, logRecord.ValueObject.Size, FileAccess.ReadWrite);
+                    valueSerializer.BeginSerialize(stream);
+                    valueSerializer.Serialize(logRecord.ValueObject);
+                    valueSerializer.EndSerialize();
+                }
+                else
+                    valueObject = logRecord.ValueObject;
                 InfoRef.SetValueIsObject();
-                valueObject = logRecord.ValueObject;
             }
             ptr += valueLength;
 
@@ -505,21 +505,24 @@ namespace Tsavorite.core
         private unsafe byte* SerializeCommonVarByteFields(RecordInfo recordInfo, byte indicatorByte, ReadOnlySpan<byte> key, int keyLengthByteCount,
                 long valueLength, int valueLengthByteCount, long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
-            allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
-            physicalAddress = (long)allocatedRecord.GetValidPointer();
+            EnsureAllocation(recordSize, bufferPool, ref allocatedRecord);
             var ptr = (byte*)physicalAddress;
 
+            // RecordInfo is a stack copy so we can modify it here. Write the key "inline" status; keys are always inline in DiskLogRecord, as they cannot
+            // be object. Value, however, does not set ValueIsInline for varbyte records, because then Info.RecordIsInline would be true. Instead we clear
+            // ValueIsInline and use ValueIsObject to determine whether the serialized bytes are string or object, and whether DeserializeValueObject can
+            // be used. WARNING: ToString() may AV when stepping through here in the debugger, until we have the lengths correctly set.
+            recordInfo.SetKeyIsInline();
+            recordInfo.ClearValueIsInline();
             *(RecordInfo*)ptr = recordInfo;
             ptr += RecordInfo.GetLength();
 
+            // Set the indicator and lengths
             *ptr++ = indicatorByte;
-
-            InfoRef.SetKeyIsInline();
             WriteVarBytes(key.Length, keyLengthByteCount, ref ptr);
-
-            // Copy the value length (the number of bytes is encoded in the indicator byte, written above), but not the actual value; the caller does that.
             WriteVarBytes(valueLength, valueLengthByteCount, ref ptr);
 
+            // Copy the key but not the value; the caller does that.
             key.CopyTo(new Span<byte>(ptr, key.Length));
 
             // Return the pointer to the value data space (immediately following the key data space, with no value length prefix as the value was already written).
@@ -548,11 +551,20 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void DirectCopyRecord(long recordSize, long srcPhysicalAddress, ref SectorAlignedMemory allocatedRecord)
+        private void DirectCopyRecord(long recordSize, long srcPhysicalAddress, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
-            allocatedRecord.pool.EnsureSize(ref allocatedRecord, RoundUp((int)recordSize, Constants.kRecordAlignment));
-            physicalAddress = (long)allocatedRecord.GetValidPointer();
+            EnsureAllocation(recordSize, bufferPool, ref allocatedRecord);
             Buffer.MemoryCopy((byte*)srcPhysicalAddress, (byte*)physicalAddress, recordSize, recordSize);
+        }
+
+        private void EnsureAllocation(long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
+        {
+            var allocatedSize = RoundUp((int)recordSize, Constants.kRecordAlignment);
+            if (allocatedRecord is not null)
+                allocatedRecord.pool.EnsureSize(ref allocatedRecord, allocatedSize);
+            else
+                allocatedRecord = bufferPool.Get(allocatedSize);
+            physicalAddress = (long)allocatedRecord.GetValidPointer();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -587,7 +599,7 @@ namespace Tsavorite.core
             if (!inputDiskLogRecord.Info.ValueIsObject)
             {
                 // The record is in inline format, so we can just copy the whole record.
-                DirectCopyRecord(inputDiskLogRecord.GetSerializedLength(), inputDiskLogRecord.physicalAddress, ref recordBuffer);
+                DirectCopyRecord(inputDiskLogRecord.GetSerializedLength(), inputDiskLogRecord.physicalAddress, bufferPool, ref recordBuffer);
                 return;
             }
 
@@ -640,8 +652,10 @@ namespace Tsavorite.core
         {
             static string bstr(bool value) => value ? "T" : "F";
             var valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToString();
+            var eTag = Info.HasETag ? ETag.ToString() : "-";
+            var expiration = Info.HasExpiration ? Expiration.ToString() : "-";
 
-            return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
+            return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{eTag} | HasExpiration {bstr(Info.HasExpiration)}:{expiration}";
         }
     }
 }

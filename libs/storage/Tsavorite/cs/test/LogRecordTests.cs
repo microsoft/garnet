@@ -206,48 +206,126 @@ namespace Tsavorite.test
             value.Fill(0x43);
             overflowValue.Fill(0x53);
 
+            // Local diskLogRecord. We keep recordBuffer outside DiskLogRecord for the reuse scenario.
             DiskLogRecord diskLogRecord;
             var valueSerializer = new TestObjectValue.Serializer();
+            bufferPool = new(recordSize: 1, sectorSize: 512);
 
             var sizeInfo = new RecordSizeInfo();
             InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLengthAddress, out var expectedFillerLength, out long eTag, out long expiration);
             diskLogRecord = new();
             diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
-            // verify inline copy by checking for SerializedSize
+            Assert.That(diskLogRecord.Info.RecordIsInline);
+            // verify inline copy by checking SerializedSize
+            Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(logRecord.GetSerializedLength()));
             // verify getting the key and value - length and data; eTag; expiration
+            Assert.That(diskLogRecord.Key.SequenceEqual(logRecord.Key));
+            Assert.That(diskLogRecord.ValueSpan.SequenceEqual(logRecord.ValueSpan));
+            Assert.That(!diskLogRecord.Info.ValueIsObject);
+            Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
+            Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
+
+            // From here down in this test we want diskLogRecord to be serialized in IndicatorByte format (varbyte).
+            var optionalLength = 2 * sizeof(long);
+            var expectedValueLengthBytes = 1;
 
             // Convert to overflow. Because objectIdSize is the same as InlineLengthPrefixSize, our value space will shrink by the original value data size.
             var offset = value.Length;
             ConvertToOverflow(overflowValue, ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration, offset);
             diskLogRecord = new();
             diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
-            // Verify indicator byte - this will be just one byte
-            // calculate offsets and call KeyInfo, ValueInfo and compare their lengths and addresses
+            Assert.That(!diskLogRecord.Info.RecordIsInline);
+            // verify out-of-line copy by checking SerializedSize
+            Assert.That(diskLogRecord.GetSerializedLength(), Is.Not.EqualTo(logRecord.GetSerializedLength()));
+            // verify indicator byte
+            Assert.That(diskLogRecord.Version, Is.EqualTo(0));
             // verify getting the key and value - length and data; eTag; expiration
+            Assert.That(diskLogRecord.Key.Length, Is.EqualTo(key.Length));
+            Assert.That(diskLogRecord.Key.SequenceEqual(logRecord.Key));
+            Assert.That(diskLogRecord.ValueSpan.Length, Is.EqualTo(overflowValue.Length));
+            Assert.That(diskLogRecord.ValueSpan.SequenceEqual(logRecord.ValueSpan));
+            Assert.That(!diskLogRecord.Info.ValueIsObject);
+            Assert.That(!diskLogRecord.Info.ValueIsInline, "To avoid issues with Info.RecordIsInline, varbyte-format DiskLogRecords do not set Info.ValueIsInline; see discussion in SerializeCommonVarByteFields");
+            Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
+            Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
 
             // Convert to Object. Because objectIdSize is the same as InlineLengthPrefixSize, we can reuse the same offset as above.
             ConvertToObject(ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration, offset);
-            diskLogRecord = new();
-            diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
-            // Verify indicator byte - this will be just one byte
-            // calculate offsets and call KeyInfo, ValueInfo and compare their lengths and addresses
-            // verify getting the key and value - length and data; eTag; expiration
 
-            // Test the 2-8 byte lengths
-            for (var ii = 1; ii < 8; ++ii)
+            // Now test different value sizes, using TestLargeObjectValue to test large objects.
+            var largeValueSerializer = new TestLargeObjectValue.Serializer();
+            for (var ii = 0; ii < sizeof(int); ++ii)
             {
-                var valueObject = new TestLargeObjectValue(1 << (ii * 8 + 1));
+                /////////////////////////////
+                // Set up the LogRecord with the object.
+                /////////////////////////////
+                var valueDataSize = (1 << (ii * 8)) + 42;         // TODO: test long values
+                var valueObject = new TestLargeObjectValue(valueDataSize);
                 Array.Fill(valueObject.value, (byte)ii);
-                var largeValueSerializer = new TestLargeObjectValue.Serializer();
                 sizeInfo.FieldInfo.ValueDataSize = ObjectIdMap.ObjectIdSize;
                 sizeInfo.FieldInfo.ValueIsObject = true;
                 UpdateRecordSizeInfo(ref sizeInfo);
                 Assert.That(logRecord.TrySetValueObject(valueObject, ref sizeInfo), Is.True);
+
+                expectedValueLengthBytes = 1;  // Non-serialized object so only a 1-byte "0" length
+                var expectedKeyDataOffset = RecordInfo.GetLength() + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
+                var expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
+
+                /////////////////////////////
+                // Serialize with a null object serializer to copy the object instance rather than serializing it into space in the record buffer.
+                /////////////////////////////
+                diskLogRecord = new();
+                diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer: null, ref recordBuffer);
+                Assert.That(diskLogRecord.Version, Is.EqualTo(0));
+                expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
+
+                var keyInfo = diskLogRecord.KeyInfo;
+                Assert.That(keyInfo.length, Is.EqualTo(initialKeyLen));
+                Assert.That(keyInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress));
+
+                var expectedSerializedValueLength = 0;      // The object instance was copied; no serialization was done so the length is zero.
+                var valueInfo = diskLogRecord.ValueInfo;
+                Assert.That(valueInfo.length, Is.EqualTo(expectedSerializedValueLength));
+                Assert.That(valueInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress + keyInfo.length));
+
+                Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
+                Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
+
+                Assert.That(diskLogRecord.ValueObject, Is.Not.Null);
+                Assert.That(new Span<byte>(((TestLargeObjectValue)diskLogRecord.ValueObject).value).SequenceEqual(new Span<byte>(((TestLargeObjectValue)logRecord.ValueObject).value)));
+                var expectedRecordSize = RoundUp(expectedKeyDataOffset + key.Length + expectedSerializedValueLength + optionalLength, Constants.kRecordAlignment);
+                Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(expectedRecordSize));
+
+                /////////////////////////////
+                // Serialize with an object serializer to allocate space in the record buffer and serialize the object into it.
+                /////////////////////////////
                 diskLogRecord = new();
                 diskLogRecord.Serialize(ref logRecord, bufferPool, largeValueSerializer, ref recordBuffer);
-                // Verify indicator byte - this will be 1-8 bytes
-                // calculate offsets and call KeyInfo, ValueInfo and compare their lengths and addresses
-                // verify getting the key and value - length and data; eTag; expiration
+                Assert.That(diskLogRecord.Version, Is.EqualTo(0));
+
+                expectedValueLengthBytes = ii + 1;  // Serialized object so the value length is used
+                expectedKeyDataOffset = RecordInfo.GetLength() + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
+                expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
+
+                keyInfo = diskLogRecord.KeyInfo;
+                Assert.That(keyInfo.length, Is.EqualTo(initialKeyLen));
+                Assert.That(keyInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress));
+
+                valueInfo = diskLogRecord.ValueInfo;
+                Assert.That(valueInfo.length, Is.EqualTo(valueObject.Size));
+                Assert.That(valueInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress + keyInfo.length));
+
+                Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
+                Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
+
+                Assert.That(diskLogRecord.Info.ValueIsObject);
+                expectedSerializedValueLength = (int)valueObject.Size;
+                expectedRecordSize = RoundUp(expectedKeyDataOffset + key.Length + expectedSerializedValueLength + optionalLength, Constants.kRecordAlignment);
+                Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(expectedRecordSize));
+
+                Assert.That(diskLogRecord.DeserializeValueObject(largeValueSerializer), Is.Not.Null);
+                Assert.That(diskLogRecord.ValueObject, Is.Not.Null);
+                Assert.That(new Span<byte>(((TestLargeObjectValue)diskLogRecord.ValueObject).value).SequenceEqual(new Span<byte>(((TestLargeObjectValue)logRecord.ValueObject).value)));
             }
         }
 
@@ -298,7 +376,7 @@ namespace Tsavorite.test
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
             Assert.That(logRecord.Info.ValueIsObject, Is.False);
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(value.Length));
-            Assert.That(logRecord.ValueSpan.AsRef<int>(), Is.EqualTo(0x43434343));
+            Assert.That(logRecord.ValueSpan.Slice(0, sizeof(int)).AsRef<int>(), Is.EqualTo(0x43434343));
 
             // These should be the same still.
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
@@ -333,7 +411,7 @@ namespace Tsavorite.test
             Assert.That(logRecord.Info.ValueIsInline, Is.False);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.True);
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(overflowValue.Length));
-            Assert.That(logRecord.ValueSpan.AsRef<int>(), Is.EqualTo(0x53535353));
+            Assert.That(logRecord.ValueSpan.Slice(0, sizeof(int)).AsRef<int>(), Is.EqualTo(0x53535353));
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
@@ -374,7 +452,7 @@ namespace Tsavorite.test
             Assert.That(logRecord.Info.ValueIsInline, Is.True);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(value.Length));
-            Assert.That(logRecord.ValueSpan.AsRef<int>(), Is.EqualTo(0x43434343));
+            Assert.That(logRecord.ValueSpan.Slice(0, sizeof(int)).AsRef<int>(), Is.EqualTo(0x43434343));
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));

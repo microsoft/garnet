@@ -177,7 +177,7 @@ namespace Tsavorite.test
     {
         public byte[] value;
 
-        public long Size { get => value.Length; set => throw new System.NotImplementedException("TestValueObject.Size.set"); }
+        public long Size { get => sizeof(int) + value.Length; set => throw new System.NotImplementedException("TestValueObject.Size.set"); }
 
         public void Dispose() { }
 
