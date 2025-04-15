@@ -12,19 +12,12 @@ namespace Garnet.server
     /// <summary>
     /// Flags used by append-only file (AOF/WAL)
     /// The byte representation only use the last 3 bits of the byte since the lower 5 bits of the field used to store the flag stores other data in the case of Object types.
-    /// In the case of a Rawstring, the last 5 bits are used for flags, and the other 3 bits are unused of the byte.
+    /// In the case of a Rawstring, the last 4 bits are used for flags, and the other 4 bits are unused of the byte.
     /// NOTE: This will soon be expanded as a part of a breaking change to make WithEtag bit compatible with object store as well.
     /// </summary>
     [Flags]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1069:Enums values should not be duplicated",
-        Justification = "We can only use the last 3 bits for object flags, and SetGet was already defined. Moving it may affect AOF.")]
     public enum RespInputFlags : byte
     {
-        /// <summary>
-        /// Flag indicating protocol version is RESP3 (for strings).
-        /// </summary>
-        Resp3String = 8,
-
         /// <summary>
         /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
         /// </summary>
@@ -34,16 +27,11 @@ namespace Garnet.server
         /// Flag indicating a SET operation that returns the previous value (for strings).
         /// </summary>
         SetGet = 32,
-        /// <summary>
-        /// Flag indicating protocol version is RESP3 (for objects).
-        /// </summary>
-        Resp3Object = 32,
 
         /// <summary>
         /// Deterministic
         /// </summary>
         Deterministic = 64,
-
         /// <summary>
         /// Expired
         /// </summary>
@@ -63,7 +51,7 @@ namespace Garnet.server
 
         // Since we know WithEtag is not used with any Object types, we keep the flag mask to work with the last 3 bits as flags,
         // and the other 5 bits for storing object associated flags. However, in the case of Rawstring we use the last 4 bits for flags, and let the others remain unused.
-        internal const byte FlagMask = (byte)RespInputFlags.Resp3Object - 1;
+        internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
 
         [FieldOffset(0)]
         internal RespCommand cmd;
@@ -78,24 +66,33 @@ namespace Garnet.server
         /// Create a new instance of RespInputHeader
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="respProtocolVersion"></param>
-        public RespInputHeader(RespCommand cmd, byte respProtocolVersion)
+        /// <param name="flags">Flags</param>
+        public RespInputHeader(RespCommand cmd, RespInputFlags flags = 0)
         {
             this.cmd = cmd;
-            if (respProtocolVersion >= 3)
-                flags = RespInputFlags.Resp3String;
+            this.flags = flags;
         }
 
         /// <summary>
         /// Create a new instance of RespInputHeader
         /// </summary>
         /// <param name="type">Object type</param>
-        /// <param name="respProtocolVersion"></param>
-        public RespInputHeader(GarnetObjectType type, byte respProtocolVersion)
+        /// <param name="flags">Flags</param>
+        public RespInputHeader(GarnetObjectType type, RespInputFlags flags = 0)
         {
             this.type = type;
-            if (respProtocolVersion >= 3)
-                flags = RespInputFlags.Resp3Object;
+            this.flags = flags;
+        }
+
+        /// <summary>
+        /// Set RESP input header
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        public void SetHeader(ushort cmd, byte flags)
+        {
+            this.cmd = (RespCommand)cmd;
+            this.flags = (RespInputFlags)flags;
         }
 
         internal byte SubId
@@ -267,9 +264,6 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool IsResp3 => (header.flags & RespInputFlags.Resp3Object) != 0;
-
-        /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + (2 * sizeof(int)) // arg1 + arg2
                                        + parseState.GetSerializedLength();
@@ -353,11 +347,11 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="respVersion">Resp protocol version</param>
+        /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(RespCommand cmd, byte respVersion, long arg1 = 0)
+        public RawStringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
-            this.header = new RespInputHeader(cmd, respVersion);
+            this.header = new RespInputHeader(cmd, flags);
             this.arg1 = arg1;
         }
 
@@ -365,11 +359,22 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="respVersion">Resp protocol version</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public RawStringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
+
+        {
+        }
+
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(RespCommand cmd, byte respVersion, ref SessionParseState parseState,
-                              long arg1 = 0) : this(cmd, respVersion, arg1)
+        /// <param name="flags">Flags</param>
+        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
         }
@@ -378,17 +383,14 @@ namespace Garnet.server
         /// Create a new instance of RawStringInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="respVersion">Resp protocol version</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(RespCommand cmd, byte respVersion, ref SessionParseState parseState, int startIdx, long arg1 = 0) : this(cmd, respVersion, arg1)
+        /// <param name="flags">Flags</param>
+        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }
-
-        /// <inheritdoc />
-        public bool IsResp3 => (header.flags & RespInputFlags.Resp3String) != 0;
 
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
@@ -481,9 +483,6 @@ namespace Garnet.server
             this.parseState = parseState.Slice(startIdx);
             RespVersion = respVersion;
         }
-
-        /// <inheritdoc />
-        public bool IsResp3 => RespVersion >= 3;
 
         /// <inheritdoc />
         public int SerializedLength => parseState.GetSerializedLength();

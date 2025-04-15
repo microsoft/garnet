@@ -107,7 +107,7 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <param name="cursor"></param>
         /// <param name="output"></param>
-        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output, bool resp3)
+        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -144,7 +144,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            if (resp3)
+                            if (respProtocolVersion >= 3)
                             {
                                 while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
                                     ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

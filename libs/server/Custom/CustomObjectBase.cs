@@ -67,7 +67,8 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                                   byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -80,7 +81,7 @@ namespace Garnet.server
                     {
                         Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                             patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, input.IsResp3);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
                     }
                     else
                     {

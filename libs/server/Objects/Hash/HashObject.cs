@@ -155,7 +155,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                            byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -179,13 +180,13 @@ namespace Garnet.server
                         HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HGET:
-                        HashGet(ref input, ref output.SpanByteAndMemory);
+                        HashGet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HMGET:
-                        HashMultipleGet(ref input, ref output.SpanByteAndMemory);
+                        HashMultipleGet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HGETALL:
-                        HashGetAll(ref input, ref output.SpanByteAndMemory);
+                        HashGetAll(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HDEL:
                         HashDelete(ref input, outputSpan);
@@ -200,31 +201,31 @@ namespace Garnet.server
                         HashExists(ref input, outputSpan);
                         break;
                     case HashOperation.HEXPIRE:
-                        HashExpire(ref input, ref output.SpanByteAndMemory);
+                        HashExpire(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HTTL:
-                        HashTimeToLive(ref input, ref output.SpanByteAndMemory);
+                        HashTimeToLive(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HPERSIST:
-                        HashPersist(ref input, ref output.SpanByteAndMemory);
+                        HashPersist(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HKEYS:
-                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HVALS:
-                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory);
+                        HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HINCRBY:
-                        HashIncrement(ref input, ref output.SpanByteAndMemory);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrement(ref input, ref output.SpanByteAndMemory);
+                        HashIncrement(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HSETNX:
                         HashSet(ref input, outputSpan);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(ref input, ref output.SpanByteAndMemory);
+                        HashRandomField(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case HashOperation.HCOLLECT:
                         HashCollect(ref input, outputSpan);
@@ -235,7 +236,7 @@ namespace Garnet.server
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength, isNoValue);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, input.IsResp3);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
                         }
                         else
                         {

@@ -14,11 +14,6 @@ namespace Tsavorite.core
         public int SerializedLength { get; }
 
         /// <summary>
-        /// Is RESP3 protocol to be used?
-        /// </summary>
-        public bool IsResp3 { get; }
-
-        /// <summary>
         /// Serialize the IStoreInput object into memory buffer
         /// </summary>
         /// <param name="dest">Memory buffer to serialize into. Guaranteed to have at least SerializedLength many bytes</param>

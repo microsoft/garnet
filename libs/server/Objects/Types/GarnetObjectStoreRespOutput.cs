@@ -24,23 +24,14 @@ namespace Garnet.server
         readonly bool resp3;
         readonly bool skipOutputHeader;
 
-        internal unsafe GarnetObjectStoreRespOutput(byte respVersion, ref SpanByteAndMemory output)
+        internal unsafe GarnetObjectStoreRespOutput(byte respVersion, ref SpanByteAndMemory output, bool _skipOutputHeader = false)
         {
             this.output = ref output;
             resp3 = respVersion >= 3;
             ptr = output.SpanByte.ToPointer();
             curr = ptr;
             end = curr + output.Length;
-            skipOutputHeader = true;
-        }
-
-        internal unsafe GarnetObjectStoreRespOutput(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            this.output = ref output;
-            resp3 = input.IsResp3;
-            ptr = output.SpanByte.ToPointer();
-            curr = ptr;
-            end = curr + output.Length;
+            skipOutputHeader = _skipOutputHeader;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -171,6 +162,21 @@ namespace Garnet.server
         {
             while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteSetLength(int len)
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteSetLength(len, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

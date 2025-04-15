@@ -35,7 +35,7 @@ namespace Garnet.cluster
                 ////////////////
                 // Build Input//
                 ////////////////
-                var input = new RawStringInput(RespCommand.MIGRATE, ServerOptions.DEFAULT_RESP_VERSION);
+                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
 
                 foreach (var pair in _keys.GetKeys())
                 {

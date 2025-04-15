@@ -44,7 +44,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HSET };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSET };
             var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -81,7 +81,7 @@ namespace Garnet.server
             }
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HSET };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSET };
             var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -125,7 +125,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HDEL };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
             var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -155,7 +155,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HGET };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
             var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
@@ -190,7 +190,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HMGET };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
             var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
@@ -221,7 +221,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HGETALL };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
             var input = new ObjectInput(header);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
@@ -253,7 +253,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HLEN };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
             var input = new ObjectInput(header);
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -283,7 +283,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(field);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HEXISTS };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
             var input = new ObjectInput(header, ref parseState);
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -313,7 +313,7 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HRANDFIELD };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var input = new ObjectInput(header, 1 << 2, seed);
 
             var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
@@ -351,7 +351,7 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash, respProtocolVersion) { HashOp = HashOperation.HRANDFIELD };
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var inputArg = (((count << 1) | 1) << 1) | (withValues ? 1 : 0);
             var input = new ObjectInput(header, inputArg, seed);
 

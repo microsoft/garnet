@@ -122,7 +122,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SetObject(Set, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                            byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -143,13 +144,13 @@ namespace Garnet.server
                         SetAdd(ref input, outputSpan);
                         break;
                     case SetOperation.SMEMBERS:
-                        SetMembers(ref input, ref output.SpanByteAndMemory);
+                        SetMembers(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case SetOperation.SISMEMBER:
-                        SetIsMember(ref input, ref output.SpanByteAndMemory);
+                        SetIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case SetOperation.SMISMEMBER:
-                        SetMultiIsMember(ref input, ref output.SpanByteAndMemory);
+                        SetMultiIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case SetOperation.SREM:
                         SetRemove(ref input, outputSpan);
@@ -158,10 +159,10 @@ namespace Garnet.server
                         SetLength(outputSpan);
                         break;
                     case SetOperation.SPOP:
-                        SetPop(ref input, ref output.SpanByteAndMemory);
+                        SetPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case SetOperation.SRANDMEMBER:
-                        SetRandomMember(ref input, ref output.SpanByteAndMemory);
+                        SetRandomMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case SetOperation.SSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
@@ -169,7 +170,7 @@ namespace Garnet.server
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                                 patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, input.IsResp3);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
                         }
                         else
                         {

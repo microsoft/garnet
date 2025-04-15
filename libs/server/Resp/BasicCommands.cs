@@ -109,7 +109,7 @@ namespace Garnet.server
             }
 
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
-            var input = new RawStringInput(RespCommand.GETEX, respProtocolVersion, ref parseState, startIdx: 1, arg1: expiry);
+            var input = new RawStringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.GETEX(ref key, ref input, ref o);
@@ -143,7 +143,7 @@ namespace Garnet.server
 
             // Set up input to instruct storage to write output to IMemory rather than
             // network buffer, if the operation goes pending.
-            var input = new RawStringInput(RespCommand.ASYNC, respProtocolVersion);
+            var input = new RawStringInput(RespCommand.ASYNC);
 
             var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out var pending);
 
@@ -327,7 +327,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.SETRANGE, respProtocolVersion, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
@@ -354,7 +354,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.GETRANGE, respProtocolVersion, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -409,7 +409,7 @@ namespace Garnet.server
 
             var sbVal = parseState.GetArgSliceByRef(2).SpanByte;
 
-            var input = new RawStringInput(RespCommand.SETEX, respProtocolVersion, valMetadata);
+            var input = new RawStringInput(RespCommand.SETEX, 0, valMetadata);
             _ = storageApi.SET(ref key, ref input, ref sbVal);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -432,7 +432,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            var input = new RawStringInput(RespCommand.SETEXNX, respProtocolVersion, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
             var status = storageApi.SET_Conditional(ref sbKey, ref input);
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
@@ -631,7 +631,7 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new RawStringInput(cmd, respProtocolVersion, valMetadata);
+            var input = new RawStringInput(cmd, 0, valMetadata);
 
             storageApi.SET(ref key, ref input, ref val);
 
@@ -650,7 +650,7 @@ namespace Garnet.server
                       ? TimeSpan.FromMilliseconds(expiry).Ticks
                       : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new RawStringInput(cmd, respProtocolVersion, ref parseState, startIdx: 1, arg1: inputArg);
+            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             if (!getValue && !withEtag)
             {
@@ -743,7 +743,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            var input = new RawStringInput(cmd, respProtocolVersion, incrByValue);
+            var input = new RawStringInput(cmd, 0, incrByValue);
             storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
@@ -786,7 +786,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            var input = new RawStringInput(RespCommand.INCRBYFLOAT, respProtocolVersion, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1);
             storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
@@ -819,7 +819,7 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
-            var input = new RawStringInput(RespCommand.APPEND, respProtocolVersion, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.APPEND, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
@@ -1537,8 +1537,7 @@ namespace Garnet.server
                     return;
                 }
 
-                this.respProtocolVersion = respProtocolVersion.Value;
-                this.storageSession.respProtocolVersion = this.respProtocolVersion;
+                this.UpdateRespProtocolVersion(respProtocolVersion.Value);
             }
 
             if (!username.IsEmpty)

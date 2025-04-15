@@ -109,11 +109,11 @@ namespace Garnet.server
             if (expiry > 0)
             {
                 var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new RawStringInput(RespCommand.SETEXNX, respProtocolVersion, ref parseState, arg1: inputArg);
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
             }
             else
             {
-                input = new RawStringInput(RespCommand.SETEXNX, respProtocolVersion, ref parseState);
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
             }
 
             var status = storageApi.SET_Conditional(ref sbKey, ref input);
@@ -450,7 +450,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, respProtocolVersion, ref parseState, startIdx: 1, arg1: (byte)expireOption);
+            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
@@ -535,7 +535,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, respProtocolVersion, ref parseState, startIdx: 1, arg1: (byte)expireOption);
+            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)

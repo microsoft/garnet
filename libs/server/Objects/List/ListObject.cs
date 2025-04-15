@@ -128,7 +128,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                            byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -150,14 +151,14 @@ namespace Garnet.server
                         ListPush(ref input, outputSpan, true);
                         break;
                     case ListOperation.LPOP:
-                        ListPop(ref input, ref output.SpanByteAndMemory, true);
+                        ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, true);
                         break;
                     case ListOperation.RPUSH:
                     case ListOperation.RPUSHX:
                         ListPush(ref input, outputSpan, false);
                         break;
                     case ListOperation.RPOP:
-                        ListPop(ref input, ref output.SpanByteAndMemory, false);
+                        ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, false);
                         break;
                     case ListOperation.LLEN:
                         ListLength(outputSpan);
@@ -166,10 +167,10 @@ namespace Garnet.server
                         ListTrim(ref input, outputSpan);
                         break;
                     case ListOperation.LRANGE:
-                        ListRange(ref input, ref output.SpanByteAndMemory);
+                        ListRange(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case ListOperation.LINDEX:
-                        ListIndex(ref input, ref output.SpanByteAndMemory);
+                        ListIndex(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case ListOperation.LINSERT:
                         ListInsert(ref input, outputSpan);
@@ -178,10 +179,10 @@ namespace Garnet.server
                         ListRemove(ref input, outputSpan);
                         break;
                     case ListOperation.LSET:
-                        ListSet(ref input, ref output.SpanByteAndMemory);
+                        ListSet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
                     case ListOperation.LPOS:
-                        ListPosition(ref input, ref output.SpanByteAndMemory);
+                        ListPosition(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
                         break;
 
                     default:

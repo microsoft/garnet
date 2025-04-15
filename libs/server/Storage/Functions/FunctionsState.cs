@@ -19,7 +19,10 @@ namespace Garnet.server
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public EtagState etagState;
+        public byte respProtocolVersion;
         public bool StoredProcMode;
+
+        public bool IsResp3 => respProtocolVersion >= 3;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)

@@ -55,8 +55,6 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
-        public byte respProtocolVersion;
-
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
@@ -70,10 +68,10 @@ namespace Garnet.server
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-            this.respProtocolVersion = respProtocolVersion;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId);
+            functionsState.respProtocolVersion = respProtocolVersion;
 
             var functions = new MainSessionFunctions(functionsState);
 
@@ -96,6 +94,11 @@ namespace Garnet.server
 
             HeadAddress = db.MainStore.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
+        }
+
+        public void UpdateRespProtocolVersion(byte respProtocolVersion)
+        {
+            functionsState.respProtocolVersion = respProtocolVersion;
         }
 
         public void Dispose()
