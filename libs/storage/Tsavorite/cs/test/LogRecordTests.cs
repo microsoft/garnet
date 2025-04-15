@@ -65,12 +65,12 @@ namespace Tsavorite.test
 
             // Key
             sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
             sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= maxInlineValueSize;
-            valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
@@ -354,9 +354,9 @@ namespace Tsavorite.test
             logRecord.InfoRef.SetValueIsInline();
 
             // SerializeKey
-            var keySpan = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
+            var keySpan = LogField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             key.CopyTo(keySpan);
-            _ = SpanField.SetInlineDataLength(logRecord.ValueAddress, value.Length);
+            _ = LogField.SetInlineDataLength(logRecord.ValueAddress, value.Length);
 
             // InitializeValue
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(initialValueLen));
@@ -365,7 +365,7 @@ namespace Tsavorite.test
             // (it ignores optionals as it's called before they're set up).
             logRecord.SetFillerLength(sizeInfo.AllocatedInlineRecordSize);
 
-            expectedFillerLengthAddress = logRecord.ValueAddress + value.Length + SpanField.InlineLengthPrefixSize;
+            expectedFillerLengthAddress = logRecord.ValueAddress + value.Length + LogField.InlineLengthPrefixSize;
             expectedFillerLength = recordEndAddress - expectedFillerLengthAddress;
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));

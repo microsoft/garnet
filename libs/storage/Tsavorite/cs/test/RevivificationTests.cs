@@ -516,9 +516,9 @@ namespace Tsavorite.test.Revivification
                 var expectedValueLength = expectedValueLengths.Dequeue();
 
                 // If an overflow logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of ObjectIdMap.ObjectIdSize,
-                // and we'll call SpanField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
+                // and we'll call LogField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
                 if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
-                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, SpanField.GetTotalSizeOfInlineField(logRecord.ValueAddress));
+                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, LogField.GetTotalSizeOfInlineField(logRecord.ValueAddress));
                 if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
                 else

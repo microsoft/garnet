@@ -60,8 +60,8 @@ namespace Tsavorite.core
             for (var ii = 0; ii < BufferSize; ++ii)
                 values[ii] = new();
 
-            // For SpanField conversions between inline and heap fields, we assume the inline field size prefix is the same size as objectId size
-            Debug.Assert(SpanField.InlineLengthPrefixSize == ObjectIdMap.ObjectIdSize, "InlineLengthPrefixSize must be equal to ObjectIdMap.ObjectIdSize");
+            // For LogField conversions between inline and heap fields, we assume the inline field size prefix is the same size as objectId size
+            Debug.Assert(LogField.InlineLengthPrefixSize == ObjectIdMap.ObjectIdSize, "InlineLengthPrefixSize must be equal to ObjectIdMap.ObjectIdSize");
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -135,7 +135,7 @@ namespace Tsavorite.core
             {
                 // Set the actual length indicator for inline.
                 LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-                _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
+                _ = LogField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
             }
             else
             {
@@ -222,12 +222,12 @@ namespace Tsavorite.core
         {
             // Key
             sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
             sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

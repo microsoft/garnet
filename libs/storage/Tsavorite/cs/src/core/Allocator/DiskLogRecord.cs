@@ -88,7 +88,7 @@ namespace Tsavorite.core
             hasFullKey = false;
 
             // Check for RecordInfo and either indicator byte or key length; InlineLengthPrefixSize is the larger.
-            if (recordBuffer.available_bytes < RecordInfo.GetLength() + SpanField.InlineLengthPrefixSize)
+            if (recordBuffer.available_bytes < RecordInfo.GetLength() + LogField.InlineLengthPrefixSize)
             {
                 requiredBytes = InitialIOSize;
                 return false;
@@ -164,7 +164,7 @@ namespace Tsavorite.core
             {
                 var address = IndicatorAddress;
                 if (Info.RecordIsInline)    // For inline, the key length int starts at the same offset as IndicatorAddress
-                    return (*(int*)address, address + SpanField.InlineLengthPrefixSize);
+                    return (*(int*)address, address + LogField.InlineLengthPrefixSize);
 
                 var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3) + 1;
                 var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask) + 1;
@@ -405,7 +405,7 @@ namespace Tsavorite.core
 
                 InfoRef.SetKeyIsInline();
                 *(int*)ptr = key.Length;
-                ptr += SpanField.InlineLengthPrefixSize;
+                ptr += LogField.InlineLengthPrefixSize;
                 key.CopyTo(new Span<byte>(ptr, key.Length));
                 ptr += key.Length;
 

@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref IGarnetObject input, ref IGarnetObject output, ref ReadInfo readInfo)
         {
-            if (srcLogRecord.ValueIsObject)
+            if (srcLogRecord.Info.ValueIsObject)
             {
                 output = (IGarnetObject)srcLogRecord.ValueObject;
                 return true;

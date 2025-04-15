@@ -1087,7 +1087,7 @@ namespace Garnet.server
                     Debug.Assert(newInputValue.Length == dstLogRecord.ValueSpan.Length);
 
                     // Copy input to value, along with optionals from source record including Expiration.
-                    if (!dstLogRecord.TrySetValueSpan(newInputValue, ref sizeInfo) || !dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpan(newInputValue, ref sizeInfo) || !dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     if (inputHeaderHasEtag != shouldUpdateEtag)
@@ -1324,7 +1324,7 @@ namespace Garnet.server
                     var updated = false;
                     newValue = dstLogRecord.ValueSpan;
 
-                    if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     // Some duplicate code to avoid "fixed" when possible
@@ -1393,7 +1393,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
-                    if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
                         return false;
 
                     // Explanation of variables:

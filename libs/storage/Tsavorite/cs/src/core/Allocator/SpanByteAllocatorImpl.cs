@@ -95,7 +95,7 @@ namespace Tsavorite.core
             var valueAddress = LogRecord.GetValueAddress(physicalAddress);
 
             LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-            _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
+            _ = LogField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -173,12 +173,12 @@ namespace Tsavorite.core
             // For SpanByteAllocator, we are always inline.
             // Key
             sizeInfo.KeyIsInline = true;
-            var keySize = sizeInfo.FieldInfo.KeyDataSize + SpanField.InlineLengthPrefixSize;
+            var keySize = sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
             sizeInfo.ValueIsInline = true;
-            var valueSize = sizeInfo.FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize;
+            var valueSize = sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

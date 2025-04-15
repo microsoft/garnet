@@ -32,7 +32,7 @@ namespace Tsavorite.core
         public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyDataSize : ObjectIdMap.ObjectIdSize;
 
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
-        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSpanSize { readonly get; internal set; }

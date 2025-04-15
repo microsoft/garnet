@@ -404,10 +404,10 @@ namespace Tsavorite.core
             if (key.Length <= maxInlineKeySize)
             {
                 logRecord.InfoRef.SetKeyIsInline();
-                keySpan = SpanField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
+                keySpan = LogField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             }
             else
-                keySpan = SpanField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
+                keySpan = LogField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
             key.CopyTo(keySpan);
         }
 

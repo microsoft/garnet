@@ -599,7 +599,7 @@ namespace Garnet.server
         static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, long input)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+            if (!dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
                 return false;
 
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan
@@ -653,7 +653,7 @@ namespace Garnet.server
         static bool TryCopyUpdateNumber<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref SpanByteAndMemory output, double input)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!dstLogRecord.TryCopyRecordOptionals(ref srcLogRecord, ref sizeInfo))
+            if (!dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
                 return false;
 
             var srcValue = srcLogRecord.ValueSpan;  // To reduce redundant length calculations getting to ValueSpan

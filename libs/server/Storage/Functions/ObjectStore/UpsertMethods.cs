@@ -81,7 +81,7 @@ namespace Garnet.server
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
             var size = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(size);
         }
 
@@ -90,7 +90,7 @@ namespace Garnet.server
         {
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
 
             _ = logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -115,7 +115,7 @@ namespace Garnet.server
 
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
 
             _ = logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -137,7 +137,7 @@ namespace Garnet.server
         {
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
 
             _ = logRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -156,7 +156,7 @@ namespace Garnet.server
 
             var newSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
             return true;
         }
