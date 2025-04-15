@@ -26,7 +26,7 @@ namespace Garnet.server
             public (double Latitude, double Longitude) Coordinates;
         }
 
-        private void GeoAdd(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void GeoAdd(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -36,7 +36,7 @@ namespace Garnet.server
             var count = input.parseState.Count;
             var currTokenIdx = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             // Read the members
             var elementsAdded = 0;
@@ -80,9 +80,9 @@ namespace Garnet.server
             output.WriteInt32((options & GeoAddOptions.CH) == 0 ? elementsAdded : elementsChanged);
         }
 
-        private void GeoHash(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void GeoHash(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -103,7 +103,7 @@ namespace Garnet.server
             }
         }
 
-        private void GeoDistance(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void GeoDistance(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             // Read 1st member
             var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
@@ -120,7 +120,7 @@ namespace Garnet.server
                 Debug.Assert(validUnit);
             }
 
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
             {
@@ -139,9 +139,9 @@ namespace Garnet.server
             }
         }
 
-        private void GeoPosition(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void GeoPosition(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -168,12 +168,13 @@ namespace Garnet.server
 
         internal void GeoSearch(ref ObjectInput input,
                                 ref SpanByteAndMemory outputFooter,
+                                byte respProtocolVersion,
                                 ref GeoSearchOptions opts,
                                 bool readOnly)
         {
             Debug.Assert(opts.searchType != default);
 
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             // FROMMEMBER
             if (opts.origin == GeoOriginType.FromMember)

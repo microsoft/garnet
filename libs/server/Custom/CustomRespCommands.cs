@@ -90,7 +90,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
-            var input = new RawStringInput(cmd, respProtocolVersion, ref parseState, startIdx: 1, arg1: inputArg);
+            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             var output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -138,7 +138,7 @@ namespace Garnet.server
 
             // Prepare input
 
-            var header = new RespInputHeader(objType, respProtocolVersion) { SubId = subid };
+            var header = new RespInputHeader(objType) { SubId = subid };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
@@ -224,7 +224,7 @@ namespace Garnet.server
             var inputArg = customCommand.expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + customCommand.expirationTicks : customCommand.expirationTicks;
             customCommandParseState.InitializeWithArguments(args);
             var cmd = customCommandManagerSession.GetCustomRespCommand(customCommand.id);
-            var rawStringInput = new RawStringInput(cmd, respProtocolVersion, ref customCommandParseState, arg1: inputArg);
+            var rawStringInput = new RawStringInput(cmd, ref customCommandParseState, arg1: inputArg);
 
             var _output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -292,7 +292,7 @@ namespace Garnet.server
 
             // Prepare input
             var type = customCommandManagerSession.GetCustomGarnetObjectType(customObjCommand.id);
-            var header = new RespInputHeader(type, respProtocolVersion) { SubId = customObjCommand.subid };
+            var header = new RespInputHeader(type) { SubId = customObjCommand.subid };
             customCommandParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref customCommandParseState);
 

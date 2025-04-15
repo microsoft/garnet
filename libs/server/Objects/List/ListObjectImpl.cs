@@ -116,11 +116,11 @@ namespace Garnet.server
             }
         }
 
-        private void ListIndex(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void ListIndex(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             var index = input.arg1;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
             output.SetResult1(-1);
 
             index = index < 0 ? list.Count + index : index;
@@ -132,12 +132,12 @@ namespace Garnet.server
             }
         }
 
-        private void ListRange(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void ListRange(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             var start = input.arg1;
             var stop = input.arg2;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             if (0 == list.Count)
             {
@@ -251,19 +251,19 @@ namespace Garnet.server
                 else
                     list.AddLast(value);
 
-                this.UpdateSize(value);
+                UpdateSize(value);
             }
             _output->result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, bool fDelAtHead)
+        private void ListPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion, bool fDelAtHead)
         {
             var count = input.arg1;
 
             if (list.Count < count)
                 count = list.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             if (list.Count == 0)
             {
@@ -297,9 +297,9 @@ namespace Garnet.server
             }
         }
 
-        private void ListSet(ref ObjectInput input, ref SpanByteAndMemory outputFooter)
+        private void ListSet(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(ref input, ref outputFooter);
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
             if (list.Count == 0)
             {
@@ -337,7 +337,7 @@ namespace Garnet.server
             output.SetResult1(1);
         }
 
-        private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
@@ -459,7 +459,7 @@ namespace Garnet.server
                 if (isDefaultCount && noOfFoundItem == 0)
                 {
                     output_currptr = output_startptr;
-                    if (input.IsResp3)
+                    if (respProtocolVersion >= 3)
                     {
                         while (!RespWriteUtils.TryWriteResp3Null(ref output_currptr, output_end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);

@@ -22,7 +22,7 @@ namespace Garnet.server
 
             parseState.Initialize(1);
 
-            var input = new RawStringInput(RespCommand.PFADD, respProtocolVersion, ref parseState);
+            var input = new RawStringInput(RespCommand.PFADD, ref parseState);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -73,7 +73,7 @@ namespace Garnet.server
                 parseState.SetArgument(i, keys[i]);
             }
 
-            var input = new RawStringInput(RespCommand.PFCOUNT, respProtocolVersion, ref parseState);
+            var input = new RawStringInput(RespCommand.PFCOUNT, ref parseState);
 
             return HyperLogLogLength(ref input, out count, out _, ref context);
         }
@@ -128,7 +128,7 @@ namespace Garnet.server
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
-                    var currInput = new RawStringInput(RespCommand.PFCOUNT, respProtocolVersion);
+                    var currInput = new RawStringInput(RespCommand.PFCOUNT);
 
                     var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
 
@@ -218,7 +218,7 @@ namespace Garnet.server
                 {
                     #region readSrcHLL
 
-                    var currInput = new RawStringInput(RespCommand.PFMERGE, respProtocolVersion);
+                    var currInput = new RawStringInput(RespCommand.PFMERGE);
 
                     var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
                     var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;

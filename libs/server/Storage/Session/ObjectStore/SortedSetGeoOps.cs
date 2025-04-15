@@ -85,7 +85,8 @@ namespace Garnet.server
                         return GarnetStatus.WRONGTYPE;
                     }
 
-                    firstSortedSet.GeoSearch(ref input, ref output, ref opts, true);
+                    firstSortedSet.GeoSearch(ref input, ref output, functionsState.respProtocolVersion,
+                                             ref opts, true);
 
                     return GarnetStatus.OK;
                 }
@@ -147,7 +148,8 @@ namespace Garnet.server
                 {
                     if (firstObj.GarnetObject is SortedSetObject firstSortedSet)
                     {
-                        firstSortedSet.GeoSearch(ref input, ref searchOutMem, ref opts, false);
+                        firstSortedSet.GeoSearch(ref input, ref searchOutMem, functionsState.respProtocolVersion,
+                                                 ref opts, false);
                     }
                     else
                     {

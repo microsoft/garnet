@@ -236,7 +236,7 @@ namespace Garnet.server
             // Explicitly force to RESP2 for now
             if (respServerSession != null)
             {
-                respServerSession.respProtocolVersion = 2;
+                respServerSession.UpdateRespProtocolVersion(2);
 
                 // The act of setting these fields causes NoScript checks to be performed
                 (respServerSession.noScriptStart, respServerSession.noScriptBitmap) = NoScriptDetails;
@@ -1477,7 +1477,7 @@ namespace Garnet.server
                 // Every invocation starts in RESP2
                 if (respServerSession != null)
                 {
-                    respServerSession.respProtocolVersion = 2;
+                    respServerSession.UpdateRespProtocolVersion(2);
                 }
 
                 _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, functionRegistryIndex);
