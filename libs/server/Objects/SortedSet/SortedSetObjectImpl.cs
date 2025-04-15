@@ -412,7 +412,7 @@ namespace Garnet.server
                     {
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion >= 3, scoredElements, ref output);
+                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref output);
                     }
                     else
                     {
@@ -468,7 +468,7 @@ namespace Garnet.server
 
                                 iterator = iterator.Skip(minIndex).Take(n);
 
-                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion >= 3, iterator, ref output);
+                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output);
                             }
                         }
                     }
@@ -485,7 +485,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, respProtocolVersion >= 3, elementsInLex, ref output);
+                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, respProtocolVersion, elementsInLex, ref output);
                     }
                 }
             }
@@ -495,9 +495,9 @@ namespace Garnet.server
             }
         }
 
-        void WriteSortedSetResult(bool withScores, int count, bool resp3, IEnumerable<(double, byte[])> iterator, ref GarnetObjectStoreRespOutput output)
+        void WriteSortedSetResult(bool withScores, int count, byte respProtocolVersion, IEnumerable<(double, byte[])> iterator, ref GarnetObjectStoreRespOutput output)
         {
-            if (withScores && resp3)
+            if (withScores && respProtocolVersion >= 3)
             {
                 // write the size of the array reply
                 output.WriteArrayLength(count);
