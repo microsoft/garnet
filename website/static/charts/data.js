@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744675685501,
+  "lastUpdate": 1744675700580,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -2304,6 +2304,92 @@ window.BENCHMARK_DATA = {
             "value": 341.928277696882,
             "unit": "ns",
             "range": "± 0.589993591583005"
+          }
+        ]
+      }
+    ],
+    "Cluster.ClusterOperations (windows-latest  net9.0 Release)": [
+      {
+        "commit": {
+          "author": {
+            "email": "96085550+vazois@users.noreply.github.com",
+            "name": "Vasileios Zois",
+            "username": "vazois"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14fb5f9204fa2a0483d71042b180c2df1a562c78",
+          "message": "Fix Announce Regression (#1171)\n\n* explicit port declarationg at get endpoint when any is used\n\n* add unit test for IPAddres.Any cluster announce\n\n* change version",
+          "timestamp": "2025-04-14T16:57:09-07:00",
+          "tree_id": "b69af006462aaf52e49267dcc41210d368a6a77e",
+          "url": "https://github.com/microsoft/garnet/commit/14fb5f9204fa2a0483d71042b180c2df1a562c78"
+        },
+        "date": 1744675500599,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 15907.432861328125,
+            "unit": "ns",
+            "range": "± 34.53859242916826"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 14643.540802001953,
+            "unit": "ns",
+            "range": "± 22.766783595946222"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 14494.695383707682,
+            "unit": "ns",
+            "range": "± 62.6406134159496"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13066.67960030692,
+            "unit": "ns",
+            "range": "± 13.154624738288696"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 104181.5691266741,
+            "unit": "ns",
+            "range": "± 223.77805635611807"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 19525.819396972656,
+            "unit": "ns",
+            "range": "± 16.61839934606306"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 19122.3148890904,
+            "unit": "ns",
+            "range": "± 22.705760906329083"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 15787.911987304688,
+            "unit": "ns",
+            "range": "± 13.621485410044045"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 13859.34342604417,
+            "unit": "ns",
+            "range": "± 18.64868807070618"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 111207.97206333706,
+            "unit": "ns",
+            "range": "± 102.82200263713558"
           }
         ]
       }
