@@ -636,14 +636,14 @@ namespace Garnet.server
         public override IDatabaseManager Clone(bool enableAof) => new MultiDatabaseManager(this, enableAof);
 
         /// <inheritdoc/>
-        public override FunctionsState CreateFunctionsState(int dbId = 0)
+        public override FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             var db = TryGetOrAddDatabase(dbId, out var success, out _);
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
             return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper.customCommandManager, null, db.ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer);
+                StoreWrapper.GarnetObjectSerializer, respProtocolVersion);
         }
 
         /// <inheritdoc/>
