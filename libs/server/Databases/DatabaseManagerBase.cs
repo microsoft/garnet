@@ -104,7 +104,7 @@ namespace Garnet.server
         public abstract bool TrySwapDatabases(int dbId1, int dbId2, CancellationToken token = default);
 
         /// <inheritdoc/>
-        public abstract FunctionsState CreateFunctionsState(int dbId = 0);
+        public abstract FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
 
         /// <inheritdoc/>
         public abstract void Dispose();

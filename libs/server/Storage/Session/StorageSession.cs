@@ -70,8 +70,7 @@ namespace Garnet.server
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();
 
-            functionsState = storeWrapper.CreateFunctionsState(dbId);
-            functionsState.respProtocolVersion = respProtocolVersion;
+            functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 
             var functions = new MainSessionFunctions(functionsState);
 
