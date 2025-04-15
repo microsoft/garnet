@@ -135,5 +135,30 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(clusterAnnounceEndpoint.Address.ToString(), clusterNodesEndpoint.Address.ToString());
             ClassicAssert.AreEqual(clusterAnnounceEndpoint.Port, clusterNodesEndpoint.Port);
         }
+
+        [Test, Order(3)]
+        [Category("CLUSTER-CONFIG"), CancelAfter(1000)]
+        public void ClusterAnyIPAnnounce()
+        {
+            context.nodes = new GarnetServer[1];
+            context.nodes[0] = context.CreateInstance(new IPEndPoint(IPAddress.Any, 7000));
+            context.nodes[0].Start();
+
+            context.endpoints = TestUtils.GetShardEndPoints(1, IPAddress.Loopback, 7000);
+            context.CreateConnection();
+
+            var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
+            var origin = config.Origin;
+
+            var endpoint = origin.ToIPEndPoint();
+            ClassicAssert.AreEqual(7000, endpoint.Port);
+
+            using var client = TestUtils.GetGarnetClient(config.Origin);
+            client.Connect();
+            var resp = client.PingAsync().GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("PONG", resp);
+            resp = client.QuitAsync().GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+        }
     }
 }
