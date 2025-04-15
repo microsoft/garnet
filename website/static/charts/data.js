@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744675617977,
+  "lastUpdate": 1744675685501,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -2218,6 +2218,92 @@ window.BENCHMARK_DATA = {
             "value": 73997.38548990885,
             "unit": "ns",
             "range": "± 379.5015148932234"
+          }
+        ]
+      }
+    ],
+    "Network.RawStringOperations (windows-latest  net9.0 Release)": [
+      {
+        "commit": {
+          "author": {
+            "email": "96085550+vazois@users.noreply.github.com",
+            "name": "Vasileios Zois",
+            "username": "vazois"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14fb5f9204fa2a0483d71042b180c2df1a562c78",
+          "message": "Fix Announce Regression (#1171)\n\n* explicit port declarationg at get endpoint when any is used\n\n* add unit test for IPAddres.Any cluster announce\n\n* change version",
+          "timestamp": "2025-04-14T16:57:09-07:00",
+          "tree_id": "b69af006462aaf52e49267dcc41210d368a6a77e",
+          "url": "https://github.com/microsoft/garnet/commit/14fb5f9204fa2a0483d71042b180c2df1a562c78"
+        },
+        "date": 1744675483323,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Set(Params: None)",
+            "value": 205.25014082590738,
+            "unit": "ns",
+            "range": "± 0.37150365299749416"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetEx(Params: None)",
+            "value": 276.7701307932536,
+            "unit": "ns",
+            "range": "± 0.6654183765808166"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetNx(Params: None)",
+            "value": 283.0822211045485,
+            "unit": "ns",
+            "range": "± 0.36034940478707167"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetXx(Params: None)",
+            "value": 295.81337656293596,
+            "unit": "ns",
+            "range": "± 0.3580924400267114"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetFound(Params: None)",
+            "value": 217.46862668257492,
+            "unit": "ns",
+            "range": "± 0.25123903666905173"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetNotFound(Params: None)",
+            "value": 153.14257144927979,
+            "unit": "ns",
+            "range": "± 0.24478038370635505"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Increment(Params: None)",
+            "value": 298.72360547383624,
+            "unit": "ns",
+            "range": "± 1.3962770423828255"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Decrement(Params: None)",
+            "value": 305.27712277003695,
+            "unit": "ns",
+            "range": "± 0.9161348528901287"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.IncrementBy(Params: None)",
+            "value": 344.0848223368327,
+            "unit": "ns",
+            "range": "± 1.0629180067632202"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.DecrementBy(Params: None)",
+            "value": 341.928277696882,
+            "unit": "ns",
+            "range": "± 0.589993591583005"
           }
         ]
       }
