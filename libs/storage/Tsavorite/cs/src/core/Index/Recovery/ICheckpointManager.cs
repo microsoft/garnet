@@ -31,6 +31,18 @@ namespace Tsavorite.core
     public interface ICheckpointManager : IDisposable
     {
         /// <summary>
+        /// Add create cookie action
+        /// </summary>
+        /// <param name="createCookieAction"></param>
+        void AddCookieDelegate(Func<byte[]> createCookieAction);
+
+        /// <summary>
+        /// Get current cookie
+        /// </summary>
+        /// <returns></returns>
+        byte[] GetCookie();
+
+        /// <summary>
         /// Initialize index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>
@@ -61,7 +73,6 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logToken"></param>
         /// <param name="commitMetadata"></param>
-        /// <returns></returns>
         void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
@@ -90,10 +101,9 @@ namespace Tsavorite.core
         /// Commit log incremental checkpoint (incremental snapshot)
         /// </summary>
         /// <param name="logToken"></param>
-        /// <param name="version"></param>
         /// <param name="commitMetadata"></param>
         /// <param name="deltaLog"></param>
-        void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog);
+        void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog);
 
         /// <summary>
         /// Cleanup log incremental checkpoint (incremental snapshot)
