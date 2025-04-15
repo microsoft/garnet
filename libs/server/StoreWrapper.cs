@@ -294,7 +294,7 @@ namespace Garnet.server
                 {
                     socket.Connect("8.8.8.8", 65530);
                     var endPoint = socket.LocalEndPoint as IPEndPoint;
-                    return endPoint;
+                    return new IPEndPoint(endPoint.Address, localEndPoint.Port);
                 }
             }
             else if (localEndPoint.Address.Equals(IPAddress.IPv6Any))
@@ -303,7 +303,7 @@ namespace Garnet.server
                 {
                     socket.Connect("2001:4860:4860::8888", 65530);
                     var endPoint = socket.LocalEndPoint as IPEndPoint;
-                    return endPoint;
+                    return new IPEndPoint(endPoint.Address, localEndPoint.Port);
                 }
             }
             return localEndPoint;
