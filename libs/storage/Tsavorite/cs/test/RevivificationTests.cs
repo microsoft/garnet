@@ -515,14 +515,14 @@ namespace Tsavorite.test.Revivification
             {
                 var expectedValueLength = expectedValueLengths.Dequeue();
 
-                // If the logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of SpanField.OverflowDataPtrSize,
+                // If an overflow logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of ObjectIdMap.ObjectIdSize,
                 // and we'll call SpanField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
                 if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
-                    ClassicAssert.AreEqual(SpanField.OverflowInlineSize, SpanField.GetTotalSizeOfInlineField(logRecord.ValueAddress) - SpanField.FieldLengthPrefixSize);
+                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, SpanField.GetTotalSizeOfInlineField(logRecord.ValueAddress));
                 if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
                 else
-                    ClassicAssert.AreEqual(logRecord.Info.ValueIsInline ? expectedValueLength : SpanField.OverflowInlineSize, logRecord.ValueSpan.Length);
+                    ClassicAssert.AreEqual(logRecord.Info.ValueIsInline ? expectedValueLength : ObjectIdMap.ObjectIdSize, logRecord.ValueSpan.Length);
 
                 ClassicAssert.GreaterOrEqual(recordAddress, store.hlogBase.ReadOnlyAddress);
 
@@ -1427,7 +1427,7 @@ namespace Tsavorite.test.Revivification
             // Oversize records in this test do not go to "next higher" bin (there is no next-higher bin in the default PowersOf2 bins we use)
             // and they become an out-of-line pointer.
             functions.expectedInputLength = OversizeLength;
-            functions.expectedValueLengths.Enqueue(SpanField.OverflowInlineSize);
+            functions.expectedValueLengths.Enqueue(ObjectIdMap.ObjectIdSize);
 
             // Initial insert of the oversize record
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref pinnedInputSpan, input, ref output) : bContext.RMW(key, ref pinnedInputSpan);

@@ -40,9 +40,6 @@ namespace Tsavorite.core
         // Size of object chunks being written to storage
         // TODO: private readonly int objectBlockSize = 100 * (1 << 20);
 
-        // RecordSize and Value size are constant; only the key size is variable.
-        private static int FixedValueSize => ObjectIdMap.ObjectIdSize;
-
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
@@ -62,6 +59,9 @@ namespace Tsavorite.core
             values = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ++ii)
                 values[ii] = new();
+
+            // For SpanField conversions between inline and heap fields, we assume the inline field size prefix is the same size as objectId size
+            Debug.Assert(SpanField.InlineLengthPrefixSize == ObjectIdMap.ObjectIdSize, "InlineLengthPrefixSize must be equal to ObjectIdMap.ObjectIdSize");
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -137,13 +137,14 @@ namespace Tsavorite.core
                 LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
                 _ = SpanField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
             }
-            else if (sizeInfo.ValueIsObject)
+            else
             {
-                LogRecord.GetInfoRef(physicalAddress).SetValueIsObject();
+                if (sizeInfo.ValueIsObject)
+                    LogRecord.GetInfoRef(physicalAddress).SetValueIsObject();
+
+                // Either an IHeapObject or a byte[]
                 *LogRecord.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
             }
-            else
-                SpanField.InitializeInlineForOverflowField(valueAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -207,7 +208,7 @@ namespace Tsavorite.core
                 FieldInfo = new()
                 {
                     KeyDataSize = key.Length,
-                    ValueDataSize = ObjectIdMap.ObjectIdSize,   // Small but allows the possibility revivification can reuse the record for an Object or Overflow
+                    ValueDataSize = 0,      // This will be inline, and with the length prefix and possible space when rounding up to kRecordAlignment, allows the possibility revivification can reuse the record for a Heap Field
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -221,12 +222,12 @@ namespace Tsavorite.core
         {
             // Key
             sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize : SpanField.OverflowInlineSize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
             sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize : (sizeInfo.ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

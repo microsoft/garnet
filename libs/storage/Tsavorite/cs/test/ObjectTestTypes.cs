@@ -80,7 +80,7 @@ namespace Tsavorite.test
         {
             if (!logRecord.TrySetValueObject(srcValue, ref sizeInfo))
                 return false;
-            output.value = ((TestObjectValue)logRecord.ValueObject);
+            output.value = (TestObjectValue)logRecord.ValueObject;
             return true;
         }
 
@@ -173,9 +173,13 @@ namespace Tsavorite.test
             => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
-    public class TestLargeObjectValue
+    public class TestLargeObjectValue : IHeapObject
     {
         public byte[] value;
+
+        public long Size { get => value.Length; set => throw new System.NotImplementedException("TestValueObject.Size.set"); }
+
+        public void Dispose() { }
 
         public TestLargeObjectValue()
         {
@@ -188,19 +192,21 @@ namespace Tsavorite.test
                 value[i] = (byte)(size + i);
         }
 
-        public class Serializer : BinaryObjectSerializer<TestLargeObjectValue>
+        public class Serializer : BinaryObjectSerializer<IHeapObject>
         {
-            public override void Deserialize(out TestLargeObjectValue obj)
+            public override void Deserialize(out IHeapObject obj)
             {
-                obj = new TestLargeObjectValue();
+                var value = new TestLargeObjectValue();
+                obj = value;
                 int size = reader.ReadInt32();
-                obj.value = reader.ReadBytes(size);
+                value.value = reader.ReadBytes(size);
             }
 
-            public override void Serialize(TestLargeObjectValue obj)
+            public override void Serialize(IHeapObject obj)
             {
-                writer.Write(obj.value.Length);
-                writer.Write(obj.value);
+                var value = (TestLargeObjectValue)obj;
+                writer.Write(value.value.Length);
+                writer.Write(value.value);
             }
         }
     }

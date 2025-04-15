@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -28,56 +27,31 @@ namespace Tsavorite.core
     public unsafe struct SpanField
     {
         /// <summary>This is the size of the length prefix on Span field.</summary>
-        public const int FieldLengthPrefixSize = sizeof(int);
+        public const int InlineLengthPrefixSize = sizeof(int);
 
         /// <summary>For an inline field, get a reference to the length field of the data.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ref int GetInlineLengthRef(long fieldAddress) => ref *(int*)fieldAddress;
 
-        /// <summary>For an inline field, get the address of the actual data (past the length prefix); this is the start of the stream of bytes.</summary>
+        /// <summary>For a field we have already verified is inline, get the address of the actual data (past the length prefix); this is the start of the stream of bytes.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetInlineDataAddress(long fieldAddress) => fieldAddress + FieldLengthPrefixSize;
-
-        /// <summary>This is the inline size of an overflow (out-of-line) byte[] objectId. There is no length prefix for this field.</summary>
-        /// <remarks>This is a separate field for </remarks>
-        internal const int OverflowInlineSize = ObjectIdMap.ObjectIdSize;
+        internal static long GetInlineDataAddress(long fieldAddress) => fieldAddress + InlineLengthPrefixSize;
 
         /// <summary>Gets a referemce to the ObjectId at address (which is ValueAddress). There is no length prefix.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ref int GetObjectIdRef(long fieldAddress) => ref *(int*)fieldAddress;
 
-        /// <summary>For an inline field, get the total inline size of the field: The length prefix plus the length of the byte stream</summary>
+        /// <summary>For a field we have already verified is inline, get the total inline size of the field: The length prefix plus the length of the byte stream</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetTotalSizeOfInlineField(long fieldAddress) => FieldLengthPrefixSize + GetInlineLengthRef(fieldAddress);
+        internal static int GetTotalSizeOfInlineField(long fieldAddress) => InlineLengthPrefixSize + GetInlineLengthRef(fieldAddress);
 
-        /// <summary>Get a field's inline length, depending on whether it is actually inline or whether it is an out-of-line objectId.</summary>
+        /// <summary>The inline length of the key or value without any length prefix.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineDataSizeOfKey(long fieldAddress, bool isInline) => isInline ? GetInlineLengthRef(fieldAddress) : OverflowInlineSize;
+        internal static int GetInlineDataSizeOfField(long valueAddress, bool valueIsInline) => valueIsInline ? GetInlineLengthRef(valueAddress) : ObjectIdMap.ObjectIdSize;
 
-        /// <summary>Get a field's inline length, depending on whether it is actually inline or whether it is an out-of-line objectId.</summary>
+        /// <summary>The inline length of the key or value including any length prefix.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineTotalSizeOfKey(long fieldAddress, bool isInline) => isInline ? FieldLengthPrefixSize + GetInlineLengthRef(fieldAddress) : OverflowInlineSize;
-
-        /// <summary>The inline length of the value without any length prefix.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineDataSizeOfValue(long valueAddress, bool valueIsObject, bool valueIsInline)
-            => valueIsInline ? GetInlineLengthRef(valueAddress) : GetInlineSizeOfOutOfLineValue(valueIsObject);
-
-        /// <summary>The inline length of the out-of-line Object Id.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineSizeOfOutOfLineValue(bool valueIsObject) => valueIsObject ? ObjectIdMap.ObjectIdSize : OverflowInlineSize;
-
-        /// <summary>The inline length of the value including any length prefix.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineTotalSizeOfValue(long valueAddress, bool valueIsObject, bool valueIsInline)
-            => valueIsInline ? GetTotalSizeOfInlineField(valueAddress) : GetInlineSizeOfOutOfLineValue(valueIsObject);
-
-        /// <summary>
-        /// Initialize an inline field with the length necessary for the eventual overflow objectId, but don't set the field to overflow yet to avoid needing nullref checks.
-        /// <see cref="LogRecord.TrySetValueLength(ref RecordSizeInfo)"/> will handle converting to overflow and allocating.
-        /// </summary>
-        /// <param name="fieldAddress"></param>
-        internal static void InitializeInlineForOverflowField(long fieldAddress) => GetInlineLengthRef(fieldAddress) = OverflowInlineSize - FieldLengthPrefixSize;
+        internal static int GetInlineTotalSizeOfField(long valueAddress, bool valueIsInline) => valueIsInline ? GetTotalSizeOfInlineField(valueAddress) : ObjectIdMap.ObjectIdSize;
 
         /// <summary>
         /// Obtain a <see cref="Span{_byte_}"/> referencing the inline or overflow data and the datasize for this field.
@@ -143,10 +117,9 @@ namespace Tsavorite.core
             }
 
             // If "shrinking" the allocation because the overflow objectId size is less than the current inline size, we must zeroinit the extra space.
-            // Note: We don't zeroinit data in the overflow allocation, just like we don't zeroinit data in the inline value within the length.
-            var clearLength = oldLength - OverflowInlineSize;
-            if (clearLength > 0)
-                ZeroInlineData(fieldAddress, OverflowInlineSize, clearLength);
+            // Note: We don't zeroinit data in the overflow allocation, just as we don't zeroinit data in the inline value within the length.
+            if (oldLength > 0)
+                ZeroInlineData(fieldAddress, 0, oldLength);
 
             recordInfo.SetValueIsOverflow();
             var objectId = objectIdMap.Allocate();
@@ -176,9 +149,6 @@ namespace Tsavorite.core
             }
             objectIdMap.Set(objectId, array);
 
-            // OverflowInlineSize is >= ObjectIdSize so we will not be "shrinking" the allocation and therefore have no new extra space to zeroinit.
-            Debug.Assert(OverflowInlineSize > ObjectIdMap.ObjectIdSize);
-
             recordInfo.SetValueIsOverflow();
             return array;
         }
@@ -198,10 +168,9 @@ namespace Tsavorite.core
             var objectId = objectIdMap.Allocate();
             var oldLength = GetInlineLengthRef(fieldAddress);
 
-            // If "shrinking" the allocation because ObjectIdSize is less than the current inline size, we must zeroinit the extra space.
-            var clearLength = oldLength - ObjectIdMap.ObjectIdSize;
-            if (clearLength > 0)
-                ZeroInlineData(fieldAddress, ObjectIdMap.ObjectIdSize, clearLength);
+            // We must zeroinit the to-be-unused space.
+            if (oldLength > 0)
+                ZeroInlineData(fieldAddress, 0, oldLength);
 
             recordInfo.SetValueIsObject();
             GetObjectIdRef(fieldAddress) = objectId;
@@ -221,7 +190,10 @@ namespace Tsavorite.core
         {
             var objectId = GetObjectIdRef(fieldAddress);
             if (objectId != ObjectIdMap.InvalidObjectId)
+            { 
+                // Clear the byte[] from the existing slot
                 objectIdMap.Set(objectId, null);
+            }
             else
             {
                 objectId = objectIdMap.Allocate();
@@ -239,6 +211,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static Span<byte> SetOverflowAllocation(long fieldAddress, int newLength, ObjectIdMap objectIdMap)
         {
+            // Assumes no object allocated for this field yet.
             var objectId = objectIdMap.Allocate();
             GetObjectIdRef(fieldAddress) = objectId;
 
@@ -262,13 +235,13 @@ namespace Tsavorite.core
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
                 var oldSpan = new Span<byte>((byte[])objectIdMap.Get(objectId));
-                objectIdMap.Set(objectId, null);
 
                 // Sequencing here is important for zeroinit correctness
                 var copyLength = oldSpan.Length < newLength ? oldSpan.Length : newLength;
                 var newSpan = SetInlineDataLength(fieldAddress, newLength);
                 recordInfo.SetValueIsInline();
                 oldSpan.Slice(0, copyLength).CopyTo(newSpan);
+                objectIdMap.Set(objectId, null);
                 return newSpan;
             }
             return SetInlineDataLength(fieldAddress, newLength);
@@ -281,12 +254,9 @@ namespace Tsavorite.core
             if (objectId != ObjectIdMap.InvalidObjectId)
                 objectIdMap.Set(objectId, null);
 
-            // Set this as inline with length equal to the size difference.
-            var newLength = OverflowInlineSize - FieldLengthPrefixSize;
-            Debug.Assert(newLength >= 0, "newLength must be non-negative");
-
+            // Our ObjectId space is now taken up exactly by FieldLengthPrefix (they're the same size), so inline length is zero.
             // Sequencing here is important for zeroinit correctness
-            GetInlineLengthRef(fieldAddress) = newLength;
+            GetInlineLengthRef(fieldAddress) = 0;
             if (isKey)
                 recordInfo.SetKeyIsInline();
             else

@@ -87,8 +87,8 @@ namespace Tsavorite.core
         {
             hasFullKey = false;
 
-            // Check for RecordInfo and either indicator byte or key length; FieldLengthPrefixSize is the larger.
-            if (recordBuffer.available_bytes < RecordInfo.GetLength() + SpanField.FieldLengthPrefixSize)
+            // Check for RecordInfo and either indicator byte or key length; InlineLengthPrefixSize is the larger.
+            if (recordBuffer.available_bytes < RecordInfo.GetLength() + SpanField.InlineLengthPrefixSize)
             {
                 requiredBytes = InitialIOSize;
                 return false;
@@ -164,7 +164,7 @@ namespace Tsavorite.core
             {
                 var address = IndicatorAddress;
                 if (Info.RecordIsInline)    // For inline, the key length int starts at the same offset as IndicatorAddress
-                    return (*(int*)address, address + SpanField.FieldLengthPrefixSize);
+                    return (*(int*)address, address + SpanField.InlineLengthPrefixSize);
 
                 var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3);
                 var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask);
@@ -335,7 +335,7 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
         {
             KeyDataSize = Key.Length,
-            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : (int)ValueInfo.length,
+            ValueDataSize = Info.ValueIsInline ? (int)ValueInfo.length : ObjectIdMap.ObjectIdSize,
             ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
@@ -401,7 +401,7 @@ namespace Tsavorite.core
 
                 InfoRef.SetKeyIsInline();
                 *(int*)ptr = key.Length;
-                ptr += SpanField.FieldLengthPrefixSize;
+                ptr += SpanField.InlineLengthPrefixSize;
                 key.CopyTo(new Span<byte>(ptr, key.Length));
                 ptr += key.Length;
 

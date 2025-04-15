@@ -173,12 +173,12 @@ namespace Tsavorite.core
             // For SpanByteAllocator, we are always inline.
             // Key
             sizeInfo.KeyIsInline = true;
-            var keySize = sizeInfo.FieldInfo.KeyDataSize + SpanField.FieldLengthPrefixSize;
+            var keySize = sizeInfo.FieldInfo.KeyDataSize + SpanField.InlineLengthPrefixSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
             sizeInfo.ValueIsInline = true;
-            var valueSize = sizeInfo.FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize;
+            var valueSize = sizeInfo.FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;

@@ -29,16 +29,16 @@ namespace Tsavorite.core
         public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
 
         /// <summary>Returns the inline length of the key (the amount it will take in the record).</summary>
-        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyDataSize : SpanField.OverflowInlineSize;
+        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyDataSize : ObjectIdMap.ObjectIdSize;
 
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
-        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueDataSize + SpanField.FieldLengthPrefixSize : (ValueIsObject ? ObjectIdMap.ObjectIdSize : SpanField.OverflowInlineSize);
+        public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueDataSize + SpanField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSpanSize { readonly get; internal set; }
 
-        /// <summary>The inline size of the record (in the main log). If Key and/or Value are overflow,
-        /// then their contribution to inline length is just <see cref="SpanField.OverflowInlineSize"/> (a pointer with length prefix).</summary>
+        /// <summary>The inline size of the record (in the main log). If Key and/or Value are overflow (or value is Object),
+        /// then their contribution to inline length is just <see cref="ObjectIdMap.ObjectIdSize"/>.</summary>
         public int ActualInlineRecordSize { readonly get; internal set; }
 
         /// <summary>The inline size of the record rounded up to <see cref="RecordInfo"/> alignment.</summary>
@@ -75,7 +75,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString()
+        public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
             return $"[{FieldInfo}] | KeyIsInl {bstr(KeyIsInline)}, ValIsInl {bstr(ValueIsInline)}, ValIsObj {bstr(ValueIsObject)}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}";
