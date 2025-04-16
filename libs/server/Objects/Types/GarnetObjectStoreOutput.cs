@@ -51,6 +51,11 @@ namespace Garnet.server
         public ObjectStoreOutputFlags OutputFlags;
 
         /// <summary>
+        /// Other output fields
+        /// </summary>
+        public ObjectOutputHeader OtherOutput;
+
+        /// <summary>
         /// True if output flag WrongType is set
         /// </summary>
         public bool HasWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;

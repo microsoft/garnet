@@ -20,7 +20,7 @@ namespace Garnet.server
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public EtagState etagState;
         public bool StoredProcMode;
-
+        public byte respProtocolVersion;
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)
         {

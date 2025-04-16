@@ -48,7 +48,8 @@ namespace Garnet.server
                     default:
                         if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                         {
-                            var opResult = value.Operate(ref input, ref dst, out _);
+                            using var operateParams = new OperateParams(ref input, ref dst, functionsState.respProtocolVersion);
+                            var opResult = value.Operate(operateParams);
                             if (dst.HasWrongType)
                                 return true;
 

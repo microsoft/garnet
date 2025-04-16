@@ -37,6 +37,13 @@ namespace Garnet.server
         bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange);
 
         /// <summary>
+        /// New call to operate
+        /// </summary>
+        /// <param name="operateParams"></param>
+        /// <returns></returns>
+        bool Operate(OperateParams operateParams);
+
+        /// <summary>
         /// Serializer
         /// </summary>
         void Serialize(BinaryWriter writer);
