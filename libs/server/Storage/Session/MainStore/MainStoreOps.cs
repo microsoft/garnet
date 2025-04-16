@@ -1332,7 +1332,7 @@ namespace Garnet.server
             var status1 = GET(key1, out val1, ref context);
             var status2 = GET(key2, out val2, ref context);
 
-            var respOutput = new GarnetObjectStoreRespOutput(functionsState.respProtocolVersion, ref output, true);
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
             try
             {
@@ -1340,12 +1340,12 @@ namespace Garnet.server
                 {
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        respOutput.WriteInt32(0);
+                        writer.WriteInt32(0);
                         return GarnetStatus.OK;
                     }
 
                     var len = ComputeLCSLength(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
-                    respOutput.WriteInt32(len);
+                    writer.WriteInt32(len);
                 }
                 else if (withIndices)
                 {
@@ -1361,25 +1361,25 @@ namespace Garnet.server
                         matches = ComputeLCSWithIndices(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen, out len);
                     }
 
-                    WriteLCSMatches(matches, withMatchLen, len, ref respOutput);
+                    WriteLCSMatches(matches, withMatchLen, len, ref writer);
                 }
                 else
                 {
                     if (status1 != GarnetStatus.OK || status2 != GarnetStatus.OK)
                     {
-                        respOutput.WriteDirect(CmdStrings.RESP_EMPTY);
+                        writer.WriteDirect(CmdStrings.RESP_EMPTY);
                         return GarnetStatus.OK;
                     }
 
                     var lcs = ComputeLCS(val1.ReadOnlySpan, val2.ReadOnlySpan, minMatchLen);
-                    respOutput.WriteBulkString(lcs);
+                    writer.WriteBulkString(lcs);
                 }
 
                 return GarnetStatus.OK;
             }
             finally
             {
-                respOutput.Dispose();
+                writer.Dispose();
             }
         }
 
@@ -1452,41 +1452,41 @@ namespace Garnet.server
         }
 
         private static unsafe void WriteLCSMatches(List<LCSMatch> matches, bool withMatchLen, int lcsLength,
-                                                   ref GarnetObjectStoreRespOutput output)
+                                                   ref RespMemoryWriter writer)
         {
-            output.WriteMapLength(2);
+            writer.WriteMapLength(2);
 
             // Write "matches" section identifier
-            output.WriteBulkString(CmdStrings.matches);
+            writer.WriteBulkString(CmdStrings.matches);
 
             // Write matches array
-            output.WriteArrayLength(matches.Count);
+            writer.WriteArrayLength(matches.Count);
 
             foreach (var match in matches)
             {
-                output.WriteArrayLength(withMatchLen ? 3 : 2);
+                writer.WriteArrayLength(withMatchLen ? 3 : 2);
 
-                output.WriteArrayLength(2);
+                writer.WriteArrayLength(2);
 
-                output.WriteInt32(match.Start1);
-                output.WriteInt32(match.Start1 + match.Length - 1);
+                writer.WriteInt32(match.Start1);
+                writer.WriteInt32(match.Start1 + match.Length - 1);
 
-                output.WriteArrayLength(2);
+                writer.WriteArrayLength(2);
 
-                output.WriteInt32(match.Start2);
-                output.WriteInt32(match.Start2 + match.Length - 1);
+                writer.WriteInt32(match.Start2);
+                writer.WriteInt32(match.Start2 + match.Length - 1);
 
                 if (withMatchLen)
                 {
-                    output.WriteInt32(match.Length);
+                    writer.WriteInt32(match.Length);
                 }
             }
 
             // Write "len" section identifier
-            output.WriteBulkString(CmdStrings.len);
+            writer.WriteBulkString(CmdStrings.len);
 
             // Write LCS length
-            output.WriteInt32(lcsLength);
+            writer.WriteInt32(lcsLength);
         }
 
         private static byte[] ComputeLCS(ReadOnlySpan<byte> str1, ReadOnlySpan<byte> str2, int minMatchLen)
