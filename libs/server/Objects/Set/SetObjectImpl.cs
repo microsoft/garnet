@@ -30,7 +30,7 @@ namespace Garnet.server
 #endif
                 {
                     _output->result1++;
-                    this.UpdateSize(member);
+                    UpdateSize(member);
                 }
             }
         }
@@ -98,7 +98,7 @@ namespace Garnet.server
 #endif
                 {
                     _output->result1++;
-                    this.UpdateSize(field, false);
+                    UpdateSize(field, false);
                 }
             }
         }
