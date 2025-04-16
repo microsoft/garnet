@@ -1102,10 +1102,10 @@ namespace Garnet.server
 
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            using (var respOutput = new GarnetObjectStoreRespOutput(respProtocolVersion, ref output, true))
+            using (var writer = new RespMemoryWriter(respProtocolVersion, ref output))
             {
-                respOutput.WriteMapLength(docsCount);
-                respOutput.WriteAsciiDirect(resultSb.ToString());
+                writer.WriteMapLength(docsCount);
+                writer.WriteAsciiDirect(resultSb.ToString());
             }
 
             if (!output.IsSpanByte)
