@@ -102,7 +102,7 @@ namespace Garnet.fuzz.Targets
             {
                 try
                 {
-                    LogDir?.Delete();
+                    LogDir?.Delete(recursive: true);
                 }
                 catch
                 {
@@ -111,7 +111,7 @@ namespace Garnet.fuzz.Targets
 
                 try
                 {
-                    CheckpointDir?.Delete();
+                    CheckpointDir?.Delete(recursive: true);
                 }
                 catch
                 {
