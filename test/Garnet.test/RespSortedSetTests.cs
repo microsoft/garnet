@@ -4208,15 +4208,16 @@ namespace Garnet.test
             _ = lightClientRequest.SendCommand("ZADD dadi 1 uno 2 due 3 tre 4 quattro 5 cinque 6 six 7 sept 8 huit 9 nough 10 dis");
 
             // ZRANDMEMBER
-            var s = Encoding.ASCII.GetString(lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi", bytesSent));
-            int startIndexField = s.IndexOf('\n') + 1;
-            int endIndexField = s.IndexOf('\n', startIndexField) - 1;
-            string memberValue = s.Substring(startIndexField, endIndexField - startIndexField);
+            var response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi", bytesSent);
+            var s = Encoding.ASCII.GetString(response, 0, TestUtils.MaxLongDigits);
+            var startIndexField = s.IndexOf('\n') + 1;
+            var endIndexField = s.IndexOf('\n', startIndexField) - 1;
+            var memberValue = s.Substring(startIndexField, endIndexField - startIndexField);
             var foundInSet = ("uno due tre quattro cinque six sept huit nough dis").IndexOf(memberValue, StringComparison.InvariantCultureIgnoreCase);
             ClassicAssert.IsTrue(foundInSet >= 0);
 
             // ZRANDMEMBER count
-            var response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 5", bytesSent, 6);
+            response = lightClientRequest.SendCommandChunks("ZRANDMEMBER dadi 5", bytesSent, 6);
             var expectedResponse = "*5\r\n"; // 5 values
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 

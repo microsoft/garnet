@@ -75,12 +75,13 @@ namespace Garnet.test
         /// </summary>
         public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, TestPort);
 
+        public static readonly int MaxLongDigits = Garnet.common.NumUtils.CountDigits(long.MaxValue) + 2;
+
         /// <summary>
         /// Whether to use a test progress logger
         /// </summary>
         static readonly bool useTestLogger = false;
 
-        private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
         internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
