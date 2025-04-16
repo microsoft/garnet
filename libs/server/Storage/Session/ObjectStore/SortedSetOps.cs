@@ -1126,57 +1126,71 @@ namespace Garnet.server
 
             // Get the first sorted set
             var status = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
+            Dictionary<byte[], double> sortedSetDictionary = null;
+
             if (status == GarnetStatus.OK)
             {
                 if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
                 {
                     return GarnetStatus.WRONGTYPE;
                 }
+                sortedSetDictionary = firstSortedSet.Dictionary;
+            }
 
-                // Initialize pairs with the first set
-                if (weights is null)
+            // Initialize pairs with the first set
+            if (weights is null)
+            {
+                pairs = sortedSetDictionary is null ? new Dictionary<byte[], double>(ByteArrayComparer.Instance) : new Dictionary<byte[], double>(sortedSetDictionary, ByteArrayComparer.Instance);
+            }
+            else
+            {
+                pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                if (sortedSetDictionary is not null)
                 {
-                    pairs = new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
-                }
-                else
-                {
-                    pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
-                    foreach (var (key, score) in firstSortedSet.Dictionary)
+                    foreach (var (key, score) in sortedSetDictionary)
                     {
                         pairs[key] = weights[0] * score;
                     }
                 }
+            }
 
-                // Process remaining sets
-                for (var i = 1; i < keys.Length; i++)
+            // Process remaining sets
+            for (var i = 1; i < keys.Length; i++)
+            {
+                status = GET(keys[i].ToArray(), out var nextObj, ref objectContext);
+                if (status == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
+                if (status != GarnetStatus.OK)
+                    continue;
+
+                if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
                 {
-                    status = GET(keys[i].ToArray(), out var nextObj, ref objectContext);
-                    if (status != GarnetStatus.OK)
-                        continue;
+                    pairs = default;
+                    return GarnetStatus.WRONGTYPE;
+                }
 
-                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
+                foreach (var (key, score) in nextSortedSet.Dictionary)
+                {
+                    var weightedScore = weights is null ? score : score * weights[i];
+                    if (pairs.TryGetValue(key, out var existingScore))
                     {
-                        pairs = default;
-                        return GarnetStatus.WRONGTYPE;
+                        pairs[key] = aggregateType switch
+                        {
+                            SortedSetAggregateType.Sum => existingScore + weightedScore,
+                            SortedSetAggregateType.Min => Math.Min(existingScore, weightedScore),
+                            SortedSetAggregateType.Max => Math.Max(existingScore, weightedScore),
+                            _ => existingScore + weightedScore // Default to SUM
+                        };
                     }
-
-                    foreach (var (key, score) in nextSortedSet.Dictionary)
+                    else
                     {
-                        var weightedScore = weights is null ? score : score * weights[i];
-                        if (pairs.TryGetValue(key, out var existingScore))
-                        {
-                            pairs[key] = aggregateType switch
-                            {
-                                SortedSetAggregateType.Sum => existingScore + weightedScore,
-                                SortedSetAggregateType.Min => Math.Min(existingScore, weightedScore),
-                                SortedSetAggregateType.Max => Math.Max(existingScore, weightedScore),
-                                _ => existingScore + weightedScore // Default to SUM
-                            };
-                        }
-                        else
-                        {
-                            pairs[key] = weightedScore;
-                        }
+                        pairs[key] = weightedScore;
                     }
                 }
             }
@@ -1190,37 +1204,47 @@ namespace Garnet.server
             pairs = default;
 
             var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
-            if (statusOp == GarnetStatus.OK)
+            if (statusOp == GarnetStatus.WRONGTYPE)
             {
-                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
+                return GarnetStatus.WRONGTYPE;
+            }
+
+            if (statusOp == GarnetStatus.NOTFOUND)
+            {
+                pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                return GarnetStatus.OK;
+            }
+
+            if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
+            if (keys.Length == 1)
+            {
+                pairs = firstSortedSet.Dictionary;
+                return GarnetStatus.OK;
+            }
+
+            // read the rest of the keys
+            for (var item = 1; item < keys.Length; item++)
+            {
+                statusOp = GET(keys[item].ToArray(), out var nextObj, ref objectContext);
+                if (statusOp == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
+                if (statusOp != GarnetStatus.OK)
+                    continue;
+
+                if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
                 {
+                    pairs = default;
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                if (keys.Length == 1)
-                {
-                    pairs = firstSortedSet.Dictionary;
-                    return GarnetStatus.OK;
-                }
-
-                // read the rest of the keys
-                for (var item = 1; item < keys.Length; item++)
-                {
-                    statusOp = GET(keys[item].ToArray(), out var nextObj, ref objectContext);
-                    if (statusOp != GarnetStatus.OK)
-                        continue;
-
-                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
-                    {
-                        pairs = default;
-                        return GarnetStatus.WRONGTYPE;
-                    }
-
-                    if (pairs == default)
-                        pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
-                    else
-                        SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
-                }
+                if (pairs == default)
+                    pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
+                else
+                    SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
             }
 
             return GarnetStatus.OK;
@@ -1410,71 +1434,82 @@ namespace Garnet.server
             pairs = default;
 
             var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
-            if (statusOp == GarnetStatus.OK)
+
+            if (statusOp == GarnetStatus.WRONGTYPE)
             {
-                if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
+                return GarnetStatus.WRONGTYPE;
+            }
+
+            if (statusOp == GarnetStatus.NOTFOUND)
+            {
+                pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                return GarnetStatus.OK;
+            }
+
+            if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
+            // Initialize result with first set
+            if (weights is null)
+            {
+                pairs = keys.Length == 1 ? firstSortedSet.Dictionary : new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+            }
+            else
+            {
+                pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
+                foreach (var kvp in firstSortedSet.Dictionary)
                 {
+                    pairs[kvp.Key] = kvp.Value * weights[0];
+                }
+            }
+
+            if (keys.Length == 1)
+            {
+                return GarnetStatus.OK;
+            }
+
+            // Intersect with remaining sets
+            for (var i = 1; i < keys.Length; i++)
+            {
+                statusOp = GET(keys[i].ToArray(), out var nextObj, ref objectContext);
+                if (statusOp == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
+                if (statusOp != GarnetStatus.OK)
+                {
+                    pairs = default;
+                    return statusOp;
+                }
+
+                if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
+                {
+                    pairs = default;
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                // Initialize result with first set
-                if (weights is null)
+                foreach (var kvp in pairs)
                 {
-                    pairs = keys.Length == 1 ? firstSortedSet.Dictionary : new Dictionary<byte[], double>(firstSortedSet.Dictionary, ByteArrayComparer.Instance);
+                    if (!nextSortedSet.TryGetScore(kvp.Key, out var score))
+                    {
+                        pairs.Remove(kvp.Key);
+                        continue;
+                    }
+
+                    var weightedScore = weights is null ? score : score * weights[i];
+                    pairs[kvp.Key] = aggregateType switch
+                    {
+                        SortedSetAggregateType.Sum => kvp.Value + weightedScore,
+                        SortedSetAggregateType.Min => Math.Min(kvp.Value, weightedScore),
+                        SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
+                        _ => kvp.Value + weightedScore // Default to SUM
+                    };
                 }
-                else
+
+                // If intersection becomes empty, we can stop early
+                if (pairs.Count == 0)
                 {
-                    pairs = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
-                    foreach (var kvp in firstSortedSet.Dictionary)
-                    {
-                        pairs[kvp.Key] = kvp.Value * weights[0];
-                    }
-                }
-
-                if (keys.Length == 1)
-                {
-                    return GarnetStatus.OK;
-                }
-
-                // Intersect with remaining sets
-                for (var i = 1; i < keys.Length; i++)
-                {
-                    statusOp = GET(keys[i].ToArray(), out var nextObj, ref objectContext);
-                    if (statusOp != GarnetStatus.OK)
-                    {
-                        pairs = default;
-                        return statusOp;
-                    }
-
-                    if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
-                    {
-                        pairs = default;
-                        return GarnetStatus.WRONGTYPE;
-                    }
-
-                    foreach (var kvp in pairs)
-                    {
-                        if (!nextSortedSet.TryGetScore(kvp.Key, out var score))
-                        {
-                            pairs.Remove(kvp.Key);
-                            continue;
-                        }
-
-                        var weightedScore = weights is null ? score : score * weights[i];
-                        pairs[kvp.Key] = aggregateType switch
-                        {
-                            SortedSetAggregateType.Sum => kvp.Value + weightedScore,
-                            SortedSetAggregateType.Min => Math.Min(kvp.Value, weightedScore),
-                            SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
-                            _ => kvp.Value + weightedScore // Default to SUM
-                        };
-                    }
-
-                    // If intersection becomes empty, we can stop early
-                    if (pairs.Count == 0)
-                    {
-                        break;
-                    }
+                    break;
                 }
             }
 
