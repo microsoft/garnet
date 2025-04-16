@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744769902481,
+  "lastUpdate": 1744769904037,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -3258,6 +3258,90 @@ window.BENCHMARK_DATA = {
             "value": 123865.20867919922,
             "unit": "ns",
             "range": "± 255.1185293702637"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "pon.vijaynirmal@outlook.com",
+            "name": "Vijay Nirmal",
+            "username": "Vijay-Nirmal"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8ae8fb42c702ca80605195947629be3598d590af",
+          "message": "Fix wrong type and non existing key issues in S/Z UNION, DIFF, INTER commands (#1162)\n\n* Fix wrong type and non existing key issues in S/Z UNION, DIFF, INTER commants\n\n* Fixed review comment\n\n---------\n\nCo-authored-by: Badrish Chandramouli <badrishc@microsoft.com>",
+          "timestamp": "2025-04-15T19:09:29-07:00",
+          "tree_id": "6b771dd93a997a56b2e58858648cbad33b02cee3",
+          "url": "https://github.com/microsoft/garnet/commit/8ae8fb42c702ca80605195947629be3598d590af"
+        },
+        "date": 1744769703259,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16708.557040405274,
+            "unit": "ns",
+            "range": "± 127.91284126566919"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 16246.39539865347,
+            "unit": "ns",
+            "range": "± 16.0053392577595"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 15284.412425114559,
+            "unit": "ns",
+            "range": "± 44.32366478565768"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13986.42132450984,
+            "unit": "ns",
+            "range": "± 112.78961323315731"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 116902.8684000651,
+            "unit": "ns",
+            "range": "± 474.60752685975876"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 21525.9034576416,
+            "unit": "ns",
+            "range": "± 71.93429165399607"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 20331.496551513672,
+            "unit": "ns",
+            "range": "± 99.84071738289751"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 16452.187789916992,
+            "unit": "ns",
+            "range": "± 79.91184678972563"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 15267.960043770927,
+            "unit": "ns",
+            "range": "± 9.178097427637791"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 123279.33665114183,
+            "unit": "ns",
+            "range": "± 87.38600661493956"
           }
         ]
       }
