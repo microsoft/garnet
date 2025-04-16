@@ -464,6 +464,17 @@ namespace Garnet.server
             }
 
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                return GarnetStatus.OK;
+            }
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             if (status == GarnetStatus.OK)
             {
                 if (first.GarnetObject is not SetObject firstObject)
@@ -490,6 +501,8 @@ namespace Garnet.server
                 }
 
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                if (status == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
                 if (status == GarnetStatus.OK)
                 {
                     if (next.GarnetObject is not SetObject nextObject)
@@ -890,6 +903,17 @@ namespace Garnet.server
 
             // first SetObject
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                return GarnetStatus.OK;
+            }
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+
             if (status == GarnetStatus.OK)
             {
                 if (first.GarnetObject is not SetObject firstObject)
@@ -909,6 +933,8 @@ namespace Garnet.server
             for (var i = 1; i < keys.Length; i++)
             {
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                if (status == GarnetStatus.WRONGTYPE)
+                    return GarnetStatus.WRONGTYPE;
                 if (status == GarnetStatus.OK)
                 {
                     if (next.GarnetObject is not SetObject nextObject)
