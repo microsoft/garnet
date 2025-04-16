@@ -156,8 +156,8 @@ namespace Garnet.server
 
                     // write array of 2 values
                     output.WriteArrayLength(2);
-                    output.WriteDoubleBulkString(lon);
-                    output.WriteDoubleBulkString(lat);
+                    output.WriteDoubleNumeric(lon);
+                    output.WriteDoubleNumeric(lat);
                 }
                 else
                 {
@@ -317,8 +317,8 @@ namespace Garnet.server
                     {
                         // Write array of 2 values
                         output.WriteArrayLength(2);
-                        output.WriteDoubleBulkString(item.Coordinates.Longitude);
-                        output.WriteDoubleBulkString(item.Coordinates.Latitude);
+                        output.WriteDoubleNumeric(item.Coordinates.Longitude);
+                        output.WriteDoubleNumeric(item.Coordinates.Latitude);
                     }
                 }
             }
