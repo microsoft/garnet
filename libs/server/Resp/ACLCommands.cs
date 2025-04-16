@@ -441,8 +441,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(1, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSetLength(1);
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
                         SendAndReset();

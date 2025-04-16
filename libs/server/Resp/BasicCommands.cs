@@ -1229,8 +1229,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(keys[i].Span, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteArrayLength(flags[i].Length, ref dcurr, dend))
-                    SendAndReset();
+                WriteSetLength(flags[i].Length);
 
                 foreach (var flag in flags[i])
                 {
