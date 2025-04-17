@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744898937195,
+  "lastUpdate": 1744898945556,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -3036,6 +3036,54 @@ window.BENCHMARK_DATA = {
             "value": 30578.424961635046,
             "unit": "ns",
             "range": "± 126.7888128591345"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kmontrose@microsoft.com",
+            "name": "kevin-montrose",
+            "username": "kevin-montrose"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c30f10c87c5331fbbb16596a3061c37904cbcc6d",
+          "message": "Add a fuzzing host (#1166)\n\n* sketch out a OneFuzz target, with some local testing niceities\n\n* implement the command parser fuzz target\n\n* parsing exceptions are fine\n\n* derp, messed up this filter\n\n* implement lua compilation fuzzing\n\n* sketch out GarnetEndToEnd fuzz target\n\n* sketch out GarnetEndToEnd fuzz target\n\n* fix bugs; add --input-directory\n\n* bunch of false crashes creating files, rework to be less race-y\n\n* small amount of cleanup and DRY'ing\n\n* formatting\n\n* fix merge\n\n* correctly cleanup LogDir and CheckpointDir in EndToEnd fuzz",
+          "timestamp": "2025-04-17T10:02:05-04:00",
+          "tree_id": "d5da23e2696ac93e84674aee665baa4413e1f111",
+          "url": "https://github.com/microsoft/garnet/commit/c30f10c87c5331fbbb16596a3061c37904cbcc6d"
+        },
+        "date": 1744898755061,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Get(Params: None)",
+            "value": 35715.024213518416,
+            "unit": "ns",
+            "range": "± 56.12837637272552"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Set(Params: None)",
+            "value": 37725.8993733724,
+            "unit": "ns",
+            "range": "± 153.9357549970597"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MGet(Params: None)",
+            "value": 31232.41960449219,
+            "unit": "ns",
+            "range": "± 158.22087319436656"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MSet(Params: None)",
+            "value": 30320.507066999162,
+            "unit": "ns",
+            "range": "± 219.30509473373647"
           }
         ]
       }
